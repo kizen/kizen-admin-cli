@@ -566,6 +566,29 @@ Why a translator is mandatory rather than nice-to-have:
 Also: **automation updates need PUT, not PATCH.** PATCH refuses step/trigger
 changes, and PUT requires the current `revision` as `last_revision`.
 
+### Previewing an update before you send it
+
+`kizen automations diff <api_name> --spec-file <path>` (stdin also accepted)
+shows what `automations update` from that spec would actually change on the
+live automation — trigger/step additions, removals, reparenting, and
+config-field changes — without writing anything. It normalizes both sides
+into the wire (PUT) dialect above and matches steps/triggers by `id` first,
+falling back to position for a spec with no `id`s at all (see "A
+step/trigger's `id` field controls..." above for what setting `id` does).
+
+Because `key` is synthesized fresh from live order on one side and
+hand-authored on the other, a literal field comparison would show every
+step's `key`/`parent_key` as "changed" even when nothing actually changed.
+`diff` excludes `key`, `parent_key`, and `prefix` from the comparison — they
+are per-side synthetic naming, not automation content — but still catches a
+genuine reparenting by comparing each step's parent by matched identity, not
+by the raw key string. Each diff line is labelled with the first octet of
+the step/trigger's `id` (e.g. `76af48bd`) so it can be matched against the
+same value visible in the UI, and it is unique within one automation. A
+changed field is identified by that octet alone; an added or removed
+step/trigger carries the whole step/trigger, full `id` included, in its
+`--json` leaf value.
+
 ### Read→write transforms
 
 Each of these was discovered via a live 400, 500, or silent data loss:

@@ -437,6 +437,8 @@
 │                       business_plugin_app_id (the value `call_llm.business_plugin_app_id` needs  │
 │                       for any non-`kizen/*` model_name — see automation.md).                     │
 │ roundtrip             Verify GET→PUT translation fidelity for one automation.                    │
+│ diff                  Show what `automations update` from this spec would change on the          │
+│                       live automation — read-only, no write is made.                             │
 │ show                  Render the automation as a step tree with stable step keys.                │
 │ start                 Trigger an automation, optionally on a record and seeding variables.       │
 │ modification-history  Who changed this automation, when, and what changed.                       │
@@ -519,6 +521,34 @@
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: automations diff [OPTIONS] {api_name}                                                       
+                                                                                                    
+ Show what `automations update` from this spec would change on the live automation — read-only, no  
+ write is made.                                                                                     
+                                                                                                    
+ Triggers/steps are matched by `id` first (regardless of `key`/order),                              
+ position among the rest as a fallback for a spec with no `id`s at all.                             
+ `key`/`parent_key`/`prefix` are excluded from the comparison — they're                             
+ per-side synthetic naming (see `kizen docs show automation`), not                                  
+ automation content — but a genuine reparenting still shows, compared by                            
+ matched identity rather than raw key. Each line is labelled with the                               
+ first octet of the step/trigger's `id` so it can be matched to what's                              
+ visible in the UI; it is unique within one automation. Under `--json`, an                          
+ added or removed step/trigger also carries its full `id` in the leaf                               
+ value.                                                                                             
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    api_name      <str>  Automation api_name. [required]                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file        <str>  Path to JSON AutomationDef. Default: read from stdin.                  │
+│ --json                    Emit full result as JSON.                                              │
+│ --help                    Show this message and exit.                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+                                                                                                    
                                                                                                     
  Usage: automations duplicate [OPTIONS] {api_name}                                                  
                                                                                                     
@@ -4067,6 +4097,9 @@
 
 
 ===== automations delete =====
+
+
+===== automations diff =====
 
 
 ===== automations duplicate =====

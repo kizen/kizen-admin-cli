@@ -141,6 +141,21 @@ called out explicitly under **Changed** or **Removed**.
   `tests/fixtures/examples/service_ticket/`, checked two ways: an offline
   test that fails if the doc and the fixtures ever diverge, and an opt-in
   drift test that applies the same fixtures live.
+- **`kizen automations diff <api_name> --spec-file <path>`** (stdin also
+  accepted) previews what `automations update` from that spec would actually
+  change on the live automation — trigger/step additions, removals,
+  reparenting, and config-field changes — without writing anything. Steps and
+  triggers are matched by `id` first, position as a fallback for a spec with
+  no `id`s at all; `key`/`parent_key`/`prefix` are excluded from the
+  comparison since they're per-side synthetic naming, not automation content,
+  so an unchanged spec produces an empty diff instead of showing every step's
+  resynthesized `key` as "changed." Each diff line is labelled with the first
+  octet of the step/trigger's `id` (matching what's visible in the UI), which
+  is unique within a single automation; under `--json`, an addition or removal
+  also carries the whole step/trigger including its full `id`.
+  `kizen automations get`'s Steps table also
+  gains an `id` column (first octet) and shortens `parent` to match, so the
+  two can be read against each other without `--json`.
 - **The package declares its license.** `kizen-builder` is MIT-licensed, and the
   built wheel and sdist now carry `License-Expression: MIT` along with a copy of
   `LICENSE`.

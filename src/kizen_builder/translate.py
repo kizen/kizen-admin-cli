@@ -483,3 +483,212 @@ def _diff(a: Any, b: Any, path: str) -> list[tuple[str, Any, Any]]:
     if a != b:
         return [(path, a, b)]
     return []
+
+
+# ---------------------------------------------------------------------------
+# Wire diff (live payload vs. spec-as-applied payload)
+# ---------------------------------------------------------------------------
+
+# Per-side synthetic naming, not automation content — excluded from
+# comparison so a spec that changes nothing produces an empty diff even
+# though `key` is resynthesized from live order on one side and authored by
+# hand on the other (see `automation.md`'s "GET and PUT are different
+# dialects").
+_WIRE_DIFF_EXCLUDED = {"key", "parent_key", "prefix"}
+
+
+def _wire_pairs(
+    live_items: list[dict[str, Any]], spec_items: list[dict[str, Any]]
+) -> list[tuple[dict[str, Any] | None, dict[str, Any] | None]]:
+    """Match live and spec steps/triggers: by ``id`` when both sides have
+    one, then by position among what's left.
+
+    Position fallback covers a spec authored from scratch with no ``id`` at
+    all — the same trick :func:`canonicalize` uses for round-trip identity,
+    adapted to match across two different payloads instead of one payload
+    before/after a write. A spec item that *does* carry an ``id``, but one
+    that matches no live item, is not a position-fallback candidate: a real
+    ``id`` naming a step that doesn't exist live cannot be that step under
+    any interpretation, so it is always an addition (and whatever live item
+    is left over is a removal), never merged into an unrelated step by
+    position.
+    """
+    spec_by_id = {s["id"]: s for s in spec_items if s.get("id")}
+    consumed: set[int] = set()
+    pairs: list[tuple[dict[str, Any] | None, dict[str, Any] | None]] = []
+    leftover_live: list[dict[str, Any]] = []
+    for live_item in live_items:
+        match = spec_by_id.get(live_item.get("id"))
+        if match is not None and id(match) not in consumed:
+            pairs.append((live_item, match))
+            consumed.add(id(match))
+        else:
+            leftover_live.append(live_item)
+
+    leftover_spec = [s for s in spec_items if id(s) not in consumed]
+    dangling_spec = [s for s in leftover_spec if s.get("id")]
+    unidentified_spec = [s for s in leftover_spec if not s.get("id")]
+
+    pairs.extend((None, s) for s in dangling_spec)
+    for i in range(max(len(leftover_live), len(unidentified_spec))):
+        pairs.append(
+            (
+                leftover_live[i] if i < len(leftover_live) else None,
+                unidentified_spec[i] if i < len(unidentified_spec) else None,
+            )
+        )
+    return pairs
+
+
+def _wire_pair_id(
+    pair: tuple[dict[str, Any] | None, dict[str, Any] | None],
+) -> str | None:
+    """The real id this matched pair shares — live's if it has one (it
+    always does; ``live_to_payload`` echoes every step/trigger's id),
+    otherwise spec's, otherwise ``None`` for a brand-new step/trigger the
+    spec hasn't assigned one to yet."""
+    live_item, spec_item = pair
+    if live_item and live_item.get("id"):
+        return live_item["id"]
+    if spec_item and spec_item.get("id"):
+        return spec_item["id"]
+    return None
+
+
+def _wire_pair_label(
+    pair: tuple[dict[str, Any] | None, dict[str, Any] | None],
+) -> str:
+    """The path label for one matched pair: the first octet of its id — the
+    same ``[:8]`` convention as `tools/planners/dashboards.py`'s plan preview
+    and `tools/plans.py`'s plan id — so a diff line can be correlated with
+    what's visible in the UI. Falls back to the spec-authored `key` only for
+    a brand-new step/trigger with no id anywhere yet.
+    """
+    pair_id = _wire_pair_id(pair)
+    if pair_id:
+        return pair_id[:8]
+    live_item, spec_item = pair
+    key = (spec_item or live_item or {}).get("key") or "?"
+    return f"new:{key}"
+
+
+def _wire_key_labels(
+    pairs: list[tuple[dict[str, Any] | None, dict[str, Any] | None]], side: int
+) -> dict[str, str]:
+    """Map one side's raw ``key`` to its pair's label, for resolving
+    ``parent_key`` into matched identity (see `_normalize_wire_steps`)."""
+    labels: dict[str, str] = {}
+    for pair in pairs:
+        item = pair[side]
+        if item is not None and item.get("key") is not None:
+            labels[item["key"]] = _wire_pair_label(pair)
+    return labels
+
+
+def _normalize_wire_triggers(
+    pairs: list[tuple[dict[str, Any] | None, dict[str, Any] | None]], side: int
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for pair in pairs:
+        item = pair[side]
+        if item is None:
+            continue
+        norm = {k: v for k, v in item.items() if k not in _WIRE_DIFF_EXCLUDED | {"id"}}
+        # `id` is carried as a normal field, but pinned to the pair's shared
+        # canonical value on both sides so a matched pair never diffs on it
+        # (position-fallback matches can have an id on only one side) while
+        # still surfacing the real, untruncated id for `--json` on a bare
+        # addition/removal.
+        norm["id"] = _wire_pair_id(pair)
+        out[_wire_pair_label(pair)] = norm
+    return out
+
+
+_GO_TO_BLOCK_FIELD = _block_field_for("go_to_automation_step")
+
+
+def _normalize_wire_steps(
+    step_pairs: list[tuple[dict[str, Any] | None, dict[str, Any] | None]],
+    trigger_pairs: list[tuple[dict[str, Any] | None, dict[str, Any] | None]],
+    side: int,
+) -> dict[str, Any]:
+    step_key_labels = _wire_key_labels(step_pairs, side)
+    trigger_key_labels = _wire_key_labels(trigger_pairs, side)
+    out: dict[str, Any] = {}
+    for pair in step_pairs:
+        item = pair[side]
+        if item is None:
+            continue
+        norm = {k: v for k, v in item.items() if k not in _WIRE_DIFF_EXCLUDED | {"id"}}
+        norm["id"] = _wire_pair_id(pair)
+        # Reparenting must still be visible: resolve `parent_key` to the
+        # *matched identity* of the parent (mirroring `canonicalize`'s
+        # `<step:N>` markers) instead of dropping it outright — a spec that
+        # genuinely moves a step under a different parent shows a real
+        # `parent` change even though raw `parent_key` strings are excluded.
+        parent_key = item.get("parent_key")
+        norm["parent"] = step_key_labels.get(parent_key) if parent_key else None
+        # A `go_to_automation_step` reference is the same situation as
+        # `parent_key`: it names its target by this side's own `key`, which
+        # is separately synthesized (live) or authored (spec). Resolve it to
+        # the target's matched-pair identity so pointing at the *same* step
+        # compares equal across a cosmetic rekey; an unresolvable key (no
+        # matching pair) is left as-is, so a genuine retarget or a dangling
+        # reference still surfaces as a real change.
+        go_to = norm.get(_GO_TO_BLOCK_FIELD)
+        if isinstance(go_to, dict):
+            resolved = dict(go_to)
+            if resolved.get("step_key") is not None:
+                resolved["step_key"] = step_key_labels.get(
+                    resolved["step_key"], resolved["step_key"]
+                )
+            if resolved.get("trigger_key") is not None:
+                resolved["trigger_key"] = trigger_key_labels.get(
+                    resolved["trigger_key"], resolved["trigger_key"]
+                )
+            norm[_GO_TO_BLOCK_FIELD] = resolved
+        out[_wire_pair_label(pair)] = norm
+    return out
+
+
+def diff_wire_payloads(
+    live: dict[str, Any], spec: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Compare two PUT-dialect payloads for the *same* automation — the live
+    automation (via :func:`live_to_payload`) against the payload a spec's
+    `automations update` would send — and return what would actually change.
+
+    Unlike :func:`semantic_diff` (GET-dialect, same automation before/after a
+    write, steps identified by position because the structure can't change),
+    the two sides here can legitimately differ in structure: a step can be
+    added, removed, or reparented. Steps/triggers are matched by `id` first
+    (regardless of `key`/order); position among the remainder is a fallback
+    only for spec items with no `id` at all — see :func:`_wire_pairs`.
+    `key`/`parent_key`/`prefix` are excluded from the field-by-field
+    comparison as per-side synthetic naming, not automation content; a
+    `go_to_automation_step` reference is resolved to its target's matched
+    identity the same way `parent_key` is, so it survives key resynthesis too.
+
+    Returns ``[{"path", "before", "after"}, ...]`` — the same shape
+    `roundtrip_automation`'s `drift` field already uses. A step/trigger only
+    on one side (`before` or `after` is the literal `"<absent>"` sentinel) is
+    an addition or removal; anything else is a changed field. `path` embeds
+    each step/trigger's first-id-octet label so a line can be matched to the
+    UI; the full id still travels in the leaf `before`/`after` values for
+    additions/removals (an addition/removal's value is the whole normalized
+    step/trigger dict, `id` included) since those are consumed by programs.
+    """
+    trigger_pairs = _wire_pairs(live.get("triggers") or [], spec.get("triggers") or [])
+    step_pairs = _wire_pairs(live.get("steps") or [], spec.get("steps") or [])
+
+    norm_live = {k: v for k, v in live.items() if k not in ("triggers", "steps")}
+    norm_spec = {k: v for k, v in spec.items() if k not in ("triggers", "steps")}
+    norm_live["triggers"] = _normalize_wire_triggers(trigger_pairs, 0)
+    norm_spec["triggers"] = _normalize_wire_triggers(trigger_pairs, 1)
+    norm_live["steps"] = _normalize_wire_steps(step_pairs, trigger_pairs, 0)
+    norm_spec["steps"] = _normalize_wire_steps(step_pairs, trigger_pairs, 1)
+
+    return [
+        {"path": p, "before": a, "after": b}
+        for p, a, b in _diff(norm_live, norm_spec, "")
+    ]
