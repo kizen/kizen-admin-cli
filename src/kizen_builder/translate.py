@@ -669,8 +669,10 @@ def diff_wire_payloads(
     `go_to_automation_step` reference is resolved to its target's matched
     identity the same way `parent_key` is, so it survives key resynthesis too.
 
-    Returns ``[{"path", "before", "after"}, ...]`` — the same shape
-    `roundtrip_automation`'s `drift` field already uses. A step/trigger only
+    Returns ``[{"path", "before", "after"}, ...]`` — the same three keys
+    `roundtrip_automation`'s `drift` field uses, but *not* the same `path`
+    convention: `drift` comes from :func:`semantic_diff` and numbers steps
+    positionally (`steps[3].field`), carrying no id at all. A step/trigger only
     on one side (`before` or `after` is the literal `"<absent>"` sentinel) is
     an addition or removal; anything else is a changed field. `path` embeds
     each step/trigger's first-id-octet label so a line can be matched to the
