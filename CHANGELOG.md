@@ -14,6 +14,29 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **`kizen messages templates get/clone/update/delete` — the email-template
+  surface can now be read and written, not just listed.** `list` only ever
+  returned summary fields, so there was no way to see a template's body at
+  all; `get` shows it (`--raw` dumps the full payload, the starting point for
+  building a new one).
+
+  The thing to know about this surface: a template stores the editable
+  `craft_json` tree **and** the compiled `content` HTML that actually gets
+  sent, and the server compiles neither from the other — confirmed live by
+  PATCHing a modified `craft_json` alone and reading `content` back
+  byte-identical. Writing one without the other leaves the builder showing one
+  email while recipients receive another, silently. So `get` reports two drift
+  checks — `structure coupled` (every `Section`/`Row` node has its matching
+  `section-<nodeId>` class in the HTML) and `text in sync` (every `Text`
+  node's copy actually appears there) — and `clone` always copies both fields
+  together, which makes it the safe way to branch a design built in the
+  builder UI.
+
+  Generating a template from a spec file is still not wired; see `kizen docs
+  show email-templates`.
+
 ### Fixed
 
 - **`kizen upgrade --check` can now find a release tag from a `uv tool

@@ -55,6 +55,30 @@ def get_template(client: KizenClient, template_id: str) -> dict[str, Any]:
     return client.get(f"/api/messages/templates/{template_id}")
 
 
+def create_template(client: KizenClient, body: dict[str, Any]) -> dict[str, Any]:
+    """POST /api/messages/templates."""
+    return client.post("/api/messages/templates", json=body)
+
+
+def update_template(
+    client: KizenClient, template_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """PATCH /api/messages/templates/{id}.
+
+    ``craft_json`` (the editable tree) and ``content`` (the compiled,
+    Outlook-safe HTML that is actually sent) are independent stored fields
+    coupled by node id — see `kizen docs show email-templates`. Sending one
+    without the other is what leaves a template's builder view and its real
+    output out of sync.
+    """
+    return client.patch(f"/api/messages/templates/{template_id}", json=body)
+
+
+def delete_template(client: KizenClient, template_id: str) -> Any:
+    """DELETE /api/messages/templates/{id}."""
+    return client.delete(f"/api/messages/templates/{template_id}")
+
+
 def create_automation_message_from_template(
     client: KizenClient, automation_id: str, template: dict[str, Any]
 ) -> dict[str, Any]:

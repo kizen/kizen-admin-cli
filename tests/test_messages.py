@@ -14,7 +14,11 @@ import respx
 
 from kizen_builder.api import messages as messages_api
 from kizen_builder.api.client import KizenClient
-from kizen_builder.tools.messages import create_automation_message, resolve_template
+from kizen_builder.tools.messages import (
+    craft_summary,
+    create_automation_message,
+    resolve_template,
+)
 from tests.conftest import FAKE_BASE_URL
 
 TEMPLATE_ID = "7cb5ce29-bf20-4f0f-bdc9-412a8c777ff8"
@@ -129,3 +133,119 @@ def test_create_automation_message_tool_resolves_and_creates(monkeypatch):
     result = create_automation_message("some_automation", TEMPLATE_ID)
     assert result["id"] == "new-message-id"
     assert result["automation_api_name"] == "some_automation"
+
+
+# ---------------------------------------------------------------------------
+# craft_json / content drift detection
+#
+# The two fields are stored independently and the server compiles neither
+# from the other — confirmed live 2026-08-25 by PATCHing a modified
+# craft_json alone and reading `content` back byte-identical. So a template
+# can look right in the builder and send something else, and the only way to
+# notice is to compare the two.
+# ---------------------------------------------------------------------------
+
+
+def _node(resolved_name, **extra):
+    return {
+        "type": {"resolvedName": resolved_name},
+        "props": {},
+        "custom": {},
+        "nodes": [],
+        "linkedNodes": {},
+        **extra,
+    }
+
+
+def _template(nodes, content):
+    return {"id": TEMPLATE_ID, "name": "t", "craft_json": nodes, "content": content}
+
+
+SECTION_ID = "4e583d9c82fb4255dd004b11"
+ROW_ID = "ff17e4ea3375d1a2f1cc2a52"
+
+
+def test_craft_summary_reports_coupled_when_both_fields_agree():
+    tmpl = _template(
+        {
+            "ROOT": _node("Root"),
+            SECTION_ID: _node("Section"),
+            ROW_ID: _node("Row"),
+            "t1": _node("Text", custom={"text": "<p>Hello there</p>"}),
+        },
+        f'<div class="section-{SECTION_ID}"></div>'
+        f'<div class="section-{ROW_ID}"><p>Hello there</p></div>',
+    )
+    summary = craft_summary(tmpl)
+    assert summary["structure_coupled"] is True
+    assert summary["text_in_sync"] is True
+    assert summary["coupled"] is True
+    assert summary["node_types"]["Text"] == 1
+
+
+def test_craft_summary_flags_a_section_with_no_class_in_the_compiled_html():
+    """A Section/Row added to the tree without recompiling `content` is
+    structural drift — the builder shows it, recipients never see it."""
+    tmpl = _template(
+        {"ROOT": _node("Root"), SECTION_ID: _node("Section"), ROW_ID: _node("Row")},
+        f'<div class="section-{SECTION_ID}"></div>',
+    )
+    summary = craft_summary(tmpl)
+    assert summary["structure_coupled"] is False
+    assert summary["containers_without_class"] == [ROW_ID]
+    assert summary["coupled"] is False
+
+
+def test_craft_summary_flags_edited_copy_that_never_reached_the_compiled_html():
+    """Text drift leaves the structure untouched, so the node-id check passes
+    and only the text check catches it — this is the failure mode a
+    craft_json-only PATCH actually produces."""
+    tmpl = _template(
+        {
+            "ROOT": _node("Root"),
+            SECTION_ID: _node("Section"),
+            "t1": _node("Text", custom={"text": "<p>Edited in the builder</p>"}),
+        },
+        f'<div class="section-{SECTION_ID}"><p>The original copy</p></div>',
+    )
+    summary = craft_summary(tmpl)
+    assert summary["structure_coupled"] is True
+    assert summary["text_in_sync"] is False
+    assert summary["text_nodes_missing_from_content"] == ["t1"]
+    assert summary["coupled"] is False
+
+
+def test_craft_summary_does_not_report_drift_for_inline_markup_or_merge_fields():
+    """`content` embeds a Text node's markup verbatim, so both sides must be
+    tag-stripped before comparing — otherwise a styled span or a merge field
+    reads as drift. Regression for a live false positive."""
+    text = (
+        '<p style="line-height: 1.25"><span style="font-size: 18px">Hi '
+        '<span class="kzn-merge-field" data-merge-field-relationship='
+        '"team_member.email">{{ team_member.email }}</span></span></p>'
+    )
+    tmpl = _template(
+        {
+            "ROOT": _node("Root"),
+            SECTION_ID: _node("Section"),
+            "t1": _node("Text", custom={"text": text}),
+        },
+        f'<div class="section-{SECTION_ID}">{text}</div>',
+    )
+    assert craft_summary(tmpl)["text_in_sync"] is True
+
+
+def test_craft_summary_compares_multi_paragraph_text_per_paragraph():
+    """A multi-paragraph node flattens to a string that never appears
+    contiguously in the rendered HTML, because the renderer puts markup
+    between the paragraphs. Regression for a live false positive."""
+    tmpl = _template(
+        {
+            "ROOT": _node("Root"),
+            SECTION_ID: _node("Section"),
+            "t1": _node("Text", custom={"text": "<p>First para</p><p>Second para</p>"}),
+        },
+        f'<div class="section-{SECTION_ID}">'
+        "<td><p>First para</p></td><td><p>Second para</p></td></div>",
+    )
+    assert craft_summary(tmpl)["text_in_sync"] is True

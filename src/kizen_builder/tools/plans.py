@@ -46,6 +46,7 @@ Kind = Literal[
     "field_option",
     "automation",
     "automation_message",
+    "email_template",
     "automation_folder",
     "dashboard",
     "dashlet",
@@ -554,6 +555,19 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
         return messages_api.create_automation_message_from_template(
             client, op.payload["automation_id"], op.payload["template"]
         )
+
+    if op.kind == "email_template":
+        from kizen_builder.api import messages as messages_api
+
+        if op.action == "create":
+            return messages_api.create_template(client, op.payload)
+        if op.existing_uuid is None:
+            raise PlanError(
+                f"{op.action} email_template op '{op.key}' has no existing_uuid — planning bug"
+            )
+        if op.action == "delete":
+            return messages_api.delete_template(client, op.existing_uuid)
+        return messages_api.update_template(client, op.existing_uuid, op.payload)
 
     if op.kind == "automation_folder":
         if op.action == "create":
