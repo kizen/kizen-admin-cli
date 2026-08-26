@@ -21,7 +21,9 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from kizen_builder.tools.merge_fields import MERGE_FIELD_RE
 
 # The 4 v1 layouts, confirmed live 2026-08-25 — exact `Row.props.columns` /
 # `Cell.props.__width` fractions, not rounded or recomputed. See
@@ -56,15 +58,88 @@ class PaddingDef(BaseModel):
     left: str = "10"
 
 
+class ParagraphDef(BaseModel):
+    """One paragraph of rich-text copy, for the single-run, single-style,
+    single-link case: uniform size/bold/color/align and at most one link,
+    applied to the whole paragraph. Rendered by
+    `tools.email_craft._paragraphs_to_html` into the markup Kizen's own
+    rich-text editor normalises **to** on save for that case (`<p
+    data-line-height="default" style="line-height: 1.25;">` +
+    `<span style="font-size: Npx;">` + `<strong>` + `<a rel="noopener
+    noreferrer nofollow">`), confirmed live 2026-08-26 — see the work item
+    that added this model for the full trace.
+
+    Deliberately closed vocabulary, and it does not cover every shape the
+    live editor can produce: re-measured 2026-08-26 against the same
+    reference template, 4 of 31 `<p>` blocks (across 9 `Text` nodes) contain
+    a bare `<a>` with no `<span>` anywhere in the paragraph, and 2 spans
+    carry a `<strong>`-wrapped run alongside plain text in the same span
+    (bold on part of a run, not the whole paragraph). Neither shape is
+    expressible here — `link` always wraps a `<span>`, and `bold` is
+    all-or-nothing per paragraph — and there is no `html` escape hatch to
+    fall back on, so paragraphs shaped like either cannot be authored from
+    this CLI. See
+    `00-inbox/paragraph-model-cannot-express-partial-run-formatting.md`.
+
+    `text` may contain `{{ namespace.field }}` merge-field tokens (rendered
+    via `tools/merge_fields.py`'s `render()`, the shared owner of that
+    markup) — see `_paragraphs_to_html`. `automation_variable.*` tokens are
+    rejected here: library email templates aren't scoped to any one
+    automation, so a variable name only one automation happens to declare
+    isn't portable, and rendering it would silently produce the literal
+    token text rather than a value everywhere else.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    size: int | None = Field(
+        default=None,
+        description="px. None renders the builder's own default span size, "
+        "not 'no span' — every live canonical span carries an explicit size.",
+    )
+    bold: bool = False
+    color: str | None = Field(
+        default=None,
+        description="Unvalidated string, matching ButtonBlockDef.color's "
+        "existing pattern — both #hex and rgb(...) are confirmed live.",
+    )
+    link: str | None = None
+    align: Literal["left", "center", "right"] | None = None
+
+    @field_validator("text")
+    @classmethod
+    def _reject_automation_variable_tokens(cls, v: str) -> str:
+        for m in MERGE_FIELD_RE.finditer(v):
+            namespace = m.group(1).split(".", 1)[0]
+            if namespace == "automation_variable":
+                raise ValueError(
+                    f"merge-field token {m.group(0)!r} uses the "
+                    "'automation_variable' namespace, which only exists in "
+                    "an automation-scoped message (see 'The "
+                    "automation_variable scope boundary' in the work item) "
+                    "— not valid on a library email template's paragraph text"
+                )
+        return v
+
+
 class TextBlockDef(BaseModel):
-    """Rich-text copy. `html` is embedded verbatim in both `craft_json`
-    (`custom.text`) and the compiled `content` — see the coupling rule in
-    `docs/specs/email-templates.md`."""
+    """Rich-text copy as a list of paragraphs — see `ParagraphDef`.
+    `_paragraphs_to_html` renders this into the HTML string embedded
+    verbatim in both `craft_json` (`custom.text`) and the compiled `content`
+    — see the coupling rule in `docs/specs/email-templates.md`. No raw-HTML
+    escape hatch on this surface (`extra="forbid"` on every block model), same
+    as BCLI-022 established for the rest of this surface."""
 
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["text"] = "text"
-    html: str
+    paragraphs: list[ParagraphDef] = Field(
+        min_length=1,
+        description="At least one paragraph is required — the html field "
+        "this replaced was required too. A spacer is a paragraph with "
+        'text: "", not an empty list.',
+    )
 
 
 class ImageBlockDef(BaseModel):

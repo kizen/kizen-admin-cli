@@ -16,6 +16,31 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Email template `text` blocks are now authored as structured paragraphs,
+  not raw HTML — and can carry inline merge fields.** `TextBlockDef.html` is
+  removed (a lingering `html` key on a `text` block now fails spec
+  validation, naming `paragraphs` as the expected field); each paragraph is
+  `{text, size, bold, color, link, align}`. The emitter renders that list
+  into the exact canonical markup Kizen's own rich-text editor normalises
+  **to** on save (`<p data-line-height="default" style="line-height:
+  1.25;">` + `<span style="font-size: Npx;">` + `<strong>` + `<a
+  rel="noopener noreferrer nofollow">`), so a template built from a spec no
+  longer loses its styling the first time a human opens and saves it in the
+  builder — previously, 7 of 9 raw-HTML text blocks in a real template were
+  silently rewritten by the builder's own save.
+
+  A paragraph's `text` may also contain `{{ namespace.field }}` merge-field
+  tokens — the same syntax automation notify steps already use — rendered
+  inline into Kizen's `<span class="kzn-merge-field">` wrapper via the
+  shared `tools/merge_fields.py`. `automation_variable.*` tokens are
+  rejected at spec-validation time: that namespace only exists inside an
+  automation-scoped message, not a portable library template. Under
+  `messages templates craft-config`/`--dry-run` (no live calls), every
+  namespace still gets a best-effort label, but `data-merge-field-objectname`
+  is omitted for custom-object namespaces — there's no live object lookup to
+  answer it offline, the same class of preview-vs-real divergence
+  `craft-config` already documents for Image blocks.
+
 - **`kizen messages templates get/clone/update/delete` — the email-template
   surface can now be read and written, not just listed.** `list` only ever
   returned summary fields, so there was no way to see a template's body at

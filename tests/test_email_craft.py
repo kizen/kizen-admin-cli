@@ -24,8 +24,13 @@ import zlib
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from kizen_builder.models.spec.email_templates import COLUMN_FRACTIONS, EmailTemplateDef
+from kizen_builder.models.spec.email_templates import (
+    COLUMN_FRACTIONS,
+    EmailTemplateDef,
+    ParagraphDef,
+)
 from kizen_builder.tools import email_craft as ec
 from kizen_builder.tools import email_html as eh
 from kizen_builder.tools import form_ui
@@ -210,20 +215,35 @@ def test_one_column_and_two_column_compiled_markup_matches_live_probe():
     assert not re.search(r"\.0px", content)
 
 
-def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
-    """Verified 2026-08-26, read-only, against a real Kizen-authored
-    template on `cli-testing`: `_render_button`/`_render_divider`'s output
-    is byte-exact against that template's actual compiled `content` for a
-    Button/Divider node carrying the same props. The real template's own
-    copy/URL/color never enter this repo (personal-data rule) — the values
-    below are synthetic, chosen to exercise the same code path.
+def test_button_anchor_declarations_match_a_real_captured_template():
+    """Re-verified 2026-08-26, read-only, against a fresh capture of the
+    reference template on `cli-testing`: the `<a>` tag's own `style`
+    declarations (`color` as `_rgba_to_hex`-converted hex, and the five
+    declarations — `font-weight:normal`, `line-height:120%`, `margin:0`,
+    `text-transform:none`, `mso-padding-alt:0px` — in this exact position
+    and order) are byte-exact against Kizen's own compiler, independently
+    confirmed across all five Button nodes in that template. The real
+    template's own copy/URL/color never enter this repo (personal-data
+    rule) — the values below are synthetic, chosen to exercise the same
+    code path.
 
-    **Corrected 2026-08-26, same-day, in BCLI-024 review**: the original
-    assertion here was missing the button table's own `align="center"` and
-    `line-height:100%;` — both confirmed present in Kizen's real compile of
-    the same button by independent comparison, and both now load-bearing
-    for `Button.alignment` actually reaching `content` (see
-    `test_content_reflects_every_layout_prop_this_item_added` below)."""
+    **This assertion is scoped to the `<a>` tag only.** The enclosing
+    `<table>`/`<td>` markup below is NOT verified against that capture and
+    is known to also diverge from it (no `align` attribute on the real
+    `<table>` at all; the real `<td>` carries different attributes and
+    style) — out of this item's scope, see
+    `00-inbox/button-table-and-divider-markup-diverge-further.md`. Do not
+    read the `<table>`/`<td>` portion of this assertion as a live-verified
+    claim; it pins the emitter's current (known-diverging) output only, so
+    an unrelated future change doesn't silently reshape it unnoticed.
+
+    **Previously corrected 2026-08-24 in BCLI-024 review**: the original
+    assertion was missing the button table's own `align="center"` and
+    `line-height:100%;` — this correction attributed `align="center"` to the
+    `<table>`, which the fresh capture above shows is wrong (it is the
+    `<td>` that carries `align="center"` in the real markup); left as-is
+    here since fixing it is part of the follow-on note above, not this
+    item's scope."""
     sections = [
         ec.section(
             [
@@ -236,9 +256,8 @@ def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
                                 )
                             ]
                         ),
-                        ec.cell([ec.divider_block("#E5E7EB")]),
                     ],
-                    layout="2 Columns",
+                    layout="1 Column",
                 )
             ]
         )
@@ -250,10 +269,37 @@ def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
         "<tr><td "
         'style="border-radius:8px;background:#1B64F2;text-align:center;" '
         'bgcolor="#1B64F2"><a href="https://example.com" target="_blank" '
-        'style="display:inline-block;background:#1B64F2;color:rgba(255,255,255,1);'
-        "font-family:Arial;font-size:16px;padding:10px 20px 10px 20px;"
-        'border-radius:8px;text-decoration:none;">Click Here</a></td></tr></table>'
+        'style="display:inline-block;background:#1B64F2;color:#ffffff;'
+        "font-family:Arial;font-size:16px;font-weight:normal;line-height:120%;"
+        "margin:0;text-decoration:none;text-transform:none;"
+        "padding:10px 20px 10px 20px;mso-padding-alt:0px;"
+        'border-radius:8px;">Click Here</a></td></tr></table>'
     ) in content
+
+
+def test_divider_markup_pins_current_shape_not_checked_against_a_capture():
+    """`_render_divider`'s output — pins the emitter's current shape, not
+    checked against a real capture. A fresh read-only capture of the
+    reference template's two Divider nodes (2026-08-26) shows Kizen's real
+    compiled Divider diverges substantially from this — it is wrapped in a
+    two-level `<table><td>` (this emitter emits a bare `<p>`), the `<p>`'s
+    own style differs (`border-top:solid 1px #color` — style before size,
+    not size before style; `margin:0px auto`, not `0 auto`; genuinely empty
+    `<p></p>`, not `<p> </p>`), and Kizen adds an MSO-conditional `<table>`
+    fallback this emitter has none of. Fixing this is out of this item's
+    scope (only `_render_button`'s `<a>` tag was in scope) — see
+    `00-inbox/button-table-and-divider-markup-diverge-further.md`."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.divider_block("#E5E7EB")])],
+                    layout="1 Column",
+                )
+            ]
+        )
+    ]
+    _craft_json, content = ec.build_email_content(sections)
     assert (
         '<p style="border-top:3px solid #E5E7EB;font-size:1px;margin:0 auto;'
         'width:100%;"> </p>'
@@ -261,16 +307,22 @@ def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
 
 
 def test_render_image_fixed_width_compiled_markup_matches_the_reference_shape():
-    """`_render_image`'s output shape, re-derived from the reference
-    template's real compiled `content` (read-only `GET`, 2026-08-26) — see
-    the work item's report for the full trace. Kizen wraps every Image in a
-    two-level table (`<td class="...">` carrying block padding, a nested
-    `<table><td style="width:...">` around the `<img>`), not a bare `<img>`
-    tag as this emitter produced before BCLI-025 — the `<img>`'s own
-    attributes/style are byte-exact against the reference; the wrapper is
-    asserted structurally (tag/attribute placement), not as one giant
-    pinned string, so a future formatting-only tweak to the wrapper doesn't
-    make this test as brittle as re-deriving the whole thing by hand."""
+    """`_render_image`'s output shape — re-derived from the reference
+    template's real compiled `content` (read-only `GET`, 2026-08-25) and
+    **independently re-verified against a fresh capture of the same
+    template, 2026-08-26**, as part of BCLI-023's audit of this file's other
+    byte-exact claims: the fresh capture's fixed-width `<img>` tag matches
+    this test's asserted attribute/style set exactly (only the surrounding
+    `<table>`/`<td>` differs by an explicit `<tbody>` the real markup emits
+    and this emitter doesn't — not asserted here, so it doesn't affect this
+    claim). Kizen wraps every Image in a two-level table (`<td class="...">`
+    carrying block padding, a nested `<table><td style="width:...">` around
+    the `<img>`), not a bare `<img>` tag as this emitter produced before
+    BCLI-025 — the `<img>`'s own attributes/style are byte-exact against the
+    reference; the wrapper is asserted structurally (tag/attribute
+    placement), not as one giant pinned string, so a future formatting-only
+    tweak to the wrapper doesn't make this test as brittle as re-deriving
+    the whole thing by hand."""
     sections = [
         ec.section(
             [
@@ -1421,7 +1473,7 @@ def test_content_reflects_every_layout_prop_this_item_added():
     # to this button's own fragment (not "somewhere in content") by
     # locating its distinctive align="right".
     button_start = content.index('<table role="presentation" align="right"')
-    button_fragment = content[button_start : button_start + 500]
+    button_fragment = content[button_start : button_start + 700]
     assert "border-radius:31px" in button_fragment
     # Top/bottom stay this item's pre-existing hardcoded "10" — only
     # left/right were added by ButtonBlockDef; order is top/right/bottom/left.
@@ -1543,9 +1595,14 @@ def test_mjml_reset_block_is_present_and_byte_exact():
     """Divergence 3: the static MJML reset block (`#outlook a`,
     `body{margin:0}`, `table,td{border-collapse}`, `img{...}`,
     `p{display:block;margin:13px 0}`) — confirmed byte-exact against the
-    reference template's compiled `content`. No per-template data, so
-    byte-exact is the right bar here (same allowance the work item gives
-    the `.moz-text-html` rule's structural shape)."""
+    reference template's compiled `content` on 2026-08-25, and
+    **independently re-verified against a fresh read-only capture of the
+    same template, 2026-08-26**, as part of BCLI-023's audit of this file's
+    byte-exact claims: the block has no per-template data (it's a fixed
+    constant, `_MJML_RESET_STYLE`), and the fresh capture's own reset block
+    matches this assertion's literal exactly, byte for byte. No per-template
+    data, so byte-exact is the right bar here (same allowance the work item
+    gives the `.moz-text-html` rule's structural shape)."""
     sections = [
         ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
     ]
@@ -1716,3 +1773,324 @@ def test_golden_output_for_a_small_synthetic_template(monkeypatch: pytest.Monkey
     assert f".section-{section_id} {{ background-color:#EEEEEE; }}" in content
     assert "<p>Hello</p>" in content
     assert "mj-column-per-100" in content
+
+
+# ---------------------------------------------------------------------------
+# BCLI-023 — structured `paragraphs` text model + inline merge fields.
+# `TextBlockDef.html` is gone; `_paragraphs_to_html` renders the canonical
+# markup confirmed live against the reference template's touched `Text`
+# nodes (2026-08-26). Every test that builds a full spec asserts BOTH
+# `craft_json`'s `custom.text` and the compiled `content` — the two are
+# independent stored fields the server never reconciles, and eight defects
+# have already shipped on this surface from a check that inspected only one.
+# ---------------------------------------------------------------------------
+
+
+def test_text_block_html_key_is_rejected_loudly_not_silently():
+    """`TextBlockDef.html` is removed. A spec that still carries the old
+    `html` key on a `text` block fails validation (`extra="forbid"`),
+    naming the offending `html` key — the same treatment BCLI-022 already
+    gives every other unrepresentable key on this surface (`craft_json`,
+    `content`, `sender_type`)."""
+    with pytest.raises(ValidationError) as exc_info:
+        EmailTemplateDef.model_validate(
+            {
+                "name": "Newsletter",
+                "sections": [
+                    {
+                        "rows": [
+                            {
+                                "cells": [
+                                    {"blocks": [{"kind": "text", "html": "<p>Hi</p>"}]}
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            }
+        )
+    errors = exc_info.value.errors()
+    assert any(
+        e["type"] == "extra_forbidden" and e["loc"][-1] == "html" for e in errors
+    )
+
+
+def test_paragraphs_to_html_bold_heading_with_explicit_size():
+    html = ec._paragraphs_to_html([ParagraphDef(text="Heading", bold=True, size=20)])
+    assert html == (
+        '<p data-line-height="default" style="line-height: 1.25;">'
+        '<span style="font-size: 20px;"><strong>Heading</strong></span></p>'
+    )
+
+
+def test_paragraphs_to_html_empty_spacer_paragraph_has_no_span():
+    html = ec._paragraphs_to_html([ParagraphDef(text="")])
+    assert html == '<p data-line-height="default" style="line-height: 1.25;"></p>'
+    assert "<span" not in html
+
+
+def test_paragraphs_to_html_plain_body_defaults_size_to_email_root_font_size():
+    html = ec._paragraphs_to_html([ParagraphDef(text="Body copy")])
+    assert f"font-size: {ec.EMAIL_ROOT_PROPS['fontSize']}px;" in html
+    assert html == (
+        '<p data-line-height="default" style="line-height: 1.25;">'
+        '<span style="font-size: 14px;">Body copy</span></p>'
+    )
+
+
+def test_paragraphs_to_html_color_is_appended_to_span_style_after_size():
+    html = ec._paragraphs_to_html([ParagraphDef(text="Body copy", color="#1B64F2")])
+    assert '<span style="font-size: 14px; color: #1B64F2;">' in html
+
+
+def test_paragraphs_to_html_align_appends_text_align_to_the_p_style():
+    html = ec._paragraphs_to_html([ParagraphDef(text="Body copy", align="center")])
+    assert (
+        '<p data-line-height="default" style="line-height: 1.25; text-align: center;">'
+        in html
+    )
+    # No align set: no text-align at all, not even the default `left`.
+    unaligned = ec._paragraphs_to_html([ParagraphDef(text="Body copy")])
+    assert "text-align" not in unaligned
+
+
+def test_paragraphs_to_html_link_wraps_the_whole_span_not_the_bare_text():
+    html = ec._paragraphs_to_html(
+        [ParagraphDef(text="Read more", link="https://example.com")]
+    )
+    assert html == (
+        '<p data-line-height="default" style="line-height: 1.25;">'
+        '<a rel="noopener noreferrer nofollow" href="https://example.com">'
+        '<span style="font-size: 14px;">Read more</span></a></p>'
+    )
+
+
+def test_paragraphs_to_html_reserved_namespace_merge_field_needs_no_resolver():
+    """`{{ business.city }}` resolves via `merge_fields`'s own captured
+    fallback table with no `resolve_label`/`resolve_objectname` at all —
+    exercises the exact `craft-config`/`--dry-run` offline path."""
+    html = ec._paragraphs_to_html([ParagraphDef(text="Hi {{ business.city }}")])
+    assert (
+        '<span class="kzn-merge-field" data-merge-field-fallback-label="Business City" '
+        'data-merge-field-relationship="business.city">{{ business.city }}</span>'
+    ) in html
+    assert "data-merge-field-objectname" not in html
+
+
+def test_paragraphs_to_html_custom_object_merge_field_with_fake_resolvers():
+    """A non-reserved namespace with a resolver pair answering it gets
+    `data-merge-field-objectname` — synthetic namespace/labels, never the
+    reference template's real object/field names."""
+
+    def resolve_label(namespace: str, field_path: str) -> str | None:
+        return "Stage" if (namespace, field_path) == ("some_object", "stage") else None
+
+    def resolve_objectname(namespace: str) -> str | None:
+        return "Some Object" if namespace == "some_object" else None
+
+    html = ec._paragraphs_to_html(
+        [ParagraphDef(text="{{ some_object.stage }}")],
+        resolve_label=resolve_label,
+        resolve_objectname=resolve_objectname,
+    )
+    assert (
+        '<span class="kzn-merge-field" data-merge-field-fallback-label="Stage" '
+        'data-merge-field-relationship="some_object.stage" '
+        'data-merge-field-objectname="Some Object">{{ some_object.stage }}</span>'
+    ) in html
+
+
+def test_paragraph_text_rejects_automation_variable_tokens():
+    """Library email templates aren't scoped to one automation, so an
+    `automation_variable.*` token (only meaningful inside an
+    automation-scoped message) is a spec-validation error, not silently
+    rendered as a token nobody can resolve."""
+    with pytest.raises(ValidationError) as exc_info:
+        ParagraphDef(text="Code: {{ automation_variable.discount_code }}")
+    assert "automation_variable" in str(exc_info.value)
+
+
+def test_paragraph_text_rejects_automation_variable_token_via_full_spec():
+    with pytest.raises(ValidationError):
+        EmailTemplateDef.model_validate(
+            {
+                "name": "Newsletter",
+                "sections": [
+                    {
+                        "rows": [
+                            {
+                                "cells": [
+                                    {
+                                        "blocks": [
+                                            {
+                                                "kind": "text",
+                                                "paragraphs": [
+                                                    {
+                                                        "text": "{{ automation_variable.x }}"
+                                                    }
+                                                ],
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            }
+        )
+
+
+def _text_block_spec(paragraphs: list[dict]) -> dict:
+    return {
+        "name": "Newsletter",
+        "sections": [
+            {
+                "rows": [
+                    {
+                        "cells": [
+                            {"blocks": [{"kind": "text", "paragraphs": paragraphs}]}
+                        ]
+                    }
+                ]
+            }
+        ],
+    }
+
+
+def test_spec_driven_paragraphs_flow_end_to_end_from_email_template_def():
+    """The full path this item wires: `EmailTemplateDef` -> `_walk_blocks`
+    (renders `paragraphs` to HTML right there) -> `assemble_sections` ->
+    `build_email_content`. Asserts BOTH stored fields carry the rendered
+    paragraph markup, per the item's non-negotiable — `craft_json` and
+    `content` are independent and never reconciled by the server."""
+    spec = EmailTemplateDef.model_validate(
+        _text_block_spec([{"text": "Heading", "bold": True, "size": 20}])
+    )
+    resolved = ec.offline_resolve_spec_images(spec)
+    sections = ec.assemble_sections(resolved)
+    craft_json, content = ec.build_email_content(sections)
+
+    expected = (
+        '<p data-line-height="default" style="line-height: 1.25;">'
+        '<span style="font-size: 20px;"><strong>Heading</strong></span></p>'
+    )
+    text_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Text")
+    assert craft_json[text_id]["custom"]["text"] == expected
+    assert expected in content
+
+
+def test_merge_field_span_appears_identically_in_craft_json_and_content():
+    """`merge-field-markup-captured-live.md` confirmed this identity holds
+    for a real captured template; this item's one-pass design (both fields
+    built from the same rendered HTML string) should preserve it by
+    construction — tested here, not assumed."""
+    spec = EmailTemplateDef.model_validate(
+        _text_block_spec([{"text": "Hi {{ business.city }}"}])
+    )
+    resolved = ec.offline_resolve_spec_images(spec)
+    sections = ec.assemble_sections(resolved)
+    craft_json, content = ec.build_email_content(sections)
+
+    text_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Text")
+    span = (
+        '<span class="kzn-merge-field" data-merge-field-fallback-label="Business City" '
+        'data-merge-field-relationship="business.city">{{ business.city }}</span>'
+    )
+    assert span in craft_json[text_id]["custom"]["text"]
+    assert span in content
+
+
+def test_offline_resolver_omits_objectname_for_every_namespace_including_custom_object():
+    """`craft-config`/`--dry-run` never make a live call
+    (`offline_resolve_spec_images` passes `resolve_label=None,
+    resolve_objectname=None` to `_walk_blocks`) — so a custom-object
+    namespace's `data-merge-field-objectname` is omitted entirely offline,
+    a real, documented divergence from what `create`/`update` would
+    produce. `data-merge-field-fallback-label` is still populated, from
+    `merge_fields`'s own title-case fallback."""
+    spec = EmailTemplateDef.model_validate(
+        _text_block_spec([{"text": "{{ some_custom_object.stage }}"}])
+    )
+    resolved = ec.offline_resolve_spec_images(spec)
+    sections = ec.assemble_sections(resolved)
+    _craft_json, content = ec.build_email_content(sections)
+
+    assert 'data-merge-field-relationship="some_custom_object.stage"' in content
+    assert "data-merge-field-objectname" not in content
+    # No namespace prefix here: `_fallback_label` only prefixes namespaces in
+    # `merge_fields._LABEL_PREFIXES` (`business`/`team_member`) — anything
+    # else, including a real custom-object api_name with no live resolver,
+    # falls back to a bare title-cased field name.
+    assert 'data-merge-field-fallback-label="Stage"' in content
+
+
+def test_craft_summary_text_in_sync_for_paragraphs_based_text_with_merge_field():
+    """`craft_summary()`'s `text_in_sync` (`tools/messages.py`, frozen per
+    BCLI-022's Constraints, not modified here) still reports `true` for a
+    template built from `paragraphs`, including a merge-field span — a
+    regression test, not an assumption. Both sides tag-strip to the same
+    plain text (`{{ business.city }}` survives tag-stripping identically on
+    both the `craft_json` and `content` side), which is exactly why this is
+    expected to hold, not merely hoped."""
+    spec = EmailTemplateDef.model_validate(
+        _text_block_spec(
+            [
+                {"text": "Hi {{ business.city }}, welcome"},
+                {"text": ""},
+                {"text": "Second paragraph", "bold": True},
+            ]
+        )
+    )
+    resolved = ec.offline_resolve_spec_images(spec)
+    sections = ec.assemble_sections(resolved)
+    craft_json, content = ec.build_email_content(sections)
+
+    summary = craft_summary({"craft_json": craft_json, "content": content})
+    assert summary["structure_coupled"] is True
+    assert summary["text_in_sync"] is True
+    assert summary["coupled"] is True
+
+
+def test_email_merge_field_resolvers_are_live_and_cached_per_call(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """`_email_merge_field_resolvers()` is backed by `tools.objects.get_object`
+    — no `AutomationDef`/`LiveContext` import — and caches each looked-up
+    object by api_name for the life of one resolver pair, since a template
+    can reference the same custom object many times across paragraphs and
+    `get_object` opens its own `KizenClient` per call."""
+    calls: list[str] = []
+
+    def fake_get_object(api_name: str) -> dict:
+        calls.append(api_name)
+        return {
+            "display_name": "Some Object",
+            "fields": [{"api_name": "stage", "display_name": "Stage"}],
+        }
+
+    monkeypatch.setattr(ec.objects, "get_object", fake_get_object)
+    resolve_label, resolve_objectname = ec._email_merge_field_resolvers()
+
+    assert resolve_label("some_object", "stage") == "Stage"
+    assert resolve_label("some_object", "missing_field") is None
+    assert resolve_objectname("some_object") == "Some Object"
+    # Reserved namespaces never reach `get_object` at all.
+    assert resolve_label("business", "city") is None
+
+    assert calls == ["some_object"]  # one live call, reused by every lookup after
+
+
+def test_email_merge_field_resolvers_return_none_on_unknown_object(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from kizen_builder.api.client import KizenAPIError
+
+    def fake_get_object(api_name: str) -> dict:
+        raise KizenAPIError(404, "not found")
+
+    monkeypatch.setattr(ec.objects, "get_object", fake_get_object)
+    resolve_label, resolve_objectname = ec._email_merge_field_resolvers()
+
+    assert resolve_label("nonexistent", "field") is None
+    assert resolve_objectname("nonexistent") is None

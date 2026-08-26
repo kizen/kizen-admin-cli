@@ -17,8 +17,10 @@ from kizen_builder.models.spec.email_templates import (
     EmailTemplateDef,
     ImageBlockDef,
     PaddingDef,
+    ParagraphDef,
     RowDef,
     SectionDef,
+    TextBlockDef,
 )
 
 
@@ -31,7 +33,16 @@ def _spec(**overrides):
                 "rows": [
                     {
                         "layout": "1 Column",
-                        "cells": [{"blocks": [{"kind": "text", "html": "<p>hi</p>"}]}],
+                        "cells": [
+                            {
+                                "blocks": [
+                                    {
+                                        "kind": "text",
+                                        "paragraphs": [{"text": "hi"}],
+                                    }
+                                ]
+                            }
+                        ],
                     }
                 ]
             }
@@ -80,7 +91,7 @@ def test_invalid_or_out_of_scope_layout_names_are_unrepresentable(layout):
 @pytest.mark.parametrize("kind", ["text", "image", "button", "divider"])
 def test_v1_block_kinds_are_accepted(kind):
     block = {
-        "text": {"kind": "text", "html": "<p>hi</p>"},
+        "text": {"kind": "text", "paragraphs": [{"text": "hi"}]},
         "image": {"kind": "image", "file": "/tmp/x.png"},
         "button": {"kind": "button", "label": "Go", "url": "https://x"},
         "divider": {"kind": "divider"},
@@ -231,3 +242,74 @@ def test_image_block_def_layout_props_are_independently_settable():
     assert img.container_width == "580"
     assert img.max_width == "300"
     assert img.max_height == "200"
+
+
+# ---------------------------------------------------------------------------
+# ParagraphDef / TextBlockDef (BCLI-023) — `TextBlockDef.html` is gone;
+# `paragraphs` is the only way to author text-block copy now.
+# ---------------------------------------------------------------------------
+
+
+def test_text_block_def_has_no_html_field_anymore():
+    assert "html" not in TextBlockDef.model_fields
+    assert "paragraphs" in TextBlockDef.model_fields
+
+
+def test_text_block_def_html_key_is_unrepresentable():
+    with pytest.raises(ValidationError):
+        TextBlockDef.model_validate({"html": "<p>hi</p>"})
+
+
+def test_text_block_def_requires_at_least_one_paragraph():
+    with pytest.raises(ValidationError):
+        TextBlockDef()
+    with pytest.raises(ValidationError):
+        TextBlockDef.model_validate({"paragraphs": []})
+
+
+def test_paragraph_def_defaults_match_the_acceptance_criteria():
+    p = ParagraphDef(text="hi")
+    assert p.size is None
+    assert p.bold is False
+    assert p.color is None
+    assert p.link is None
+    assert p.align is None
+
+
+@pytest.mark.parametrize("align", ["left", "center", "right"])
+def test_paragraph_def_align_accepts_the_closed_enum(align):
+    p = ParagraphDef(text="hi", align=align)
+    assert p.align == align
+
+
+def test_paragraph_def_align_rejects_values_outside_the_closed_enum():
+    with pytest.raises(ValidationError):
+        ParagraphDef(text="hi", align="justify")
+
+
+def test_paragraph_def_color_is_an_unvalidated_string_hex_or_rgb():
+    """Matches `ButtonBlockDef.color`'s existing pattern — both `#hex` and
+    `rgb(...)` are confirmed live, so this field does not constrain shape."""
+    assert ParagraphDef(text="hi", color="#1B64F2").color == "#1B64F2"
+    assert ParagraphDef(text="hi", color="rgb(27, 100, 242)").color == (
+        "rgb(27, 100, 242)"
+    )
+
+
+def test_paragraph_def_rejects_automation_variable_merge_field_token():
+    with pytest.raises(ValidationError):
+        ParagraphDef(text="{{ automation_variable.discount_code }}")
+
+
+def test_paragraph_def_accepts_other_reserved_namespace_tokens():
+    """Only `automation_variable` is rejected — every other reserved
+    namespace (`business`/`team_member`/`contact`/`entity_record`/
+    `custom_objects`/`automation_history`) is meaningful on a portable
+    library template."""
+    ParagraphDef(text="{{ business.city }}")  # must not raise
+    ParagraphDef(text="{{ entity_record.link_url }}")  # must not raise
+
+
+def test_paragraph_def_extra_keys_are_forbidden():
+    with pytest.raises(ValidationError):
+        ParagraphDef.model_validate({"text": "hi", "font_family": "Arial"})
