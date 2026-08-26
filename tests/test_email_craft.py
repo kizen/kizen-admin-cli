@@ -27,6 +27,7 @@ import pytest
 
 from kizen_builder.models.spec.email_templates import COLUMN_FRACTIONS, EmailTemplateDef
 from kizen_builder.tools import email_craft as ec
+from kizen_builder.tools import email_html as eh
 from kizen_builder.tools import form_ui
 from kizen_builder.tools.messages import craft_summary
 
@@ -307,8 +308,8 @@ def test_render_image_fixed_width_compiled_markup_matches_the_reference_shape():
         nid for nid, n in craft_json.items() if _resolved_name(n) == "Image"
     )
     # Fixed mode: no `-auto` class, and no auto-mode CSS rule at all.
-    assert f'class="{ec._image_auto_class(image_id)}"' not in content
-    assert f".{ec._image_auto_class(image_id)} > table td" not in content
+    assert f'class="{eh._image_auto_class(image_id)}"' not in content
+    assert f".{eh._image_auto_class(image_id)} > table td" not in content
     # The outer block-level <td> carries the image's own containerPadding.
     outer_td = re.search(
         r'<td align="center" class="" style="background:rgba\(0,0,0,0\);'
@@ -409,7 +410,7 @@ def test_render_image_auto_mode_uses_section_container_width_and_natural_width_r
     assert "width" not in craft_json[image_id]["props"]
     assert craft_json[image_id]["props"]["size"] == "auto"
 
-    auto_class = ec._image_auto_class(image_id)
+    auto_class = eh._image_auto_class(image_id)
     assert f'class="{auto_class}"' in content
     assert (
         f".{auto_class} > table td {{ width: 100% !important; max-width: 1200px; }}"
@@ -471,8 +472,8 @@ def test_image_and_section_class_conventions_share_id_formatting():
     hand-rolled f-strings to stay in sync. Both wrap the SAME node id in
     the SAME `<prefix>-<nodeId>[-suffix]` shape."""
     for node_id in ["abc123", "0" * 24, "a-node-with-dashes"]:
-        assert ec._section_class(node_id) == f"section-{node_id}"
-        assert ec._image_auto_class(node_id) == f"image-{node_id}-auto"
+        assert eh._section_class(node_id) == f"section-{node_id}"
+        assert eh._image_auto_class(node_id) == f"image-{node_id}-auto"
 
 
 def test_exactly_one_tr_per_row_regardless_of_column_count():
@@ -1434,7 +1435,7 @@ def test_content_reflects_every_layout_prop_this_item_added():
     # this emitter has no background-image concept — see the work item's
     # report for that scoping call).
     assert 'width="919" style="width:919px;"' in content
-    assert f".{ec._section_class(section_id)} {{ max-width:919px; }}" in content
+    assert f".{eh._section_class(section_id)} {{ max-width:919px; }}" in content
 
     # --- Fields confirmed craft_json-only by checking Kizen's own compiled
     # output for the reference template (not merely "no consumer in
@@ -1492,9 +1493,9 @@ def test_rgba_to_hex_matches_the_two_conversions_confirmed_live():
     """`Root.props.color: rgba(74,86,96,1)` -> `#4a5660` and
     `Root.props.linkColor: rgba(82,142,249,1)` -> `#528ef9` — both read
     directly off the reference template's compiled `content`."""
-    assert ec._rgba_to_hex("rgba(74,86,96,1)") == "#4a5660"
-    assert ec._rgba_to_hex("rgba(82,142,249,1)") == "#528ef9"
-    assert ec._rgba_to_hex("#FFFFFF") == "#FFFFFF"  # passes through non-rgba unchanged
+    assert eh._rgba_to_hex("rgba(74,86,96,1)") == "#4a5660"
+    assert eh._rgba_to_hex("rgba(82,142,249,1)") == "#528ef9"
+    assert eh._rgba_to_hex("#FFFFFF") == "#FFFFFF"  # passes through non-rgba unchanged
 
 
 def test_moz_text_html_rule_exists_for_every_column_class_in_a_multi_column_layout():
@@ -1535,7 +1536,7 @@ def test_moz_text_html_rule_exists_for_every_column_class_in_a_multi_column_layo
 def test_no_moz_text_html_style_block_when_template_has_no_rows():
     """`_moz_text_html_style_block` returns nothing when there are no `Row`
     nodes to derive column classes from, rather than an empty/broken rule."""
-    assert ec._moz_text_html_style_block({}, "414") == ""
+    assert eh._moz_text_html_style_block({}, "414") == ""
 
 
 def test_mjml_reset_block_is_present_and_byte_exact():
@@ -1629,7 +1630,7 @@ def test_section_container_width_gets_no_outer_wrapper_when_unset():
     section_id = next(
         nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
     )
-    assert f'class="{ec._section_class(section_id)}"' in content
+    assert f'class="{eh._section_class(section_id)}"' in content
     assert 'role="presentation" align="center" width=' not in content
 
 
@@ -1655,9 +1656,9 @@ def test_section_container_width_wrapper_carries_the_containerWidth_attribute():
         '<!--[if mso | IE]><table border="0" cellpadding="0" cellspacing="0" '
         'role="presentation" align="center" width="900" style="width:900px;">'
         "<tr><td><![endif]-->"
-        f'<div class="{ec._section_class(section_id)}"'
+        f'<div class="{eh._section_class(section_id)}"'
     ) in content
-    assert f".{ec._section_class(section_id)} {{ max-width:900px; }}" in content
+    assert f".{eh._section_class(section_id)} {{ max-width:900px; }}" in content
 
 
 def test_float_formatted_content_width_never_prints_a_trailing_dot_zero_at_non_default_width():

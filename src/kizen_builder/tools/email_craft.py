@@ -13,20 +13,35 @@ then compiling HTML in a second pass that mints its *own* ids produces a
 template whose builder view and real output silently disagree — the exact
 failure this module exists to make impossible.
 
-`build_email_content()` is the one entry point that upholds that invariant.
-Everything else here is either structural reuse of `tools.form_ui` (the
-`Root`/`Section`/`Row`/`Cell` assembly is identical topology, threaded
-through the `cell_props`/`block_assembler` hooks added there for this
-module) or email-specific: this surface's own `Text`/`Image`/`Button`/
-`Divider` prop shapes (email's `Button`/`Divider` props differ from the
-forms surface's — see `docs/specs/email-templates.md`), the v1 column-preset
-table (byte-exact `columns`/`__width` fractions and compiled-HTML markup,
-confirmed live 2026-08-25), and image upload (`api/files.py::upload_file`
-with `source="public_image"`, plus reading `naturalWidth`/`naturalHeight`
-straight from the uploaded file's own header bytes).
+`build_email_content()` is the one entry point that upholds that invariant:
+it calls `tools.form_ui.build_content_tree` once (the single id-minting pass
+for `Root`/`Section`/`Row`/`Cell` nodes, threaded through the
+`cell_props`/`block_assembler`/`section_props`/`row_props` hooks added there
+for this module) and then compiles `content` from that exact tree via
+`email_html._compile_html` — never a second tree-walk that could mint ids of
+its own. This module owns id minting end-to-end: `form_ui.build_content_tree`
+for the container nodes, `_assemble_email_block` for leaf blocks below.
+Split across three modules for size — `email_html.py` (compiles `content`
+from an existing tree; never mints an id) and `email_images.py` (upload +
+header-byte dimension reading) — but the one-pass invariant this docstring
+describes is unchanged: neither of those modules imports `form_ui` or calls
+`_new_id()`.
+
+This module keeps this surface's own `Text`/`Image`/`Button`/`Divider` prop
+shapes (email's `Button`/`Divider` props differ from the forms surface's —
+see `docs/specs/email-templates.md`), craft_json assembly, and spec
+resolution. `upload_email_image`/`read_image_dimensions` are imported back
+from `email_images.py` by name, so `email_craft.upload_email_image` etc.
+keep resolving with no re-export shim. The v1 column-preset table
+(`ColumnLayout`/`COLUMN_LAYOUTS`, byte-exact `columns`/`__width` fractions
+and compiled-HTML markup, confirmed live 2026-08-25) lives in `email_html.py`
+instead of here — `row()` below imports `COLUMN_LAYOUTS` back from there to
+validate cell counts, since `email_html.py` can't import from this module
+(this module already needs `_compile_html` from it, and a circular import
+isn't an option).
 
 v1 scope only: `Text`, `Image`, `Button`, `Divider` leaf blocks, and the 4
-column presets in `COLUMN_LAYOUT` below (`1 Column`, `2 Columns`, `2 Columns
+column presets in `COLUMN_LAYOUTS` (`1 Column`, `2 Columns`, `2 Columns
 (1/3 and 2/3)`, `2 Columns (2/3 and 1/3)`). `Attachments` and the other 5
 presets (`3`/`4`/`5`/`6 Columns`, `3 Columns (gutters)`) are confirmed live
 but out of scope — anything using them fails loudly rather than silently
@@ -36,14 +51,10 @@ degrading. There is no raw-HTML escape hatch on this surface (no
 
 from __future__ import annotations
 
-import math
-import re
 from collections.abc import Callable
-from html import escape
 from pathlib import Path
 from typing import Any
 
-from kizen_builder.api import files as files_api
 from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec.email_templates import (
@@ -55,6 +66,8 @@ from kizen_builder.models.spec.email_templates import (
     TextBlockDef,
 )
 from kizen_builder.tools import form_ui
+from kizen_builder.tools.email_html import COLUMN_LAYOUTS, _compile_html
+from kizen_builder.tools.email_images import read_image_dimensions, upload_email_image
 
 # ---------------------------------------------------------------------------
 # Root/container prop shapes
@@ -129,154 +142,10 @@ _CONTAINER_DEFAULTS: dict[str, Any] = {
 }
 
 # ---------------------------------------------------------------------------
-# Compiled-HTML fidelity fixes (BCLI-025) — static blocks and small
-# conversions shared by several `_render_*`/`_compile_html` call sites below.
+# v1 column presets — the byte-exact layout table (`ColumnLayout`,
+# `COLUMN_LAYOUTS`) lives in `email_html.py` and is imported above; this
+# module keeps the out-of-scope guard and the public enumeration API.
 # ---------------------------------------------------------------------------
-
-_RGBA_RE = re.compile(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*[\d.]+\s*)?\)")
-
-
-def _rgba_to_hex(value: str) -> str:
-    """Convert an `rgba(r,g,b,a)`/`rgb(r,g,b)` colour string to the lowercase
-    `#rrggbb` hex Kizen's own compiler emits for the same value — confirmed
-    against the reference template's compiled `content`: `Root.props.color`
-    (`rgba(74,86,96,1)`) compiles to `#4a5660`, `Root.props.linkColor`
-    (`rgba(82,142,249,1)`) compiles to `#528ef9`. Alpha is dropped, matching
-    both observed conversions (both alpha `1`) — this surface has no
-    confirmed case of a translucent text/link colour reaching `content`.
-    Anything that isn't `rgba(...)`/`rgb(...)` passes through unchanged
-    (most `container*` colour props on this surface are already hex or a
-    literal like `"transparent"`, not every colour prop here uses the
-    rgba wire format)."""
-    m = _RGBA_RE.fullmatch(value.strip())
-    if not m:
-        return value
-    r, g, b = (int(x) for x in m.groups())
-    return f"#{r:02x}{g:02x}{b:02x}"
-
-
-# The MJML boilerplate reset block — Outlook/webkit/Gecko normalization with
-# no per-template data, confirmed byte-exact against the reference template's
-# compiled `content` (read-only `GET`, 2026-08-26). Kept as one literal
-# constant rather than built up piecewise, since every byte here is fixed.
-_MJML_RESET_STYLE = (
-    '<style type="text/css">\n'
-    "#outlook a { padding: 0; }\n"
-    "body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; "
-    "-ms-text-size-adjust: 100%; }\n"
-    "table, td { border-collapse: collapse; mso-table-lspace: 0pt; "
-    "mso-table-rspace: 0pt; }\n"
-    "img { border: 0; height: auto; line-height: 100%; outline: none; "
-    "text-decoration: none; -ms-interpolation-mode: bicubic; }\n"
-    "p { display: block; margin: 13px 0; }\n"
-    "</style>"
-)
-
-# `.kizen-text-styles` — the class Kizen's own compiler uses to scope text
-# typography and rich-text element styling (links, paragraphs, code/pre).
-# The rule text itself carries no per-template data except `linkColor`
-# (interpolated below), so it's kept as one structural block, confirmed
-# against the reference template's compiled `content`. BCLI-023's text model
-# (paragraph/list/code rendering) is untouched by this — these rules only
-# apply Kizen's own styling to whatever HTML a `Text` block already embeds.
-_KIZEN_TEXT_STYLES_TEMPLATE = (
-    ".kizen-text-styles a {{ color: {link_color}; text-decoration: none; }}"
-    ".kizen-text-styles a *, .kizen-text-styles span * "
-    "{{ color: inherit; font-size: inherit; }}"
-    ".kizen-text-styles a:hover, .kizen-text-styles a:focus, "
-    ".kizen-text-styles a:hover *, .kizen-text-styles a:focus * "
-    "{{ text-decoration: underline; }}"
-    ".kizen-text-styles a:hover s, .kizen-text-styles a:focus s "
-    "{{ text-decoration: underline line-through; }}"
-    ".kizen-text-styles p {{ margin: 0; line-height: 1.5em; min-height: 1em; }}"
-    ".kizen-text-styles p * "
-    "{{ font-family: inherit; font-size: inherit; line-height: inherit; }}"
-    ".kizen-text-styles ul, .kizen-text-styles ol "
-    "{{ margin-top: 0; margin-bottom: 10px; }}"
-    ".kizen-text-styles code {{ font-family: 'Courier New', Monospace; "
-    "font-size: inherit; font-weight: 400; background-color: #F5F6F7; "
-    "padding: 5px; color: #4A5660; border-radius: 4px; }}"
-    ".kizen-text-styles pre {{ padding: 10px; background-color: #F5F6F7; "
-    "border-radius: 4px; border: 1px solid #D8DDE1; }}"
-    ".kizen-text-styles pre code {{ padding: 0; background-color: unset; "
-    "border-radius: 0; white-space: pre-wrap; word-break: break-all; }}"
-)
-
-
-def _section_class(node_id: str) -> str:
-    """`section-<nodeId>` — the existing Section/Row coupling class every
-    `_render_section`/`_render_row` call site uses. A tiny shared helper so
-    it and `_image_auto_class` below format node ids identically rather than
-    as two independently hand-rolled f-strings — see
-    `test_image_and_section_class_conventions_share_id_formatting`."""
-    return f"section-{node_id}"
-
-
-def _image_auto_class(node_id: str) -> str:
-    """`image-<nodeId>-auto` — the auto-mode image sizing class, same
-    `<prefix>-<nodeId>[-suffix]` shape as `_section_class` above. Confirmed
-    against the reference template's compiled `content`
-    (`.image-<nodeId>-auto > table td { ... }`, one real occurrence
-    inspected structurally, node id not reproduced here)."""
-    return f"image-{node_id}-auto"
-
-
-# ---------------------------------------------------------------------------
-# v1 column presets — byte-exact, confirmed live 2026-08-25. Do not round or
-# recompute; see the work item's "Live probe findings".
-# ---------------------------------------------------------------------------
-
-
-class ColumnLayout:
-    __slots__ = ("preset", "columns", "classes", "media_widths")
-
-    def __init__(
-        self,
-        preset: str,
-        columns: tuple[float, ...],
-        classes: tuple[str, ...],
-        media_widths: tuple[str, ...],
-    ) -> None:
-        self.preset = preset
-        self.columns = columns
-        self.classes = classes
-        self.media_widths = media_widths
-
-
-# 880px was the content width in every case observed pre-BCLI-024 (900
-# Section maxWidth - 20px padding, both hardcoded at the time). Now that
-# `Section.max_width`/`Row.container_width`/padding are spec-settable
-# (BCLI-024), the actual per-row pixel width is computed by
-# `_row_content_width_px` below, not held as one constant — see that
-# function's docstring for the fallback formula, which reduces to exactly
-# 880.0 when nothing is overridden.
-
-COLUMN_LAYOUTS: dict[str, ColumnLayout] = {
-    "1 Column": ColumnLayout(
-        "1 Column",
-        (1,),
-        ("mj-column-per-100",),
-        ("100%",),
-    ),
-    "2 Columns": ColumnLayout(
-        "2 Columns",
-        (0.5, 0.5),
-        ("mj-column-per-50", "mj-column-per-50"),
-        ("50%", "50%"),
-    ),
-    "2 Columns (1/3 and 2/3)": ColumnLayout(
-        "2 Columns (1/3 and 2/3)",
-        (0.3333333333333333, 0.6666666666666666),
-        ("mj-column-per-33-333332", "mj-column-per-66-666664"),
-        ("33.333332%", "66.666664%"),
-    ),
-    "2 Columns (2/3 and 1/3)": ColumnLayout(
-        "2 Columns (2/3 and 1/3)",
-        (0.6666666666666666, 0.3333333333333333),
-        ("mj-column-per-66-666664", "mj-column-per-33-333332"),
-        ("66.666664%", "33.333332%"),
-    ),
-}
 
 # The other 5 presets are pre-captured groundwork for a follow-on item, not
 # built here. Naming one is a clear, immediate error, not a silent skip.
@@ -438,120 +307,6 @@ def section(
 
 
 # ---------------------------------------------------------------------------
-# Image upload + header-byte pixel dimensions
-# ---------------------------------------------------------------------------
-
-
-def _png_dimensions(data: bytes) -> tuple[int, int]:
-    # Signature (8 bytes) + IHDR chunk: length(4) type(4) width(4) height(4).
-    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise ValueError("not a valid PNG (bad signature)")
-    width = int.from_bytes(data[16:20], "big")
-    height = int.from_bytes(data[20:24], "big")
-    return width, height
-
-
-# JPEG SOF (start-of-frame) markers that carry dimensions. Excludes DHT
-# (0xC4), JPG (0xC8), DAC (0xCC) — same-range bytes that are NOT SOF markers.
-_JPEG_SOF_MARKERS = frozenset(
-    {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
-)
-# Markers with no following length/payload — skip straight past them.
-_JPEG_STANDALONE_MARKERS = frozenset({0x01, 0xD8, 0xD9} | set(range(0xD0, 0xD8)))
-
-
-def _jpeg_dimensions(data: bytes) -> tuple[int, int]:
-    if len(data) < 4 or data[0:2] != b"\xff\xd8":
-        raise ValueError("not a valid JPEG (bad SOI marker)")
-    pos = 2
-    n = len(data)
-    while pos < n - 1:
-        if data[pos] != 0xFF:
-            raise ValueError("malformed JPEG: expected a marker")
-        marker = data[pos + 1]
-        pos += 2
-        while marker == 0xFF and pos < n:  # padding fill bytes between markers
-            marker = data[pos]
-            pos += 1
-        if marker in _JPEG_STANDALONE_MARKERS:
-            continue
-        if pos + 2 > n:
-            break
-        seg_len = int.from_bytes(data[pos : pos + 2], "big")
-        if marker in _JPEG_SOF_MARKERS:
-            if pos + 7 > n:
-                break
-            height = int.from_bytes(data[pos + 3 : pos + 5], "big")
-            width = int.from_bytes(data[pos + 5 : pos + 7], "big")
-            return width, height
-        pos += seg_len
-    raise ValueError("no SOF0/SOF2 segment found in JPEG")
-
-
-def read_image_dimensions(data: bytes) -> tuple[int, int, str]:
-    """Return ``(width, height, content_type)`` read from the file's own
-    header bytes. PNG and JPEG only — both are real cases on this surface
-    (every image already stored in the target environment is PNG, but the
-    browser trace that settled the ``source`` question was a JPEG upload).
-    GIF/WebP/SVG fail loudly as unsupported rather than being silently
-    mis-parsed; SVG especially has no pixel dimensions to read this way at
-    all.
-    """
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        w, h = _png_dimensions(data)
-        return w, h, "image/png"
-    if data[:3] == b"\xff\xd8\xff":
-        w, h = _jpeg_dimensions(data)
-        return w, h, "image/jpeg"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        raise ValueError("GIF is not supported on this surface — PNG or JPEG only")
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        raise ValueError("WebP is not supported on this surface — PNG or JPEG only")
-    if data[:5] == b"<?xml" or data.lstrip()[:4] == b"<svg":
-        raise ValueError(
-            "SVG has no pixel dimensions to read (no fixed naturalWidth/"
-            "naturalHeight) and is not supported on this surface"
-        )
-    raise ValueError("unrecognized image format — only PNG and JPEG are supported")
-
-
-def upload_email_image(
-    client: KizenClient, base_url: str, path: str | Path
-) -> dict[str, Any]:
-    """Upload a local PNG/JPEG for use in an Image block and return the
-    resolved block fields (``file_id``, ``src``, ``name``, ``natural_width``,
-    ``natural_height``).
-
-    A real write — reuses ``api.files.upload_file`` with
-    ``source=files_api.PUBLIC_IMAGE`` and ``is_public=True``, confirmed live
-    2026-08-25 (without ``is_public``, the upload defaults to non-public and
-    the resulting `src` 404s for any recipient without an authenticated
-    session — see `docs/specs/email-templates.md`). Callers outside
-    ``tools/planners/`` only (planners never write — see ``CLAUDE.md``); the
-    CLI only calls this for a real apply — under ``--dry-run`` it calls
-    :func:`offline_resolve_spec_images` instead, which uploads nothing.
-    ``base_url`` is the target env's own base URL (``EnvConfig.base_url``) —
-    ``Image.src`` is host-absolute, confirmed live, so a template is
-    environment-bound.
-    """
-    src_path = Path(path)
-    data = src_path.read_bytes()
-    width, height, _content_type = read_image_dimensions(data)
-    registered = files_api.upload_file(
-        client, src_path, source=files_api.PUBLIC_IMAGE, is_public=True
-    )
-    file_id = registered["id"]
-    src = f"{base_url}/api/files/{file_id}/download"
-    return {
-        "file_id": file_id,
-        "src": src,
-        "name": src_path.name,
-        "natural_width": width,
-        "natural_height": height,
-    }
-
-
-# ---------------------------------------------------------------------------
 # craft_json assembly — reuses tools.form_ui's Root/Section/Row/Cell shell
 # via the cell_props/block_assembler hooks added there for this module.
 # ---------------------------------------------------------------------------
@@ -606,6 +361,121 @@ def _row_props(row_spec: dict[str, Any]) -> dict[str, Any]:
     return overrides
 
 
+def _assemble_text_block(block: dict[str, Any], parent_id: str) -> dict[str, Any]:
+    return {
+        "type": {"resolvedName": "Text"},
+        "isCanvas": False,
+        "props": dict(_CONTAINER_DEFAULTS),
+        "displayName": "Text",
+        "custom": {"text": block["html"]},
+        "parent": parent_id,
+        "hidden": False,
+        "nodes": [],
+        "linkedNodes": {},
+    }
+
+
+def _assemble_image_block(block: dict[str, Any], parent_id: str) -> dict[str, Any]:
+    # An omitted `width` used to collapse to a fixed `150` right here,
+    # before the node ever reached `craft_json` — so "omit width" never
+    # actually meant "auto mode", just a silent 150px default. Kizen's
+    # own auto mode (confirmed live against the reference: the one Image
+    # node with no `width` set at all) drops the `width` key entirely
+    # and sets `size: "auto"` instead of `"dynamic"` — both reproduced
+    # here. See `email_html._render_image` for how `content` resolves the
+    # omitted width from the parent Section's `containerWidth`.
+    width = block.get("width")
+    image_props: dict[str, Any] = {
+        **_CONTAINER_DEFAULTS,
+        "size": "dynamic" if width is not None else "auto",
+        "unit": "pixel",
+        "height": None,
+        "display": "flex",
+        "position": "center",
+        "alt": block.get("alt", ""),
+        "link": block.get("link", ""),
+        "src": block["src"],
+        "name": block["name"],
+        "fileId": block["file_id"],
+        "naturalHeight": block.get("natural_height"),
+        "naturalWidth": block.get("natural_width"),
+        "dimension": "width",
+    }
+    if width is not None:
+        image_props["width"] = width
+    if block.get("container_width") is not None:
+        image_props["containerWidth"] = block["container_width"]
+    if block.get("max_width") is not None:
+        image_props["maxWidth"] = block["max_width"]
+    if block.get("max_height") is not None:
+        image_props["maxHeight"] = block["max_height"]
+    return {
+        "type": {"resolvedName": "Image"},
+        "isCanvas": False,
+        "props": image_props,
+        "displayName": "Image",
+        "custom": {},
+        "parent": parent_id,
+        "hidden": False,
+        "nodes": [],
+        "linkedNodes": {},
+    }
+
+
+def _assemble_button_block(block: dict[str, Any], parent_id: str) -> dict[str, Any]:
+    return {
+        "type": {"resolvedName": "Button"},
+        "isCanvas": False,
+        "props": {
+            **_CONTAINER_DEFAULTS,
+            "url": block.get("url", ""),
+            "label": block["label"],
+            "action": "url",
+            "color": block.get("color") or "rgba(0,51,160,1)",
+            "textColor": "rgba(255,255,255,1)",
+            "fontSize": "16",
+            "fontFamily": "Arial",
+            "alignment": block.get("alignment") or "center",
+            "borderSize": "0",
+            "borderColor": "rgba(0,0,0,1)",
+            "borderRadius": block.get("border_radius") or "8",
+            "paddingTop": "10",
+            "paddingLeft": block.get("padding_left") or "20",
+            "paddingRight": block.get("padding_right") or "20",
+            "paddingBottom": "10",
+            "textStyles": [],
+            "openLinkInNewTab": True,
+        },
+        "displayName": "Button",
+        "custom": {},
+        "parent": parent_id,
+        "hidden": False,
+        "nodes": [],
+        "linkedNodes": {},
+    }
+
+
+def _assemble_divider_block(block: dict[str, Any], parent_id: str) -> dict[str, Any]:
+    return {
+        "type": {"resolvedName": "Divider"},
+        "isCanvas": False,
+        "props": {
+            **_CONTAINER_DEFAULTS,
+            "size": block.get("size") or "3",
+            "color": block.get("color") or "rgba(78,193,145,1)",
+            "width": "100",
+            "alignment": "center",
+            "borderStyle": "solid",
+        },
+        "displayName": "Divider",
+        "custom": {},
+        "parent": parent_id,
+        "hidden": False,
+        "nodes": [],
+        "linkedNodes": {},
+    }
+
+
 def _assemble_email_block(
     block: dict[str, Any], parent_id: str, content: dict[str, Any]
 ) -> str:
@@ -613,112 +483,13 @@ def _assemble_email_block(
     node_id = form_ui._new_id()
 
     if kind == "text":
-        node = {
-            "type": {"resolvedName": "Text"},
-            "isCanvas": False,
-            "props": dict(_CONTAINER_DEFAULTS),
-            "displayName": "Text",
-            "custom": {"text": block["html"]},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _assemble_text_block(block, parent_id)
     elif kind == "image":
-        # An omitted `width` used to collapse to a fixed `150` right here,
-        # before the node ever reached `craft_json` — so "omit width" never
-        # actually meant "auto mode", just a silent 150px default. Kizen's
-        # own auto mode (confirmed live against the reference: the one Image
-        # node with no `width` set at all) drops the `width` key entirely
-        # and sets `size: "auto"` instead of `"dynamic"` — both reproduced
-        # here. See `_render_image` for how `content` resolves the omitted
-        # width from the parent Section's `containerWidth`.
-        width = block.get("width")
-        image_props: dict[str, Any] = {
-            **_CONTAINER_DEFAULTS,
-            "size": "dynamic" if width is not None else "auto",
-            "unit": "pixel",
-            "height": None,
-            "display": "flex",
-            "position": "center",
-            "alt": block.get("alt", ""),
-            "link": block.get("link", ""),
-            "src": block["src"],
-            "name": block["name"],
-            "fileId": block["file_id"],
-            "naturalHeight": block.get("natural_height"),
-            "naturalWidth": block.get("natural_width"),
-            "dimension": "width",
-        }
-        if width is not None:
-            image_props["width"] = width
-        if block.get("container_width") is not None:
-            image_props["containerWidth"] = block["container_width"]
-        if block.get("max_width") is not None:
-            image_props["maxWidth"] = block["max_width"]
-        if block.get("max_height") is not None:
-            image_props["maxHeight"] = block["max_height"]
-        node = {
-            "type": {"resolvedName": "Image"},
-            "isCanvas": False,
-            "props": image_props,
-            "displayName": "Image",
-            "custom": {},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _assemble_image_block(block, parent_id)
     elif kind == "button":
-        node = {
-            "type": {"resolvedName": "Button"},
-            "isCanvas": False,
-            "props": {
-                **_CONTAINER_DEFAULTS,
-                "url": block.get("url", ""),
-                "label": block["label"],
-                "action": "url",
-                "color": block.get("color") or "rgba(0,51,160,1)",
-                "textColor": "rgba(255,255,255,1)",
-                "fontSize": "16",
-                "fontFamily": "Arial",
-                "alignment": block.get("alignment") or "center",
-                "borderSize": "0",
-                "borderColor": "rgba(0,0,0,1)",
-                "borderRadius": block.get("border_radius") or "8",
-                "paddingTop": "10",
-                "paddingLeft": block.get("padding_left") or "20",
-                "paddingRight": block.get("padding_right") or "20",
-                "paddingBottom": "10",
-                "textStyles": [],
-                "openLinkInNewTab": True,
-            },
-            "displayName": "Button",
-            "custom": {},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _assemble_button_block(block, parent_id)
     elif kind == "divider":
-        node = {
-            "type": {"resolvedName": "Divider"},
-            "isCanvas": False,
-            "props": {
-                **_CONTAINER_DEFAULTS,
-                "size": block.get("size") or "3",
-                "color": block.get("color") or "rgba(78,193,145,1)",
-                "width": "100",
-                "alignment": "center",
-                "borderStyle": "solid",
-            },
-            "displayName": "Divider",
-            "custom": {},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _assemble_divider_block(block, parent_id)
     else:
         raise ValueError(
             f"unsupported email block kind: {kind!r}. Supported: "
@@ -727,465 +498,6 @@ def _assemble_email_block(
 
     content[node_id] = node
     return node_id
-
-
-# ---------------------------------------------------------------------------
-# content (compiled HTML) — walks the SAME craft_json dict build_content_tree
-# just returned, using its dict keys as node ids. No second id-minting pass.
-# ---------------------------------------------------------------------------
-
-
-def _resolved_name(node: dict[str, Any]) -> str:
-    t = node.get("type")
-    return str(t.get("resolvedName")) if isinstance(t, dict) else str(t)
-
-
-def _layout_for_columns(columns: list[float]) -> ColumnLayout:
-    for layout in COLUMN_LAYOUTS.values():
-        if list(layout.columns) == list(columns):
-            return layout
-    raise ValueError(f"no v1 column layout matches columns={columns!r}")
-
-
-def _render_button(node: dict[str, Any]) -> str:
-    p = node["props"]
-    return (
-        '<table role="presentation" '
-        f'align="{p["alignment"]}" '
-        'border="0" cellpadding="0" cellspacing="0" '
-        'style="border-collapse:separate;line-height:100%;">'
-        "<tr><td "
-        f'style="border-radius:{p["borderRadius"]}px;background:{p["color"]};'
-        f'text-align:center;" '
-        f'bgcolor="{p["color"]}">'
-        f'<a href="{escape(p["url"], quote=True)}" target="_blank" '
-        f'style="display:inline-block;background:{p["color"]};color:{p["textColor"]};'
-        f"font-family:{p['fontFamily']};font-size:{p['fontSize']}px;"
-        f"padding:{p['paddingTop']}px {p['paddingRight']}px "
-        f"{p['paddingBottom']}px {p['paddingLeft']}px;border-radius:{p['borderRadius']}px;"
-        'text-decoration:none;">'
-        f"{escape(p['label'])}</a></td></tr></table>"
-    )
-
-
-def _render_divider(node: dict[str, Any]) -> str:
-    p = node["props"]
-    return (
-        f'<p style="border-top:{p["size"]}px {p["borderStyle"]} {p["color"]};'
-        f'font-size:1px;margin:0 auto;width:{p["width"]}%;"> </p>'
-    )
-
-
-def _ancestor_section_props(node_id: str, craft_json: dict[str, Any]) -> dict[str, Any]:
-    """Walk a leaf block's fixed 3-hop ancestry — block -> Cell -> Row ->
-    Section (`_assemble_cell` always sets a block's own `parent` to the
-    enclosing Cell's id, per `tools.form_ui`) — and return the enclosing
-    `Section`'s own `props`. Used by auto-mode image sizing below to read
-    the Section's `containerWidth`."""
-    cell_id = craft_json[node_id]["parent"]
-    row_id = craft_json[cell_id]["parent"]
-    section_id = craft_json[row_id]["parent"]
-    return craft_json[section_id]["props"]
-
-
-def _render_image(node_id: str, craft_json: dict[str, Any]) -> tuple[str, list[str]]:
-    """Return `(html, extra_style_rules)`. Kizen wraps every Image block in
-    the same two-level table Kizen's own compiler uses (confirmed against
-    the reference's compiled `content` for both a fixed-width and an
-    auto-mode image) — an outer `<td>` carrying block padding and, in auto
-    mode, the `.image-<nodeId>-auto` coupling class, then a nested
-    `<table><td style="width:...">` around the `<img>` itself. That inner
-    `<td>` is what the auto-mode CSS rule's `> table td` selector actually
-    targets — the rule is meaningless without this wrapper, so the two are
-    implemented together, not the rule alone.
-
-    Auto mode (`Image.props.width` absent — see `_assemble_email_block`):
-    the `<img>`'s `width` attribute becomes the parent Section's own
-    `containerWidth`, falling back to `Root.props.maxWidth` when the
-    Section doesn't set one (inferred, not observed live — see the work
-    item's Open questions), and a `.image-<nodeId>-auto > table td` rule
-    caps it at the image's own `naturalWidth`.
-    """
-    node = craft_json[node_id]
-    p = node["props"]
-    style_rules: list[str] = []
-    explicit_width = p.get("width")
-    if explicit_width is not None:
-        img_width: Any = explicit_width
-        td_class = ""
-    else:
-        section_props = _ancestor_section_props(node_id, craft_json)
-        container_width = section_props.get("containerWidth")
-        if container_width is None:
-            container_width = craft_json["ROOT"]["props"]["maxWidth"]
-        img_width = container_width
-        td_class = _image_auto_class(node_id)
-        natural_width = p.get("naturalWidth")
-        if natural_width is not None:
-            style_rules.append(
-                f".{td_class} > table td {{ width: 100% !important; "
-                f"max-width: {natural_width}px; }}"
-            )
-
-    img = (
-        f'<img alt="{escape(p.get("alt") or "")}" height="auto" '
-        f'src="{escape(p["src"], quote=True)}" width="{img_width}" '
-        'style="border:0;display:block;outline:none;text-decoration:none;'
-        'height:auto;width:100%;font-size:13px;" />'
-    )
-    wrapped = (
-        '<table border="0" cellpadding="0" cellspacing="0" role="presentation" '
-        'width="100%" style="vertical-align:top;"><tr>'
-        f'<td align="center" class="{td_class}" style="background:rgba(0,0,0,0);'
-        "font-size:0px;padding:10px 25px;"
-        f"padding-top:{p.get('containerPaddingTop', '10')}px;"
-        f"padding-right:{p.get('containerPaddingRight', '10')}px;"
-        f"padding-bottom:{p.get('containerPaddingBottom', '10')}px;"
-        f"padding-left:{p.get('containerPaddingLeft', '10')}px;"
-        'word-break:break-word;">'
-        '<table border="0" cellpadding="0" cellspacing="0" role="presentation" '
-        'style="border-collapse:collapse;border-spacing:0px;"><tr>'
-        f'<td style="width:{img_width}px;">{img}</td>'
-        "</tr></table>"
-        "</td></tr></table>"
-    )
-    link = p.get("link")
-    if link:
-        wrapped = f'<a href="{escape(link, quote=True)}" target="_blank">{wrapped}</a>'
-    return wrapped, style_rules
-
-
-def _render_text(node: dict[str, Any], craft_json: dict[str, Any]) -> str:
-    """The wrapper Kizen's own compiler puts around every Text block's copy
-    — the `kizen-text-styles` class plus its typography, sourced from
-    `Root.props` (confirmed against the reference's compiled `content`):
-    `font-family`/`font-size`/`color` (rgba->hex converted) come from
-    `Root.props`; `line-height:1`/`text-align:left` are fixed literals with
-    no controlling Root prop in the reference. `custom.text` is still
-    embedded verbatim inside it — this never touches BCLI-023's text model,
-    only the wrapper *around* it."""
-    root_props = craft_json["ROOT"]["props"]
-    font_family = root_props.get("fontFamily", "Arial")
-    font_size = root_props.get("fontSize", "14")
-    color = _rgba_to_hex(root_props.get("color", "rgba(74,86,96,1)"))
-    return (
-        '<div class="kizen-text-styles" style="'
-        f"font-family:{font_family};font-size:{font_size}px;line-height:1;"
-        f'text-align:left;color:{color};">{node["custom"]["text"]}</div>'
-    )
-
-
-def _render_block(node_id: str, craft_json: dict[str, Any]) -> tuple[str, list[str]]:
-    node = craft_json[node_id]
-    name = _resolved_name(node)
-    if name == "Text":
-        # Embedded verbatim, not stripped — see craft_summary()'s _plain_text,
-        # which tag-strips both sides before comparing.
-        return _render_text(node, craft_json), []
-    if name == "Image":
-        return _render_image(node_id, craft_json)
-    if name == "Button":
-        return _render_button(node), []
-    if name == "Divider":
-        return _render_divider(node), []
-    raise ValueError(f"cannot compile HTML for unsupported node type {name!r}")
-
-
-def _render_cell(cell_id: str, craft_json: dict[str, Any]) -> tuple[str, list[str]]:
-    node = craft_json[cell_id]
-    html_parts: list[str] = []
-    style_rules: list[str] = []
-    for block_id in node["nodes"]:
-        html, rules = _render_block(block_id, craft_json)
-        html_parts.append(html)
-        style_rules.extend(rules)
-    return "".join(html_parts), style_rules
-
-
-def _truncate4(value: float) -> float:
-    """Truncate (not round) to 4 decimal places — matches the live-confirmed
-    column-width convention (`293.3333`, not `293.3333333333333` or the
-    rounded `293.3334`; `586.6666`, not the rounded `586.6667`)."""
-    return math.floor(value * 10000) / 10000
-
-
-def _row_content_width_px(row_id: str, craft_json: dict[str, Any]) -> float:
-    """The row's actual compiled pixel width — the value the mso table and
-    the `.section-<rowId> { max-width:...px; }` rule must use.
-
-    Trusts an explicit `Row.props.containerWidth` when the spec set one
-    directly (BCLI-024's independent, spec-settable field — the same
-    "explicit, not derived" trust model this surface already uses for
-    `Row.props.columns`/`Cell.props.__width`). Otherwise derives it from the
-    parent `Section`'s own `maxWidth` and padding: content width = maxWidth
-    - (paddingLeft + paddingRight) — the formula this module's `content
-    width` comment already stated, now actually applied instead of frozen
-    as one hardcoded constant. With every prop at its pre-BCLI-024 default
-    (`Section.maxWidth: "900"`, padding `"10"` each side), this reduces to
-    exactly `900 - 10 - 10 = 880.0`, the old hardcoded value — so unmodified
-    specs compile identically to before.
-
-    Either way, the result is then scaled by `Row.props.width` (percent,
-    default `"100"`) — Kizen's real compiler applies this as a genuine
-    multiplier on top of `containerWidth`/the derived width, confirmed
-    against the reference template (`width: '75'` on a `containerWidth:
-    '580'` row compiles to `435px`, not `580px`). A default `"100"` makes
-    this a no-op.
-    """
-    row_props = craft_json[row_id]["props"]
-    if "containerWidth" in row_props:
-        base_width = float(row_props["containerWidth"])
-    else:
-        section_props = craft_json[craft_json[row_id]["parent"]]["props"]
-        max_width = float(section_props["maxWidth"])
-        pad_left = float(section_props.get("containerPaddingLeft", 0))
-        pad_right = float(section_props.get("containerPaddingRight", 0))
-        base_width = max_width - pad_left - pad_right
-    return base_width * float(row_props.get("width", 100)) / 100
-
-
-def _padding_css(props: dict[str, Any]) -> str:
-    """CSS `padding` shorthand (top/right/bottom/left, no unit suffix on the
-    value) from a node's own `containerPadding{Top,Right,Bottom,Left}`
-    props — the same order `_render_button` already uses for its own
-    padding. Reads whatever `Section`/`Row` actually carries in
-    `craft_json`, default `"10"` or an explicit spec override alike, so
-    `content` cannot silently disagree with `craft_json` the way it did
-    before this fix (Section/Row padding never reached the compiled output
-    at all)."""
-    return (
-        f"{props.get('containerPaddingTop', '0')}px "
-        f"{props.get('containerPaddingRight', '0')}px "
-        f"{props.get('containerPaddingBottom', '0')}px "
-        f"{props.get('containerPaddingLeft', '0')}px"
-    )
-
-
-def _fmt_px(value: float) -> str:
-    """Format a computed pixel length for the compiled CSS without a
-    spurious trailing `.0` (`880.0px` -> `880px`) while leaving a genuine
-    fractional value untouched (`293.3333px` stays `293.3333px`). Used at
-    `_render_row`'s width call sites: `_row_content_width_px`'s two sites
-    and the per-column `mso_widths_px` (`_truncate4`'s output)."""
-    if value == int(value):
-        return str(int(value))
-    return str(value)
-
-
-def _render_row(row_id: str, craft_json: dict[str, Any]) -> tuple[str, list[str]]:
-    """Return (body_html, style_rules) for one Row — `style_rules` is the
-    row's own `max-width` rule followed by any rules its cells' blocks
-    contributed (currently only an auto-mode Image's `.image-<id>-auto`
-    rule, see `_render_image`)."""
-    node = craft_json[row_id]
-    columns = node["props"]["columns"]
-    layout = _layout_for_columns(columns)
-    cell_ids = [node["linkedNodes"][f"column-{i + 1}"] for i in range(len(columns))]
-    content_width_px = _row_content_width_px(row_id, craft_json)
-    content_width_str = _fmt_px(content_width_px)
-    mso_widths_px = [
-        _fmt_px(_truncate4(content_width_px * frac)) for frac in layout.columns
-    ]
-
-    parts = [
-        f'<div class="{_section_class(row_id)}" '
-        f'style="padding:{_padding_css(node["props"])};">'
-    ]
-    parts.append(
-        '<!--[if mso | IE]><table align="center" border="0" cellpadding="0" '
-        'cellspacing="0" role="presentation" '
-        f'style="width:{content_width_str}px;"><tr>'
-    )
-    extra_style_rules: list[str] = []
-    columns_data = zip(cell_ids, layout.classes, mso_widths_px, strict=True)
-    for i, (cid, cls, mso_w) in enumerate(columns_data):
-        if i == 0:
-            parts.append(
-                f'<td style="vertical-align:top;width:{mso_w}px;"><![endif]-->'
-            )
-        else:
-            parts.append(
-                f'<!--[if mso | IE]></td><td style="vertical-align:top;width:{mso_w}px;">'
-                "<![endif]-->"
-            )
-        parts.append(
-            f'<div class="mj-outlook-group-fix {cls}" style="font-size:0px;'
-            "text-align:left;direction:ltr;display:inline-block;vertical-align:top;"
-            'width:100%;">'
-        )
-        cell_html, cell_style_rules = _render_cell(cid, craft_json)
-        parts.append(cell_html)
-        extra_style_rules.extend(cell_style_rules)
-        parts.append("</div>")
-    parts.append("<!--[if mso | IE]></td></tr></table><![endif]-->")
-    parts.append("</div>")
-
-    style_rule = f".{_section_class(row_id)} {{ max-width:{content_width_str}px; }}"
-    return "".join(parts), [style_rule, *extra_style_rules]
-
-
-def _render_section(
-    section_id: str, craft_json: dict[str, Any]
-) -> tuple[str, list[str]]:
-    node = craft_json[section_id]
-    props = node["props"]
-    bg = props.get("containerBackgroundColor", "#FFFFFF")
-    rows_html: list[str] = []
-    style_rules = [f".{_section_class(section_id)} {{ background-color:{bg}; }}"]
-    for row_id in node["nodes"]:
-        row_html, row_rules = _render_row(row_id, craft_json)
-        rows_html.append(row_html)
-        style_rules.extend(row_rules)
-    section_padding = _padding_css(props)
-    body = (
-        f'<div class="{_section_class(section_id)}" style="padding:{section_padding};">'
-        + "".join(rows_html)
-        + "</div>"
-    )
-
-    # The outer background-table wrapper `Section.props.containerWidth`
-    # needs, deferred here from BCLI-024 (see that item's Outcome). Only
-    # added when the spec set an explicit container_width — matching this
-    # surface's existing "None means no override, byte-identical to
-    # pre-this-prop output" convention (see `_section_props`), and the only
-    # case this module has real reference evidence for. Simplified relative
-    # to Kizen's own VML/background-image fallback markup (this emitter has
-    # no background-image concept at all, only `background_color`) — see the
-    # work item's report for the scoping call.
-    container_width = props.get("containerWidth")
-    if container_width is not None:
-        style_rules.append(
-            f".{_section_class(section_id)} {{ max-width:{container_width}px; }}"
-        )
-        body = (
-            '<!--[if mso | IE]><table border="0" cellpadding="0" cellspacing="0" '
-            f'role="presentation" align="center" width="{container_width}" '
-            f'style="width:{container_width}px;"><tr><td>'
-            "<![endif]-->" + body + "<!--[if mso | IE]></td></tr></table><![endif]-->"
-        )
-    return body, style_rules
-
-
-def _distinct_column_widths(craft_json: dict[str, Any]) -> dict[str, str]:
-    """Every distinct `mj-column-per-N` class in use across this template's
-    `Row` nodes, mapped to its media-query width percentage. Shared by
-    `_column_base_width_rules`, `_media_query_rules`, and
-    `_moz_text_html_style_block` so the three rule sets can't independently
-    drift on which classes exist."""
-    seen: dict[str, str] = {}
-    for node in craft_json.values():
-        if _resolved_name(node) != "Row":
-            continue
-        columns = node["props"]["columns"]
-        layout = _layout_for_columns(columns)
-        for cls, media_w in zip(layout.classes, layout.media_widths, strict=True):
-            seen[cls] = media_w
-    return seen
-
-
-def _column_base_width_rules(craft_json: dict[str, Any]) -> list[str]:
-    """Unconditional `.mj-column-per-N` width rules — MJML's own convention.
-
-    Each column `<div>` also carries a hardcoded inline `width:100%` (see
-    `_render_row`), which is the fallback for clients that ignore `<style>`
-    entirely. This unconditional rule is what overrides that fallback for
-    every CSS-aware client at normal viewport widths, so multi-column rows
-    render side by side by default; `_media_query_rules` below is what
-    collapses them back to full width on narrow viewports.
-    """
-    return [
-        f".{cls} {{ width:{w} !important; max-width:{w}; }}"
-        for cls, w in sorted(_distinct_column_widths(craft_json).items())
-    ]
-
-
-def _media_query_rules(craft_json: dict[str, Any]) -> list[str]:
-    """`max-width:<mobileBreak>px` rules that collapse every column to full
-    width, so a narrow viewport stacks instead of staying multi-column."""
-    return [
-        f".{cls} {{ width:100% !important; max-width:100%; }}"
-        for cls in sorted(_distinct_column_widths(craft_json))
-    ]
-
-
-def _moz_text_html_style_block(craft_json: dict[str, Any], mobile_break: str) -> str:
-    """Gecko-based mail clients (Thunderbird and others) key column-stacking
-    behaviour off a `.moz-text-html`-prefixed selector rather than the plain
-    `.mj-column-per-N` rule `_column_base_width_rules` emits — its absence
-    is real and recipient-visible, scoped to that client family. Same
-    class/width pairs, wrapped in Kizen's own `min-width` media-attribute
-    convention (confirmed against the reference template's compiled
-    `content`) so it only applies above the same `mobileBreak` breakpoint."""
-    widths = _distinct_column_widths(craft_json)
-    if not widths:
-        return ""
-    rules = "".join(
-        f".moz-text-html .{cls} {{ width:{w} !important; max-width:{w}; }} "
-        for cls, w in sorted(widths.items())
-    )
-    return f'<style media="screen and (min-width:{mobile_break}px)">{rules}</style>'
-
-
-def _compile_html(craft_json: dict[str, Any]) -> str:
-    root = craft_json["ROOT"]
-    root_props = root["props"]
-    bodies: list[str] = []
-    style_rules: list[str] = []
-    for section_id in root["nodes"]:
-        body, rules = _render_section(section_id, craft_json)
-        bodies.append(body)
-        style_rules.extend(rules)
-
-    # Confirmed live 2026-08-26: `Root.props.mobileBreak` (`"414"` by
-    # default), not the hardcoded `480` this module used before. The `480`
-    # fallback below only applies if a caller's `craft_json` predates this
-    # prop entirely — every tree this module itself builds always has it.
-    mobile_break = str(root_props.get("mobileBreak", "480"))
-    column_rules = _column_base_width_rules(craft_json)
-    media_rules = _media_query_rules(craft_json)
-    style_block = (
-        '<style type="text/css">'
-        ".mj-outlook-group-fix{width:100% !important;}"
-        + "".join(style_rules)
-        + "".join(column_rules)
-        + (
-            f"@media only screen and (max-width:{mobile_break}px){{"
-            + "".join(media_rules)
-            + "}"
-            if media_rules
-            else ""
-        )
-        + "</style>"
-        + _moz_text_html_style_block(craft_json, mobile_break)
-    )
-    link_color = _rgba_to_hex(root_props.get("linkColor", "rgba(82,142,249,1)"))
-    kizen_text_styles_block = (
-        "<style>"
-        + _KIZEN_TEXT_STYLES_TEMPLATE.format(link_color=link_color)
-        + "</style>"
-    )
-    body_bg = root_props.get("backgroundColor", "#F8FAFF")
-    return (
-        "<!doctype html>"
-        '<html xmlns="http://www.w3.org/1999/xhtml" '
-        'xmlns:v="urn:schemas-microsoft-com:vml" '
-        'xmlns:o="urn:schemas-microsoft-com:office:office">'
-        "<head>"
-        '<meta charset="utf-8">'
-        '<meta http-equiv="X-UA-Compatible" content="IE=edge">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        + _MJML_RESET_STYLE
-        + "<!--[if mso]><noscript><xml><o:OfficeDocumentSettings>"
-        "<o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings>"
-        "</xml></noscript><![endif]-->"
-        + style_block
-        + kizen_text_styles_block
-        + "</head>"
-        f'<body style="word-spacing:normal;background-color:{body_bg};">'
-        f'<div style="background-color:{body_bg};">'
-        + "".join(bodies)
-        + "</div></body></html>"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1380,10 +692,10 @@ def resolve_spec_images(spec: EmailTemplateDef) -> list[dict[str, Any]]:
     reference and return ``spec.sections`` as the plain nested dicts
     ``tools.planners.messages`` turns into a plan.
 
-    A real write (see :func:`upload_email_image`) — call this from the CLI
-    layer for a real apply, never from ``tools/planners/``. Under
-    ``--dry-run`` the CLI calls :func:`offline_resolve_spec_images` instead,
-    so a dry run uploads nothing — see that function.
+    A real write (see :func:`email_images.upload_email_image`) — call this
+    from the CLI layer for a real apply, never from ``tools/planners/``.
+    Under ``--dry-run`` the CLI calls :func:`offline_resolve_spec_images`
+    instead, so a dry run uploads nothing — see that function.
     """
     config = load_env_config()
     with KizenClient(config) as client:
