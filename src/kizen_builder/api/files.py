@@ -33,6 +33,14 @@ from kizen_builder.config import EnvConfig
 # The ``source`` a smart connector's reference/sample file is uploaded under.
 SMART_CONNECTOR_IMPORT = "smart_connector_import"
 
+# The ``source`` an email-template Image block's file is uploaded under —
+# confirmed live 2026-08-25 from the Kizen email builder's own browser
+# network trace, then confirmed end-to-end through `upload_file()` itself.
+# `source` is a server-validated closed choice (~30 other plausible names
+# all rejected live); this is the only one confirmed to work for an image.
+# See `kizen docs show email-templates`.
+PUBLIC_IMAGE = "public_image"
+
 
 def download_file(
     config: EnvConfig, file_id: str, timeout: float = 120.0
@@ -71,6 +79,7 @@ def upload_file(
     *,
     source: str = SMART_CONNECTOR_IMPORT,
     content_type: str | None = None,
+    is_public: bool = False,
     timeout: float = 300.0,
 ) -> dict[str, Any]:
     """Upload a local file and return the registered Kizen ``File`` dict.
@@ -79,7 +88,12 @@ def upload_file(
     wants. ``content_type`` is guessed from the extension when omitted; the
     guess is signed into the S3 policy, so a mismatch between what's declared
     here and what S3 receives fails the upload rather than uploading something
-    mislabeled.
+    mislabeled. ``is_public`` sets ``POST /api/s3/success``'s own
+    ``is_public`` field (confirmed live 2026-08-25 via ``GET
+    /api/docs/schema``, "Whether the S3 object is public (default: false)")
+    — omitted means false, matching the field's own documented default. A
+    caller that needs an unauthenticated recipient to load the file (an
+    email's ``Image.src``, say) must pass ``is_public=True`` explicitly.
     """
     src = Path(path)
     if not src.is_file():
@@ -131,12 +145,25 @@ def upload_file(
     etag = (s3_resp.headers.get("etag") or "").strip('"')
 
     # Leg 3: register the File with Kizen (form-encoded).
+    data = {"uuid": s3object_id, "key": key, "name": src.name, "etag": etag}
+    if is_public:
+        data["is_public"] = "true"
     registered = client.post(
         "/api/s3/success",
         params={"source": source},
-        data={"uuid": s3object_id, "key": key, "name": src.name, "etag": etag},
+        data=data,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     if not isinstance(registered, dict) or not registered.get("id"):
         raise KizenAPIError(0, f"unexpected s3/success response: {registered!r}")
     return registered
+
+
+def delete_file(client: KizenClient, file_id: str) -> Any:
+    """DELETE /api/files/{id} — confirmed live 2026-08-25 (a follow-up
+    download of the same id 404s afterward, so this is a real delete, not a
+    soft no-op). Needed for drift teardown: `GET /api/files` is broken
+    (301s to plain HTTP, then 404s), so there is no other way to find or
+    remove a file a drift run uploaded.
+    """
+    return client.delete(f"/api/files/{file_id}")

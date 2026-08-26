@@ -11,6 +11,89 @@ Two distinct resources, easy to confuse:
 --template <name|uuid>` creates the automation message a `notify_member_via_email`
 step points at.
 
+## Building a template from a spec file — `messages templates create`/`update --spec-file`
+
+`craft_json` (the editable tree) and `content` (the compiled, Outlook-safe
+HTML that is actually sent) are independent stored fields, and the server
+compiles neither from the other on `POST` or `PATCH` — see "Two content
+fields that must be kept in sync" below. So a spec never names either field
+directly; both are built together, from one pass over one node tree, by
+`kizen messages templates create --spec-file <f>` (and `update <tmpl>
+--spec-file <f>`, an alternative to that command's raw
+`--craft-json-file`/`--content-file` PATCH path). Preview what a spec would
+produce, offline, with `messages templates craft-config --spec-file <f>
+[--out-html <file>]` — no args lists the available block kinds and layouts.
+
+### Spec shape
+
+```json
+{
+  "name": "Newsletter",
+  "subject": "This month's update",
+  "sections": [
+    {
+      "background_color": "#FFFFFF",
+      "rows": [
+        {
+          "layout": "2 Columns",
+          "cells": [
+            {"blocks": [{"kind": "text", "html": "<p>Left column</p>"}]},
+            {"blocks": [{"kind": "image", "file": "/path/to/logo.png", "alt": "Logo"}]}
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `sections[].rows[].layout` is one of **4 v1 presets**, a closed enum — a
+  typo'd name is a spec-validation error, not a bad fractions array to catch
+  later. `cells` must have exactly the count the preset needs.
+
+  | preset | `columns` | `Cell.__width` |
+  |---|---|---|
+  | `1 Column` | `[1]` | `1` |
+  | `2 Columns` | `[0.5, 0.5]` | `0.5`, `0.5` |
+  | `2 Columns (1/3 and 2/3)` | `[0.3333333333333333, 0.6666666666666666]` | same |
+  | `2 Columns (2/3 and 1/3)` | `[0.6666666666666666, 0.3333333333333333]` | same |
+
+  Confirmed live 2026-08-25, byte-exact — not rounded, not recomputed as
+  `1/3`. Five more presets (`3`/`4`/`5`/`6 Columns`, `3 Columns (gutters)`)
+  are confirmed live but out of scope for this spec format; naming one is a
+  clear error, not a silent reshape.
+- `cells[].blocks[].kind` is one of `text`, `image`, `button`, `divider` — a
+  closed set, same reasoning. There is no `attachments` kind and no raw-HTML
+  escape hatch (no `HTMLBlock` on this surface at all, confirmed live).
+  - `text`: `{"kind": "text", "html": "<p>...</p>"}` — embedded verbatim in
+    both outputs.
+  - `image`: `{"kind": "image", "file": "<local path>", "alt": "", "link": "", "width": 150}`.
+    `file` is a **local path**, not a `file_id` — there is no CLI surface to
+    look one up afterward (`GET /api/files` is broken; see below), so the
+    spec captures the upload at the point it happens. **PNG and JPEG only**
+    (pixel dimensions are read from the file's own header bytes, no
+    dependency); GIF/WebP/SVG are rejected outright. Uploaded with
+    `is_public=true` (confirmed live 2026-08-25 via `GET /api/docs/schema`
+    on `POST /api/s3/success`) so the emitted `src` is reachable by a real
+    recipient, not just an authenticated session. Uploading happens for real
+    when a `create`/`update --spec-file` is actually applied; under
+    `--dry-run` the CLI resolves images offline instead (a placeholder
+    `fileId`/`src`, real dimensions still read from the file's own header
+    bytes) so a dry run never writes.
+  - `button`: `{"kind": "button", "label": "...", "url": "...", "color": null}`.
+  - `divider`: `{"kind": "divider", "color": null}`.
+- `sender_type` and `from_name_type` are not spec keys. They are hard-coded
+  to `"business"`/`"default"`, the only values ever observed live — see
+  "Other top-level fields" below. There is no `--sender-type` flag.
+  **`from_name_type` is required on `POST`**, confirmed live 2026-08-25: a
+  create without it 400s (`{"from_name_type": ["This field is required."]}`)
+  — the earlier PATCH-only probing hadn't surfaced this since PATCH only
+  needs the fields actually being changed.
+
+No flag and no spec key on `create` accepts a raw `craft_json` or `content`
+value, on purpose — that's the exact "hand-author both fields and hope they
+agree" foot-gun this whole surface exists to close.
+
 ## Automation messages: create them *from a template*
 
 A `notify_member_via_email` step's config has no subject/body — it is a bare
@@ -43,9 +126,10 @@ template `Text` blocks.
 ## Email template wire format
 
 Confirmed live 2026-07-21 from a real save captured out of the Kizen email
-template builder — `PATCH /api/messages/templates/{id}`. Read, clone, update
-and delete are CLI-wired (`kizen messages templates`); generating a template
-from a spec file is not.
+template builder — `PATCH /api/messages/templates/{id}`. Read, clone,
+create, update and delete are all CLI-wired (`kizen messages templates`) —
+see "Building a template from a spec file" above for `create`/`update
+--spec-file`/`craft-config`.
 
 ### Two content fields that must be kept in sync
 
@@ -124,18 +208,32 @@ Block props confirmed live 2026-08-25:
 - **`Text`** — copy lives in `custom.text` as an HTML string, not in props.
   `content` embeds that markup **verbatim**, so comparing the two means
   tag-stripping both sides.
-- **`Image`** — `src` is host-absolute
-  (`https://<host>/api/files/<fileId>/download`) alongside a `fileId`, so an
-  image reference is **environment-bound**; moving a template between envs
-  needs the `src` rewritten. `naturalWidth`/`naturalHeight` are the uploaded
-  file's real pixel dimensions and are not derivable from a spec — they have
-  to be read off the image.
+- **`Image`** — `src` is host-absolute, so an image reference is
+  **environment-bound**; moving a template between envs needs `src`
+  rewritten. Two URL schemes are both confirmed live on a plain `Image`
+  node, not just on `Attachments`: `https://<host>/api/files/{fileId}/download`
+  (used by the "All Rows" capture and most templates) and
+  `https://<host>/api/public/s3/{fileId}/download` (seen on one image in
+  another template) — either is accepted; `messages templates create`/
+  `craft-config` always emit the `/api/files/` form. `naturalWidth`/
+  `naturalHeight` are the uploaded file's real pixel dimensions and are not
+  derivable from a spec — they have to be read off the image (this surface's
+  spec-file emitter parses them from the file's own PNG/JPEG header bytes).
+  **The uploaded file must be `is_public: true`** or `src` 404s for anyone
+  without an authenticated Kizen session — confirmed live 2026-08-25 (`POST
+  /api/s3/success`'s own `is_public` field, `GET /api/docs/schema`; both URL
+  schemes 200 unauthenticated once set, 404 on both when not). The
+  spec-file emitter's upload path sets it; a raw `upload_file()` call
+  elsewhere in this repo does not unless asked (see `api/files.py`).
 - **`Button`** — `{url, label, action: "url", color, textColor, fontSize,
   fontFamily, alignment, borderSize, borderColor, borderRadius,
   padding{Top,Left,Right,Bottom}, textStyles: [], openLinkInNewTab}` plus the
-  `container*` set.
+  `container*` set. The emitter's compiled `content` markup for this node
+  (`_render_button`) was checked byte-exact against a real Button in a
+  Kizen-authored template, read-only, 2026-08-26.
 - **`Divider`** — `{size, color, width, alignment, borderStyle}` plus the
-  `container*` set.
+  `container*` set. Same verification: `_render_divider`'s output matches a
+  real captured Divider's compiled markup byte-exact.
 - **`Attachments`** — `props.attachments` is a list of **full file records**
   (id, key, url, name, size_bytes, content_type, thumbnail_url, `is_public`,
   and an `employee` object naming the uploader), plus an
@@ -155,19 +253,25 @@ merge-field span to an existing `Text` node).
 Generating genuinely **new** structure — new Sections/Rows/Images/Buttons from
 scratch, the way forms/layouts/dashboards builders do — additionally requires
 hand-producing matching Outlook-safe compiled HTML for `content`, with the
-node ids threaded through it. Not attempted, and meaningfully higher-stakes
-than the other craft.js surfaces: a wrong `content` is what real recipients
-receive, not an editor-only concern. Since the server will not compile it for
-you (see the table above), that emitter has to live somewhere.
+node ids threaded through it. **Built** by `tools/email_craft.py`'s
+`build_email_content()`, wired to `messages templates create`/`update
+--spec-file`/`craft-config` — see "Building a template from a spec file"
+above. It covers `Text`/`Image`/`Button`/`Divider` and the 4 v1 column
+presets; `Attachments` and the other 5 presets are confirmed live but still
+unbuilt (their `columns`/markup are pre-captured for a follow-on). This
+stayed meaningfully higher-stakes than the other craft.js surfaces even once
+built: a wrong `content` is what real recipients actually receive, not an
+editor-only concern, and nothing offline can substitute for opening a real
+test send in Outlook.
 
-`kizen messages templates clone` is the safe path in the meantime: it copies
-both content fields together, so the copy is internally consistent by
-construction. Build the design once in the builder UI, then clone and
-surgically edit it.
+`kizen messages templates clone` is still the safe path for copying an
+existing design: it copies both content fields together, so the copy is
+internally consistent by construction. Build the design once in the builder
+UI (or with `create --spec-file`), then clone and surgically edit it.
 
-Everything needed to build the generation slice — node shapes, the coupling
-rule, the compile findings — is in this document. It is deliberately the only
-home for those facts.
+Everything needed to build on the generation slice — node shapes, the
+coupling rule, the compile findings, the spec-file format — is in this
+document. It is deliberately the only home for those facts.
 
 ## See also
 

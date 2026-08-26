@@ -184,6 +184,29 @@ def test_upload_file_walks_presign_s3_and_success(client, tmp_path):
     )
     assert b"uuid=s3-obj-1" in ok_req.content
     assert b"etag=abc123" in ok_req.content
+    # is_public defaults to omitted (server default is false) — a smart
+    # connector's reference file has no reason to be world-readable.
+    assert b"is_public" not in ok_req.content
+
+
+@respx.mock
+def test_upload_file_sends_is_public_true_when_requested(client, tmp_path):
+    src = tmp_path / "sample.csv"
+    src.write_bytes(b"order_number\n1\n")
+    respx.get(f"{FAKE_BASE_URL}/api/s3/presigned-post").mock(
+        return_value=httpx.Response(
+            200,
+            json={"url": S3_URL, "fields": {"key": "k"}, "s3object_id": "s3-obj-1"},
+        )
+    )
+    respx.post(S3_URL).mock(return_value=httpx.Response(204, headers={"etag": '"e"'}))
+    success = respx.post(f"{FAKE_BASE_URL}/api/s3/success").mock(
+        return_value=httpx.Response(200, json={"id": "file-1", "name": "sample.csv"})
+    )
+
+    files_api.upload_file(client, src, is_public=True)
+
+    assert b"is_public=true" in success.calls.last.request.content
 
 
 @respx.mock

@@ -9,17 +9,21 @@ import json
 from pathlib import Path
 
 import typer
+from pydantic import ValidationError
 from rich.table import Table
 
 from kizen_builder import output as out
-from kizen_builder.cli._mutations import _run_mutation
+from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
     console,
+    err_console,
 )
+from kizen_builder.models.spec.email_templates import EmailTemplateDef
+from kizen_builder.tools import email_craft
 from kizen_builder.tools import messages as message_tools
 from kizen_builder.tools.planners import messages as message_planners
 
@@ -130,6 +134,71 @@ def messages_templates_get(
     out.render(fmt, json_data={**summary, "id": detail.get("id")}, table=table)
 
 
+def _validate_email_spec(spec_dict: dict) -> EmailTemplateDef:
+    try:
+        return EmailTemplateDef.model_validate(spec_dict)
+    except ValidationError as e:
+        for err in e.errors():
+            loc = ".".join(str(p) for p in err.get("loc", ())) or "spec"
+            msg = err.get("msg", "invalid value")
+            err_console.print(f"[red]spec error:[/red] {loc}: {msg}")
+        raise typer.Exit(code=1) from e
+
+
+@messages_templates_app.command(
+    "create",
+    epilog="Spec shape: see `kizen docs show email-templates`. "
+    "Generate one with `messages templates craft-config`.",
+)
+def messages_templates_create(
+    spec_file: str = typer.Option(
+        "",
+        "--spec-file",
+        help="Path to a JSON email-template spec. Default: read from stdin.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Create an email template from a spec file — `craft_json` and `content`
+    built together from one pass over the spec's `sections`, so the two can
+    never be authored out of sync.
+
+    No flag and no spec key accepts a raw `craft_json` or `content` value —
+    that hand-author-both-and-hope-they-agree foot-gun is exactly what this
+    command exists to close. `sender_type` is always `"business"`, the only
+    value ever observed live. Any Image block's local file is uploaded for
+    real before the plan is built (there's no way to know its real
+    `fileId`/`src`/`naturalWidth`/`naturalHeight` otherwise) — except under
+    `--dry-run`, which resolves images offline instead (placeholder
+    `fileId`/`src`, real dimensions read from the file's own header bytes)
+    so a dry run never writes.
+    """
+    spec_dict, from_stdin = _read_spec(spec_file, what="email template")
+    with cli_errors(ValueError, FileNotFoundError):
+        spec = _validate_email_spec(spec_dict)
+        resolved_sections = (
+            email_craft.offline_resolve_spec_images(spec)
+            if dry_run
+            else email_craft.resolve_spec_images(spec)
+        )
+    _run_mutation(
+        lambda: message_planners.plan_create_template_from_spec(
+            spec, resolved_sections
+        ),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+        stdin_consumed=from_stdin,
+    )
+
+
 @messages_templates_app.command(
     "clone",
     epilog="Wire format (the two coupled content fields): see `kizen docs show email-templates`",
@@ -175,6 +244,13 @@ def messages_templates_update(
     content_file: str = typer.Option(
         None, "--content-file", help="Path to an HTML file to send as `content`."
     ),
+    spec_file: str = typer.Option(
+        "",
+        "--spec-file",
+        help="Path to a JSON email-template spec — rebuilds `craft_json`/`content` "
+        "together the same way `create` does. Mutually exclusive with "
+        "--name/--subject/--craft-json-file/--content-file.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the plan without applying."
     ),
@@ -187,12 +263,46 @@ def messages_templates_update(
 ) -> None:
     """PATCH one email template's fields.
 
-    The server stores both content fields verbatim and compiles neither
-    from the other (confirmed live 2026-08-25), so sending `craft_json`
-    without `content` — or the reverse — leaves the builder showing one
-    email while recipients receive another. Pass both together, and check
-    the result with `messages templates get`.
+    Two ways to update: `--spec-file` rebuilds `craft_json`/`content` from a
+    spec, both fields together, the same way `create` does. The raw path
+    (`--craft-json-file`/`--content-file`/`--name`/`--subject`) PATCHes
+    fields verbatim instead — the server stores both content fields
+    independently and compiles neither from the other (confirmed live
+    2026-08-25), so sending `craft_json` without `content` on the raw path —
+    or the reverse — leaves the builder showing one email while recipients
+    receive another. Check the result either way with `messages templates
+    get`.
     """
+    raw_flags_used = (
+        name is not None or subject is not None or craft_json_file or content_file
+    )
+    if spec_file and raw_flags_used:
+        err_console.print(
+            "[red]error:[/red] --spec-file cannot be combined with "
+            "--name/--subject/--craft-json-file/--content-file."
+        )
+        raise typer.Exit(code=2)
+
+    if spec_file:
+        spec_dict, from_stdin = _read_spec(spec_file, what="email template")
+        with cli_errors(ValueError, FileNotFoundError):
+            spec = _validate_email_spec(spec_dict)
+            resolved_sections = (
+                email_craft.offline_resolve_spec_images(spec)
+                if dry_run
+                else email_craft.resolve_spec_images(spec)
+            )
+        _run_mutation(
+            lambda: message_planners.plan_update_template(
+                template, spec=spec, resolved_sections=resolved_sections
+            ),
+            dry_run=dry_run,
+            yes=yes,
+            json_out=json_out,
+            stdin_consumed=from_stdin,
+        )
+        return
+
     patch: dict[str, object] = {}
     if name is not None:
         patch["name"] = name
@@ -231,6 +341,61 @@ def messages_templates_delete(
         yes=yes,
         json_out=json_out,
     )
+
+
+@messages_templates_app.command(
+    "craft-config",
+    epilog="Spec shape: see `kizen docs show email-templates`",
+)
+def messages_templates_craft_config(
+    spec_file: str = typer.Option(
+        "",
+        "--spec-file",
+        help="Path to a JSON email-template spec. Omit to list the available "
+        "block kinds and column layouts instead.",
+    ),
+    out_html: str = typer.Option(
+        "", "--out-html", help="Write the compiled `content` HTML to this file."
+    ),
+) -> None:
+    """Preview the `{craft_json, content}` pair a spec would produce —
+    offline, no live calls, runs the exact emitter `create`/`update
+    --spec-file` use.
+
+    Unlike `dashboards dashlet-config`, this command's output is **not**
+    meant to be pasted into a create/update spec: any Image block is
+    resolved without uploading (no live calls here), so its `fileId`/`src`
+    are obvious placeholder tokens, not real ones. Use `--out-html` to drop
+    the compiled body somewhere a browser (or Outlook) can open it.
+    """
+    if not spec_file:
+        t = Table(title="Block kinds")
+        t.add_column("kind")
+        for kind in email_craft.known_block_kinds():
+            t.add_row(kind)
+        console.print(t)
+
+        lt = Table(title="Column layouts (v1)")
+        lt.add_column("layout")
+        lt.add_column("columns")
+        for name in email_craft.known_layouts():
+            columns = email_craft.COLUMN_LAYOUTS[name].columns
+            lt.add_row(name, ", ".join(str(c) for c in columns))
+        console.print(lt)
+        return
+
+    spec_dict, _ = _read_spec(spec_file, what="email template")
+    with cli_errors(ValueError, FileNotFoundError):
+        spec = _validate_email_spec(spec_dict)
+        resolved_sections = email_craft.offline_resolve_spec_images(spec)
+        sections = email_craft.assemble_sections(resolved_sections)
+        craft_json, content = email_craft.build_email_content(sections)
+
+    if out_html:
+        Path(out_html).write_text(content)
+        err_console.print(f"[dim]wrote compiled content to {out_html}[/dim]")
+
+    out.emit_json({"craft_json": craft_json, "content": content})
 
 
 @messages_app.command("create")

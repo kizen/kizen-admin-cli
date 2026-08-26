@@ -2264,11 +2264,17 @@
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ list    List email templates (pass one's name or UUID as `--template`).                          │
-│ get     Show one email template, including how well its two content fields agree.                │
-│ clone   Copy an email template, both content fields included.                                    │
-│ update  PATCH one email template's fields.                                                       │
-│ delete  Delete an email template.                                                                │
+│ list          List email templates (pass one's name or UUID as `--template`).                    │
+│ get           Show one email template, including how well its two content fields agree.          │
+│ create        Create an email template from a spec file — `craft_json` and `content`             │
+│               built together from one pass over the spec's `sections`, so the two can            │
+│               never be authored out of sync.                                                     │
+│ clone         Copy an email template, both content fields included.                              │
+│ update        PATCH one email template's fields.                                                 │
+│ delete        Delete an email template.                                                          │
+│ craft-config  Preview the `{craft_json, content}` pair a spec would produce —                    │
+│               offline, no live calls, runs the exact emitter `create`/`update                    │
+│               --spec-file` use.                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: messages templates clone [OPTIONS] {source}                                                 
@@ -2291,6 +2297,54 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Wire format (the two coupled content fields): see `kizen docs show email-templates`                
+                                                                                                    
+                                                                                                    
+ Usage: messages templates craft-config [OPTIONS]                                                   
+                                                                                                    
+ Preview the `{craft_json, content}` pair a spec would produce — offline, no live calls, runs the   
+ exact emitter `create`/`update --spec-file` use.                                                   
+                                                                                                    
+ Unlike `dashboards dashlet-config`, this command's output is **not**                               
+ meant to be pasted into a create/update spec: any Image block is                                   
+ resolved without uploading (no live calls here), so its `fileId`/`src`                             
+ are obvious placeholder tokens, not real ones. Use `--out-html` to drop                            
+ the compiled body somewhere a browser (or Outlook) can open it.                                    
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file        <str>  Path to a JSON email-template spec. Omit to list the available block   │
+│                           kinds and column layouts instead.                                      │
+│ --out-html         <str>  Write the compiled `content` HTML to this file.                        │
+│ --help                    Show this message and exit.                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape: see `kizen docs show email-templates`                                                  
+                                                                                                    
+                                                                                                    
+ Usage: messages templates create [OPTIONS]                                                         
+                                                                                                    
+ Create an email template from a spec file — `craft_json` and `content` built together from one     
+ pass over the spec's `sections`, so the two can never be authored out of sync.                     
+                                                                                                    
+ No flag and no spec key accepts a raw `craft_json` or `content` value —                            
+ that hand-author-both-and-hope-they-agree foot-gun is exactly what this                            
+ command exists to close. `sender_type` is always `"business"`, the only                            
+ value ever observed live. Any Image block's local file is uploaded for                             
+ real before the plan is built (there's no way to know its real                                     
+ `fileId`/`src`/`naturalWidth`/`naturalHeight` otherwise) — except under                            
+ `--dry-run`, which resolves images offline instead (placeholder                                    
+ `fileId`/`src`, real dimensions read from the file's own header bytes)                             
+ so a dry run never writes.                                                                         
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON email-template spec. Default: read from stdin.        │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape: see `kizen docs show email-templates`. Generate one with `messages templates           
+ craft-config`.                                                                                     
                                                                                                     
                                                                                                     
  Usage: messages templates delete [OPTIONS] {template}                                              
@@ -2345,11 +2399,15 @@
                                                                                                     
  PATCH one email template's fields.                                                                 
                                                                                                     
- The server stores both content fields verbatim and compiles neither                                
- from the other (confirmed live 2026-08-25), so sending `craft_json`                                
- without `content` — or the reverse — leaves the builder showing one                                
- email while recipients receive another. Pass both together, and check                              
- the result with `messages templates get`.                                                          
+ Two ways to update: `--spec-file` rebuilds `craft_json`/`content` from a                           
+ spec, both fields together, the same way `create` does. The raw path                               
+ (`--craft-json-file`/`--content-file`/`--name`/`--subject`) PATCHes                                
+ fields verbatim instead — the server stores both content fields                                    
+ independently and compiles neither from the other (confirmed live                                  
+ 2026-08-25), so sending `craft_json` without `content` on the raw path —                           
+ or the reverse — leaves the builder showing one email while recipients                             
+ receive another. Check the result either way with `messages templates                              
+ get`.                                                                                              
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    template      <str>  Template name or UUID. [required]                                      │
@@ -2359,6 +2417,10 @@
 │ --subject                  <str>  Set the subject line.                                          │
 │ --craft-json-file          <str>  Path to a JSON file to send as `craft_json`.                   │
 │ --content-file             <str>  Path to an HTML file to send as `content`.                     │
+│ --spec-file                <str>  Path to a JSON email-template spec — rebuilds                  │
+│                                   `craft_json`/`content` together the same way `create` does.    │
+│                                   Mutually exclusive with                                        │
+│                                   --name/--subject/--craft-json-file/--content-file.             │
 │ --dry-run                         Show the plan without applying.                                │
 │ --yes              -y             Skip the y/N confirmation prompt.                              │
 │ --json                            Emit JSON (plan with --dry-run, results otherwise).            │
@@ -4367,6 +4429,12 @@
 
 
 ===== messages templates clone =====
+
+
+===== messages templates craft-config =====
+
+
+===== messages templates create =====
 
 
 ===== messages templates delete =====

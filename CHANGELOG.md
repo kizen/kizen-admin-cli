@@ -37,6 +37,30 @@ called out explicitly under **Changed** or **Removed**.
   Generating a template from a spec file is still not wired; see `kizen docs
   show email-templates`.
 
+- **`kizen messages templates create --spec-file <f>` builds a complete email
+  template — `craft_json` and the compiled, Outlook-safe `content` HTML —
+  from one declarative spec.** `update <tmpl> --spec-file <f>` rewrites an
+  existing template the same way, as an alternative to its existing
+  field-level `--craft-json-file`/`--content-file` PATCH path. Both fields
+  come from one pass over one node tree, so a spec can never describe one
+  without the other — no flag and no spec key accepts a raw `craft_json` or
+  `content` value.
+
+  A spec's rows pick one of 4 column layouts by name (`1 Column`, `2
+  Columns`, `2 Columns (1/3 and 2/3)`, `2 Columns (2/3 and 1/3)`) and cells
+  hold `text`/`image`/`button`/`divider` blocks — both closed sets, so an
+  unsupported layout or block kind is a clear error, never a silent partial
+  template. An `image` block names a local PNG/JPEG file; it's uploaded
+  (`source="public_image"`, publicly readable so recipients can load it) and
+  its real pixel dimensions are read from the file's own header bytes — no
+  new dependency. `--dry-run` resolves images offline instead of uploading,
+  so it never writes. `messages templates craft-config` previews the
+  `{craft_json, content}` pair offline, with `--out-html` to drop the
+  compiled body somewhere a browser (or Outlook) can open it.
+
+  A real test send opened in Outlook is still the only way to confirm actual
+  rendering — nothing offline can substitute for that.
+
 ### Fixed
 
 - **`kizen upgrade --check` can now find a release tag from a `uv tool
