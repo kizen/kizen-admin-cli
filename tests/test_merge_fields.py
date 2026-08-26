@@ -137,20 +137,62 @@ def test_render_never_calls_resolve_objectname_for_reserved_namespace():
 @pytest.mark.parametrize(
     ("token", "label"),
     [
-        ("business.city", "Business City"),
         ("business.name", "Business Name"),
+        ("business.reply_to_email", "Business Notification Email"),
+        ("business.phone", "Business Phone"),
+        ("business.street_address", "Business Street Address"),
+        ("business.country", "Business Country"),
+        ("business.country_code", "Business Country Code"),
+        ("business.state", "Business State/Province"),
+        ("business.state_code", "Business State/Province Code"),
+        ("business.city", "Business City"),
+        ("business.postal_code", "Business Zip/Postal Code"),
         ("business.primary_marketing_contact_name", "Business Primary Name"),
+        ("business.primary_marketing_contact_email", "Business Primary Email"),
+        ("team_member.first_name", "Team Member First Name"),
         ("team_member.last_name", "Team Member Last Name"),
+        ("team_member.email", "Team Member Email"),
+        ("team_member.phone", "Team Member Phone"),
         ("team_member.signature", "Team Member Signature"),
     ],
 )
 def test_render_known_label_for_business_and_team_member(token, label):
-    """Confirmed live 2026-08-26 (merge-field-markup-captured-live.md's
-    "Full captured label set"). None of these are reachable by a
-    namespace-prefix + title-case transform (e.g.
-    `primary_marketing_contact_name` would title-case to "Primary Marketing
-    Contact Name", not "Primary Name") — that's why they're in the static
-    table rather than derived."""
+    """The complete Business (12) and Team Member (5) merge-field picker
+    lists, confirmed live 2026-08-26 — every entry was inserted from the email
+    builder's picker and read back, and the counts match the picker exactly.
+    See merge-field-markup-captured-live.md, "COMPLETE business / team_member
+    picker list".
+
+    Six of the twelve Business labels are NOT reachable by a
+    `"Business " + title(api_name)` rule — `postal_code` → "Zip/Postal Code",
+    `state` → "State/Province", `state_code` → "State/Province Code",
+    `reply_to_email` → "Notification Email",
+    `primary_marketing_contact_name` → "Primary Name",
+    `primary_marketing_contact_email` → "Primary Email". The other six and all
+    five Team Member entries would work under such a rule; the whole list is
+    pinned anyway because it is finite, captured, and exact.
+    """
+    out = render("{{ " + token + " }}")
+    assert f'data-merge-field-fallback-label="{label}"' in out
+
+
+@pytest.mark.parametrize(
+    ("token", "label"),
+    [
+        ("business.timezone", "Business Timezone"),
+        ("team_member.nickname", "Team Member Nickname"),
+    ],
+)
+def test_render_prefixes_the_namespace_for_tokens_outside_the_picker_list(token, label):
+    """A hand-authored token in a reserved namespace still gets the namespace
+    prefix rather than a bare title-cased field name.
+
+    Not verified against Kizen — these tokens are not in either picker, so no
+    captured label exists for them and none could. This pins a deliberate
+    fallback choice: "Business Timezone" reads correctly where a bare
+    "Timezone" would look like a field of whatever object the surrounding
+    content is about.
+    """
     out = render("{{ " + token + " }}")
     assert f'data-merge-field-fallback-label="{label}"' in out
 

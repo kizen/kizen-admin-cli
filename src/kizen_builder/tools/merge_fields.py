@@ -82,18 +82,46 @@ RESERVED_NAMESPACES = frozenset(
 # fixtures vs. `"Agentic Workflow Execution ID"` in `kitchen_sink_triggers`
 # and in live capture), so no single value belongs here — see
 # merge-field-markup-captured-live.md's "label is NOT a function of the
-# token" finding. Necessarily incomplete otherwise — these are the only
-# values anyone has captured and checked in.
+# token" finding.
+#
+# For `business`/`team_member` this table IS complete, not a sample: every
+# entry in the email builder's Business and Team Member merge-field pickers
+# was inserted into a template and read back on 2026-08-26, and the counts
+# match the pickers exactly (12 and 5). These labels cannot be derived or
+# fetched — `GET /api/docs/schema`'s `Business` component lists 40 properties
+# (not these 12, and missing `country_code`/`state_code` entirely), and no
+# merge-field catalog endpoint exists (0 of 564 schema paths match "merge").
+# The picker is curated. Adding to this table means capturing from the UI.
 _KNOWN_LABELS: dict[tuple[str, str], str] = {
-    # confirmed live 2026-08-26 (merge-field-markup-captured-live.md)
+    # Complete Business picker, confirmed live 2026-08-26
+    # (merge-field-markup-captured-live.md). Six of these are unreachable by
+    # any `"Business " + title(api_name)` rule, which is why the whole list is
+    # pinned rather than a prefix rule with exceptions.
+    ("business", "name"): "Business Name",
+    ("business", "reply_to_email"): "Business Notification Email",
+    ("business", "phone"): "Business Phone",
+    ("business", "street_address"): "Business Street Address",
+    ("business", "country"): "Business Country",
+    ("business", "country_code"): "Business Country Code",
+    ("business", "state"): "Business State/Province",
+    ("business", "state_code"): "Business State/Province Code",
+    ("business", "city"): "Business City",
+    ("business", "postal_code"): "Business Zip/Postal Code",
+    ("business", "primary_marketing_contact_name"): "Business Primary Name",
+    ("business", "primary_marketing_contact_email"): "Business Primary Email",
+    # Complete Team Member picker, same capture.
     ("team_member", "first_name"): "Team Member First Name",
     ("team_member", "last_name"): "Team Member Last Name",
+    ("team_member", "email"): "Team Member Email",
+    ("team_member", "phone"): "Team Member Phone",
     ("team_member", "signature"): "Team Member Signature",
-    ("business", "postal_code"): "Business Zip/Postal Code",
-    ("business", "city"): "Business City",
-    ("business", "name"): "Business Name",
-    ("business", "primary_marketing_contact_name"): "Business Primary Name",
 }
+
+# Namespaces whose picker list is fully captured in `_KNOWN_LABELS` above.
+# A token in one of these that is NOT in the table was hand-authored rather
+# than picked, so it still gets the namespace prefix — `Business Timezone`
+# beats a bare `Timezone`, which would read as a field of the wrong object.
+_LABEL_PREFIXES = {"business": "Business", "team_member": "Team Member"}
 
 ResolveLabel = Callable[[str, str], "str | None"]
 ResolveObjectName = Callable[[str], "str | None"]
@@ -102,21 +130,28 @@ ResolveObjectName = Callable[[str], "str | None"]
 def _fallback_label(namespace: str, field_path: str) -> str:
     """The label to use when no resolver answers for this token.
 
-    `automation_variable.<name>` is a confirmed special case: Kizen does not
-    title-case these at all — the label is the literal variable name as
-    authored (`tests/fixtures/automations/llm_comparison.raw.json`,
-    `on_or_around_date_goto.raw.json`). Everything else without a known
-    stored label gets a title-cased reading of the field path — a readable
-    guess, not a verified value (this is the same fallback the old
-    `_merge_field_label` used for `entity_record` pseudo-fields, extended
-    here to dot-separated multi-segment paths).
+    Three tiers, in order:
+
+    1. `automation_variable.<name>` is a confirmed special case: Kizen does
+       not title-case these at all — the label is the literal variable name
+       as authored (`tests/fixtures/automations/llm_comparison.raw.json`,
+       `on_or_around_date_goto.raw.json`).
+    2. An exact captured label from :data:`_KNOWN_LABELS`, which holds the
+       complete `business`/`team_member` picker lists.
+    3. A title-cased reading of the field path, prefixed with the namespace's
+       display name for namespaces in :data:`_LABEL_PREFIXES`. This tier is a
+       readable guess, **not** a verified value — it is only reached by a
+       hand-authored token outside the picker lists, or by an
+       `entity_record` pseudo-field the live resolver could not answer.
     """
     if namespace == "automation_variable":
         return field_path
     known = _KNOWN_LABELS.get((namespace, field_path))
     if known is not None:
         return known
-    return field_path.replace("_", " ").replace(".", " ").title()
+    words = field_path.replace("_", " ").replace(".", " ").title()
+    prefix = _LABEL_PREFIXES.get(namespace)
+    return f"{prefix} {words}" if prefix else words
 
 
 def render(
