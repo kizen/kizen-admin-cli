@@ -34,16 +34,23 @@ _SECTION_CLASS = re.compile(r"section-([0-9a-f]{6,})")
 
 
 def _split_style_block(content: str) -> tuple[str, str]:
-    """(base_css, media_css) — split the compiled `<style>` block at its
-    `@media` query, so a test can tell a base (unconditional) rule from a
-    mobile-collapse rule instead of merely checking presence anywhere in the
-    document. That distinction is the whole point: a column-width rule that
-    only exists inside `@media (max-width:480px)` renders stacked at desktop
-    width, which is the inverted-CSS bug this module fixes."""
-    style = content.split("<style", 1)[1].split("</style>", 1)[0]
+    """(base_css, media_css) — split this module's own main `<style>` block
+    (the one carrying `.mj-outlook-group-fix{width:100% !important;}` as its
+    first rule — the head also carries the static MJML reset block, and, if
+    `Row`s exist, the `.moz-text-html` style block, both `<style>` tags of
+    their own) at its `@media` query, so a test can tell a base
+    (unconditional) rule from a mobile-collapse rule instead of merely
+    checking presence anywhere in the document. That distinction is the
+    whole point: a column-width rule that only exists inside `@media
+    (max-width:...px)` renders stacked at desktop width, which is the
+    inverted-CSS bug this module fixes."""
+    marker = ".mj-outlook-group-fix{width:100% !important;}"
+    start = content.index(marker)
+    style = content[start : content.index("</style>", start)]
     if "@media" not in style:
         return style, ""
-    base, media = style.split("@media only screen and (max-width:480px){", 1)
+    base, media = style.split("@media only screen and (max-width:", 1)
+    _breakpoint, media = media.split("px){", 1)
     # Strip exactly the one closing brace that ends the @media block itself
     # (not a rule's own closing brace).
     return base, media[:-1] if media.endswith("}") else media
@@ -178,14 +185,28 @@ def test_one_column_and_two_column_compiled_markup_matches_live_probe():
     _craft_json, content = ec.build_email_content(sections)
     base_css, media_css = _split_style_block(content)
     assert "mj-column-per-100" in content
-    assert "width:880.0px;" in content
-    # 2 Columns: one base rule + one media-collapse rule + one div per
-    # column = 4 occurrences of the class name.
-    assert content.count("mj-column-per-50") == 4
+    # 880px, not 880.0px, at every width call site in `_render_row` —
+    # `_row_content_width_px`'s two sites and the per-column `mso_widths_px`
+    # (`_truncate4`'s output) alike. See the float-formatting fix (BCLI-025
+    # item 7).
+    assert 'role="presentation" style="width:880px;"><tr>' in content
+    assert " { max-width:880px; }" in content
+    assert 'width:880px;">' in content  # the 1-Column row's own mso <td>
+    assert "width:880.0px;" not in content
+    # 2 Columns: one base rule + one media-collapse rule + one
+    # `.moz-text-html`-prefixed rule (BCLI-025 item 2) + one div per column
+    # = 5 occurrences of the class name.
+    assert content.count("mj-column-per-50") == 5
     assert ".mj-column-per-50 { width:50% !important; max-width:50%; }" in base_css
     assert ".mj-column-per-50 { width:100% !important; max-width:100%; }" in media_css
     assert "width:50%" not in media_css
-    assert content.count("width:440.0px;") == 2
+    # The 2-Columns row's own two `content_width_px` call sites are unchanged
+    # from the 1-Column row above (same Section, so still 880/880px, not
+    # split). "440px" here is the per-column `mso_widths_px` (`_truncate4`,
+    # 0.5 * 880), once per column.
+    assert content.count("width:440px;") == 2
+    assert "width:440.0px;" not in content
+    assert not re.search(r"\.0px", content)
 
 
 def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
@@ -238,14 +259,17 @@ def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
     ) in content
 
 
-def test_render_image_compiled_markup_matches_a_real_captured_template():
-    """`_render_image` had zero automated coverage before this review round,
-    despite `position: "center"` -> `margin:0 auto` being a real fix (see
-    BCLI-024's "Third and fourth blocking defects") — exactly the "verified
-    once by hand, never pinned" pattern this item was built to catch
-    elsewhere. Verified 2026-08-26, read-only, against a real Kizen-authored
-    template on `cli-testing`: byte-exact for a plain, non-linked Image
-    node."""
+def test_render_image_fixed_width_compiled_markup_matches_the_reference_shape():
+    """`_render_image`'s output shape, re-derived from the reference
+    template's real compiled `content` (read-only `GET`, 2026-08-26) — see
+    the work item's report for the full trace. Kizen wraps every Image in a
+    two-level table (`<td class="...">` carrying block padding, a nested
+    `<table><td style="width:...">` around the `<img>`), not a bare `<img>`
+    tag as this emitter produced before BCLI-025 — the `<img>`'s own
+    attributes/style are byte-exact against the reference; the wrapper is
+    asserted structurally (tag/attribute placement), not as one giant
+    pinned string, so a future formatting-only tweak to the wrapper doesn't
+    make this test as brittle as re-deriving the whole thing by hand."""
     sections = [
         ec.section(
             [
@@ -270,34 +294,185 @@ def test_render_image_compiled_markup_matches_a_real_captured_template():
             ]
         )
     ]
-    _craft_json, content = ec.build_email_content(sections)
+    craft_json, content = ec.build_email_content(sections)
     assert (
-        '<img src="https://example.com/logo.png" alt="Logo" width="150" '
-        'style="display:block;width:150px;max-width:100%;height:auto;border:0;'
-        'margin:0 auto;" data-natural-width="200" data-natural-height="100">'
+        '<img alt="Logo" height="auto" src="https://example.com/logo.png" '
+        'width="150" style="border:0;display:block;outline:none;'
+        'text-decoration:none;height:auto;width:100%;font-size:13px;" />'
     ) in content
+    assert "data-natural-width" not in content
+    assert "data-natural-height" not in content
 
-
-def test_render_image_non_centered_position_omits_margin_auto():
-    """`Image.position` isn't spec-settable today — `_assemble_email_block`
-    hardcodes it to `"center"` (see `ImageBlockDef`'s docstring) — but
-    `_render_image` reads the value rather than assuming it, so a future
-    spec that makes `position` settable can't silently drift from what it
-    renders. There's no way to reach this branch through a spec today, so
-    it's exercised directly against `_render_image`."""
-    node = {
-        "props": {
-            "src": "https://example.com/logo.png",
-            "alt": "Logo",
-            "width": 150,
-            "position": "left",
-        }
-    }
-    img = ec._render_image(node)
-    assert "margin:0 auto" not in img
-    assert (
-        'style="display:block;width:150px;max-width:100%;height:auto;border:0;"' in img
+    image_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Image"
     )
+    # Fixed mode: no `-auto` class, and no auto-mode CSS rule at all.
+    assert f'class="{ec._image_auto_class(image_id)}"' not in content
+    assert f".{ec._image_auto_class(image_id)} > table td" not in content
+    # The outer block-level <td> carries the image's own containerPadding.
+    outer_td = re.search(
+        r'<td align="center" class="" style="background:rgba\(0,0,0,0\);'
+        r"font-size:0px;padding:10px 25px;padding-top:(\d+)px;"
+        r"padding-right:(\d+)px;padding-bottom:(\d+)px;padding-left:(\d+)px;"
+        r'word-break:break-word;">',
+        content,
+    )
+    assert outer_td, "no block-level <td> wrapper found around the Image"
+    assert outer_td.groups() == ("10", "10", "10", "10")
+    # The inner nested table's own <td> carries the img's pixel width.
+    assert '<td style="width:150px;">' in content
+
+
+def test_render_image_with_link_wraps_the_whole_table_in_an_anchor():
+    """Pins current output shape; not verified against a real captured
+    template. The reference template's one worked Image example (the hero)
+    has no `link`, so this case has never been checked against Kizen's own
+    compiled `content` — this test only guards against `_render_image`'s
+    `<a>`-wrapping silently changing shape, e.g. reverting to wrapping just
+    the bare `<img>` instead of the whole two-level table."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell(
+                            [
+                                ec.image_block(
+                                    file_id="f1",
+                                    src="https://example.com/logo.png",
+                                    name="logo.png",
+                                    alt="Logo",
+                                    link="https://example.com/landing",
+                                    natural_width=200,
+                                    natural_height=100,
+                                    width=150,
+                                )
+                            ]
+                        )
+                    ],
+                    layout="1 Column",
+                )
+            ]
+        )
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    anchor_open = '<a href="https://example.com/landing" target="_blank">'
+    assert anchor_open in content
+    start = content.index(anchor_open) + len(anchor_open)
+    # The anchor wraps the ENTIRE image table, not just the <img> tag —
+    # everything between the anchor open and its matching close is the
+    # two-level table this fix is pinning, ending right where the <img>'s
+    # own markup does.
+    assert content[start : start + len('<table border="0"')] == '<table border="0"'
+    img_end = content.index("/>", start) + len("/>")
+    assert content[
+        img_end : img_end + len("</td></tr></table></td></tr></table></a>")
+    ] == ("</td></tr></table></td></tr></table></a>")
+
+
+def test_render_image_auto_mode_uses_section_container_width_and_natural_width_rule():
+    """Auto mode (`width` omitted in the spec): the `<img>`'s `width`
+    attribute becomes the parent Section's own `containerWidth`, and a
+    `.image-<nodeId>-auto > table td` rule caps it at the image's own
+    `naturalWidth` — both confirmed against the reference template's one
+    real auto-mode Image node (`containerWidth: 600`, `naturalWidth: 1200`
+    -> `width="600"` and `max-width: 1200px` in that exact rule shape)."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell(
+                            [
+                                ec.image_block(
+                                    file_id="f1",
+                                    src="https://example.com/hero.png",
+                                    name="hero.png",
+                                    alt="Hero",
+                                    natural_width=1200,
+                                    natural_height=630,
+                                )
+                            ]
+                        )
+                    ],
+                    layout="1 Column",
+                    container_width="600",
+                )
+            ],
+            container_width="900",
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    image_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Image"
+    )
+    assert "width" not in craft_json[image_id]["props"]
+    assert craft_json[image_id]["props"]["size"] == "auto"
+
+    auto_class = ec._image_auto_class(image_id)
+    assert f'class="{auto_class}"' in content
+    assert (
+        f".{auto_class} > table td {{ width: 100% !important; max-width: 1200px; }}"
+        in content
+    )
+    # Auto width comes from the Row's parent SECTION's own containerWidth
+    # (900), not the Row's own containerWidth (600) and not the image's own
+    # naturalWidth (1200) — the fallback chain's first, most-specific rung.
+    assert (
+        '<img alt="Hero" height="auto" src="https://example.com/hero.png" '
+        'width="900"' in content
+    )
+    assert '<td style="width:900px;">' in content
+
+
+def test_render_image_auto_mode_falls_back_to_root_max_width_when_section_unset():
+    """When the parent Section has no explicit `container_width` at all
+    (the common case for an unmodified spec), auto mode falls back to
+    `Root.props.maxWidth`. Inferred, not observed live — the work item's
+    Open questions flags this as the fallback with the weakest evidence in
+    this item, since the reference template's one auto-mode image had an
+    explicit `Section.containerWidth` set."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell(
+                            [
+                                ec.image_block(
+                                    file_id="f1",
+                                    src="https://example.com/hero.png",
+                                    name="hero.png",
+                                    natural_width=1200,
+                                    natural_height=630,
+                                )
+                            ]
+                        )
+                    ],
+                    layout="1 Column",
+                )
+            ]
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    section_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
+    )
+    assert "containerWidth" not in craft_json[section_id]["props"]
+    # EMAIL_ROOT_PROPS["maxWidth"] == "900".
+    assert 'width="900"' in content
+    assert '<td style="width:900px;">' in content
+
+
+def test_image_and_section_class_conventions_share_id_formatting():
+    """The `.image-<nodeId>-auto` and `.section-<nodeId>` conventions must
+    not drift apart from each other — pinned here, together, per the work
+    item's explicit constraint, rather than trusting two independently
+    hand-rolled f-strings to stay in sync. Both wrap the SAME node id in
+    the SAME `<prefix>-<nodeId>[-suffix]` shape."""
+    for node_id in ["abc123", "0" * 24, "a-node-with-dashes"]:
+        assert ec._section_class(node_id) == f"section-{node_id}"
+        assert ec._image_auto_class(node_id) == f"image-{node_id}-auto"
 
 
 def test_exactly_one_tr_per_row_regardless_of_column_count():
@@ -710,8 +885,8 @@ def test_compiled_content_row_width_tracks_section_max_width_with_default_paddin
     ]
     craft_json, content = ec.build_email_content(sections)
     row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
-    assert _row_style_max_width_px(content, row_id) == "580.0"
-    assert _mso_table_width_px(content, row_id) == "580.0"
+    assert _row_style_max_width_px(content, row_id) == "580"
+    assert _mso_table_width_px(content, row_id) == "580"
 
 
 def test_compiled_content_row_width_tracks_section_max_width_with_zero_padding():
@@ -726,8 +901,8 @@ def test_compiled_content_row_width_tracks_section_max_width_with_zero_padding()
     ]
     craft_json, content = ec.build_email_content(sections)
     row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
-    assert _row_style_max_width_px(content, row_id) == "600.0"
-    assert _mso_table_width_px(content, row_id) == "600.0"
+    assert _row_style_max_width_px(content, row_id) == "600"
+    assert _mso_table_width_px(content, row_id) == "600"
 
 
 def test_compiled_content_row_width_defaults_to_880_matching_pre_bcli_024_output():
@@ -739,8 +914,8 @@ def test_compiled_content_row_width_defaults_to_880_matching_pre_bcli_024_output
     ]
     craft_json, content = ec.build_email_content(sections)
     row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
-    assert _row_style_max_width_px(content, row_id) == "880.0"
-    assert _mso_table_width_px(content, row_id) == "880.0"
+    assert _row_style_max_width_px(content, row_id) == "880"
+    assert _mso_table_width_px(content, row_id) == "880"
 
 
 def test_compiled_content_row_width_prefers_explicit_row_container_width_over_section():
@@ -763,8 +938,8 @@ def test_compiled_content_row_width_prefers_explicit_row_container_width_over_se
     craft_json, content = ec.build_email_content(sections)
     row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
     assert craft_json[row_id]["props"]["containerWidth"] == "450"
-    assert _row_style_max_width_px(content, row_id) == "450.0"
-    assert _mso_table_width_px(content, row_id) == "450.0"
+    assert _row_style_max_width_px(content, row_id) == "450"
+    assert _mso_table_width_px(content, row_id) == "450"
 
 
 def test_compiled_content_two_rows_in_one_template_get_independent_widths():
@@ -787,7 +962,7 @@ def test_compiled_content_two_rows_in_one_template_get_independent_widths():
     row_ids = [nid for nid, n in craft_json.items() if _resolved_name(n) == "Row"]
     assert len(row_ids) == 2
     widths = sorted(_row_style_max_width_px(content, rid) for rid in row_ids)
-    assert widths == ["580.0", "600.0"]
+    assert widths == ["580", "600"]
 
 
 def test_compiled_content_column_split_truncates_to_four_decimals_at_a_non_default_width():
@@ -1230,7 +1405,7 @@ def test_content_reflects_every_layout_prop_this_item_added():
 
     # --- RowDef.container_width (Row B): DIRECT, trusted over the
     # Section-derived formula Row A exercises above.
-    assert _row_style_max_width_px(content, row_b) == "271.0"
+    assert _row_style_max_width_px(content, row_b) == "271"
 
     # --- RowDef.padding (Row A): DIRECT, on the Row's own wrapper div —
     # independent of Section's own padding, asserted above as a different
@@ -1251,23 +1426,263 @@ def test_content_reflects_every_layout_prop_this_item_added():
     # left/right were added by ButtonBlockDef; order is top/right/bottom/left.
     assert "padding:10px 37px 10px 33px;" in button_fragment
 
+    # --- SectionDef.container_width: DIRECT as of BCLI-025 (was
+    # craft_json-only through BCLI-024 — see that item's Outcome). Kizen's
+    # real `content` applies it to an outer background-table wrapper;
+    # `_render_section` now builds a simplified version of that wrapper
+    # (mso-conditional table only, no VML background-image fallback, since
+    # this emitter has no background-image concept — see the work item's
+    # report for that scoping call).
+    assert 'width="919" style="width:919px;"' in content
+    assert f".{ec._section_class(section_id)} {{ max-width:919px; }}" in content
+
     # --- Fields confirmed craft_json-only by checking Kizen's own compiled
     # output for the reference template (not merely "no consumer in
     # `_render_*`" — see the process note in BCLI-024's work item for why
     # that alone isn't sufficient):
-    #   * SectionDef.container_width — deferred to BCLI-025, not exempt by
-    #     design. Kizen's real content DOES apply it, to an outer
-    #     background-table wrapper this emitter hasn't built yet.
     #   * ImageBlockDef.container_width/max_width/max_height (content's
     #     `<img>` always uses the emitter's own `width`/fixed
     #     `max-width:100%` pair — these three new props have no consumer in
     #     `_render_image`, and this one *is* confirmed absent from the
     #     reference's compiled content too).
-    assert craft_json[section_id]["props"]["containerWidth"] == "919"
     assert craft_json[row_a]["props"]["width"] == "77"
     assert craft_json[image_id]["props"]["containerWidth"] == "401"
     assert craft_json[image_id]["props"]["maxWidth"] == "403"
     assert craft_json[image_id]["props"]["maxHeight"] == "407"
+
+
+# ---------------------------------------------------------------------------
+# BCLI-025 — compiled `content` fidelity against Kizen's own compiler.
+# Every fix below was checked against the reference template's REAL compiled
+# `content` (read-only `GET`, `cli-testing`, 2026-08-26), not inferred from
+# `craft_json` or from "no consumer exists in `_render_*`" — see that item's
+# report for the trace. In binding priority order.
+# ---------------------------------------------------------------------------
+
+
+def test_font_family_reaches_every_text_blocks_wrapper(monkeypatch: pytest.MonkeyPatch):
+    """Divergence 1 (highest priority): compiled `content` carried NO
+    `font-family` for text at all before this fix — every recipient
+    rendered in the client's serif fallback. Fixed via the
+    `kizen-text-styles` wrapper div Kizen's own compiler uses (confirmed
+    structurally against the reference), sourced from `Root.props`, never
+    `TextBlockDef`/`_render_paragraphs` (BCLI-023's scope — untouched)."""
+    monkeypatch.setitem(ec.EMAIL_ROOT_PROPS, "fontFamily", "Georgia")
+    monkeypatch.setitem(ec.EMAIL_ROOT_PROPS, "color", "rgba(10,20,30,1)")
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert (
+        '<div class="kizen-text-styles" style="font-family:Georgia;'
+        'font-size:14px;line-height:1;text-align:left;color:#0a141e;">'
+        "<p>x</p></div>"
+    ) in content
+
+
+def test_font_family_default_matches_todays_arial_value():
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert "font-family:Arial;font-size:14px;line-height:1;" in content
+
+
+def test_rgba_to_hex_matches_the_two_conversions_confirmed_live():
+    """`Root.props.color: rgba(74,86,96,1)` -> `#4a5660` and
+    `Root.props.linkColor: rgba(82,142,249,1)` -> `#528ef9` — both read
+    directly off the reference template's compiled `content`."""
+    assert ec._rgba_to_hex("rgba(74,86,96,1)") == "#4a5660"
+    assert ec._rgba_to_hex("rgba(82,142,249,1)") == "#528ef9"
+    assert ec._rgba_to_hex("#FFFFFF") == "#FFFFFF"  # passes through non-rgba unchanged
+
+
+def test_moz_text_html_rule_exists_for_every_column_class_in_a_multi_column_layout():
+    """Divergence 2: Gecko-based mail clients (Thunderbird and others) key
+    column-stacking behaviour off `.moz-text-html`-prefixed rules — real,
+    recipient-visible, but scoped to that client family. Parses the
+    compiled `<style>` block and asserts the rule exists for each
+    `mj-column-per-*` class a multi-column layout actually uses."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell([ec.text_block("<p>a</p>")]),
+                        ec.cell([ec.text_block("<p>b</p>")]),
+                    ],
+                    layout="2 Columns (1/3 and 2/3)",
+                )
+            ]
+        )
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    moz_style = re.search(
+        r'<style media="screen and \(min-width:\d+px\)">(.*?)</style>', content
+    )
+    assert moz_style, "no .moz-text-html style block found"
+    moz_css = moz_style.group(1)
+    assert (
+        ".moz-text-html .mj-column-per-33-333332 "
+        "{ width:33.333332% !important; max-width:33.333332%; }"
+    ) in moz_css
+    assert (
+        ".moz-text-html .mj-column-per-66-666664 "
+        "{ width:66.666664% !important; max-width:66.666664%; }"
+    ) in moz_css
+
+
+def test_no_moz_text_html_style_block_when_template_has_no_rows():
+    """`_moz_text_html_style_block` returns nothing when there are no `Row`
+    nodes to derive column classes from, rather than an empty/broken rule."""
+    assert ec._moz_text_html_style_block({}, "414") == ""
+
+
+def test_mjml_reset_block_is_present_and_byte_exact():
+    """Divergence 3: the static MJML reset block (`#outlook a`,
+    `body{margin:0}`, `table,td{border-collapse}`, `img{...}`,
+    `p{display:block;margin:13px 0}`) — confirmed byte-exact against the
+    reference template's compiled `content`. No per-template data, so
+    byte-exact is the right bar here (same allowance the work item gives
+    the `.moz-text-html` rule's structural shape)."""
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert (
+        '<style type="text/css">\n'
+        "#outlook a { padding: 0; }\n"
+        "body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; "
+        "-ms-text-size-adjust: 100%; }\n"
+        "table, td { border-collapse: collapse; mso-table-lspace: 0pt; "
+        "mso-table-rspace: 0pt; }\n"
+        "img { border: 0; height: auto; line-height: 100%; outline: none; "
+        "text-decoration: none; -ms-interpolation-mode: bicubic; }\n"
+        "p { display: block; margin: 13px 0; }\n"
+        "</style>"
+    ) in content
+
+
+def test_mobile_break_breakpoint_reads_root_props_not_hardcoded_480(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Divergence 4: the mobile-collapse media query's breakpoint must come
+    from `craft_json["ROOT"]["props"]["mobileBreak"]`, not a hardcoded
+    `480`. `mobileBreak` isn't spec-settable today (no `EmailTemplateDef`
+    field for it), so this monkeypatches `EMAIL_ROOT_PROPS` directly, per
+    the work item's own suggested approach for this test."""
+    monkeypatch.setitem(ec.EMAIL_ROOT_PROPS, "mobileBreak", "600")
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([]), ec.cell([])],
+                    layout="2 Columns",
+                )
+            ]
+        )
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert "@media only screen and (max-width:600px){" in content
+    assert "@media only screen and (max-width:480px)" not in content
+    # The .moz-text-html block's min-width also tracks the same breakpoint.
+    assert 'media="screen and (min-width:600px)"' in content
+
+
+def test_mobile_break_default_is_414_not_the_old_hardcoded_480():
+    sections = [ec.section([ec.row([ec.cell([]), ec.cell([])], layout="2 Columns")])]
+    _craft_json, content = ec.build_email_content(sections)
+    assert "@media only screen and (max-width:414px){" in content
+    assert "@media only screen and (max-width:480px)" not in content
+
+
+def test_body_background_color_reads_root_props(monkeypatch: pytest.MonkeyPatch):
+    """Divergence 5 (body-background half): `Root.props.backgroundColor`
+    must reach `<body>`'s inline style — confirmed against the reference
+    that it also reaches an outer wrapping `<div>`, not just `<body>`."""
+    monkeypatch.setitem(ec.EMAIL_ROOT_PROPS, "backgroundColor", "#112233")
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert '<body style="word-spacing:normal;background-color:#112233;">' in content
+    assert '<div style="background-color:#112233;">' in content
+
+
+def test_body_background_color_default_matches_todays_value():
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert '<body style="word-spacing:normal;background-color:#F8FAFF;">' in content
+
+
+def test_section_container_width_gets_no_outer_wrapper_when_unset():
+    """Byte-identical-defaults guarantee: a Section that doesn't set
+    `container_width` gets no outer mso wrapper table at all — matching
+    this surface's existing "None means no override" convention for every
+    other layout prop `_section_props` handles."""
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    section_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
+    )
+    assert f'class="{ec._section_class(section_id)}"' in content
+    assert 'role="presentation" align="center" width=' not in content
+
+
+def test_section_container_width_wrapper_carries_the_containerWidth_attribute():
+    """Divergence 5 (outer wrapper half): a Section with an explicit
+    `container_width` gets an mso-conditional table hosting that value as
+    both a `width` attribute and an inline `width:...px` style — matching
+    Kizen's own reference-confirmed pattern of applying `containerWidth` to
+    an outer background-table wrapper (`_render_section`'s simplified
+    version of it — see the work item's report for the scoping call on how
+    far this emitter reproduces Kizen's full VML markup)."""
+    sections = [
+        ec.section(
+            [ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")],
+            container_width="900",
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    section_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
+    )
+    assert (
+        '<!--[if mso | IE]><table border="0" cellpadding="0" cellspacing="0" '
+        'role="presentation" align="center" width="900" style="width:900px;">'
+        "<tr><td><![endif]-->"
+        f'<div class="{ec._section_class(section_id)}"'
+    ) in content
+    assert f".{ec._section_class(section_id)} {{ max-width:900px; }}" in content
+
+
+def test_float_formatted_content_width_never_prints_a_trailing_dot_zero_at_non_default_width():
+    """Divergence 7: the float-formatting artifact is general to any
+    computed row width, not just the literal 880 case (`_row_content_width_px`
+    always returns a Python `float`, per BCLI-024). A `container_width` that
+    still lands on a whole number (here 700) must print `700px`, never
+    `700.0px`, at every width call site in `_render_row` — the row's own two
+    `content_width_px` sites and the per-column mso `<td>` width alike."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.text_block("<p>x</p>")])],
+                    layout="1 Column",
+                    container_width="700",
+                )
+            ]
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
+    assert _row_style_max_width_px(content, row_id) == "700"
+    assert _mso_table_width_px(content, row_id) == "700"
+    assert not re.search(r"\.0px", content)
 
 
 def test_golden_output_for_a_small_synthetic_template(monkeypatch: pytest.MonkeyPatch):

@@ -85,7 +85,13 @@ class ImageBlockDef(BaseModel):
     link: str = ""
     width: int | None = Field(
         default=None,
-        description="Display width in px. Defaults to 150 (form_ui's default).",
+        description=(
+            "Display width in px. Omitting this triggers Kizen's own "
+            "auto-sizing mode: the image fills its parent Section's "
+            "containerWidth (or Root.maxWidth if the Section doesn't set "
+            "one) and is capped at its own natural width by a per-image "
+            "CSS rule, instead of rendering at a fixed pixel width."
+        ),
     )
     container_width: str | None = None
     max_width: str | None = None

@@ -152,14 +152,19 @@ produce, offline, with `messages templates craft-config --spec-file <f>
   for `Section`/`Row` at all, on any template, so text always rendered
   flush against the canvas edge regardless of what `craft_json` said.
 
-  **`Section.container_width` is `craft_json`-only in this emitter today,
-  but that is a deferred gap, not a by-design exemption.** Kizen's real
-  compiled `content` does apply it — to an outer full-bleed background-table
-  wrapper (mso `<td width="...">`, a `<v:fill>`, an outer `max-width`) that
-  this emitter hasn't built yet. Wiring it in is BCLI-025's scope, which
-  already owns the related "dropped `<body>` background" gap; this emitter's
-  `_render_section` goes straight from a section's own div to its rows, with
-  no such wrapper to hang the value on.
+  **`Section.container_width` reaches `content` (BCLI-025), via an outer
+  mso-conditional background-table wrapper.** An explicit `container_width`
+  gets `_render_section` to wrap the section's own div in `<!--[if mso |
+  IE]><table ... width="<containerWidth>" style="width:<containerWidth>px;">
+  ...<![endif]-->`, plus a `.section-<sectionId> { max-width:...px; }` rule
+  — a *simplified* version of Kizen's own wrapper: this emitter has no
+  background-image concept at all (only `background_color`), so it skips the
+  VML `<v:rect>`/`<v:fill>` fallback Kizen's compiler always emits alongside
+  it, even for a solid colour. Section's own `background_color` is applied
+  via a CSS class rule, as before — this fix only adds the width wrapper.
+  When `container_width` is unset (the common case for an unmodified spec),
+  `content` is unchanged from before this fix — no wrapper at all, matching
+  this surface's existing "`None` means no override" convention.
 - `sender_type` and `from_name_type` are not spec keys. They are hard-coded
   to `"business"`/`"default"`, the only values ever observed live — see
   "Other top-level fields" below. There is no `--sender-type` flag.
@@ -234,6 +239,26 @@ let it regenerate. A `craft_json`-only update leaves the email that actually
 gets sent out of sync with what the builder shows — silently, since the
 builder only ever reads `craft_json`.
 
+**This emitter's own `content` fidelity against Kizen's own compiler
+(BCLI-025).** All confirmed against the reference template's real compiled
+`content`, not inferred from `craft_json`: `font-family` (see "Text" below),
+`.moz-text-html .mj-column-per-N { ... }` rules (one per distinct column
+class, scoped to `@media (min-width:<mobileBreak>px)`, matching Kizen's own
+wrapping — Gecko clients key column-stacking behaviour off this selector),
+the static MJML reset block (`#outlook a`/`body{margin:0}`/
+`table,td{border-collapse}`/`img{...}`/`p{display:block;margin:13px 0}`),
+`@media (max-width:<mobileBreak>px)`'s breakpoint reading
+`Root.props.mobileBreak` instead of a hardcoded `480`, `<body>`'s
+`background-color` (from `Root.props.backgroundColor`) plus a matching
+outer wrapping `<div>`, and no float-formatted lengths (`880px`, never
+`880.0px`) anywhere in a row's compiled width output, including its
+per-column mso `<td>` widths. **Not** replicated: Kizen's
+own 6-`<style>`-block structure (this emitter stays at a handful of
+`<style>` tags — the block *count* is organizational, not a correctness
+gap) or its full VML/background-image fallback markup on the Section
+wrapper (see `Section.container_width` below — this emitter has no
+background-image concept at all).
+
 ### The two fields are coupled by node id
 
 Not merely parallel: the compiled HTML carries a `section-<nodeId>` class for
@@ -285,7 +310,15 @@ Block props confirmed live 2026-08-25:
 
 - **`Text`** — copy lives in `custom.text` as an HTML string, not in props.
   `content` embeds that markup **verbatim**, so comparing the two means
-  tag-stripping both sides.
+  tag-stripping both sides. The wrapper *around* that markup carries a
+  `kizen-text-styles` class and inline typography sourced from
+  `Root.props` (`fontFamily`, `fontSize`, `color` — rgba->hex converted;
+  `line-height:1`/`text-align:left` are fixed literals with no controlling
+  Root prop in the reference), confirmed against the reference template's
+  compiled `content` (BCLI-025) — before that fix, `content` carried no
+  `font-family` for text at all, so every email rendered in the client's
+  serif fallback. The `.kizen-text-styles` `<style>` rules themselves
+  (link/paragraph/list/code styling) are static except for `linkColor`.
 - **`Image`** — `src` is host-absolute, so an image reference is
   **environment-bound**; moving a template between envs needs `src`
   rewritten. Two URL schemes are both confirmed live on a plain `Image`
@@ -304,12 +337,31 @@ Block props confirmed live 2026-08-25:
   spec-file emitter's upload path sets it; a raw `upload_file()` call
   elsewhere in this repo does not unless asked (see `api/files.py`).
   `position: "center"` (the only value ever hardcoded — not spec-settable,
-  no observed alternative) compiles to `margin:0 auto;` on the `<img>`
-  itself; a plain `display:block` fixed-width image with no margin renders
-  flush left, not centered. `container_width`/`max_width`/`max_height` are
-  spec-settable (`ImageBlockDef`) but are **`craft_json`-only** — `content`'s
-  `<img>` always uses the emitter's own `width`/fixed `max-width:100%`
-  pair, confirmed by reading `_render_image`.
+  no observed alternative) compiles to `align="center"` on the block-level
+  `<td>` wrapping the image (see below) — confirmed against the reference
+  template; the `<img>` itself carries no centering style of its own.
+
+  **Two sizing modes (BCLI-025), confirmed against the reference template's
+  compiled `content`**, chosen by whether `ImageBlockDef.width` is set:
+
+  | `width` | compiled `<img>` `width` attr | `.image-<nodeId>-auto` rule |
+  |---|---|---|
+  | set (fixed mode) | that value | not emitted |
+  | omitted (auto mode) | parent Section's `containerWidth`, falling back to `Root.maxWidth` if unset (the fallback is *inferred*, not observed live) | emitted: `.image-<nodeId>-auto > table td { width:100% !important; max-width:<naturalWidth>px; }` |
+
+  Both modes compile the `<img>` to the same attribute/style set
+  (`height="auto"`, `width:100%` in the inline style alongside the explicit
+  pixel `width` attribute, `outline:none`, `text-decoration:none`,
+  `font-size:13px`) and wrap it in the same two-level table Kizen's own
+  compiler uses — an outer `<td align="center" class="...">` carrying the
+  image block's own `container*` padding, then a nested
+  `<table><td style="width:...px;">` around the `<img>`. `content`'s
+  previous `data-natural-width`/`data-natural-height` attributes are gone —
+  grepped as unused anywhere in this repo, so purely decorative in this
+  emitter's own prior output. `container_width`/`max_width`/`max_height`
+  remain spec-settable (`ImageBlockDef`) but stay **`craft_json`-only** —
+  confirmed absent from the reference's compiled `content` in both sizing
+  modes, not merely "no consumer in `_render_image`".
 - **`Button`** — `{url, label, action: "url", color, textColor, fontSize,
   fontFamily, alignment, borderSize, borderColor, borderRadius,
   padding{Top,Left,Right,Bottom}, textStyles: [], openLinkInNewTab}` plus the

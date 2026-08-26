@@ -87,6 +87,33 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Compiled email `content` no longer diverges from what Kizen's own
+  builder produces for the same layout.** Every recipient's email now
+  carries a real `font-family` for body text (`Root.props.fontFamily`,
+  via the same `kizen-text-styles` wrapper class/`<style>` rules Kizen's
+  own compiler uses) — previously `content` carried no `font-family` at
+  all, so any template without hand-inlined font styles rendered in the
+  client's serif fallback on every send. Also fixed: the missing
+  `.moz-text-html` rule (Gecko-based clients like Thunderbird key
+  column-stacking behaviour off it), the missing MJML reset block, a
+  hardcoded `480px` mobile breakpoint that now reads
+  `Root.props.mobileBreak`, a dropped `<body>` background colour, and
+  `Section.container_width` now reaching `content` via an outer
+  background-table wrapper (previously `craft_json`-only, deferred from
+  the layout-knobs change above). `Image` blocks gain a genuine
+  full-bleed auto-sizing mode — omitting `width` in an `image` spec block
+  now sizes the image to its parent Section's `containerWidth` (capped at
+  its own natural width by a per-image CSS rule) instead of silently
+  defaulting to a fixed 150px — and their compiled markup now matches
+  Kizen's own attribute/style set exactly (`data-natural-width`/
+  `data-natural-height`, confirmed unused anywhere in this repo, are
+  gone). Finally, a float-formatting artifact that printed
+  `880.0px`-style widths in the compiled CSS (or any other row whose
+  computed width happened to land on a whole number) now prints `880px`.
+  Every fix was checked against Kizen's real compiled `content` for the
+  same layout, not inferred from `craft_json` alone — see `kizen docs
+  show email-templates`.
+
 - **`kizen upgrade --check` can now find a release tag from a `uv tool
   install`/`pipx`/direct-VCS install, not just an editable checkout.**
   Previously any non-checkout install shape skipped straight to the

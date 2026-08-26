@@ -142,9 +142,16 @@ def test_create_template_from_spec_roundtrips_live(
 
     # The stored content's column-width rule must be a BASE rule, not only
     # inside the mobile @media query — confirms the fix against the real
-    # stored payload, not just the offline emitter.
-    style_start = live["content"].index('<style type="text/css">')
-    media_start = live["content"].index("@media only screen and (max-width:480px)")
+    # stored payload, not just the offline emitter. The breakpoint itself
+    # tracks `EMAIL_ROOT_PROPS["mobileBreak"]` ("414"), not the pre-BCLI-025
+    # hardcoded 480 (see `tools.email_craft._compile_html`).
+    # `.index('<style type="text/css">')` would match the MJML reset block's
+    # own `<style>` tag first (both open with the identical literal), not
+    # the main style block this assertion means to isolate — anchor on the
+    # `.mj-outlook-group-fix` marker instead, the way `test_email_craft.py`'s
+    # `_split_style_block` does.
+    style_start = live["content"].index(".mj-outlook-group-fix{width:100% !important;}")
+    media_start = live["content"].index("@media only screen and (max-width:414px)")
     base_css = live["content"][style_start:media_start]
     assert "width:33.333332% !important; max-width:33.333332%;" in base_css
 
