@@ -33,9 +33,15 @@ produce, offline, with `messages templates craft-config --spec-file <f>
   "sections": [
     {
       "background_color": "#FFFFFF",
+      "max_width": "600",
+      "container_width": "900",
+      "padding": {"top": "10", "right": "10", "bottom": "10", "left": "10"},
       "rows": [
         {
           "layout": "2 Columns",
+          "width": "100",
+          "container_width": "580",
+          "padding": {"top": "10", "right": "10", "bottom": "10", "left": "10"},
           "cells": [
             {"blocks": [{"kind": "text", "html": "<p>Left column</p>"}]},
             {"blocks": [{"kind": "image", "file": "/path/to/logo.png", "alt": "Logo"}]}
@@ -67,7 +73,8 @@ produce, offline, with `messages templates craft-config --spec-file <f>
   escape hatch (no `HTMLBlock` on this surface at all, confirmed live).
   - `text`: `{"kind": "text", "html": "<p>...</p>"}` — embedded verbatim in
     both outputs.
-  - `image`: `{"kind": "image", "file": "<local path>", "alt": "", "link": "", "width": 150}`.
+  - `image`: `{"kind": "image", "file": "<local path>", "alt": "", "link": "", "width": 150,
+    "container_width": null, "max_width": null, "max_height": null}`.
     `file` is a **local path**, not a `file_id` — there is no CLI surface to
     look one up afterward (`GET /api/files` is broken; see below), so the
     spec captures the upload at the point it happens. **PNG and JPEG only**
@@ -79,9 +86,80 @@ produce, offline, with `messages templates craft-config --spec-file <f>
     when a `create`/`update --spec-file` is actually applied; under
     `--dry-run` the CLI resolves images offline instead (a placeholder
     `fileId`/`src`, real dimensions still read from the file's own header
-    bytes) so a dry run never writes.
-  - `button`: `{"kind": "button", "label": "...", "url": "...", "color": null}`.
-  - `divider`: `{"kind": "divider", "color": null}`.
+    bytes) so a dry run never writes. `container_width`/`max_width`/
+    `max_height` default to `null`, meaning the corresponding `Image.props`
+    key is omitted entirely, matching this emitter's output before these
+    fields existed.
+  - `button`: `{"kind": "button", "label": "...", "url": "...", "color": null,
+    "border_radius": "8", "padding_left": "20", "padding_right": "20",
+    "alignment": "center"}`. `alignment` is a closed enum
+    (`left`/`center`/`right`).
+  - `divider`: `{"kind": "divider", "color": null, "size": "3"}` — `size` is
+    the rule's thickness in px.
+- `sections[].max_width`/`container_width`/`padding` and
+  `sections[].rows[].width`/`container_width`/`padding` set `Section`/`Row`
+  width and padding directly. `padding` is `{"top", "right", "bottom",
+  "left"}`, four independent strings — not a CSS-style shorthand, since the
+  wire format itself has four independent `containerPadding{Top,Right,
+  Bottom,Left}` keys (a shorthand would be a lossy abstraction over that).
+  **Confirmed live 2026-08-26 against the reference template
+  (`0bc71ca1-72c7-4f8d-934e-322d9fd40975`): `Row` layout props are not
+  uniform.** Most rows in that template share `containerWidth: '580'` and
+  uniform `10` padding, but the same template also has rows with
+  `containerWidth: '600'`, one with asymmetric padding
+  (`containerPaddingLeft/Right: '40'`, top/bottom still `10`), one with all
+  four paddings at `0`, and one with `Row.width: '75'` (not the usual
+  `100`) — `Row.containerWidth` does **not** cleanly derive from
+  `Section.max_width - 2*padding` across these observations. So
+  `width`/`container_width`/`padding` are independent, spec-settable fields
+  on both `SectionDef` and `RowDef`, never computed from one another — the
+  same "redundant-but-must-agree" trust model this surface already uses for
+  `Row.props.columns` vs. every `Cell.props.__width`.
+
+  Defaults reproduce this emitter's pre-existing hardcoded output exactly
+  (`Section.max_width: "900"`, `Row.width: "100"`, all padding uniform
+  `"10"`, no `containerWidth` key on either node) — **not** the reference
+  template's own common values (`Section.max_width: "600"`,
+  `Row.containerWidth: "580"`), which a spec sets explicitly when targeting
+  that layout.
+
+  **These values also drive the compiled `content`'s row width — not just
+  `craft_json`.** Each row's mso table width and its `.section-<rowId> {
+  max-width:...px; }` rule use an explicit `Row.container_width` directly
+  when the spec set one; otherwise they derive it as `Section.max_width -
+  (containerPaddingLeft + containerPaddingRight)` from the row's parent
+  `Section`. That result is then scaled by `Row.width` (percent, default
+  `"100"`) — confirmed live against the reference template, where a
+  `width: '75'` row on a `containerWidth: '580'` row compiles to `435px`
+  (`580 * 0.75`), not `580px`. With every field at its default this
+  reduces to exactly `900 - 10 - 10 = 880`, this emitter's original
+  hardcoded value — so an all-defaults spec's compiled HTML is unchanged. A
+  spec that sets `Section.max_width` (or a row's own `container_width`/
+  `width`) without this derivation would otherwise produce a `craft_json`
+  that renders at the new width in Kizen's builder while `content` — the
+  HTML actually sent — stayed at the old width: `craft_summary()`'s
+  `structure_coupled`/`text_in_sync` checks cannot see this class of
+  divergence, since node ids and text both still match.
+
+  **Padding follows the same rule.** Each `Section`/`Row`'s own
+  `containerPadding{Top,Right,Bottom,Left}` — default uniform `"10"` or an
+  explicit `padding` override — is rendered as an inline
+  `padding:Tpx Rpx Bpx Lpx;` (top/right/bottom/left, matching
+  `_render_button`'s existing padding order) on that node's own wrapper
+  `<div class="section-<nodeId>">` in `content`. This applies to every
+  section and row, not only ones that explicitly set the new `padding`
+  field — before this fix, `content` carried **no** padding declaration
+  for `Section`/`Row` at all, on any template, so text always rendered
+  flush against the canvas edge regardless of what `craft_json` said.
+
+  **`Section.container_width` is `craft_json`-only in this emitter today,
+  but that is a deferred gap, not a by-design exemption.** Kizen's real
+  compiled `content` does apply it — to an outer full-bleed background-table
+  wrapper (mso `<td width="...">`, a `<v:fill>`, an outer `max-width`) that
+  this emitter hasn't built yet. Wiring it in is BCLI-025's scope, which
+  already owns the related "dropped `<body>` background" gap; this emitter's
+  `_render_section` goes straight from a section's own div to its rows, with
+  no such wrapper to hang the value on.
 - `sender_type` and `from_name_type` are not spec keys. They are hard-coded
   to `"business"`/`"default"`, the only values ever observed live — see
   "Other top-level fields" below. There is no `--sender-type` flag.
@@ -225,15 +303,35 @@ Block props confirmed live 2026-08-25:
   schemes 200 unauthenticated once set, 404 on both when not). The
   spec-file emitter's upload path sets it; a raw `upload_file()` call
   elsewhere in this repo does not unless asked (see `api/files.py`).
+  `position: "center"` (the only value ever hardcoded — not spec-settable,
+  no observed alternative) compiles to `margin:0 auto;` on the `<img>`
+  itself; a plain `display:block` fixed-width image with no margin renders
+  flush left, not centered. `container_width`/`max_width`/`max_height` are
+  spec-settable (`ImageBlockDef`) but are **`craft_json`-only** — `content`'s
+  `<img>` always uses the emitter's own `width`/fixed `max-width:100%`
+  pair, confirmed by reading `_render_image`.
 - **`Button`** — `{url, label, action: "url", color, textColor, fontSize,
   fontFamily, alignment, borderSize, borderColor, borderRadius,
   padding{Top,Left,Right,Bottom}, textStyles: [], openLinkInNewTab}` plus the
   `container*` set. The emitter's compiled `content` markup for this node
   (`_render_button`) was checked byte-exact against a real Button in a
-  Kizen-authored template, read-only, 2026-08-26.
+  Kizen-authored template, read-only, 2026-08-26. `borderRadius`/
+  `padding{Left,Right}`/`alignment` are spec-settable
+  (`ButtonBlockDef.border_radius`/`padding_left`/`padding_right`/
+  `alignment`), defaulting to this emitter's pre-existing hardcoded values
+  (`"8"`/`"20"`/`"20"`/`"center"`); the reference template's own newsletter
+  button uses `"20"`/`"30"`/`"30"`/`"center"`, set explicitly, not inherited
+  as the default. `alignment` compiles to an `align="..."` attribute on the
+  button's own wrapping `<table>` (which also carries `line-height:100%;`
+  in its `style` — both confirmed present on a real Kizen-compiled button by
+  independent comparison in this item's review); without it every button
+  renders left-aligned in its cell regardless of the spec.
 - **`Divider`** — `{size, color, width, alignment, borderStyle}` plus the
   `container*` set. Same verification: `_render_divider`'s output matches a
-  real captured Divider's compiled markup byte-exact.
+  real captured Divider's compiled markup byte-exact. `size` (thickness in
+  px) is spec-settable (`DividerBlockDef.size`), defaulting to this
+  emitter's pre-existing hardcoded `"3"`; the reference template's divider
+  uses `"1"`, set explicitly.
 - **`Attachments`** — `props.attachments` is a list of **full file records**
   (id, key, url, name, size_bytes, content_type, thumbnail_url, `is_public`,
   and an `employee` object naming the uploader), plus an

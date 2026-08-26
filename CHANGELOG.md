@@ -61,6 +61,30 @@ called out explicitly under **Changed** or **Removed**.
   A real test send opened in Outlook is still the only way to confirm actual
   rendering — nothing offline can substitute for that.
 
+- **Email template specs can now set the layout knobs a designed newsletter
+  needs — `Section`/`Row` width and padding, `Divider` thickness, `Button`
+  corner radius/padding/alignment — instead of every template landing at
+  this emitter's fixed defaults.** `sections[].max_width`/`container_width`/
+  `padding` and `sections[].rows[].width`/`container_width`/`padding` set
+  `Section`/`Row` props directly; `padding` is four independent
+  `{top, right, bottom, left}` strings, matching the wire format's four
+  independent `containerPadding*` keys rather than a lossy CSS-style
+  shorthand. `button` blocks gain `border_radius`/`padding_left`/
+  `padding_right`/`alignment`; `divider` blocks gain `size`. Every new field
+  defaults to this emitter's exact pre-existing hardcoded value, so a spec
+  that sets none of them produces the same output as before this change.
+  The compiled `content` HTML's row widths now track these same values too
+  (previously frozen at a hardcoded 880px regardless of what the spec set —
+  a real `craft_json`/`content` divergence, the exact failure this whole
+  surface exists to prevent), `content` now carries `Section`/`Row`
+  padding at all (previously absent entirely, on every template — text
+  always rendered flush against the canvas edge regardless of what
+  `craft_json` said), `content`'s `Button` markup now carries `align`
+  (previously every button rendered left-aligned regardless of the spec's
+  `alignment`), and a centered `Image` (`position: "center"`, the only
+  value this surface sets) now actually renders centered in `content`
+  instead of flush left.
+
 ### Fixed
 
 - **`kizen upgrade --check` can now find a release tag from a `uv tool

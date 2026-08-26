@@ -535,6 +535,7 @@ def _assemble_row(
     *,
     cell_props: Callable[[float | None], dict[str, Any]] | None = None,
     block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
+    row_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> str:
     row_id = _new_id()
     cells = row_spec["cells"]
@@ -551,16 +552,19 @@ def _assemble_row(
         )
         for i, c in enumerate(cells)
     ]
+    props = {
+        "columns": columns,
+        **_CONTAINER_DEFAULTS,
+        "maxWidth": "900",
+        "width": "100",
+        "alignment": "center",
+    }
+    if row_props:
+        props.update(row_props(row_spec))
     content[row_id] = {
         "type": {"resolvedName": "Row"},
         "isCanvas": False,
-        "props": {
-            "columns": columns,
-            **_CONTAINER_DEFAULTS,
-            "maxWidth": "900",
-            "width": "100",
-            "alignment": "center",
-        },
+        "props": props,
         "displayName": "Row",
         "custom": {},
         "parent": parent_id,
@@ -578,6 +582,8 @@ def _assemble_section(
     *,
     cell_props: Callable[[float | None], dict[str, Any]] | None = None,
     block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
+    section_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    row_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> str:
     section_id = _new_id()
     row_ids = [
@@ -587,19 +593,23 @@ def _assemble_section(
             content,
             cell_props=cell_props,
             block_assembler=block_assembler,
+            row_props=row_props,
         )
         for r in section_spec["rows"]
     ]
+    props = {
+        **_CONTAINER_DEFAULTS,
+        "containerBackgroundColor": section_spec.get("background_color", "#FFFFFF"),
+        "maxWidth": "900",
+        "width": "100",
+        "alignment": "center",
+    }
+    if section_props:
+        props.update(section_props(section_spec))
     content[section_id] = {
         "type": {"resolvedName": "Section"},
         "isCanvas": True,
-        "props": {
-            **_CONTAINER_DEFAULTS,
-            "containerBackgroundColor": section_spec.get("background_color", "#FFFFFF"),
-            "maxWidth": "900",
-            "width": "100",
-            "alignment": "center",
-        },
+        "props": props,
         "displayName": "Section",
         "custom": {},
         "parent": parent_id,
@@ -616,6 +626,8 @@ def build_content_tree(
     root_props: dict[str, Any] | None = None,
     cell_props: Callable[[float | None], dict[str, Any]] | None = None,
     block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
+    section_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    row_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Assemble a ``Root`` → ``Section`` → ``Row`` → ``Cell`` → block
     camelCase craft.js tree from :func:`section`/:func:`row`/:func:`cell`/
@@ -639,13 +651,22 @@ def build_content_tree(
     ``Cell.props`` or leaf-block prop shapes differ from this module's forms
     defaults — see ``tools.email_craft``, which needs ``Cell.props`` to carry
     ``{"__width": <fraction>}`` and its own Button/Divider prop construction.
-    Both default to ``None``, which reproduces today's exact output — the
+    ``section_props``/``row_props`` are the same shape of hook for
+    ``Section``/``Row`` props — each takes the section/row spec dict and
+    returns a props-override dict merged over this module's defaults. All
+    four default to ``None``, which reproduces today's exact output — the
     call sites in this file and in ``tools/layouts.py`` are unaffected.
     """
     content: dict[str, Any] = {}
     section_ids = [
         _assemble_section(
-            s, "ROOT", content, cell_props=cell_props, block_assembler=block_assembler
+            s,
+            "ROOT",
+            content,
+            cell_props=cell_props,
+            block_assembler=block_assembler,
+            section_props=section_props,
+            row_props=row_props,
         )
         for s in sections
     ]

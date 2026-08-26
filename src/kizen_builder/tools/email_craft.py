@@ -36,6 +36,7 @@ degrading. There is no raw-HTML escape hatch on this surface (no
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from html import escape
 from pathlib import Path
@@ -49,6 +50,7 @@ from kizen_builder.models.spec.email_templates import (
     DividerBlockDef,
     EmailTemplateDef,
     ImageBlockDef,
+    PaddingDef,
     TextBlockDef,
 )
 from kizen_builder.tools import form_ui
@@ -132,7 +134,7 @@ _CONTAINER_DEFAULTS: dict[str, Any] = {
 
 
 class ColumnLayout:
-    __slots__ = ("preset", "columns", "classes", "media_widths", "mso_widths_px")
+    __slots__ = ("preset", "columns", "classes", "media_widths")
 
     def __init__(
         self,
@@ -140,17 +142,20 @@ class ColumnLayout:
         columns: tuple[float, ...],
         classes: tuple[str, ...],
         media_widths: tuple[str, ...],
-        mso_widths_px: tuple[float, ...],
     ) -> None:
         self.preset = preset
         self.columns = columns
         self.classes = classes
         self.media_widths = media_widths
-        self.mso_widths_px = mso_widths_px
 
 
-# 880px content width in every case observed (900 Root maxWidth - 20px padding).
-CONTENT_WIDTH_PX = 880.0
+# 880px was the content width in every case observed pre-BCLI-024 (900
+# Section maxWidth - 20px padding, both hardcoded at the time). Now that
+# `Section.max_width`/`Row.container_width`/padding are spec-settable
+# (BCLI-024), the actual per-row pixel width is computed by
+# `_row_content_width_px` below, not held as one constant — see that
+# function's docstring for the fallback formula, which reduces to exactly
+# 880.0 when nothing is overridden.
 
 COLUMN_LAYOUTS: dict[str, ColumnLayout] = {
     "1 Column": ColumnLayout(
@@ -158,28 +163,24 @@ COLUMN_LAYOUTS: dict[str, ColumnLayout] = {
         (1,),
         ("mj-column-per-100",),
         ("100%",),
-        (880.0,),
     ),
     "2 Columns": ColumnLayout(
         "2 Columns",
         (0.5, 0.5),
         ("mj-column-per-50", "mj-column-per-50"),
         ("50%", "50%"),
-        (440.0, 440.0),
     ),
     "2 Columns (1/3 and 2/3)": ColumnLayout(
         "2 Columns (1/3 and 2/3)",
         (0.3333333333333333, 0.6666666666666666),
         ("mj-column-per-33-333332", "mj-column-per-66-666664"),
         ("33.333332%", "66.666664%"),
-        (293.3333, 586.6666),
     ),
     "2 Columns (2/3 and 1/3)": ColumnLayout(
         "2 Columns (2/3 and 1/3)",
         (0.6666666666666666, 0.3333333333333333),
         ("mj-column-per-66-666664", "mj-column-per-33-333332"),
         ("66.666664%", "33.333332%"),
-        (586.6666, 293.3333),
     ),
 }
 
@@ -226,6 +227,9 @@ def image_block(
     width: int | None = None,
     natural_width: int | None = None,
     natural_height: int | None = None,
+    container_width: str | None = None,
+    max_width: str | None = None,
+    max_height: str | None = None,
 ) -> dict[str, Any]:
     return {
         "kind": "image",
@@ -237,28 +241,62 @@ def image_block(
         "width": width,
         "natural_width": natural_width,
         "natural_height": natural_height,
+        "container_width": container_width,
+        "max_width": max_width,
+        "max_height": max_height,
     }
 
 
-def button_block(label: str, url: str, *, color: str | None = None) -> dict[str, Any]:
-    return {"kind": "button", "label": label, "url": url, "color": color}
+def button_block(
+    label: str,
+    url: str,
+    *,
+    color: str | None = None,
+    border_radius: str | None = None,
+    padding_left: str | None = None,
+    padding_right: str | None = None,
+    alignment: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "kind": "button",
+        "label": label,
+        "url": url,
+        "color": color,
+        "border_radius": border_radius,
+        "padding_left": padding_left,
+        "padding_right": padding_right,
+        "alignment": alignment,
+    }
 
 
-def divider_block(color: str | None = None) -> dict[str, Any]:
-    return {"kind": "divider", "color": color}
+def divider_block(
+    color: str | None = None, *, size: str | None = None
+) -> dict[str, Any]:
+    return {"kind": "divider", "color": color, "size": size}
 
 
 def cell(blocks: list[dict[str, Any]]) -> dict[str, Any]:
     return {"blocks": blocks}
 
 
-def row(cells: list[dict[str, Any]], layout: str = "1 Column") -> dict[str, Any]:
+def row(
+    cells: list[dict[str, Any]],
+    layout: str = "1 Column",
+    *,
+    width: str | None = None,
+    container_width: str | None = None,
+    padding: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """One row using a v1 column preset by name.
 
     Raises ``ValueError`` — never a silent reshape — for an unknown preset
     name or a cell count that doesn't match it, naming the valid presets or
     the expected count. The planner (``tools.planners.messages``) catches
     this and re-raises as a ``PlanError``.
+
+    ``width``/``container_width``/``padding`` default to ``None`` — no
+    override, reproducing today's exact hardcoded output — see
+    ``_row_props``.
     """
     if layout in _OUT_OF_SCOPE_LAYOUTS:
         raise ValueError(
@@ -275,13 +313,34 @@ def row(cells: list[dict[str, Any]], layout: str = "1 Column") -> dict[str, Any]
         raise ValueError(
             f"layout {layout!r} needs {len(preset.columns)} cell(s), got {len(cells)}"
         )
-    return {"cells": cells, "columns": list(preset.columns), "layout": layout}
+    return {
+        "cells": cells,
+        "columns": list(preset.columns),
+        "layout": layout,
+        "width": width,
+        "container_width": container_width,
+        "padding": padding,
+    }
 
 
 def section(
-    rows: list[dict[str, Any]], *, background_color: str = "#FFFFFF"
+    rows: list[dict[str, Any]],
+    *,
+    background_color: str = "#FFFFFF",
+    max_width: str | None = None,
+    container_width: str | None = None,
+    padding: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    return {"rows": rows, "background_color": background_color}
+    """``max_width``/``container_width``/``padding`` default to ``None`` — no
+    override, reproducing today's exact hardcoded output — see
+    ``_section_props``."""
+    return {
+        "rows": rows,
+        "background_color": background_color,
+        "max_width": max_width,
+        "container_width": container_width,
+        "padding": padding,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +469,49 @@ def _cell_props(width: float | None) -> dict[str, Any]:
     return {"__width": width}
 
 
+def _padding_overrides(padding: dict[str, str] | None) -> dict[str, Any]:
+    if padding is None:
+        return {}
+    return {
+        "containerPaddingTop": padding["top"],
+        "containerPaddingRight": padding["right"],
+        "containerPaddingBottom": padding["bottom"],
+        "containerPaddingLeft": padding["left"],
+    }
+
+
+def _section_props(section_spec: dict[str, Any]) -> dict[str, Any]:
+    """The ``section_props`` hook for ``form_ui.build_content_tree``: an
+    overrides dict merged over form_ui's own Section defaults. ``None``
+    values from ``SectionDef.container_width``/``padding`` mean "no
+    override" — the containerWidth key stays absent and padding stays
+    form_ui's hardcoded uniform ``"10"``, exactly matching this emitter's
+    output before this hook existed."""
+    overrides: dict[str, Any] = {}
+    if section_spec.get("max_width") is not None:
+        overrides["maxWidth"] = section_spec["max_width"]
+    if section_spec.get("container_width") is not None:
+        overrides["containerWidth"] = section_spec["container_width"]
+    overrides.update(_padding_overrides(section_spec.get("padding")))
+    return overrides
+
+
+def _row_props(row_spec: dict[str, Any]) -> dict[str, Any]:
+    """The ``row_props`` hook for ``form_ui.build_content_tree`` — see
+    ``_section_props``. `Row` layout props are not uniform across the
+    reference template (`containerWidth`, padding, and `width` itself vary
+    row-to-row with no clean derivation from `Section.max_width`/padding),
+    so these are independent overrides, never computed from the parent
+    Section."""
+    overrides: dict[str, Any] = {}
+    if row_spec.get("width") is not None:
+        overrides["width"] = row_spec["width"]
+    if row_spec.get("container_width") is not None:
+        overrides["containerWidth"] = row_spec["container_width"]
+    overrides.update(_padding_overrides(row_spec.get("padding")))
+    return overrides
+
+
 def _assemble_email_block(
     block: dict[str, Any], parent_id: str, content: dict[str, Any]
 ) -> str:
@@ -429,26 +531,33 @@ def _assemble_email_block(
             "linkedNodes": {},
         }
     elif kind == "image":
+        image_props: dict[str, Any] = {
+            **_CONTAINER_DEFAULTS,
+            "size": "dynamic",
+            "unit": "pixel",
+            "height": None,
+            "width": block.get("width") or 150,
+            "display": "flex",
+            "position": "center",
+            "alt": block.get("alt", ""),
+            "link": block.get("link", ""),
+            "src": block["src"],
+            "name": block["name"],
+            "fileId": block["file_id"],
+            "naturalHeight": block.get("natural_height"),
+            "naturalWidth": block.get("natural_width"),
+            "dimension": "width",
+        }
+        if block.get("container_width") is not None:
+            image_props["containerWidth"] = block["container_width"]
+        if block.get("max_width") is not None:
+            image_props["maxWidth"] = block["max_width"]
+        if block.get("max_height") is not None:
+            image_props["maxHeight"] = block["max_height"]
         node = {
             "type": {"resolvedName": "Image"},
             "isCanvas": False,
-            "props": {
-                **_CONTAINER_DEFAULTS,
-                "size": "dynamic",
-                "unit": "pixel",
-                "height": None,
-                "width": block.get("width") or 150,
-                "display": "flex",
-                "position": "center",
-                "alt": block.get("alt", ""),
-                "link": block.get("link", ""),
-                "src": block["src"],
-                "name": block["name"],
-                "fileId": block["file_id"],
-                "naturalHeight": block.get("natural_height"),
-                "naturalWidth": block.get("natural_width"),
-                "dimension": "width",
-            },
+            "props": image_props,
             "displayName": "Image",
             "custom": {},
             "parent": parent_id,
@@ -469,13 +578,13 @@ def _assemble_email_block(
                 "textColor": "rgba(255,255,255,1)",
                 "fontSize": "16",
                 "fontFamily": "Arial",
-                "alignment": "center",
+                "alignment": block.get("alignment") or "center",
                 "borderSize": "0",
                 "borderColor": "rgba(0,0,0,1)",
-                "borderRadius": "8",
+                "borderRadius": block.get("border_radius") or "8",
                 "paddingTop": "10",
-                "paddingLeft": "20",
-                "paddingRight": "20",
+                "paddingLeft": block.get("padding_left") or "20",
+                "paddingRight": block.get("padding_right") or "20",
                 "paddingBottom": "10",
                 "textStyles": [],
                 "openLinkInNewTab": True,
@@ -493,7 +602,7 @@ def _assemble_email_block(
             "isCanvas": False,
             "props": {
                 **_CONTAINER_DEFAULTS,
-                "size": "3",
+                "size": block.get("size") or "3",
                 "color": block.get("color") or "rgba(78,193,145,1)",
                 "width": "100",
                 "alignment": "center",
@@ -537,8 +646,10 @@ def _layout_for_columns(columns: list[float]) -> ColumnLayout:
 def _render_button(node: dict[str, Any]) -> str:
     p = node["props"]
     return (
-        '<table role="presentation" border="0" cellpadding="0" cellspacing="0" '
-        'style="border-collapse:separate;">'
+        '<table role="presentation" '
+        f'align="{p["alignment"]}" '
+        'border="0" cellpadding="0" cellspacing="0" '
+        'style="border-collapse:separate;line-height:100%;">'
         "<tr><td "
         f'style="border-radius:{p["borderRadius"]}px;background:{p["color"]};'
         f'text-align:center;" '
@@ -563,10 +674,17 @@ def _render_divider(node: dict[str, Any]) -> str:
 
 def _render_image(node: dict[str, Any]) -> str:
     p = node["props"]
+    # `position: "center"` (the only value this surface ever sets, hardcoded
+    # in `_assemble_email_block` — see `models.spec.email_templates`'s
+    # `ImageBlockDef` docstring) means "center this block-level, fixed-width
+    # image within its cell" — the standard `margin:0 auto` technique. Read
+    # from props rather than hardcoded here so the render side can't drift
+    # from craft_json's own value if a future spec ever makes this settable.
+    align_style = "margin:0 auto;" if p.get("position") == "center" else ""
     img = (
         f'<img src="{escape(p["src"], quote=True)}" alt="{escape(p.get("alt") or "")}" '
         f'width="{p["width"]}" style="display:block;width:{p["width"]}px;'
-        'max-width:100%;height:auto;border:0;" '
+        f'max-width:100%;height:auto;border:0;{align_style}" '
         f'data-natural-width="{p.get("naturalWidth")}" '
         f'data-natural-height="{p.get("naturalHeight")}">'
     )
@@ -596,20 +714,83 @@ def _render_cell(cell_id: str, craft_json: dict[str, Any]) -> str:
     return "".join(_render_block(craft_json[bid]) for bid in node["nodes"])
 
 
+def _truncate4(value: float) -> float:
+    """Truncate (not round) to 4 decimal places — matches the live-confirmed
+    column-width convention (`293.3333`, not `293.3333333333333` or the
+    rounded `293.3334`; `586.6666`, not the rounded `586.6667`)."""
+    return math.floor(value * 10000) / 10000
+
+
+def _row_content_width_px(row_id: str, craft_json: dict[str, Any]) -> float:
+    """The row's actual compiled pixel width — the value the mso table and
+    the `.section-<rowId> { max-width:...px; }` rule must use.
+
+    Trusts an explicit `Row.props.containerWidth` when the spec set one
+    directly (BCLI-024's independent, spec-settable field — the same
+    "explicit, not derived" trust model this surface already uses for
+    `Row.props.columns`/`Cell.props.__width`). Otherwise derives it from the
+    parent `Section`'s own `maxWidth` and padding: content width = maxWidth
+    - (paddingLeft + paddingRight) — the formula this module's `content
+    width` comment already stated, now actually applied instead of frozen
+    as one hardcoded constant. With every prop at its pre-BCLI-024 default
+    (`Section.maxWidth: "900"`, padding `"10"` each side), this reduces to
+    exactly `900 - 10 - 10 = 880.0`, the old hardcoded value — so unmodified
+    specs compile identically to before.
+
+    Either way, the result is then scaled by `Row.props.width` (percent,
+    default `"100"`) — Kizen's real compiler applies this as a genuine
+    multiplier on top of `containerWidth`/the derived width, confirmed
+    against the reference template (`width: '75'` on a `containerWidth:
+    '580'` row compiles to `435px`, not `580px`). A default `"100"` makes
+    this a no-op.
+    """
+    row_props = craft_json[row_id]["props"]
+    if "containerWidth" in row_props:
+        base_width = float(row_props["containerWidth"])
+    else:
+        section_props = craft_json[craft_json[row_id]["parent"]]["props"]
+        max_width = float(section_props["maxWidth"])
+        pad_left = float(section_props.get("containerPaddingLeft", 0))
+        pad_right = float(section_props.get("containerPaddingRight", 0))
+        base_width = max_width - pad_left - pad_right
+    return base_width * float(row_props.get("width", 100)) / 100
+
+
+def _padding_css(props: dict[str, Any]) -> str:
+    """CSS `padding` shorthand (top/right/bottom/left, no unit suffix on the
+    value) from a node's own `containerPadding{Top,Right,Bottom,Left}`
+    props — the same order `_render_button` already uses for its own
+    padding. Reads whatever `Section`/`Row` actually carries in
+    `craft_json`, default `"10"` or an explicit spec override alike, so
+    `content` cannot silently disagree with `craft_json` the way it did
+    before this fix (Section/Row padding never reached the compiled output
+    at all)."""
+    return (
+        f"{props.get('containerPaddingTop', '0')}px "
+        f"{props.get('containerPaddingRight', '0')}px "
+        f"{props.get('containerPaddingBottom', '0')}px "
+        f"{props.get('containerPaddingLeft', '0')}px"
+    )
+
+
 def _render_row(row_id: str, craft_json: dict[str, Any]) -> tuple[str, str]:
     """Return (body_html, style_rule) for one Row."""
     node = craft_json[row_id]
     columns = node["props"]["columns"]
     layout = _layout_for_columns(columns)
     cell_ids = [node["linkedNodes"][f"column-{i + 1}"] for i in range(len(columns))]
+    content_width_px = _row_content_width_px(row_id, craft_json)
+    mso_widths_px = [_truncate4(content_width_px * frac) for frac in layout.columns]
 
-    parts = [f'<div class="section-{row_id}">']
+    parts = [
+        f'<div class="section-{row_id}" style="padding:{_padding_css(node["props"])};">'
+    ]
     parts.append(
         '<!--[if mso | IE]><table align="center" border="0" cellpadding="0" '
         'cellspacing="0" role="presentation" '
-        f'style="width:{CONTENT_WIDTH_PX}px;"><tr>'
+        f'style="width:{content_width_px}px;"><tr>'
     )
-    columns_data = zip(cell_ids, layout.classes, layout.mso_widths_px, strict=True)
+    columns_data = zip(cell_ids, layout.classes, mso_widths_px, strict=True)
     for i, (cid, cls, mso_w) in enumerate(columns_data):
         if i == 0:
             parts.append(
@@ -630,7 +811,7 @@ def _render_row(row_id: str, craft_json: dict[str, Any]) -> tuple[str, str]:
     parts.append("<!--[if mso | IE]></td></tr></table><![endif]-->")
     parts.append("</div>")
 
-    style_rule = f".section-{row_id} {{ max-width:{CONTENT_WIDTH_PX}px; }}"
+    style_rule = f".section-{row_id} {{ max-width:{content_width_px}px; }}"
     return "".join(parts), style_rule
 
 
@@ -645,7 +826,12 @@ def _render_section(
         row_html, row_style = _render_row(row_id, craft_json)
         rows_html.append(row_html)
         style_rules.append(row_style)
-    body = f'<div class="section-{section_id}">' + "".join(rows_html) + "</div>"
+    section_padding = _padding_css(node["props"])
+    body = (
+        f'<div class="section-{section_id}" style="padding:{section_padding};">'
+        + "".join(rows_html)
+        + "</div>"
+    )
     return body, style_rules
 
 
@@ -744,6 +930,8 @@ def build_email_content(sections: list[dict[str, Any]]) -> tuple[dict[str, Any],
         root_props=EMAIL_ROOT_PROPS,
         cell_props=_cell_props,
         block_assembler=_assemble_email_block,
+        section_props=_section_props,
+        row_props=_row_props,
     )
     content = _compile_html(craft_json)
     return craft_json, content
@@ -783,23 +971,48 @@ def assemble_sections(resolved_sections: list[dict[str, Any]]) -> list[dict[str,
                                 width=b.get("width"),
                                 natural_width=b.get("natural_width"),
                                 natural_height=b.get("natural_height"),
+                                container_width=b.get("container_width"),
+                                max_width=b.get("max_width"),
+                                max_height=b.get("max_height"),
                             )
                         )
                     elif kind == "button":
                         blocks.append(
-                            button_block(b["label"], b["url"], color=b.get("color"))
+                            button_block(
+                                b["label"],
+                                b["url"],
+                                color=b.get("color"),
+                                border_radius=b.get("border_radius"),
+                                padding_left=b.get("padding_left"),
+                                padding_right=b.get("padding_right"),
+                                alignment=b.get("alignment"),
+                            )
                         )
                     elif kind == "divider":
-                        blocks.append(divider_block(b.get("color")))
+                        blocks.append(divider_block(b.get("color"), size=b.get("size")))
                     else:
                         raise ValueError(
                             f"unsupported block kind: {kind!r}. Supported: "
                             f"{', '.join(known_block_kinds())}"
                         )
                 cells.append(cell(blocks))
-            rows.append(row(cells, layout=r["layout"]))
+            rows.append(
+                row(
+                    cells,
+                    layout=r["layout"],
+                    width=r.get("width"),
+                    container_width=r.get("container_width"),
+                    padding=r.get("padding"),
+                )
+            )
         sections.append(
-            section(rows, background_color=s.get("background_color", "#FFFFFF"))
+            section(
+                rows,
+                background_color=s.get("background_color", "#FFFFFF"),
+                max_width=s.get("max_width"),
+                container_width=s.get("container_width"),
+                padding=s.get("padding"),
+            )
         )
     return sections
 
@@ -815,6 +1028,10 @@ def assemble_sections(resolved_sections: list[dict[str, Any]]) -> list[dict[str,
 # make that obvious rather than looking like a real id a spec could paste in.
 OFFLINE_FILE_PLACEHOLDER = "<FILE_UUID>"
 OFFLINE_HOST_PLACEHOLDER = "<HOST>"
+
+
+def _padding_dict(padding: PaddingDef | None) -> dict[str, str] | None:
+    return padding.model_dump() if padding is not None else None
 
 
 def _walk_blocks(
@@ -838,17 +1055,47 @@ def _walk_blocks(
                                 "label": b.label,
                                 "url": b.url,
                                 "color": b.color,
+                                "border_radius": b.border_radius,
+                                "padding_left": b.padding_left,
+                                "padding_right": b.padding_right,
+                                "alignment": b.alignment,
                             }
                         )
                     elif isinstance(b, DividerBlockDef):
-                        blocks.append({"kind": "divider", "color": b.color})
+                        blocks.append(
+                            {"kind": "divider", "color": b.color, "size": b.size}
+                        )
                     elif isinstance(b, ImageBlockDef):
-                        blocks.append({"kind": "image", **resolve_image(b)})
+                        blocks.append(
+                            {
+                                "kind": "image",
+                                **resolve_image(b),
+                                "container_width": b.container_width,
+                                "max_width": b.max_width,
+                                "max_height": b.max_height,
+                            }
+                        )
                     else:  # pragma: no cover - the discriminated union rejects this
                         raise ValueError(f"unsupported block: {b!r}")
                 cells.append({"blocks": blocks})
-            rows.append({"layout": r.layout, "cells": cells})
-        sections.append({"rows": rows, "background_color": s.background_color})
+            rows.append(
+                {
+                    "layout": r.layout,
+                    "cells": cells,
+                    "width": r.width,
+                    "container_width": r.container_width,
+                    "padding": _padding_dict(r.padding),
+                }
+            )
+        sections.append(
+            {
+                "rows": rows,
+                "background_color": s.background_color,
+                "max_width": s.max_width,
+                "container_width": s.container_width,
+                "padding": _padding_dict(s.padding),
+            }
+        )
     return sections
 
 

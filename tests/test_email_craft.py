@@ -194,7 +194,14 @@ def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
     is byte-exact against that template's actual compiled `content` for a
     Button/Divider node carrying the same props. The real template's own
     copy/URL/color never enter this repo (personal-data rule) — the values
-    below are synthetic, chosen to exercise the same code path."""
+    below are synthetic, chosen to exercise the same code path.
+
+    **Corrected 2026-08-26, same-day, in BCLI-024 review**: the original
+    assertion here was missing the button table's own `align="center"` and
+    `line-height:100%;` — both confirmed present in Kizen's real compile of
+    the same button by independent comparison, and both now load-bearing
+    for `Button.alignment` actually reaching `content` (see
+    `test_content_reflects_every_layout_prop_this_item_added` below)."""
     sections = [
         ec.section(
             [
@@ -216,8 +223,9 @@ def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
     ]
     _craft_json, content = ec.build_email_content(sections)
     assert (
-        '<table role="presentation" border="0" cellpadding="0" cellspacing="0" '
-        'style="border-collapse:separate;"><tr><td '
+        '<table role="presentation" align="center" border="0" cellpadding="0" '
+        'cellspacing="0" style="border-collapse:separate;line-height:100%;">'
+        "<tr><td "
         'style="border-radius:8px;background:#1B64F2;text-align:center;" '
         'bgcolor="#1B64F2"><a href="https://example.com" target="_blank" '
         'style="display:inline-block;background:#1B64F2;color:rgba(255,255,255,1);'
@@ -228,6 +236,68 @@ def test_button_and_divider_compiled_markup_matches_a_real_captured_template():
         '<p style="border-top:3px solid #E5E7EB;font-size:1px;margin:0 auto;'
         'width:100%;"> </p>'
     ) in content
+
+
+def test_render_image_compiled_markup_matches_a_real_captured_template():
+    """`_render_image` had zero automated coverage before this review round,
+    despite `position: "center"` -> `margin:0 auto` being a real fix (see
+    BCLI-024's "Third and fourth blocking defects") — exactly the "verified
+    once by hand, never pinned" pattern this item was built to catch
+    elsewhere. Verified 2026-08-26, read-only, against a real Kizen-authored
+    template on `cli-testing`: byte-exact for a plain, non-linked Image
+    node."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell(
+                            [
+                                ec.image_block(
+                                    file_id="f1",
+                                    src="https://example.com/logo.png",
+                                    name="logo.png",
+                                    alt="Logo",
+                                    natural_width=200,
+                                    natural_height=100,
+                                    width=150,
+                                )
+                            ]
+                        )
+                    ],
+                    layout="1 Column",
+                )
+            ]
+        )
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert (
+        '<img src="https://example.com/logo.png" alt="Logo" width="150" '
+        'style="display:block;width:150px;max-width:100%;height:auto;border:0;'
+        'margin:0 auto;" data-natural-width="200" data-natural-height="100">'
+    ) in content
+
+
+def test_render_image_non_centered_position_omits_margin_auto():
+    """`Image.position` isn't spec-settable today — `_assemble_email_block`
+    hardcodes it to `"center"` (see `ImageBlockDef`'s docstring) — but
+    `_render_image` reads the value rather than assuming it, so a future
+    spec that makes `position` settable can't silently drift from what it
+    renders. There's no way to reach this branch through a spec today, so
+    it's exercised directly against `_render_image`."""
+    node = {
+        "props": {
+            "src": "https://example.com/logo.png",
+            "alt": "Logo",
+            "width": 150,
+            "position": "left",
+        }
+    }
+    img = ec._render_image(node)
+    assert "margin:0 auto" not in img
+    assert (
+        'style="display:block;width:150px;max-width:100%;height:auto;border:0;"' in img
+    )
 
 
 def test_exactly_one_tr_per_row_regardless_of_column_count():
@@ -458,6 +528,746 @@ def test_offline_resolve_spec_images_reads_local_dims_without_uploading(tmp_path
 # Golden fixture — deterministic ids, byte-exact output for a small synthetic
 # template. Regression net for accidental format drift in the emitter.
 # ---------------------------------------------------------------------------
+
+
+def _props_of(craft_json: dict, kind: str) -> dict:
+    return next(n["props"] for n in craft_json.values() if _resolved_name(n) == kind)
+
+
+def _all_props_of(craft_json: dict, kind: str) -> list[dict]:
+    return [n["props"] for n in craft_json.values() if _resolved_name(n) == kind]
+
+
+# ---------------------------------------------------------------------------
+# Layout props (BCLI-024) — actual emitted prop values and placement, not
+# merely "the key exists somewhere". The regression test pins the
+# all-defaults case byte-identical to the pre-this-item emitter's exact
+# key set — see the model's own defaults for why (SectionDef.max_width is
+# "900", not the reference's "600").
+# ---------------------------------------------------------------------------
+
+
+def test_all_defaults_spec_is_byte_identical_to_the_pre_item_section_and_row_props():
+    """Pins BCLI-024's own regression-safety acceptance criterion: a spec
+    that sets none of the new layout fields must reproduce the *exact* key
+    set `form_ui._assemble_section`/`_assemble_row` produced before this
+    item — in particular, no `containerWidth` key at all (it was never
+    written before this item added the field)."""
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    craft_json, _content = ec.build_email_content(sections)
+
+    section_props = _props_of(craft_json, "Section")
+    assert section_props["maxWidth"] == "900"
+    assert section_props["width"] == "100"
+    assert "containerWidth" not in section_props
+    assert section_props["containerPaddingTop"] == "10"
+    assert section_props["containerPaddingRight"] == "10"
+    assert section_props["containerPaddingBottom"] == "10"
+    assert section_props["containerPaddingLeft"] == "10"
+
+    row_props = _props_of(craft_json, "Row")
+    assert row_props["maxWidth"] == "900"
+    assert row_props["width"] == "100"
+    assert "containerWidth" not in row_props
+    assert row_props["containerPaddingTop"] == "10"
+    assert row_props["containerPaddingRight"] == "10"
+    assert row_props["containerPaddingBottom"] == "10"
+    assert row_props["containerPaddingLeft"] == "10"
+
+
+def test_section_layout_props_are_emitted_when_set_matching_the_reference_pattern():
+    """Values chosen to match the pattern independently confirmed live
+    against the reference template's `Section` nodes (BCLI-024 Context):
+    `maxWidth: '600'`, `containerWidth: '900'`, uniform padding `10` (or
+    `0` on the one full-bleed section observed)."""
+    sections = [
+        ec.section(
+            [ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")],
+            max_width="600",
+            container_width="900",
+            padding={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+        )
+    ]
+    craft_json, _content = ec.build_email_content(sections)
+    props = _props_of(craft_json, "Section")
+    assert props["maxWidth"] == "600"
+    assert props["containerWidth"] == "900"
+    assert props["containerPaddingTop"] == "0"
+    assert props["containerPaddingRight"] == "0"
+    assert props["containerPaddingBottom"] == "0"
+    assert props["containerPaddingLeft"] == "0"
+
+
+def test_row_layout_props_are_emitted_when_set_including_asymmetric_padding():
+    """Values chosen to match the reference's non-uniform rows (BCLI-024
+    Context): one row at `width: '75'` (not `'100'`), one row with
+    asymmetric `containerPaddingLeft/Right: '40'` against `'10'`
+    top/bottom — `Row` props are independent, not derived from `Section`."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.text_block("<p>x</p>")])],
+                    layout="1 Column",
+                    width="75",
+                    container_width="600",
+                    padding={"top": "10", "right": "40", "bottom": "10", "left": "40"},
+                )
+            ]
+        )
+    ]
+    craft_json, _content = ec.build_email_content(sections)
+    props = _props_of(craft_json, "Row")
+    assert props["width"] == "75"
+    assert props["containerWidth"] == "600"
+    assert props["containerPaddingTop"] == "10"
+    assert props["containerPaddingRight"] == "40"
+    assert props["containerPaddingBottom"] == "10"
+    assert props["containerPaddingLeft"] == "40"
+
+
+def test_row_layout_props_are_independent_per_row_not_uniform_across_a_section():
+    """The load-bearing design fact this item's Context established: `Row`
+    layout props don't follow a clean formula from the parent `Section`, so
+    two rows in the same section can carry different values."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.text_block("<p>a</p>")])],
+                    layout="1 Column",
+                    container_width="580",
+                ),
+                ec.row(
+                    [ec.cell([ec.text_block("<p>b</p>")])],
+                    layout="1 Column",
+                    container_width="600",
+                ),
+            ]
+        )
+    ]
+    craft_json, _content = ec.build_email_content(sections)
+    widths = sorted(p["containerWidth"] for p in _all_props_of(craft_json, "Row"))
+    assert widths == ["580", "600"]
+
+
+# ---------------------------------------------------------------------------
+# Compiled `content` must track the SAME width `craft_json` carries — a
+# blocking defect found in review: `content`'s mso table/media widths were
+# still pinned to a module-level 880px constant, never reacting to
+# `Section.max_width`/`Row.container_width`/padding, so a spec with
+# `max_width: "600"` produced a `craft_json` that renders at 600px in
+# Kizen's builder and a `content` that still renders at 880px — the exact
+# two-fields-disagree failure this whole surface exists to prevent
+# (`craft_summary()` can't see it: node ids and text both still match).
+# ---------------------------------------------------------------------------
+
+
+def _row_style_max_width_px(content: str, row_id: str) -> str:
+    m = re.search(rf"\.section-{row_id} \{{ max-width:([0-9.]+)px; \}}", content)
+    assert m, f"no max-width rule found for row {row_id}"
+    return m.group(1)
+
+
+def _mso_table_width_px(content: str, row_id: str) -> str:
+    # The row's own opening <div class="section-{row_id}" ...> is
+    # immediately followed by its mso table; scope the search to that row's
+    # own fragment so a multi-row template can't match a sibling row's
+    # table. Matches on the class prefix only (not a full tag), since the
+    # div also carries a `style="padding:...;"` attribute.
+    start = content.index(f'<div class="section-{row_id}"')
+    fragment = content[start : start + 400]
+    m = re.search(r'role="presentation" style="width:([0-9.]+)px;"', fragment)
+    assert m, f"no mso table width found for row {row_id}"
+    return m.group(1)
+
+
+def _row_padding_css(content: str, row_id: str) -> str:
+    m = re.search(rf'<div class="section-{row_id}" style="padding:([^;"]+);"', content)
+    assert m, f"no padding style found on row {row_id}'s own wrapper div"
+    return m.group(1)
+
+
+def _section_padding_css(content: str, section_id: str) -> str:
+    m = re.search(
+        rf'<div class="section-{section_id}" style="padding:([^;"]+);"', content
+    )
+    assert m, f"no padding style found on section {section_id}'s own wrapper div"
+    return m.group(1)
+
+
+def test_compiled_content_row_width_tracks_section_max_width_with_default_padding():
+    """The coordinator's own repro: `max_width: '600'` on a section with the
+    default (uniform `'10'`) padding must compile to 580px in `content`,
+    not the old hardcoded 880px."""
+    sections = [
+        ec.section(
+            [ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")],
+            max_width="600",
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
+    assert _row_style_max_width_px(content, row_id) == "580.0"
+    assert _mso_table_width_px(content, row_id) == "580.0"
+
+
+def test_compiled_content_row_width_tracks_section_max_width_with_zero_padding():
+    """Same section `max_width`, but full-bleed (`padding: 0/0/0/0`) — must
+    compile to 600px, not 580px and not 880px."""
+    sections = [
+        ec.section(
+            [ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")],
+            max_width="600",
+            padding={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
+    assert _row_style_max_width_px(content, row_id) == "600.0"
+    assert _mso_table_width_px(content, row_id) == "600.0"
+
+
+def test_compiled_content_row_width_defaults_to_880_matching_pre_bcli_024_output():
+    """No overrides at all: must still compile to 880px — today's exact
+    pre-existing hardcoded value, now *derived* (900 Section maxWidth - 10 -
+    10 padding) rather than frozen as a constant."""
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
+    assert _row_style_max_width_px(content, row_id) == "880.0"
+    assert _mso_table_width_px(content, row_id) == "880.0"
+
+
+def test_compiled_content_row_width_prefers_explicit_row_container_width_over_section():
+    """An explicit `Row.container_width` is trusted directly, even when it
+    disagrees with what the Section-derived formula would produce —
+    matching BCLI-024's "independent, explicit fields" design, the same
+    trust model as `Row.props.columns`/`Cell.props.__width`."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.text_block("<p>x</p>")])],
+                    layout="1 Column",
+                    container_width="450",
+                )
+            ],
+            max_width="600",
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
+    assert craft_json[row_id]["props"]["containerWidth"] == "450"
+    assert _row_style_max_width_px(content, row_id) == "450.0"
+    assert _mso_table_width_px(content, row_id) == "450.0"
+
+
+def test_compiled_content_two_rows_in_one_template_get_independent_widths():
+    """Two sections with different `max_width`/padding in the SAME
+    template compile to two DIFFERENT row widths in `content` — proving
+    the width is computed per row, not held as one module-level value that
+    the last section computed would silently apply to every row."""
+    sections = [
+        ec.section(
+            [ec.row([ec.cell([ec.text_block("<p>a</p>")])], layout="1 Column")],
+            max_width="600",
+        ),
+        ec.section(
+            [ec.row([ec.cell([ec.text_block("<p>b</p>")])], layout="1 Column")],
+            max_width="600",
+            padding={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+        ),
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    row_ids = [nid for nid, n in craft_json.items() if _resolved_name(n) == "Row"]
+    assert len(row_ids) == 2
+    widths = sorted(_row_style_max_width_px(content, rid) for rid in row_ids)
+    assert widths == ["580.0", "600.0"]
+
+
+def test_compiled_content_column_split_truncates_to_four_decimals_at_a_non_default_width():
+    """The mso per-column pixel split must use the SAME truncate-to-4-
+    decimals convention the live-confirmed 880px defaults already used
+    (`293.3333`, not the rounded `293.3334` or the full-precision
+    `293.3333333333333`), generalized to a non-880 row width."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell([ec.text_block("<p>a</p>")]),
+                        ec.cell([ec.text_block("<p>b</p>")]),
+                    ],
+                    layout="2 Columns (1/3 and 2/3)",
+                    container_width="580",
+                )
+            ]
+        )
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert "width:193.3333px;" in content
+    assert "width:386.6666px;" in content
+
+
+# ---------------------------------------------------------------------------
+# Compiled `content` must also carry `Section`/`Row` padding — a second
+# blocking defect found in review, same root cause as the width bug:
+# `_render_row`/`_render_section` built their markup without ever reading
+# `containerPadding{Top,Right,Bottom,Left}`, so `content` had NO padding
+# declaration for `Section`/`Row` at all (text rendered flush against the
+# canvas edge), regardless of what `craft_json` said.
+# ---------------------------------------------------------------------------
+
+
+def test_compiled_content_section_padding_matches_craft_json_when_set():
+    sections = [
+        ec.section(
+            [ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")],
+            padding={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    section_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
+    )
+    assert _section_padding_css(content, section_id) == "0px 0px 0px 0px"
+
+
+def test_compiled_content_row_padding_matches_craft_json_when_set():
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.text_block("<p>x</p>")])],
+                    layout="1 Column",
+                    padding={"top": "20", "right": "20", "bottom": "20", "left": "20"},
+                )
+            ]
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
+    assert _row_padding_css(content, row_id) == "20px 20px 20px 20px"
+
+
+def test_compiled_content_padding_defaults_to_uniform_10_matching_craft_json():
+    """No overrides at all: `content` must still carry the SAME uniform
+    `'10'` padding `craft_json` has always defaulted to — this is not a new
+    field's default, it's a pre-existing prop that `content` simply never
+    rendered before this fix, on every section and row, not just ones that
+    explicitly set the new `padding` field."""
+    sections = [
+        ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    section_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
+    )
+    row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
+    assert _section_padding_css(content, section_id) == "10px 10px 10px 10px"
+    assert _row_padding_css(content, row_id) == "10px 10px 10px 10px"
+
+
+def test_compiled_content_padding_matches_craft_json_for_the_asymmetric_case():
+    """The coordinator's own repro shape: left/right differ from top/bottom
+    (`20/30/20/30`, not a uniform value) — a fix that only handles the
+    uniform default would pass the two tests above and still fail this
+    one."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.text_block("<p>x</p>")])],
+                    layout="1 Column",
+                    padding={"top": "20", "right": "30", "bottom": "20", "left": "30"},
+                )
+            ],
+            padding={"top": "10", "right": "40", "bottom": "10", "left": "40"},
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    section_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
+    )
+    row_id = next(nid for nid, n in craft_json.items() if _resolved_name(n) == "Row")
+    assert _section_padding_css(content, section_id) == "10px 40px 10px 40px"
+    assert _row_padding_css(content, row_id) == "20px 30px 20px 30px"
+
+
+def test_compiled_content_padding_is_independent_per_row_and_section():
+    """Two sections, each with its own row, all four carrying different
+    padding — proving padding is read per node, not one value leaking
+    across the template (the same class of bug the width fix already
+    guarded against)."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.text_block("<p>a</p>")])],
+                    layout="1 Column",
+                    padding={"top": "20", "right": "20", "bottom": "20", "left": "20"},
+                )
+            ],
+            padding={"top": "10", "right": "10", "bottom": "10", "left": "10"},
+        ),
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.text_block("<p>b</p>")])],
+                    layout="1 Column",
+                    padding={"top": "30", "right": "30", "bottom": "30", "left": "30"},
+                )
+            ],
+            padding={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+        ),
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    section_ids = [
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
+    ]
+    row_ids = [nid for nid, n in craft_json.items() if _resolved_name(n) == "Row"]
+    section_paddings = sorted(_section_padding_css(content, sid) for sid in section_ids)
+    row_paddings = sorted(_row_padding_css(content, rid) for rid in row_ids)
+    assert section_paddings == ["0px 0px 0px 0px", "10px 10px 10px 10px"]
+    assert row_paddings == ["20px 20px 20px 20px", "30px 30px 30px 30px"]
+
+
+def test_divider_size_is_emitted_when_set():
+    sections = [
+        ec.section([ec.row([ec.cell([ec.divider_block(size="1")])], layout="1 Column")])
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    props = _props_of(craft_json, "Divider")
+    assert props["size"] == "1"
+    assert "border-top:1px solid" in content
+
+
+def test_divider_size_defaults_to_3_when_unset():
+    sections = [
+        ec.section([ec.row([ec.cell([ec.divider_block()])], layout="1 Column")])
+    ]
+    craft_json, _content = ec.build_email_content(sections)
+    assert _props_of(craft_json, "Divider")["size"] == "3"
+
+
+def test_button_layout_props_are_emitted_when_set_matching_the_reference_pattern():
+    """Values chosen to match the pattern independently confirmed live
+    against the reference template's `Button` node (BCLI-024 Context):
+    `borderRadius: '20'`, `padding{Left,Right}: '30'`, `alignment: 'left'`."""
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell(
+                            [
+                                ec.button_block(
+                                    "Go",
+                                    "https://example.com",
+                                    border_radius="20",
+                                    padding_left="30",
+                                    padding_right="30",
+                                    alignment="left",
+                                )
+                            ]
+                        )
+                    ],
+                    layout="1 Column",
+                )
+            ]
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+    props = _props_of(craft_json, "Button")
+    assert props["borderRadius"] == "20"
+    assert props["paddingLeft"] == "30"
+    assert props["paddingRight"] == "30"
+    assert props["alignment"] == "left"
+    assert "border-radius:20px;" in content
+    assert "padding:10px 30px 10px 30px;" in content
+
+
+def test_button_layout_props_default_to_todays_hardcoded_values_when_unset():
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [ec.cell([ec.button_block("Go", "https://example.com")])],
+                    layout="1 Column",
+                )
+            ]
+        )
+    ]
+    craft_json, _content = ec.build_email_content(sections)
+    props = _props_of(craft_json, "Button")
+    assert props["borderRadius"] == "8"
+    assert props["paddingLeft"] == "20"
+    assert props["paddingRight"] == "20"
+    assert props["alignment"] == "center"
+
+
+def test_image_layout_props_are_emitted_only_when_set():
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell(
+                            [
+                                ec.image_block(
+                                    file_id="f1",
+                                    src="https://host/api/files/f1/download",
+                                    name="logo.png",
+                                    container_width="580",
+                                    max_width="300",
+                                    max_height="200",
+                                )
+                            ]
+                        )
+                    ],
+                    layout="1 Column",
+                )
+            ]
+        )
+    ]
+    craft_json, _content = ec.build_email_content(sections)
+    props = _props_of(craft_json, "Image")
+    assert props["containerWidth"] == "580"
+    assert props["maxWidth"] == "300"
+    assert props["maxHeight"] == "200"
+
+
+def test_image_layout_props_are_absent_by_default_matching_todays_output():
+    sections = [
+        ec.section(
+            [
+                ec.row(
+                    [
+                        ec.cell(
+                            [
+                                ec.image_block(
+                                    file_id="f1",
+                                    src="https://host/api/files/f1/download",
+                                    name="logo.png",
+                                )
+                            ]
+                        )
+                    ],
+                    layout="1 Column",
+                )
+            ]
+        )
+    ]
+    craft_json, _content = ec.build_email_content(sections)
+    props = _props_of(craft_json, "Image")
+    assert "containerWidth" not in props
+    assert "maxWidth" not in props
+    assert "maxHeight" not in props
+
+
+def test_spec_driven_layout_props_flow_end_to_end_from_email_template_def():
+    """The full path this item wires: `EmailTemplateDef` -> `_walk_blocks`
+    -> `assemble_sections` -> `build_email_content`, for one section/row
+    carrying every new field at once."""
+    spec = EmailTemplateDef.model_validate(
+        {
+            "name": "Newsletter",
+            "sections": [
+                {
+                    "max_width": "600",
+                    "container_width": "900",
+                    "padding": {"top": "0", "right": "0", "bottom": "0", "left": "0"},
+                    "rows": [
+                        {
+                            "layout": "1 Column",
+                            "width": "75",
+                            "container_width": "580",
+                            "padding": {
+                                "top": "10",
+                                "right": "40",
+                                "bottom": "10",
+                                "left": "40",
+                            },
+                            "cells": [
+                                {
+                                    "blocks": [
+                                        {
+                                            "kind": "button",
+                                            "label": "Go",
+                                            "url": "https://x",
+                                            "border_radius": "20",
+                                            "padding_left": "30",
+                                            "padding_right": "30",
+                                            "alignment": "left",
+                                        }
+                                    ]
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    resolved = ec.offline_resolve_spec_images(spec)
+    sections = ec.assemble_sections(resolved)
+    craft_json, _content = ec.build_email_content(sections)
+
+    section_props = _props_of(craft_json, "Section")
+    assert section_props["maxWidth"] == "600"
+    assert section_props["containerWidth"] == "900"
+
+    row_props = _props_of(craft_json, "Row")
+    assert row_props["width"] == "75"
+    assert row_props["containerWidth"] == "580"
+    assert row_props["containerPaddingRight"] == "40"
+
+    button_props = _props_of(craft_json, "Button")
+    assert button_props["borderRadius"] == "20"
+    assert button_props["alignment"] == "left"
+
+
+# ---------------------------------------------------------------------------
+# Systematic content-coverage test — added in review after THREE separate
+# craft_json-vs-content divergences were found by hand (width, then padding,
+# then Button.alignment/Image.position): a new field landing correctly in
+# craft_json and silently never reaching content is this item's recurring
+# failure mode, and it was invisible to every acceptance test up to this
+# point because the original reference-diff only ever compared craft_json.
+# This test walks every field BCLI-024 added and asserts its value reaches
+# content ON THE RIGHT NODE — not merely somewhere in the document — with a
+# named, commented exemption for any field confirmed to be craft_json-only
+# by design, never a silent pass.
+# ---------------------------------------------------------------------------
+
+
+def test_content_reflects_every_layout_prop_this_item_added():
+    """One fixture, every new field set to a distinctive, individually
+    identifiable value, so a bug that reads the wrong node's prop (not just
+    "no prop at all") would also be caught."""
+
+    def resolved(n: dict) -> str:
+        t = n.get("type")
+        return t.get("resolvedName") if isinstance(t, dict) else t
+
+    sections = [
+        ec.section(
+            [
+                # Row A: no explicit container_width, so Section.max_width's
+                # effect on the compiled row width is directly observable
+                # (isolated from Row B's own explicit override below).
+                ec.row(
+                    [
+                        ec.cell(
+                            [
+                                ec.divider_block(size="7"),
+                                ec.button_block(
+                                    "Go",
+                                    "https://example.com",
+                                    border_radius="31",
+                                    padding_left="33",
+                                    padding_right="37",
+                                    alignment="right",
+                                ),
+                                ec.image_block(
+                                    file_id="f1",
+                                    src="https://host/x",
+                                    name="x.png",
+                                    container_width="401",
+                                    max_width="403",
+                                    max_height="407",
+                                ),
+                            ]
+                        )
+                    ],
+                    layout="1 Column",
+                    width="77",  # exempt, see below
+                    padding={"top": "21", "right": "23", "bottom": "27", "left": "29"},
+                ),
+                # Row B: explicit container_width, proving it's trusted
+                # directly rather than only ever derived from the Section.
+                ec.row(
+                    [ec.cell([ec.text_block("<p>b</p>")])],
+                    layout="1 Column",
+                    container_width="271",
+                ),
+            ],
+            max_width="543",
+            container_width="919",  # exempt, see below
+            padding={"top": "11", "right": "13", "bottom": "17", "left": "19"},
+        )
+    ]
+    craft_json, content = ec.build_email_content(sections)
+
+    section_id = next(nid for nid, n in craft_json.items() if resolved(n) == "Section")
+    row_ids = [nid for nid, n in craft_json.items() if resolved(n) == "Row"]
+    row_a = next(
+        rid for rid in row_ids if craft_json[rid]["props"].get("width") == "77"
+    )
+    row_b = next(
+        rid
+        for rid in row_ids
+        if craft_json[rid]["props"].get("containerWidth") == "271"
+    )
+    image_id = next(nid for nid, n in craft_json.items() if resolved(n) == "Image")
+
+    # --- SectionDef.max_width: INDIRECT — with no Row.container_width
+    # override, Row A's derived width is 543 - 19 - 13 = 511.0 (Section's
+    # own left/right padding, not Row A's).
+    # --- RowDef.width: DIRECT — a genuine multiplier on top of that derived
+    # width, confirmed against the reference template (a `width: '75'` row
+    # there compiles narrower than its `containerWidth`, not equal to it).
+    # 511.0 * 0.77 = 393.47.
+    assert _row_style_max_width_px(content, row_a) == "393.47"
+
+    # --- SectionDef.padding: DIRECT, on the Section's own wrapper div.
+    assert _section_padding_css(content, section_id) == "11px 13px 17px 19px"
+
+    # --- RowDef.container_width (Row B): DIRECT, trusted over the
+    # Section-derived formula Row A exercises above.
+    assert _row_style_max_width_px(content, row_b) == "271.0"
+
+    # --- RowDef.padding (Row A): DIRECT, on the Row's own wrapper div —
+    # independent of Section's own padding, asserted above as a different
+    # value (21/23/27/29 vs. 11/13/17/19).
+    assert _row_padding_css(content, row_a) == "21px 23px 27px 29px"
+
+    # --- DividerBlockDef.size: DIRECT, in the compiled border-top rule.
+    assert "border-top:7px" in content
+
+    # --- ButtonBlockDef.border_radius/padding_left/padding_right/alignment:
+    # DIRECT, all on the Button's own compiled table/anchor markup. Scoped
+    # to this button's own fragment (not "somewhere in content") by
+    # locating its distinctive align="right".
+    button_start = content.index('<table role="presentation" align="right"')
+    button_fragment = content[button_start : button_start + 500]
+    assert "border-radius:31px" in button_fragment
+    # Top/bottom stay this item's pre-existing hardcoded "10" — only
+    # left/right were added by ButtonBlockDef; order is top/right/bottom/left.
+    assert "padding:10px 37px 10px 33px;" in button_fragment
+
+    # --- Fields confirmed craft_json-only by checking Kizen's own compiled
+    # output for the reference template (not merely "no consumer in
+    # `_render_*`" — see the process note in BCLI-024's work item for why
+    # that alone isn't sufficient):
+    #   * SectionDef.container_width — deferred to BCLI-025, not exempt by
+    #     design. Kizen's real content DOES apply it, to an outer
+    #     background-table wrapper this emitter hasn't built yet.
+    #   * ImageBlockDef.container_width/max_width/max_height (content's
+    #     `<img>` always uses the emitter's own `width`/fixed
+    #     `max-width:100%` pair — these three new props have no consumer in
+    #     `_render_image`, and this one *is* confirmed absent from the
+    #     reference's compiled content too).
+    assert craft_json[section_id]["props"]["containerWidth"] == "919"
+    assert craft_json[row_a]["props"]["width"] == "77"
+    assert craft_json[image_id]["props"]["containerWidth"] == "401"
+    assert craft_json[image_id]["props"]["maxWidth"] == "403"
+    assert craft_json[image_id]["props"]["maxHeight"] == "407"
 
 
 def test_golden_output_for_a_small_synthetic_template(monkeypatch: pytest.MonkeyPatch):

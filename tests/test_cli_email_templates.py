@@ -187,6 +187,84 @@ def test_create_dry_run_with_an_image_block_uploads_nothing(tmp_path):
     assert image_node["props"]["fileId"] == ec.OFFLINE_FILE_PLACEHOLDER
 
 
+@respx.mock
+def test_craft_config_reflects_layout_props_from_the_spec(tmp_path):
+    """BCLI-024's acceptance criterion: `craft-config` reflects every new
+    prop in its output, exercised through the actual CLI command — not
+    just the model accepting the field."""
+    spec = {
+        "name": "Newsletter",
+        "sections": [
+            {
+                "max_width": "600",
+                "container_width": "900",
+                "padding": {"top": "0", "right": "0", "bottom": "0", "left": "0"},
+                "rows": [
+                    {
+                        "layout": "1 Column",
+                        "width": "75",
+                        "container_width": "580",
+                        "padding": {
+                            "top": "10",
+                            "right": "40",
+                            "bottom": "10",
+                            "left": "40",
+                        },
+                        "cells": [
+                            {
+                                "blocks": [
+                                    {
+                                        "kind": "button",
+                                        "label": "Go",
+                                        "url": "https://x",
+                                        "border_radius": "20",
+                                        "padding_left": "30",
+                                        "padding_right": "30",
+                                        "alignment": "left",
+                                    },
+                                    {"kind": "divider", "size": "1"},
+                                ]
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(spec))
+    result = runner.invoke(
+        cli.app,
+        ["messages", "templates", "craft-config", "--spec-file", str(spec_file)],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    craft_json = payload["craft_json"]
+
+    def props_of(kind):
+        return next(
+            n["props"]
+            for n in craft_json.values()
+            if isinstance(n, dict) and n.get("type", {}).get("resolvedName") == kind
+        )
+
+    section_props = props_of("Section")
+    assert section_props["maxWidth"] == "600"
+    assert section_props["containerWidth"] == "900"
+
+    row_props = props_of("Row")
+    assert row_props["width"] == "75"
+    assert row_props["containerWidth"] == "580"
+    assert row_props["containerPaddingRight"] == "40"
+
+    button_props = props_of("Button")
+    assert button_props["borderRadius"] == "20"
+    assert button_props["alignment"] == "left"
+
+    divider_props = props_of("Divider")
+    assert divider_props["size"] == "1"
+
+
 def test_create_has_no_craft_json_or_content_flag():
     result = runner.invoke(cli.app, ["messages", "templates", "create", "--help"])
     assert result.exit_code == 0
