@@ -42,8 +42,6 @@ Adding a new step type means: write a builder function, add it to
 
 from __future__ import annotations
 
-import html
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -53,6 +51,7 @@ from kizen_builder.models.spec import (
     AutomationStepDef,
     AutomationTriggerDef,
 )
+from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
@@ -81,7 +80,7 @@ class LiveContext:
         self._automations_by_api: dict[str, dict[str, Any]] | None = None
 
     def object_uuid(self, api_name: str) -> str:
-        return self._object(api_name)["id"]
+        return self.object_data(api_name)["id"]
 
     def field_uuid(self, object_api_name: str, field_api_name: str) -> str:
         return self._field(object_api_name, field_api_name)["id"]
@@ -107,7 +106,7 @@ class LiveContext:
     def _fields_with_options(self, object_api_name: str) -> list[dict[str, Any]]:
         cache_key = f"__fields__{object_api_name}"
         if cache_key not in self._objects_by_api:
-            obj = self._object(object_api_name)
+            obj = self.object_data(object_api_name)
             from kizen_builder.api import custom_objects as co_api
             from kizen_builder.api.client import KizenClient
 
@@ -117,7 +116,7 @@ class LiveContext:
         return self._objects_by_api[cache_key]
 
     def _field(self, object_api_name: str, field_api_name: str) -> dict[str, Any]:
-        obj = self._object(object_api_name)
+        obj = self.object_data(object_api_name)
         match = next(
             (f for f in obj["fields"] if f["api_name"] == field_api_name), None
         )
@@ -137,7 +136,7 @@ class LiveContext:
         relationship hop. Returns None if there are zero or more than one
         candidate — ambiguous cases must name the hop explicitly.
         """
-        obj = self._object(from_object_api)
+        obj = self.object_data(from_object_api)
         matches = [
             f for f in obj["fields"] if f.get("relation_target") == to_object_api
         ]
@@ -179,7 +178,13 @@ class LiveContext:
                 raise PlanError(str(e)) from e
         return form_id
 
-    def _object(self, api_name: str) -> dict[str, Any]:
+    def object_data(self, api_name: str) -> dict[str, Any]:
+        """The full live object record (id, display_name, fields, …).
+
+        Not private: `merge_fields.py`'s objectname resolver needs it from
+        outside this class (an object's `display_name` is the `objectname`
+        merge-field spans carry for a real custom-object namespace).
+        """
         if api_name not in self._objects_by_api:
             try:
                 self._objects_by_api[api_name] = get_object(api_name)
@@ -1600,8 +1605,9 @@ def _step_call_llm(
         # quirk as notify_member_via_text's content/html_content): a
         # plain-prompt-only step still runs fine via the API but the
         # rich-text prompt editor renders blank without this.
+        resolve_label, resolve_objectname = _merge_field_resolvers(auto, ctx)
         out["html_prompt"] = (
-            f"<p>{_html_with_merge_fields(out['prompt'], auto, ctx)}</p>"
+            f"<p>{merge_fields.render(out['prompt'], resolve_label=resolve_label, resolve_objectname=resolve_objectname)}</p>"
         )
     if block.get("destinations"):
         out["destinations"] = _resolve_llm_destinations(
@@ -1671,8 +1677,9 @@ def _step_file_content_extraction(
         out["html_prompt"] = block["html_prompt"]
     elif out.get("prompt"):
         # Same prompt/html_prompt sync quirk as call_llm — see its comment.
+        resolve_label, resolve_objectname = _merge_field_resolvers(auto, ctx)
         out["html_prompt"] = (
-            f"<p>{_html_with_merge_fields(out['prompt'], auto, ctx)}</p>"
+            f"<p>{merge_fields.render(out['prompt'], resolve_label=resolve_label, resolve_objectname=resolve_objectname)}</p>"
         )
     if block.get("merge_field_validation"):
         out["merge_field_validation"] = block["merge_field_validation"]
@@ -1965,59 +1972,48 @@ def _step_notify_member_via_email(
     return out
 
 
-_MERGE_FIELD_RE = re.compile(r"\{\{\s*([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\s*\}\}")
+def _merge_field_resolvers(
+    auto: AutomationDef, ctx: LiveContext
+) -> tuple[merge_fields.ResolveLabel, merge_fields.ResolveObjectName]:
+    """The label/objectname resolvers `merge_fields.render` needs for one
+    automation payload build, backed by this plan call's `LiveContext`.
 
-
-def _merge_field_label(
-    segment: str, field_api_name: str, auto: AutomationDef, ctx: LiveContext
-) -> str:
-    """Best-effort fallback label for a merge-field span.
-
-    Only ``entity_record.<field>`` is resolvable against live field metadata
-    (real fields on the automation's target_object). Kizen's merge-field
-    picker also exposes other reserved namespaces confirmed from a live
-    capture — ``team_member.*`` (the notified team member's own fields),
-    ``business.*`` (tenant settings), and ``entity_record`` pseudo-fields
-    like ``link_url``/``created``/``estimated_close_date`` that aren't real
-    object fields — with no API-queryable catalog; those get a readable
-    title-cased fallback instead of a wrong-but-confident resolved label.
+    ``entity_record``/``custom_objects`` (the reserved pseudo-tokens for "the
+    triggering record" and "the automation's own target_object") resolve
+    against the automation's `target_object`; any other namespace outside
+    `merge_fields.RESERVED_NAMESPACES` is treated as a real custom object's
+    own api_name and resolved against itself. Neither resolver attempts a
+    relationship-hop field path (more than one segment past the namespace,
+    e.g. ``primary_document_record.id``) — `LiveContext.field_data` only
+    resolves a single field api_name on one object, so a hop falls through to
+    `merge_fields`'s own title-cased fallback rather than crashing or, worse,
+    resolving the wrong field.
     """
-    if segment in ("entity_record", "custom_objects") and auto.target_object:
-        # `custom_objects` is call_llm/initialize_variable's namespace token
-        # for "the automation's own target_object" — a literal token, not the
-        # object's real api_name (confirmed from live capture; see
-        # reference.md's merge-field namespace table).
+
+    def resolve_label(namespace: str, field_path: str) -> str | None:
+        if "." in field_path:
+            return None
+        if namespace in ("entity_record", "custom_objects"):
+            object_api_name = auto.target_object
+        elif namespace not in merge_fields.RESERVED_NAMESPACES:
+            object_api_name = namespace
+        else:
+            return None
+        if not object_api_name:
+            return None
         try:
-            return (
-                ctx.field_data(auto.target_object, field_api_name).get("display_name")
-                or field_api_name
-            )
+            data = ctx.field_data(object_api_name, field_path)
         except PlanError:
-            pass
-    return field_api_name.replace("_", " ").title()
+            return None
+        return data.get("display_name") or field_path
 
+    def resolve_objectname(namespace: str) -> str | None:
+        try:
+            return ctx.object_data(namespace).get("display_name")
+        except PlanError:
+            return None
 
-def _html_with_merge_fields(text: str, auto: AutomationDef, ctx: LiveContext) -> str:
-    """Render ``{{ <namespace>.<field_api_name> }}`` merge-field tokens into
-    the ``<span class="kzn-merge-field" ...>`` markup Kizen's builder UI
-    wraps them in (confirmed from a live capture) — plain text is escaped
-    around them. See :func:`_merge_field_label` for the label rule.
-    """
-    out: list[str] = []
-    last = 0
-    for m in _MERGE_FIELD_RE.finditer(text):
-        out.append(html.escape(text[last : m.start()]))
-        segment, field_api_name = m.group(1), m.group(2)
-        label = _merge_field_label(segment, field_api_name, auto, ctx)
-        out.append(
-            '<span class="kzn-merge-field" '
-            f'data-merge-field-fallback-label="{html.escape(label)}" '
-            f'data-merge-field-relationship="{segment}.{field_api_name}">'
-            f"{html.escape(m.group(0))}</span>"
-        )
-        last = m.end()
-    out.append(html.escape(text[last:]))
-    return "".join(out)
+    return resolve_label, resolve_objectname
 
 
 def _step_notify_member_via_text(
@@ -2042,8 +2038,9 @@ def _step_notify_member_via_text(
         # renders in the API but shows blank/wrong in the UI without this.
         # Merge-field tokens (e.g. `{{ entity_record.owner }}`) render into
         # the UI's special span markup rather than being escaped literally.
+        resolve_label, resolve_objectname = _merge_field_resolvers(auto, ctx)
         out["html_content"] = (
-            f"<p>{_html_with_merge_fields(out['content'], auto, ctx)}</p>"
+            f"<p>{merge_fields.render(out['content'], resolve_label=resolve_label, resolve_objectname=resolve_objectname)}</p>"
         )
     base_id = block.get("base_message_id") or block.get("message_template_id")
     if base_id:

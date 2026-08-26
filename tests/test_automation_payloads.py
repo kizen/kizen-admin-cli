@@ -513,7 +513,7 @@ def test_find_relationship_field_auto_detects_unambiguous_hop(monkeypatch):
             {"api_name": "patient_rel", "relation_target": "patients", "id": "bbbb"},
         ]
     }
-    monkeypatch.setattr(ctx, "_object", lambda api_name: fake_object)
+    monkeypatch.setattr(ctx, "object_data", lambda api_name: fake_object)
     assert ctx.find_relationship_field("encounters", "patients") == "bbbb"
     assert ctx.find_relationship_field("encounters", "nonexistent_object") is None
 
@@ -536,7 +536,7 @@ def test_find_relationship_field_ambiguous_returns_none(monkeypatch):
             },
         ]
     }
-    monkeypatch.setattr(ctx, "_object", lambda api_name: fake_object)
+    monkeypatch.setattr(ctx, "object_data", lambda api_name: fake_object)
     assert ctx.find_relationship_field("encounters", "patients") is None
 
 
@@ -731,9 +731,14 @@ def test_notify_member_via_text_merge_field_pseudo_field_falls_back_to_title_cas
 
 def test_notify_member_via_text_merge_field_reserved_namespaces(patch_live_lookups):
     """team_member.* (the notified team member's own fields) and business.*
-    (tenant settings) are reserved merge-field namespaces, not custom
-    object api_names — confirmed from a live capture. Neither is
-    field-metadata-resolvable, so both get the title-cased fallback."""
+    (tenant settings) are reserved merge-field namespaces, not custom object
+    api_names, and neither carries `objectname` — confirmed from a live
+    capture (2026-08-26). The specific label VALUES asserted below
+    ("Team Member First Name", "Business Zip/Postal Code") are also from
+    that same live capture, for these two exact tokens — not a claim that
+    labels in these namespaces are generally derivable from the field
+    api_name; an unrecognized token in either namespace still falls back to
+    a title-cased guess (merge_fields._fallback_label)."""
     spec = {
         "api_name": "notify_text_merge_namespaces_test",
         "name": "Notify Text Merge Namespaces Test",
@@ -758,11 +763,191 @@ def test_notify_member_via_text_merge_field_reserved_namespaces(patch_live_looku
         'data-merge-field-relationship="team_member.first_name"'
         in action["html_content"]
     )
-    assert 'data-merge-field-fallback-label="First Name"' in action["html_content"]
+    assert (
+        'data-merge-field-fallback-label="Team Member First Name"'
+        in action["html_content"]
+    )
     assert (
         'data-merge-field-relationship="business.postal_code"' in action["html_content"]
     )
-    assert 'data-merge-field-fallback-label="Postal Code"' in action["html_content"]
+    assert (
+        'data-merge-field-fallback-label="Business Zip/Postal Code"'
+        in action["html_content"]
+    )
+    assert "data-merge-field-objectname" not in action["html_content"]
+
+
+def test_notify_member_via_text_merge_field_custom_object_namespace_gains_objectname(
+    patch_live_lookups,
+):
+    """A namespace that is a real custom-object api_name — not one of
+    merge_fields.RESERVED_NAMESPACES — gets `data-merge-field-objectname`
+    holding the object's DISPLAY name, confirmed from a live capture
+    (2026-08-26): `object_with_workflow` -> "object with workflow", `county`
+    -> "County". No committed fixture uses a real custom-object api_name as
+    a merge-field namespace (every fixture uses `custom_objects`, the
+    pseudo-token for the automation's own target_object — see
+    test_call_llm_derives_html_prompt_from_plain_prompt), so this uses the
+    `patients` object fixture directly as the namespace instead — a real,
+    already-committed object record, just not one previously exercised in
+    this position. This is the gap the repo's own fixtures don't cover
+    (BCLI-027)."""
+    patients = load_fixture("objects/patients.json")
+    mrn = next(f for f in patients["fields"] if f["api_name"] == "mrn")
+    spec = {
+        "api_name": "notify_text_merge_objectname_test",
+        "name": "Notify Text Merge Objectname Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "notify",
+                "step_type": "notify_member_via_text",
+                "order": 0,
+                "parent_key": None,
+                "action_notify_member_via_text": {
+                    "team_member": {"type": "owner"},
+                    "content": "{{ patients.mrn }}",
+                },
+            }
+        ],
+    }
+    payload = _build(spec)
+    action = payload["steps"][0]["action_notify_member_via_text"]
+    assert action["html_content"] == (
+        '<p><span class="kzn-merge-field" '
+        f'data-merge-field-fallback-label="{mrn["display_name"]}" '
+        'data-merge-field-relationship="patients.mrn" '
+        f'data-merge-field-objectname="{patients["display_name"]}">'
+        "{{ patients.mrn }}</span></p>"
+    )
+
+
+def test_notify_member_via_text_merge_field_automation_variable_is_literal(
+    patch_live_lookups,
+):
+    """automation_variable.<name> tokens are NOT title-cased by Kizen at all
+    — the fallback-label is the literal variable name as authored. Confirmed
+    from committed fixtures, not a live capture done for this item:
+    tests/fixtures/automations/llm_comparison.raw.json:296
+    (`fallback-label="llm_extract_output"`) and
+    on_or_around_date_goto.raw.json:1230
+    (`fallback-label="classification_total"`). Reserved namespace, so no
+    `objectname` either."""
+    spec = {
+        "api_name": "notify_text_merge_automation_variable_test",
+        "name": "Notify Text Merge Automation Variable Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "notify",
+                "step_type": "notify_member_via_text",
+                "order": 0,
+                "parent_key": None,
+                "action_notify_member_via_text": {
+                    "team_member": {"type": "owner"},
+                    "content": "{{ automation_variable.llm_extract_output }}",
+                },
+            }
+        ],
+    }
+    payload = _build(spec)
+    action = payload["steps"][0]["action_notify_member_via_text"]
+    assert (
+        'data-merge-field-fallback-label="llm_extract_output"' in action["html_content"]
+    )
+    assert "data-merge-field-objectname" not in action["html_content"]
+
+
+def test_notify_member_via_text_merge_field_automation_history(patch_live_lookups):
+    """automation_history.<field> is a reserved namespace (no objectname).
+    Its label is NOT a fixed function of the field: the same token
+    (`automation_history.execution_id`) carries "Automation Execution ID" in
+    three committed fixtures but "Agentic Workflow Execution ID" in
+    `kitchen_sink_triggers.raw.json` and in a live capture — see
+    merge-field-markup-captured-live.md's "label is NOT a function of the
+    token" finding. This is authoring-time context, not a canonical value,
+    so this test does not pin a specific label string for any
+    automation_history field — only that a span is produced (relationship
+    and namespace classification are correct, no objectname) for both a
+    field with a captured-but-contested label and one with none at all."""
+    spec = {
+        "api_name": "notify_text_merge_automation_history_test",
+        "name": "Notify Text Merge Automation History Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "notify",
+                "step_type": "notify_member_via_text",
+                "order": 0,
+                "parent_key": None,
+                "action_notify_member_via_text": {
+                    "team_member": {"type": "owner"},
+                    "content": (
+                        "{{ automation_history.execution_id }} "
+                        "{{ automation_history.automation_id }} "
+                        "{{ automation_history.unrecognized_field }}"
+                    ),
+                },
+            }
+        ],
+    }
+    payload = _build(spec)
+    action = payload["steps"][0]["action_notify_member_via_text"]
+    html_content = action["html_content"]
+    for field in ("execution_id", "automation_id", "unrecognized_field"):
+        assert (
+            f'data-merge-field-relationship="automation_history.{field}"'
+            in html_content
+        )
+        assert f"{{{{ automation_history.{field} }}}}" in html_content
+    assert "data-merge-field-objectname" not in html_content
+
+
+def test_notify_member_via_text_merge_field_multi_segment_token(patch_live_lookups):
+    """The token regex must match a namespace followed by ONE OR MORE
+    dot-separated segments, not exactly two. A real multi-segment
+    relationship-hop token — `custom_objects.primary_document_record.id` —
+    is committed at
+    tests/fixtures/automations/activity_logged_schedule_activity.raw.json:246.
+    The pre-existing single-dot regex could not match this at all: the
+    token fell through untouched to html.escape and rendered as literal
+    `{{ ... }}` braces in the recipient's message. This test only proves
+    the token is captured into a span instead of being silently skipped —
+    it does not assert the exact live label ("Primary Document Record
+    (ID)"), which requires resolving a relationship hop this item's
+    resolvers don't attempt (see _merge_field_resolvers)."""
+    spec = {
+        "api_name": "notify_text_merge_multi_segment_test",
+        "name": "Notify Text Merge Multi Segment Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "notify",
+                "step_type": "notify_member_via_text",
+                "order": 0,
+                "parent_key": None,
+                "action_notify_member_via_text": {
+                    "team_member": {"type": "owner"},
+                    "content": "{{ custom_objects.primary_document_record.id }}",
+                },
+            }
+        ],
+    }
+    payload = _build(spec)
+    action = payload["steps"][0]["action_notify_member_via_text"]
+    # If the regex still silently skipped the token, this would instead be
+    # `<p>{{ custom_objects.primary_document_record.id }}</p>` — plain
+    # html-escaped text, no span at all.
+    assert action["html_content"] == (
+        '<p><span class="kzn-merge-field" '
+        'data-merge-field-fallback-label="Primary Document Record Id" '
+        'data-merge-field-relationship="custom_objects.primary_document_record.id">'
+        "{{ custom_objects.primary_document_record.id }}</span></p>"
+    )
 
 
 def test_manual_trigger_auto_prepended(patch_live_lookups):
