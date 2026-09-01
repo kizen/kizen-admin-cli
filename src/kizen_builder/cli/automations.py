@@ -9,19 +9,23 @@ import time
 from typing import Any
 
 import typer
+from pydantic import ValidationError
 from rich.table import Table
 
 from kizen_builder import output as out
 from kizen_builder.api.client import KizenAPIError
+from kizen_builder.cli._mutations import _read_spec
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
     console,
+    err_console,
 )
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
+from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.plans import PlanError
 
 autos_app = typer.Typer(
@@ -122,16 +126,18 @@ def autos_get(
 
         step_table = Table(title="Steps")
         step_table.add_column("ord", justify="right")
+        step_table.add_column("id", style="dim")
         step_table.add_column("type")
         step_table.add_column("description")
-        step_table.add_column("parent")
+        step_table.add_column("parent", style="dim")
         step_table.add_column("branch")
         for s in result["steps"]:
             step_table.add_row(
                 str(s["order"]) if s["order"] is not None else "",
+                (s["id"] or "")[:8],
                 s["step_type"] or "",
                 s["description"] or "",
-                (s["parent_step_id"] or ""),
+                (s["parent_step_id"] or "")[:8],
                 s["parent_condition"] or "",
             )
         console.print(step_table)
@@ -272,6 +278,70 @@ def autos_roundtrip(
         result.get("executed") and result.get("drift")
     ):
         raise typer.Exit(code=1)
+
+
+@autos_app.command(
+    "diff",
+    epilog="Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`",
+)
+def autos_diff(
+    api_name: str = typer.Argument(..., help="Automation api_name."),
+    spec_file: str = typer.Option(
+        "",
+        "--spec-file",
+        help="Path to JSON AutomationDef. Default: read from stdin.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit full result as JSON."),
+) -> None:
+    """Show what `automations update` from this spec would change on the
+    live automation — read-only, no write is made.
+
+    Triggers/steps are matched by `id` first (regardless of `key`/order),
+    position among the rest as a fallback for a spec with no `id`s at all.
+    `key`/`parent_key`/`prefix` are excluded from the comparison — they're
+    per-side synthetic naming (see `kizen docs show automation`), not
+    automation content — but a genuine reparenting still shows, compared by
+    matched identity rather than raw key. Each line is labelled with the
+    first octet of the step/trigger's `id` so it can be matched to what's
+    visible in the UI; it is unique within one automation. Under `--json`, an
+    added or removed step/trigger also carries its full `id` in the leaf
+    value.
+    """
+    spec_dict, _from_stdin = _read_spec(spec_file)
+    spec_api_name = spec_dict.get("api_name")
+    if spec_api_name and spec_api_name != api_name:
+        err_console.print(
+            f"[red]error:[/red] spec api_name '{spec_api_name}' does not match "
+            f"'{api_name}' — diffing against the wrong automation. Pass the "
+            "spec's own api_name, or fix --spec-file."
+        )
+        raise typer.Exit(code=2)
+    try:
+        with cli_errors(LookupError, PlanError):
+            result = auto_planners.diff_automation(spec_dict)
+    except ValidationError as e:
+        for err in e.errors():
+            loc = ".".join(str(p) for p in err.get("loc", ())) or "spec"
+            msg = err.get("msg", "invalid value")
+            err_console.print(f"[red]spec error:[/red] {loc}: {msg}")
+        raise typer.Exit(code=1) from e
+
+    if json_out:
+        typer.echo(json.dumps(result, indent=2))
+        return
+
+    console.print(
+        f"[bold]{result['api_name']}[/bold]  [dim](rev {result['revision']})[/dim]"
+    )
+    diff = result["diff"]
+    if not diff:
+        console.print("[green]no changes[/green] — update would be a no-op")
+        return
+    console.print(f"[yellow]{len(diff)} change(s):[/yellow]")
+    for d in diff:
+        console.print(
+            f"  [yellow]{d['path']}[/yellow]: {d['before']!r} → {d['after']!r}"
+        )
 
 
 def _step_label(step: dict[str, Any]) -> str:

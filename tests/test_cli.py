@@ -1632,6 +1632,90 @@ def test_automations_create_dry_run_reads_spec_from_stdin(monkeypatch):
     assert json.loads(result.stdout)["summary"] == "test plan"
 
 
+def test_automations_diff_reads_spec_from_stdin(monkeypatch):
+    seen = {}
+
+    def fake_diff(spec):
+        seen["spec"] = spec
+        return {
+            "env": "testenv",
+            "api_name": "x",
+            "id": "auto-1",
+            "revision": 4,
+            "diff": [],
+        }
+
+    monkeypatch.setattr(auto_planners, "diff_automation", fake_diff)
+    spec = {"api_name": "x", "name": "X", "type": "global", "steps": []}
+    result = runner.invoke(
+        cli.app, ["automations", "diff", "x"], input=json.dumps(spec)
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["spec"] == spec
+    assert "no changes" in result.output
+
+
+def test_automations_diff_json_emits_full_result(monkeypatch):
+    fake_result = {
+        "env": "testenv",
+        "api_name": "x",
+        "id": "auto-1",
+        "revision": 4,
+        "diff": [
+            {
+                "path": "steps.76af48bd.action_code_step.script",
+                "before": "a",
+                "after": "b",
+            }
+        ],
+    }
+    monkeypatch.setattr(auto_planners, "diff_automation", lambda spec: fake_result)
+    spec = json.dumps({"api_name": "x", "name": "X", "type": "global", "steps": []})
+    result = runner.invoke(cli.app, ["automations", "diff", "x", "--json"], input=spec)
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == fake_result
+
+
+def test_automations_diff_renders_change_lines(monkeypatch):
+    fake_result = {
+        "env": "testenv",
+        "api_name": "x",
+        "id": "auto-1",
+        "revision": 4,
+        "diff": [
+            {
+                "path": "steps.76af48bd.action_code_step.script",
+                "before": "a",
+                "after": "b",
+            }
+        ],
+    }
+    monkeypatch.setattr(auto_planners, "diff_automation", lambda spec: fake_result)
+    spec = json.dumps({"api_name": "x", "name": "X", "type": "global", "steps": []})
+    result = runner.invoke(cli.app, ["automations", "diff", "x"], input=spec)
+    assert result.exit_code == 0, result.output
+    assert "1 change" in result.output
+    assert "steps.76af48bd.action_code_step.script" in result.output
+
+
+def test_automations_diff_rejects_mismatched_api_name(monkeypatch):
+    spec = json.dumps({"api_name": "x", "name": "X", "type": "global", "steps": []})
+    result = runner.invoke(cli.app, ["automations", "diff", "not-x"], input=spec)
+    assert result.exit_code == 2
+    assert "does not match" in result.stderr
+
+
+def test_automations_diff_propagates_plan_error(monkeypatch):
+    def fake_diff(spec):
+        raise auto_planners.PlanError("no automation with api_name 'x'")
+
+    monkeypatch.setattr(auto_planners, "diff_automation", fake_diff)
+    spec = json.dumps({"api_name": "x", "name": "X", "type": "global", "steps": []})
+    result = runner.invoke(cli.app, ["automations", "diff", "x"], input=spec)
+    assert result.exit_code == 1
+    assert "no automation with api_name" in result.stderr
+
+
 def test_plan_star_commands_are_gone():
     result = runner.invoke(cli.app, ["plan-create-field", "invoice"])
     assert result.exit_code != 0

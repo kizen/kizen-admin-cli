@@ -13,6 +13,7 @@ from kizen_builder.models.spec import AutomationDef
 from kizen_builder.tools.planners.automations import (
     LiveContext,
     _build_automation_payload,
+    diff_automation,
     plan_create_automation,
     plan_update_automation,
 )
@@ -1430,6 +1431,137 @@ def test_plan_create_omitted_active_defaults_false(patch_live_lookups):
     (op,) = plan.operations
     assert op.payload["active"] is False
     assert op.preview["active"] is False
+
+
+# ---------------------------------------------------------------------------
+# diff_automation: live vs. spec-as-applied, no write
+# ---------------------------------------------------------------------------
+
+
+def test_diff_automation_rejects_unknown_api_name(patch_live_lookups):
+    """Same lookup, same error text as `plan_update_automation` — reusing
+    that check rather than inventing a new error message."""
+    spec = {"api_name": "no_such_auto", "name": "Nope", "type": "global", "steps": []}
+    with pytest.raises(PlanError, match="no automation with api_name"):
+        diff_automation(spec)
+
+
+def test_diff_automation_reproduced_spec_is_empty(patch_live_lookups):
+    """The golden case: a spec that reproduces `test_two_code_steps`'s live
+    shape — hand-authored keys, real ids echoed back, `active` omitted —
+    diffs to nothing, even though the fixture's live steps use
+    `live_to_payload`-synthesized keys and this spec uses different ones."""
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    spec = {
+        "api_name": "test_two_code_steps",
+        "name": "Test Two Code Steps",
+        "type": "global",
+        # `active` deliberately omitted — resolves to live's `false` via
+        # BCLI-016, so this also proves that resolution reaches `diff`.
+        "triggers": [
+            {
+                "trigger_type": "manual",
+                "order": 0,
+                "id": raw["triggers"][0]["id"],
+                "description": raw["triggers"][0]["description"],
+            }
+        ],
+        "steps": [
+            {
+                "key": "step0",
+                "id": steps[0]["id"],
+                "step_type": "code_step",
+                "order": 0,
+                "parent_key": None,
+                "description": steps[0]["description"],
+                "user_description": steps[0]["user_description"],
+                "action_on_failure": "notify_pause",
+                "action_code_step": steps[0]["action_code_step"],
+            },
+            {
+                "key": "step1",
+                "id": steps[1]["id"],
+                "step_type": "code_step",
+                "order": 1,
+                "parent_key": "step0",
+                "description": steps[1]["description"],
+                "user_description": steps[1]["user_description"],
+                "action_on_failure": "notify_pause",
+                "action_code_step": steps[1]["action_code_step"],
+            },
+        ],
+    }
+    result = diff_automation(spec)
+    assert result["api_name"] == "test_two_code_steps"
+    assert result["revision"] == raw["revision"]
+    assert result["diff"] == []
+
+
+def test_diff_automation_surfaces_active_flip(patch_live_lookups):
+    """`active` is diffed like any other top-level field — no special-casing
+    for the BCLI-016 bug beyond reusing `plan_update_automation`'s own
+    resolution: an *explicit* flip in the spec still shows."""
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    spec = {
+        "api_name": "test_two_code_steps",
+        "name": "Test Two Code Steps",
+        "type": "global",
+        "active": True,  # live is false
+        "triggers": [
+            {
+                "trigger_type": "manual",
+                "order": 0,
+                "id": raw["triggers"][0]["id"],
+                "description": raw["triggers"][0]["description"],
+            }
+        ],
+        "steps": [
+            {
+                "key": "step0",
+                "id": steps[0]["id"],
+                "step_type": "code_step",
+                "order": 0,
+                "parent_key": None,
+                "description": steps[0]["description"],
+                "user_description": steps[0]["user_description"],
+                "action_on_failure": "notify_pause",
+                "action_code_step": steps[0]["action_code_step"],
+            },
+            {
+                "key": "step1",
+                "id": steps[1]["id"],
+                "step_type": "code_step",
+                "order": 1,
+                "parent_key": "step0",
+                "description": steps[1]["description"],
+                "user_description": steps[1]["user_description"],
+                "action_on_failure": "notify_pause",
+                "action_code_step": steps[1]["action_code_step"],
+            },
+        ],
+    }
+    result = diff_automation(spec)
+    assert result["diff"] == [{"path": "active", "before": False, "after": True}]
+
+
+def test_diff_automation_never_writes(patch_live_lookups, monkeypatch):
+    """Constraint check: `diff_automation` must not go anywhere near
+    `update_automation` (the PUT). Fails loudly if it ever does."""
+    from kizen_builder.api import automations as auto_api
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("diff_automation must never call update_automation")
+
+    monkeypatch.setattr(auto_api, "update_automation", _boom)
+    spec = {
+        "api_name": "test_two_code_steps",
+        "name": "Test Two Code Steps",
+        "type": "global",
+        "steps": [],
+    }
+    diff_automation(spec)  # steps=[] means every live step reports as removed
 
 
 # ---------------------------------------------------------------------------

@@ -11,11 +11,13 @@ revision it was captured from.
 
 from __future__ import annotations
 
+import copy
 import json
 
 import pytest
 
 from kizen_builder.translate import (
+    diff_wire_payloads,
     live_to_payload,
     semantic_diff,
     synthesize_step_keys,
@@ -245,3 +247,205 @@ def test_message_steps_reference_message_by_id(kitchen: dict) -> None:
     assert set(email["email"]) == {"id"}
     text = _step_block(kitchen, "send_related_contact_text")
     assert set(text["text"]) == {"id"}
+
+
+# ---------------------------------------------------------------------------
+# diff_wire_payloads: live vs. spec-as-applied, wire (PUT) dialect
+# ---------------------------------------------------------------------------
+
+
+def _rekey(payload: dict, prefix: str) -> dict:
+    """Return a deep copy with every step/trigger `key` replaced by a
+    differently-named one, `parent_key` and `go_to_automation_step`
+    references remapped to match — the shape a hand-authored spec takes
+    (author picks their own keys; identity rides on `id`, not `key`).
+    Simulates the exact churn `key`/`parent_key` exclusion exists to absorb,
+    including a `go_to` pointed at the same target under its new key."""
+    out = copy.deepcopy(payload)
+    step_map = {s["key"]: f"{prefix}step{i}" for i, s in enumerate(out["steps"])}
+    trigger_map = {
+        t["key"]: f"{prefix}trigger{i}" for i, t in enumerate(out["triggers"])
+    }
+    for s in out["steps"]:
+        s["key"] = step_map[s["key"]]
+        if s["parent_key"]:
+            s["parent_key"] = step_map[s["parent_key"]]
+        go_to = s.get("action_go_to_automation_step")
+        if isinstance(go_to, dict):
+            if go_to.get("step_key"):
+                go_to["step_key"] = step_map[go_to["step_key"]]
+            if go_to.get("trigger_key"):
+                go_to["trigger_key"] = trigger_map[go_to["trigger_key"]]
+    for t in out["triggers"]:
+        t["key"] = trigger_map[t["key"]]
+    return out
+
+
+def test_diff_wire_payloads_self_diff_is_empty() -> None:
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    live = live_to_payload(raw)
+    spec = live_to_payload(raw)
+    assert diff_wire_payloads(live, spec) == []
+
+
+def test_diff_wire_payloads_ignores_key_resynthesis() -> None:
+    """The golden case this item exists for: a spec that reproduces a live
+    automation, authored with its own keys, must show zero diff even though
+    every `key`/`parent_key` differs textually from the live side's
+    synthesized ones."""
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    live = live_to_payload(raw)
+    spec = _rekey(live_to_payload(raw), "authored_")
+    assert diff_wire_payloads(live, spec) == []
+
+
+def test_diff_wire_payloads_ignores_go_to_key_resynthesis() -> None:
+    """A `go_to_automation_step` reference must resolve by matched identity,
+    same as `parent_key` — re-keying it to point at the *same* target under
+    its new key must not register as a change."""
+    raw = load_fixture("automations/on_or_around_date_goto.raw.json")
+    live = live_to_payload(raw)
+    spec = _rekey(live_to_payload(raw), "authored_")
+    assert diff_wire_payloads(live, spec) == []
+
+
+def test_diff_wire_payloads_reports_go_to_retarget() -> None:
+    """A go_to genuinely pointed at a different step must still surface —
+    matched-identity resolution must not suppress a real retarget."""
+    raw = load_fixture("automations/on_or_around_date_goto.raw.json")
+    live = live_to_payload(raw)
+    spec = copy.deepcopy(live)
+    go_to_step = next(s for s in spec["steps"] if s["type"] == "go_to_automation_step")
+    other_step = next(
+        s
+        for s in spec["steps"]
+        if s["key"] != go_to_step["action_go_to_automation_step"]["step_key"]
+        and s["type"] != "go_to_automation_step"
+    )
+    go_to_step["action_go_to_automation_step"]["step_key"] = other_step["key"]
+    entries = diff_wire_payloads(live, spec)
+    assert len(entries) == 1
+    (entry,) = entries
+    assert entry["path"].endswith(".action_go_to_automation_step.step_key")
+    assert entry["before"] != entry["after"]
+    assert entry["after"] == other_step["id"][:8]
+
+
+def test_diff_wire_payloads_reports_added_step() -> None:
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    live = live_to_payload(raw)
+    spec = copy.deepcopy(live)
+    spec["steps"].append(
+        {
+            "key": "s02_stop_execution",
+            "parent_key": spec["steps"][-1]["key"],
+            "parent_yes_no": "",
+            "parent_condition": "",
+            "type": "stop_execution",
+            "prefix": "step",
+            "order": 2,
+            "user_description": "",
+            "action_on_failure": "notify_continue",
+            "should_skip_execution": False,
+            "goal_type": False,
+            "action_stop_execution": {},
+        }
+    )
+    entries = diff_wire_payloads(live, spec)
+    assert len(entries) == 1
+    (entry,) = entries
+    assert entry["before"] == "<absent>"
+    assert entry["after"]["type"] == "stop_execution"
+    assert entry["path"].startswith("steps.new:")
+
+
+def test_diff_wire_payloads_reports_removed_step() -> None:
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    live = live_to_payload(raw)
+    spec = copy.deepcopy(live)
+    removed = spec["steps"].pop()
+    entries = diff_wire_payloads(live, spec)
+    assert len(entries) == 1
+    (entry,) = entries
+    assert entry["after"] == "<absent>"
+    assert entry["before"]["id"] == removed["id"]
+    assert entry["path"] == f"steps.{removed['id'][:8]}"
+
+
+def test_diff_wire_payloads_dangling_spec_id_is_addition_not_edit() -> None:
+    """A spec step carrying an `id` that matches no live step must be an
+    addition, and the live step it displaces a removal — not merged into a
+    single "step edited" entry, which would misreport a delete+add as an
+    in-place change and hide the spec's bogus id entirely."""
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    live = live_to_payload(raw)
+    spec = copy.deepcopy(live)
+    removed = spec["steps"].pop()
+    spec["steps"].append(
+        {
+            "id": "99999999-9999-9999-9999-999999999999",
+            "key": "s01_stop_execution",
+            "parent_key": spec["steps"][-1]["key"],
+            "parent_yes_no": "",
+            "parent_condition": "",
+            "type": "stop_execution",
+            "prefix": "step",
+            "order": 1,
+            "user_description": "",
+            "action_on_failure": "notify_continue",
+            "should_skip_execution": False,
+            "goal_type": False,
+            "action_stop_execution": {},
+        }
+    )
+    entries = diff_wire_payloads(live, spec)
+    by_path = {e["path"]: e for e in entries}
+    assert by_path[f"steps.{removed['id'][:8]}"]["after"] == "<absent>"
+    assert by_path["steps.99999999"]["before"] == "<absent>"
+    assert (
+        by_path["steps.99999999"]["after"]["id"]
+        == "99999999-9999-9999-9999-999999999999"
+    )
+    assert len(entries) == 2
+
+
+def test_diff_wire_payloads_reports_one_changed_field() -> None:
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    live = live_to_payload(raw)
+    spec = copy.deepcopy(live)
+    spec["steps"][0]["action_code_step"]["script"] = 'outputs.log("changed")'
+    entries = diff_wire_payloads(live, spec)
+    assert len(entries) == 1
+    (entry,) = entries
+    step_octet = live["steps"][0]["id"][:8]
+    assert entry["path"] == f"steps.{step_octet}.action_code_step.script"
+    assert entry["before"] == 'outputs.log("step 1")'
+    assert entry["after"] == 'outputs.log("changed")'
+
+
+def test_diff_wire_payloads_reports_reparenting() -> None:
+    """Excluding `parent_key` from the literal comparison must not also hide
+    a genuine reparenting — the parent is compared by matched identity."""
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    live = live_to_payload(raw)
+    spec = copy.deepcopy(live)
+    spec["steps"][1]["parent_key"] = None
+    entries = diff_wire_payloads(live, spec)
+    assert len(entries) == 1
+    (entry,) = entries
+    child_octet = live["steps"][1]["id"][:8]
+    parent_octet = live["steps"][0]["id"][:8]
+    assert entry["path"] == f"steps.{child_octet}.parent"
+    assert entry["before"] == parent_octet
+    assert entry["after"] is None
+
+
+def test_diff_wire_payloads_active_is_diffed_like_any_top_level_field() -> None:
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    live = live_to_payload(raw)
+    spec = copy.deepcopy(live)
+    spec["active"] = not live["active"]
+    entries = diff_wire_payloads(live, spec)
+    assert entries == [
+        {"path": "active", "before": live["active"], "after": spec["active"]}
+    ]

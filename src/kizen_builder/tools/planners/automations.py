@@ -296,6 +296,65 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     )
 
 
+def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any]:
+    """Compare a spec's would-be `update` against the live automation,
+    without writing anything — the read-only counterpart to
+    `plan_update_automation`.
+
+    Fetches the live automation exactly once and derives both comparison
+    sides from that single `current`: the live side via
+    `translate.live_to_payload`, the spec side via the same
+    `_build_automation_payload` + `_merge_server_state` calls
+    `plan_update_automation` itself makes (not by calling
+    `plan_update_automation`/building a `Plan` a second time, which would
+    re-fetch `current` and admit a race). This also guarantees
+    `last_revision` matches on both sides by construction. Mirrors
+    `plan_update_automation`'s `active` resolution (an omitted `active` in
+    the spec means "leave live's value alone," not "set False") so `active`
+    only shows a diff when the spec genuinely asks for a flip.
+
+    See `translate.diff_wire_payloads` for the id-first/position-fallback
+    step and trigger matching, and the `key`/`parent_key`/`prefix`
+    exclusions that keep synthesized-key churn out of the result.
+    """
+    from kizen_builder.translate import diff_wire_payloads, live_to_payload
+
+    auto = (
+        automation
+        if isinstance(automation, AutomationDef)
+        else AutomationDef.model_validate(automation)
+    )
+    ctx = LiveContext()
+    env = ctx.env
+
+    existing = next(
+        (a for a in list_automations() if a["api_name"] == auto.api_name),
+        None,
+    )
+    if existing is None:
+        raise PlanError(
+            f"no automation with api_name '{auto.api_name}'. "
+            "Use plan_create_automation."
+        )
+
+    current = get_automation(auto.api_name)["raw"]
+
+    live_active = bool(current.get("active", False))
+    resolved_active = auto.active if auto.active is not None else live_active
+    auto = auto.model_copy(update={"active": resolved_active})
+
+    live_payload = live_to_payload(current)
+    spec_payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+
+    return {
+        "env": env,
+        "api_name": auto.api_name,
+        "id": existing["id"],
+        "revision": current.get("revision"),
+        "diff": diff_wire_payloads(live_payload, spec_payload),
+    }
+
+
 def _merge_server_state(
     payload: dict[str, Any], current: dict[str, Any]
 ) -> dict[str, Any]:

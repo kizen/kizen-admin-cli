@@ -21,6 +21,7 @@ kizen automations get <api_name>             # one automation incl. triggers + s
 kizen automations show <api_name>            # step tree with synthesized step keys (handles for steps verbs)
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
 kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check)
+kizen automations diff <api_name> --spec-file <path>  # preview what `update` from this spec would change — read-only
 kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen docs show automation)
 kizen automations runs list <api_name>       # recent runs for an automation
 kizen automations runs view <exec_uuid>      # one run: summary + step-by-step trace (per-step status/duration)
