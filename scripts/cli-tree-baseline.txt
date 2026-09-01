@@ -2264,7 +2264,71 @@
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ list  List email templates (pass one's name or UUID as `--template`).                            │
+│ list    List email templates (pass one's name or UUID as `--template`).                          │
+│ get     Show one email template, including how well its two content fields agree.                │
+│ clone   Copy an email template, both content fields included.                                    │
+│ update  PATCH one email template's fields.                                                       │
+│ delete  Delete an email template.                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: messages templates clone [OPTIONS] {source}                                                 
+                                                                                                    
+ Copy an email template, both content fields included.                                              
+                                                                                                    
+ `craft_json` and `content` are carried over together — copying one                                 
+ without the other yields a template whose builder view and real sent                               
+ output disagree.                                                                                   
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    source      <str>  Source template name or UUID. [required]                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ *  --name             <str>  Name for the copy. [required]                                       │
+│    --dry-run                 Show the plan without applying.                                     │
+│    --yes      -y             Skip the y/N confirmation prompt.                                   │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --help                    Show this message and exit.                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Wire format (the two coupled content fields): see `kizen docs show email-templates`                
+                                                                                                    
+                                                                                                    
+ Usage: messages templates delete [OPTIONS] {template}                                              
+                                                                                                    
+ Delete an email template.                                                                          
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Template name or UUID. [required]                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: messages templates get [OPTIONS] {template}                                                 
+                                                                                                    
+ Show one email template, including how well its two content fields agree.                          
+                                                                                                    
+ A template stores the editable `craft_json` tree and the compiled                                  
+ `content` HTML that actually gets sent as independent fields, and the                              
+ server derives neither from the other. Two checks are reported, because                            
+ they catch different drift: `structure coupled` matches every                                      
+ `Section`/`Row` node against its `section-<nodeId>` class in the HTML,                             
+ and `text in sync` checks each `Text` node's copy actually appears                                 
+ there. Either one reading `no` means the builder view and what                                     
+ recipients receive have diverged.                                                                  
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Email template name or UUID. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --raw                    Emit the full raw API payload (`craft_json` and `content` included) —   │
+│                          the template source for building a new one. Implies JSON.               │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: messages templates list [OPTIONS]                                                           
@@ -2276,6 +2340,33 @@
 │ --json                   Alias for --output json.                                                │
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: messages templates update [OPTIONS] {template}                                              
+                                                                                                    
+ PATCH one email template's fields.                                                                 
+                                                                                                    
+ The server stores both content fields verbatim and compiles neither                                
+ from the other (confirmed live 2026-08-25), so sending `craft_json`                                
+ without `content` — or the reverse — leaves the builder showing one                                
+ email while recipients receive another. Pass both together, and check                              
+ the result with `messages templates get`.                                                          
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Template name or UUID. [required]                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --name                     <str>  Rename the template.                                           │
+│ --subject                  <str>  Set the subject line.                                          │
+│ --craft-json-file          <str>  Path to a JSON file to send as `craft_json`.                   │
+│ --content-file             <str>  Path to an HTML file to send as `content`.                     │
+│ --dry-run                         Show the plan without applying.                                │
+│ --yes              -y             Skip the y/N confirmation prompt.                              │
+│ --json                            Emit JSON (plan with --dry-run, results otherwise).            │
+│ --help                            Show this message and exit.                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Wire format (the two coupled content fields): see `kizen docs show email-templates`                
+                                                                                                    
                                                                                                     
  Usage: objects [OPTIONS] COMMAND [ARGS]...                                                         
                                                                                                     
@@ -4275,7 +4366,19 @@
 ===== messages templates =====
 
 
+===== messages templates clone =====
+
+
+===== messages templates delete =====
+
+
+===== messages templates get =====
+
+
 ===== messages templates list =====
+
+
+===== messages templates update =====
 
 
 ===== objects =====
