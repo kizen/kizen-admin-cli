@@ -2655,6 +2655,7 @@
 │ group         Show one permission group as a sectioned permission map (mirrors the UI).          │
 │ meta          Show the permissions catalog / meta-data (raw).                                    │
 │ group-create  Create a permission group (full default structure, optionally shaped).             │
+│ group-update  Raise/lower specific controls on an existing permission group.                     │
 │ group-delete  Delete a permission group.                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2711,6 +2712,29 @@
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: permissions group-update [OPTIONS] {group}                                                  
+                                                                                                    
+ Raise/lower specific controls on an existing permission group.                                     
+                                                                                                    
+ Each op calls `object-update` (object/field) or a section PATCH — never                            
+ a full-group PUT — so the server normalizes cross-field rules for you.                             
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    group      <str>  Permission group name or UUID. [required]                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ *  --settings-file          <str>  JSON list of shaping ops to apply (object/field/section) —    │
+│                                    same shape as `group-create --settings-file`.                 │
+│                                    [required]                                                    │
+│    --dry-run                       Show the plan without applying.                               │
+│    --yes            -y             Skip the y/N confirmation prompt.                             │
+│    --json                          Emit JSON (plan with --dry-run, results otherwise).           │
+│    --help                          Show this message and exit.                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Settings-file shape (a list of shaping ops): see `kizen docs show permission-group`                
+                                                                                                    
                                                                                                     
  Usage: permissions groups [OPTIONS]                                                                
                                                                                                     
@@ -4542,6 +4566,9 @@
 
 
 ===== permissions group-delete =====
+
+
+===== permissions group-update =====
 
 
 ===== permissions groups =====

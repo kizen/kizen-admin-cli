@@ -70,7 +70,7 @@ class Leaf:
             if self._wire_key is None
             else self._container[self._wire_key]
         )
-        return _value_to_level(value, self.allowed_access)
+        return value_to_level(value, self.allowed_access)
 
     def set_level(self, level: str) -> None:
         if self._wire_key is None:
@@ -81,7 +81,7 @@ class Leaf:
             )
 
 
-def _value_to_level(value: Any, allowed: list[str]) -> str:
+def value_to_level(value: Any, allowed: list[str]) -> str:
     """Read a wire value back to a level label."""
     if isinstance(value, bool):
         if not value:
@@ -96,6 +96,18 @@ def _value_to_level(value: Any, allowed: list[str]) -> str:
                 best = key
         return best
     return "none"
+
+
+def substitute_object_label(label: str, entity: str) -> str:
+    """Fill an object-area control label's ``{0}`` placeholder with the
+    object's display name (e.g. ``"All {0} Records"`` -> ``"All Companies
+    Records"``). Meta only templates object labels this way — field and
+    section labels never carry ``{0}`` — so a label without it is returned
+    unchanged.
+    """
+    if "{0}" not in label:
+        return label
+    return label.replace("{0}", entity).replace("  ", " ").strip()
 
 
 def _level_to_shape(shape: Any, level: str) -> Any:

@@ -104,13 +104,6 @@ def delete_permission_group(client: KizenClient, group_id: str) -> None:
     client.delete(f"/api/permission-group/{group_id}")
 
 
-def duplicate_permission_group(
-    client: KizenClient, group_id: str, payload: dict[str, Any]
-) -> dict[str, Any]:
-    """POST /api/permission-group/{id}/duplicate — {name}. Copies all levels."""
-    return client.post(f"/api/permission-group/{group_id}/duplicate", json=payload)
-
-
 def patch_permission_group(
     client: KizenClient, group_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:

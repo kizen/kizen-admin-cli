@@ -437,6 +437,43 @@ def perms_group_create(
     )
 
 
+@perms_app.command(
+    "group-update",
+    epilog="Settings-file shape (a list of shaping ops): see `kizen docs show permission-group`",
+)
+def perms_group_update(
+    group: str = typer.Argument(..., help="Permission group name or UUID."),
+    settings_file: str = typer.Option(
+        ...,
+        "--settings-file",
+        help="JSON list of shaping ops to apply (object/field/section) — same "
+        "shape as `group-create --settings-file`.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Raise/lower specific controls on an existing permission group.
+
+    Each op calls `object-update` (object/field) or a section PATCH — never
+    a full-group PUT — so the server normalizes cross-field rules for you.
+    """
+    group_id = _resolve_group_id(group)
+    settings = json.loads(Path(settings_file).read_text())
+    _run_mutation(
+        lambda: perm_planners.plan_update_permission_group(group_id, settings),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+    )
+
+
 @perms_app.command("group-delete")
 def perms_group_delete(
     group: str = typer.Argument(..., help="Permission group name or UUID."),

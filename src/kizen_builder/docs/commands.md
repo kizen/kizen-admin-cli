@@ -285,6 +285,7 @@ kizen roles create --name X [--group <name|uuid> ...] [--permission <flag> ...] 
 kizen roles update <name|uuid> [--name Y] [--group <name|uuid> ...] [--default/--no-default]  # --group REPLACES the set
 kizen roles delete <name|uuid>
 kizen permissions group-create --name X [--base default|clone] [--from <name|uuid>] [--settings-file f]
+kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
 kizen permissions group-delete <name|uuid>
 
 # patch one automation step (GET → translate → mutate node → validate → atomic PUT)

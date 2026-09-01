@@ -243,9 +243,10 @@ def describe_group(group_id: str, include_fields: bool = False) -> dict[str, Any
             blk["enabled"] = leaf.current_level != "none"
             continue
         row_label = leaf.row_label
-        if blk["area"] == "object" and "{0}" in row_label:
-            entity = obj_entities.get(leaf.block_key, "")
-            row_label = row_label.replace("{0}", entity).replace("  ", " ").strip()
+        if blk["area"] == "object":
+            row_label = pb.substitute_object_label(
+                row_label, obj_entities.get(leaf.block_key, "")
+            )
         if leaf.category == "custom_fields":
             row_label = field_names.get(leaf.row_key, leaf.row_key)
         category_label = (
