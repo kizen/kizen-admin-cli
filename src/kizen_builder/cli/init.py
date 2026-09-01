@@ -50,15 +50,27 @@ def _ask(
 
     `choices`, when given, makes Rich re-prompt on anything else — used for
     the environment picker so a mistyped answer can't silently fall through.
+    Matching is case-insensitive: Rich defaults to case-sensitive choices, and
+    a business literally named "Go" typing it as typed — capitalized — would
+    otherwise loop on the rejection message forever with no clue why.
     `default=None` means there's genuinely nothing to fall back to: Rich's own
     "no default" sentinel is Ellipsis, not `None` or `""`, so the `default`
     kwarg is omitted rather than passed through — passing `None` would make
     Rich hand back `None` on a bare Enter, bypassing `choices` entirely.
     """
+    prompt_cls = _EnvironmentPrompt if choices else Prompt
     try:
         if default is None:
-            return Prompt.ask(label, password=password, choices=choices)
-        return Prompt.ask(label, default=default, password=password, choices=choices)
+            return prompt_cls.ask(
+                label, password=password, choices=choices, case_sensitive=False
+            )
+        return prompt_cls.ask(
+            label,
+            default=default,
+            password=password,
+            choices=choices,
+            case_sensitive=False,
+        )
     except EOFError:
         if default:
             return default
@@ -70,6 +82,19 @@ def _ask(
 
 
 _FREE_TEXT_CHOICE = "url"
+
+
+class _EnvironmentPrompt(Prompt):
+    """Rich's stock rejection message just says "please select one of the
+    available options" — it doesn't say that "url" *is* one of those options
+    and picking it opens a second free-text prompt. Someone whose environment
+    isn't one of the curated names has no way to guess that from the error
+    alone and can end up re-typing their actual host forever."""
+
+    illegal_choice_message = (
+        '[prompt.invalid.choice]Not one of the listed names. Type "url" to '
+        "enter a custom address instead."
+    )
 
 
 def _ask_base_url(default: str | None, *, flag: str = "--base-url") -> str:
