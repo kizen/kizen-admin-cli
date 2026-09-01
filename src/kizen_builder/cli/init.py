@@ -5,16 +5,132 @@ profile.
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 import typer
 from rich.prompt import Prompt
+from rich.text import Text
 
 from kizen_builder import docs as docs_res
 from kizen_builder import profiles
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.cli._shared import app, console, err_console
 from kizen_builder.config import EnvConfig
+
+# The dotted-halftone Kizen logo mark from Kizen's node CLI (@kizenapps/cli's
+# src/ui/Logo.tsx), transcribed verbatim from that package's published source
+# map so the two CLIs show the same mark. 22 rows of exactly 43 columns —
+# trailing spaces are part of the art, so don't let an editor strip them
+# (`ruff format` leaves string-literal contents alone).
+_BANNER_ART_LINES: tuple[str, ...] = (
+    "                     ::::::::              ",
+    "         ::::::    :::::::::::             ",
+    "        ::::::   ::::::::::                ",
+    "       ::::::   ::::::      :::::::        ",
+    "       :::::   ::::::  :::::::::::::::::   ",
+    "       :::::  :::::   :::::::::::::::::::  ",
+    "       :::::  :::::   ::::::        :::::  ",
+    "::::   :::::   :::           :::::     ::  ",
+    ":::::  ::::::               ::::::::::     ",
+    ":::::   ::::::               :::::::::::   ",
+    " :::::    :::                     :::::::  ",
+    "  :::::::                     :::    ::::: ",
+    "   :::::::::::               ::::::   :::::",
+    "     ::::::::::               ::::::  :::::",
+    "  ::     :::::           :::   :::::   ::::",
+    "  :::::        ::::::   :::::  :::::   ::: ",
+    "  :::::::::::::::::::   :::::  :::::       ",
+    "   :::::::::::::::::   :::::   :::::       ",
+    "       :::::::::     ::::::   ::::::       ",
+    "                ::::::::::   ::::::        ",
+    "             :::::::::::    ::::::         ",
+    "              ::::::::                     ",
+)
+_BANNER_ART_WIDTH = 43
+_BANNER_ART_HEIGHT = 22
+# Matches the node CLI's own rendering (ink's <Text color="cyan">) — the
+# terminal's named cyan, not a truecolor hex.
+_BANNER_ACCENT = "cyan"
+
+# Compact fallback for a terminal too narrow/short for the full art — the
+# node CLI has no equivalent; this tier is our own addition.
+_COMPACT_BANNER_INNER_WIDTH = 18
+_COMPACT_BANNER_LINES = (
+    f"╔{'═' * _COMPACT_BANNER_INNER_WIDTH}╗",
+    f"║{'KIZEN'.center(_COMPACT_BANNER_INNER_WIDTH)}║",
+    f"╚{'═' * _COMPACT_BANNER_INNER_WIDTH}╝",
+)
+_COMPACT_BANNER_WIDTH = _COMPACT_BANNER_INNER_WIDTH + 2
+
+# Named for this tool rather than reusing the node CLI's tagline ("Kizen App
+# Development Toolkit"), which describes that tool.
+_BANNER_TAGLINE = "Kizen Admin CLI"
+
+
+def _init_is_interactive() -> bool:
+    """Whether this invocation should show interactive-only chrome (the
+    banner).
+
+    A thin wrapper around `console.is_terminal` — the same signal `_ask()`
+    relies on via Rich's own prompt handling — kept as its own function so a
+    test can monkeypatch this one function instead of mutating the shared
+    `console` singleton's private `_force_terminal` attribute. The singleton
+    is process-wide, so poking at it directly would leak between tests.
+    """
+    return console.is_terminal
+
+
+def _print_banner() -> None:
+    """A short banner before the first prompt: the Kizen logo mark above a
+    tagline, real terminals only.
+
+    Never runs for piped output or under `CliRunner` (both leave
+    `console.is_terminal` `False`), and never appears in `--help` output
+    (Typer/Click don't call the command body for `--help`).
+
+    The art is skipped in favor of a compact fallback, or dropped entirely
+    for just the tagline, when the real terminal is too small to hold it
+    without wrapping into garbage. `console.size` can't answer that:
+    `_shared.py` fixes the shared console's width at 220 (so tables render
+    consistently at any terminal size), which means `console.size.width`
+    always reports 220 here, not the terminal's actual width.
+    `shutil.get_terminal_size` is what Rich itself falls back to internally
+    for a console with no fixed width, so this reads the same real signal.
+    """
+    if not _init_is_interactive():
+        return
+
+    term_width, term_height = shutil.get_terminal_size(fallback=(80, 24))
+
+    if term_width >= _BANNER_ART_WIDTH and term_height >= _BANNER_ART_HEIGHT + 3:
+        # Each row prints as its own plain `Text` — never parsed as Rich
+        # markup (a `Text` object bypasses markup parsing entirely, unlike a
+        # string) and never reflowed (`no_wrap` + `overflow="crop"`), so
+        # Rich can't refold or truncate-with-ellipsis a line on its own.
+        for line in _BANNER_ART_LINES:
+            console.print(
+                Text(line, style=_BANNER_ACCENT, no_wrap=True, overflow="crop")
+            )
+        console.print()
+        console.print(Text(_BANNER_TAGLINE, style=f"bold {_BANNER_ACCENT}"))
+        console.print()
+    elif term_width >= _COMPACT_BANNER_WIDTH and term_height >= 5:
+        for line in _COMPACT_BANNER_LINES:
+            console.print(
+                Text(
+                    line,
+                    style=f"bold {_BANNER_ACCENT}",
+                    no_wrap=True,
+                    overflow="crop",
+                )
+            )
+        console.print()
+        console.print(Text(_BANNER_TAGLINE, style=f"bold {_BANNER_ACCENT}"))
+        console.print()
+    else:
+        console.print(Text(_BANNER_TAGLINE, style=f"bold {_BANNER_ACCENT}"))
+        console.print()
 
 
 def _validate_creds(cfg: EnvConfig) -> None:
@@ -178,6 +294,7 @@ def init(
     anything still missing is prompted for, so this works interactively and
     headlessly from the same command.
     """
+    _print_banner()
     cwd = Path.cwd()
     if not profile:
         profile = _ask("Profile name", _default_profile_name(cwd), flag="--profile")

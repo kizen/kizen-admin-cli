@@ -12,6 +12,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 import kizen_builder.cli as cli
+from kizen_builder.cli import init as init_cli
 from kizen_builder.cli import objects as objects_cli
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import forms as form_tools
@@ -2060,6 +2061,102 @@ def test_init_stores_profile_and_pins_directory(monkeypatch, tmp_path):
     assert pin_file.is_file()
     data = tomllib.loads(pin_file.read_text())
     assert data == {"profile": "alpha", "business_id": "AAAA"}
+
+
+def test_init_banner_absent_when_not_interactive(monkeypatch, tmp_path):
+    """CliRunner's captured stream isn't a real tty, so `_init_is_interactive`
+    (which wraps `console.is_terminal`) is already `False` by default — no
+    monkeypatching needed to prove the piped/non-interactive case."""
+    from kizen_builder import config, profiles
+
+    config.set_profile_override(None)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        cli.app,
+        ["init", "--profile", "banner-off", "--skip-validation"],
+        input="apikey\nCCCC\nuser1\ngo\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert init_cli._BANNER_TAGLINE not in result.stdout
+    assert "::::" not in result.stdout
+    assert profiles.get_profile("banner-off") is not None
+
+
+def test_init_banner_shows_full_art_on_a_wide_terminal(monkeypatch, tmp_path):
+    """Interactive, and the (measured, real) terminal is comfortably bigger
+    than the 43x22 art: the full art and tagline print.
+
+    `_init_is_interactive` and `shutil.get_terminal_size` are monkeypatched
+    directly on the `init` module rather than mutating the shared `console`
+    singleton — see `_init_is_interactive`'s docstring for why."""
+    from kizen_builder import config, profiles
+
+    config.set_profile_override(None)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(init_cli, "_init_is_interactive", lambda: True)
+    monkeypatch.setattr(
+        init_cli.shutil, "get_terminal_size", lambda fallback=(80, 24): (120, 40)
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["init", "--profile", "banner-wide", "--skip-validation"],
+        input="apikey\nDDDD\nuser1\ngo\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert init_cli._BANNER_TAGLINE in result.stdout
+    assert "::::" in result.stdout  # the halftone art rendered
+    assert "KIZEN" not in result.stdout  # not the compact fallback
+    assert profiles.get_profile("banner-wide") is not None
+
+
+def test_init_banner_degrades_to_compact_form_on_narrow_terminal(monkeypatch, tmp_path):
+    """Interactive, but the terminal is narrower than the 43-column art: the
+    bordered KIZEN wordmark prints instead, not the full halftone art."""
+    from kizen_builder import config, profiles
+
+    config.set_profile_override(None)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(init_cli, "_init_is_interactive", lambda: True)
+    monkeypatch.setattr(
+        init_cli.shutil, "get_terminal_size", lambda fallback=(80, 24): (30, 24)
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["init", "--profile", "banner-narrow", "--skip-validation"],
+        input="apikey\nEEEE\nuser1\ngo\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert init_cli._BANNER_TAGLINE in result.stdout
+    assert "KIZEN" in result.stdout
+    assert "::::" not in result.stdout
+    assert profiles.get_profile("banner-narrow") is not None
+
+
+def test_init_banner_shows_tagline_only_on_tiny_terminal(monkeypatch, tmp_path):
+    """Interactive, but the terminal is too small for even the compact
+    fallback: only the plain tagline prints."""
+    from kizen_builder import config, profiles
+
+    config.set_profile_override(None)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(init_cli, "_init_is_interactive", lambda: True)
+    monkeypatch.setattr(
+        init_cli.shutil, "get_terminal_size", lambda fallback=(80, 24): (10, 3)
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["init", "--profile", "banner-tiny", "--skip-validation"],
+        input="apikey\nFFFF\nuser1\ngo\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert init_cli._BANNER_TAGLINE in result.stdout
+    assert "KIZEN" not in result.stdout
+    assert "::::" not in result.stdout
+    assert profiles.get_profile("banner-tiny") is not None
 
 
 def test_init_environment_picker_resolves_named_host(monkeypatch, tmp_path):
