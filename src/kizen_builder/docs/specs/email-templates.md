@@ -43,7 +43,9 @@ produce, offline, with `messages templates craft-config --spec-file <f>
           "container_width": "580",
           "padding": {"top": "10", "right": "10", "bottom": "10", "left": "10"},
           "cells": [
-            {"blocks": [{"kind": "text", "html": "<p>Left column</p>"}]},
+            {"blocks": [{"kind": "text", "paragraphs": [
+              {"text": "Left column, hi {{ business.city }}", "bold": true, "size": 16}
+            ]}]},
             {"blocks": [{"kind": "image", "file": "/path/to/logo.png", "alt": "Logo"}]}
           ]
         }
@@ -71,8 +73,34 @@ produce, offline, with `messages templates craft-config --spec-file <f>
 - `cells[].blocks[].kind` is one of `text`, `image`, `button`, `divider` — a
   closed set, same reasoning. There is no `attachments` kind and no raw-HTML
   escape hatch (no `HTMLBlock` on this surface at all, confirmed live).
-  - `text`: `{"kind": "text", "html": "<p>...</p>"}` — embedded verbatim in
-    both outputs.
+  - `text`: `{"kind": "text", "paragraphs": [{"text": "...", "size": null,
+    "bold": false, "color": null, "link": null, "align": null}]}` — at least
+    one paragraph is required (an empty `paragraphs` list fails validation;
+    a paragraph with `text: ""` is the way to author a spacer). Each
+    paragraph is rendered into the canonical markup Kizen's own rich-text
+    editor normalises **to** on save for the single-run, single-style,
+    single-link case (`<p data-line-height="default" style="line-height:
+    1.25;">` + `<span style="font-size: Npx;">` + `<strong>` + `<a
+    rel="noopener noreferrer nofollow">`), not raw HTML — there is no
+    raw-HTML escape hatch on this surface (`TextBlockDef.html` was removed;
+    a lingering `html` key fails validation loudly, naming `paragraphs` as
+    the expected field). `size` omitted defaults to the builder's own
+    default span size (`14`px), not "no span" — every live canonical span
+    carries an explicit size. `text` may contain `{{ namespace.field }}`
+    merge-field tokens, rendered inline via `tools/merge_fields.py` — see
+    "Merge fields in message content" below. `automation_variable.*` tokens
+    are rejected at spec-validation time: library templates aren't scoped
+    to one automation.
+
+    This is a closed vocabulary, and it does not cover every paragraph
+    shape the live editor produces: the same reference template used to
+    derive this format also contains paragraphs with a bare `<a>` and no
+    `<span>` at all, and spans with a `<strong>`-wrapped run alongside plain
+    text in the same span (bold on part of a run, not the whole paragraph).
+    Neither is representable via `paragraphs`, and — because `html` is
+    gone — neither can be authored from this CLI at all. Tracked as a known
+    gap on the engineering board (BCLI-023's follow-on inbox note), not
+    fixed here.
   - `image`: `{"kind": "image", "file": "<local path>", "alt": "", "link": "", "width": 150,
     "container_width": null, "max_width": null, "max_height": null}`.
     `file` is a **local path**, not a `file_id` — there is no CLI surface to
@@ -191,20 +219,51 @@ the returned UUID as the step's `email_template_id`.
 
 ## Merge fields in message content
 
-`{{ <namespace>.<field_api_name> }}`. Confirmed namespaces:
+A merge field is **not** a bare `{{ <namespace>.<field_api_name> }}` token —
+that renders as inert literal braces in a recipient's inbox. Kizen's builder
+UI always wraps the token in a `<span class="kzn-merge-field">` marker
+(confirmed live 2026-08-26), and that wrapper is the real authoring/wire
+format everywhere merge fields appear — automation notify steps, `call_llm`/
+`file_content_extraction` prompts, dashboard static-content text blocks, and
+email template `Text` blocks alike:
 
-- **`entity_record`** — the triggering record. Includes pseudo-fields that
-  aren't real object fields (`link_url`, `created`, `estimated_close_date`).
-- **`team_member`** — the notified team member's own fields.
-- **`business`** — tenant settings.
+```html
+<span class="kzn-merge-field"
+      data-merge-field-fallback-label="Stage"
+      data-merge-field-relationship="object_with_workflow.stage"
+      data-merge-field-objectname="object with workflow">{{ object_with_workflow.stage }}</span>
+```
 
-No API-queryable catalog exists. Note the namespace token varies by step type —
-`call_llm` prompts and variable static sources use the literal
-`custom_objects.<field>` instead, regardless of the target object's real
-api_name. Full table: `kizen docs show automation`.
+`data-merge-field-objectname` (the object's *display* name) is present only
+when the namespace is a real custom object's api_name; reserved namespaces —
+`entity_record` (the triggering record, including pseudo-fields that aren't
+real object fields: `link_url`, `created`, `estimated_close_date`),
+`team_member` (the notified team member's own fields), `business` (tenant
+settings), `contact`, `automation_variable`, `automation_history`, and
+`custom_objects` (the literal token `call_llm`/`initialize_variable` use for
+the automation's own target_object) — never carry it. No API-queryable
+catalog of namespaces exists; any custom object's api_name can be one. Full
+table and the shared span-building rules: `kizen docs show automation`,
+`src/kizen_builder/tools/merge_fields.py`.
 
-Same convention applies in dashboard static-content text blocks and email
-template `Text` blocks.
+**A `paragraphs`-based `Text` block is one of the places this format is
+authored** (BCLI-023): a `{{ ns.field }}` token inline in a `ParagraphDef.text`
+string is rendered into the span above by `tools/email_craft.py`'s
+`_paragraphs_to_html`, via `merge_fields.render()` — the sole owner of this
+markup; nothing in `email_craft.py`/`email_templates.py` re-implements token
+parsing or the label tables. `automation_variable.*` is rejected at
+spec-validation time for a `Text` block's paragraphs — that namespace only
+exists in an automation-scoped message, not a portable library template.
+
+**`messages templates craft-config`/`--dry-run` never make a live call**, so
+they cannot resolve a custom object's api_name to its display name:
+`data-merge-field-objectname` is **omitted for every namespace** in that
+offline preview, including a real custom-object one that `create`/`update`
+would resolve for real — the same class of divergence `craft-config` already
+documents for Image blocks (placeholder `fileId`/`src` rather than real
+ones). `data-merge-field-fallback-label` is still populated in both paths —
+`merge_fields.render()`'s own built-in fallback tables answer every
+namespace with no resolver at all.
 
 ## Email template wire format
 
@@ -319,6 +378,21 @@ Block props confirmed live 2026-08-25:
   `font-family` for text at all, so every email rendered in the client's
   serif fallback. The `.kizen-text-styles` `<style>` rules themselves
   (link/paragraph/list/code styling) are static except for `linkColor`.
+  Inside `custom.text` itself, the builder's own canonical per-paragraph
+  markup **does** carry inline `color` at the `<span>` level — confirmed
+  live 2026-08-26 (BCLI-023), correcting an earlier claim here that it was
+  "not derivable." A per-paragraph `font-family` at the same `<span>` level
+  is also real but rarer in the reference template (a likely one-off
+  override, not a general pattern) and is not spec-settable in v1 — see
+  `ParagraphDef`/`_paragraphs_to_html` in `tools/email_craft.py`.
+  `ParagraphDef`'s vocabulary is closed and not exhaustive of what the
+  editor itself produces: re-measured 2026-08-26 against all 9 `Text` nodes
+  in the reference template, 4 of 31 `<p>` blocks contain a bare `<a>` with
+  no `<span>` at all, and 2 spans carry a `<strong>`-wrapped run alongside
+  plain text in the same span (partial-run bold). `paragraphs` cannot
+  express either shape, and since `TextBlockDef.html` is gone, there is no
+  fallback for authoring one from this CLI — tracked as a known gap on the
+  engineering board (BCLI-023's follow-on inbox note), not fixed here.
 - **`Image`** — `src` is host-absolute, so an image reference is
   **environment-bound**; moving a template between envs needs `src`
   rewritten. Two URL schemes are both confirmed live on a plain `Image`
@@ -365,25 +439,35 @@ Block props confirmed live 2026-08-25:
 - **`Button`** — `{url, label, action: "url", color, textColor, fontSize,
   fontFamily, alignment, borderSize, borderColor, borderRadius,
   padding{Top,Left,Right,Bottom}, textStyles: [], openLinkInNewTab}` plus the
-  `container*` set. The emitter's compiled `content` markup for this node
-  (`_render_button`) was checked byte-exact against a real Button in a
-  Kizen-authored template, read-only, 2026-08-26. `borderRadius`/
-  `padding{Left,Right}`/`alignment` are spec-settable
+  `container*` set. **Only the compiled `<a>` tag's own `style`** (`color`
+  hex-converted; `font-weight:normal`/`line-height:120%`/`margin:0`/
+  `text-transform:none`/`mso-padding-alt:0px` present, in this order) is
+  checked byte-exact against a real Button in a Kizen-authored template,
+  read-only, re-verified 2026-08-26 (BCLI-023) across all five Button nodes
+  in that template. The enclosing `<table>`/`<td>` markup is **not**
+  byte-exact against that capture — real Kizen puts no `align` attribute on
+  the `<table>` at all (`Button.alignment` instead reaches `<td
+  align="...">` there) and the `<td>` carries additional attributes/style
+  this emitter doesn't reproduce; recorded as a follow-on finding on the
+  engineering board (`button-table-and-divider-markup-diverge-further`),
+  not fixed here.
+  `borderRadius`/`padding{Left,Right}`/`alignment` are spec-settable
   (`ButtonBlockDef.border_radius`/`padding_left`/`padding_right`/
   `alignment`), defaulting to this emitter's pre-existing hardcoded values
   (`"8"`/`"20"`/`"20"`/`"center"`); the reference template's own newsletter
   button uses `"20"`/`"30"`/`"30"`/`"center"`, set explicitly, not inherited
-  as the default. `alignment` compiles to an `align="..."` attribute on the
-  button's own wrapping `<table>` (which also carries `line-height:100%;`
-  in its `style` — both confirmed present on a real Kizen-compiled button by
-  independent comparison in this item's review); without it every button
-  renders left-aligned in its cell regardless of the spec.
+  as the default. `alignment` compiles to an `align="..."` attribute on
+  *this emitter's own* wrapping `<table>` (not Kizen's, per above); without
+  it every button renders left-aligned in its cell regardless of the spec.
 - **`Divider`** — `{size, color, width, alignment, borderStyle}` plus the
-  `container*` set. Same verification: `_render_divider`'s output matches a
-  real captured Divider's compiled markup byte-exact. `size` (thickness in
-  px) is spec-settable (`DividerBlockDef.size`), defaulting to this
-  emitter's pre-existing hardcoded `"3"`; the reference template's divider
-  uses `"1"`, set explicitly.
+  `container*` set. `_render_divider`'s output is **not** verified against a
+  real capture — it pins this emitter's current shape only. A real Kizen
+  Divider wraps the rule in a two-level `<table><td>` plus an
+  MSO-conditional fallback `<table>`, none of which this emitter produces;
+  see the follow-on note cited above. `size` (thickness in px) is
+  spec-settable (`DividerBlockDef.size`), defaulting to this emitter's
+  pre-existing hardcoded `"3"`; the reference template's divider uses `"1"`,
+  set explicitly.
 - **`Attachments`** — `props.attachments` is a list of **full file records**
   (id, key, url, name, size_bytes, content_type, thumbnail_url, `is_public`,
   and an `employee` object naming the uploader), plus an

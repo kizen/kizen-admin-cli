@@ -423,9 +423,17 @@ first.
 
 ### Merge-field namespace tokens by step type
 
-`{{ <namespace>.<field_api_name> }}` merge-field tokens vary their
-namespace token **by which step type's content field they're in** — this
-isn't one global convention:
+A merge field is not a bare `{{ <namespace>.<field_api_name> }}` token — the
+planner (and Kizen's builder UI) always wraps it in a
+`<span class="kzn-merge-field" data-merge-field-fallback-label="…"
+data-merge-field-relationship="…" [data-merge-field-objectname="…"]>{{ … }}</span>`
+marker; the bare token by itself is inert text. See
+`src/kizen_builder/tools/merge_fields.py` for the span-building rules this
+planner shares across step types, and `docs/specs/email-templates.md` for the
+same convention in email template `Text` blocks and dashboard static text.
+
+The namespace token varies **by which step type's content field it's in** —
+this isn't one global convention:
 
 | Step type | Namespace for the trigger record's own fields |
 |-----------|------------------------------------------------|
@@ -433,9 +441,13 @@ isn't one global convention:
 | `call_llm` (`prompt`), `initialize_variable`/`update_variable` ("static" sources) | `custom_objects.<field>` — a **literal token**, regardless of the target object's real api_name |
 
 Other reserved namespaces (not real object fields, no API-queryable
-catalog): `team_member.<field>` (the notified team member's own fields),
-`business.<field>` (tenant settings), and `entity_record` pseudo-fields
-like `link_url`/`created`/`estimated_close_date`.
+catalog, never carry `data-merge-field-objectname`): `team_member.<field>`
+(the notified team member's own fields), `business.<field>` (tenant
+settings), `contact.<field>`, `automation_variable.<name>`,
+`automation_history.<field>`, and `entity_record` pseudo-fields like
+`link_url`/`created`/`estimated_close_date`. Any OTHER namespace is treated
+as a real custom object's own api_name, and its span gets
+`data-merge-field-objectname` holding that object's display name.
 
 ---
 

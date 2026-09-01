@@ -16,6 +16,31 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Email template `text` blocks are now authored as structured paragraphs,
+  not raw HTML — and can carry inline merge fields.** `TextBlockDef.html` is
+  removed (a lingering `html` key on a `text` block now fails spec
+  validation, naming `paragraphs` as the expected field); each paragraph is
+  `{text, size, bold, color, link, align}`. The emitter renders that list
+  into the exact canonical markup Kizen's own rich-text editor normalises
+  **to** on save (`<p data-line-height="default" style="line-height:
+  1.25;">` + `<span style="font-size: Npx;">` + `<strong>` + `<a
+  rel="noopener noreferrer nofollow">`), so a template built from a spec no
+  longer loses its styling the first time a human opens and saves it in the
+  builder — previously, 7 of 9 raw-HTML text blocks in a real template were
+  silently rewritten by the builder's own save.
+
+  A paragraph's `text` may also contain `{{ namespace.field }}` merge-field
+  tokens — the same syntax automation notify steps already use — rendered
+  inline into Kizen's `<span class="kzn-merge-field">` wrapper via the
+  shared `tools/merge_fields.py`. `automation_variable.*` tokens are
+  rejected at spec-validation time: that namespace only exists inside an
+  automation-scoped message, not a portable library template. Under
+  `messages templates craft-config`/`--dry-run` (no live calls), every
+  namespace still gets a best-effort label, but `data-merge-field-objectname`
+  is omitted for custom-object namespaces — there's no live object lookup to
+  answer it offline, the same class of preview-vs-real divergence
+  `craft-config` already documents for Image blocks.
+
 - **`kizen messages templates get/clone/update/delete` — the email-template
   surface can now be read and written, not just listed.** `list` only ever
   returned summary fields, so there was no way to see a template's body at
@@ -113,6 +138,36 @@ called out explicitly under **Changed** or **Removed**.
   Every fix was checked against Kizen's real compiled `content` for the
   same layout, not inferred from `craft_json` alone — see `kizen docs
   show email-templates`.
+
+- **Automation email/text merge-field markup now matches what Kizen's builder
+  UI actually writes**, fixing three divergences in the `notify_member_via_email`/
+  `_via_text`, `call_llm`, and `file_content_extraction` steps' derived HTML:
+  - A `{{ ns.field.field }}`-shaped multi-segment relationship-hop token (a
+    real one, `custom_objects.primary_document_record.id`, is captured in
+    this repo's own fixtures) previously failed to match the merge-field
+    regex at all and rendered as literal, unconverted `{{ ... }}` braces in
+    the recipient's message. The token grammar now accepts one or more
+    dot-separated segments.
+  - A real custom-object namespace (e.g. a related record's own object
+    api_name) now gets `data-merge-field-objectname` holding that object's
+    display name, matching every custom-object merge field Kizen's UI has
+    ever been observed to write. Previously this attribute was never emitted
+    at all.
+  - Fallback labels for `team_member`/`business` are now Kizen's real
+    stored field display names. The email builder's Business and Team Member
+    merge-field pickers were captured in full — all 17 entries, matching the
+    picker counts exactly — so these are pinned, verified values rather than
+    guesses (e.g. `business.postal_code` -> "Business Zip/Postal Code" and
+    `business.reply_to_email` -> "Business Notification Email", neither
+    reachable from the api_name by any transform). A token outside those
+    picker lists now at least keeps its namespace prefix;
+    `automation_variable.<name>` now keeps the variable name literal, since
+    Kizen never title-cases those. (`automation_history` labels turned out
+    to vary by containing automation rather than being fixed per field, so
+    they still fall back to a title-cased guess rather than a pinned
+    value.) The rules are consolidated in a new `tools/merge_fields.py`,
+    shared with a future email-template emitter instead of being
+    re-derived.
 
 - **`kizen upgrade --check` can now find a release tag from a `uv tool
   install`/`pipx`/direct-VCS install, not just an editable checkout.**

@@ -52,10 +52,11 @@ degrading. There is no raw-HTML escape hatch on this surface (no
 from __future__ import annotations
 
 from collections.abc import Callable
+from html import escape
 from pathlib import Path
 from typing import Any
 
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec.email_templates import (
     ButtonBlockDef,
@@ -63,9 +64,10 @@ from kizen_builder.models.spec.email_templates import (
     EmailTemplateDef,
     ImageBlockDef,
     PaddingDef,
+    ParagraphDef,
     TextBlockDef,
 )
-from kizen_builder.tools import form_ui
+from kizen_builder.tools import form_ui, merge_fields, objects
 from kizen_builder.tools.email_html import COLUMN_LAYOUTS, _compile_html
 from kizen_builder.tools.email_images import read_image_dimensions, upload_email_image
 
@@ -622,9 +624,135 @@ def _padding_dict(padding: PaddingDef | None) -> dict[str, str] | None:
     return padding.model_dump() if padding is not None else None
 
 
+def _paragraphs_to_html(
+    paragraphs: list[ParagraphDef],
+    *,
+    resolve_label: merge_fields.ResolveLabel | None = None,
+    resolve_objectname: merge_fields.ResolveObjectName | None = None,
+) -> str:
+    """Render a `TextBlockDef.paragraphs` list into the exact markup Kizen's
+    own rich-text editor normalises **to** on save — confirmed live
+    2026-08-26 against the reference template's touched `Text` nodes (see
+    the work item's "The canonical vocabulary" section): one `<p
+    data-line-height="default" style="line-height: 1.25;">` per paragraph,
+    `text-align: <align>;` appended to that same `style` only when `align`
+    is set, an empty `<p>...</p>` with no `<span>` child for `{"text": ""}`,
+    and non-empty text wrapped in exactly one `<span style="font-size:
+    Npx;">` (`<strong>` nested *inside* the span when `bold`, not the
+    reverse) with the whole span wrapped in `<a rel="noopener noreferrer
+    nofollow" href="...">` when `link` is set. `size` defaults to
+    `EMAIL_ROOT_PROPS["fontSize"]` when omitted — every live canonical span
+    carries an explicit size, so "omitted" means "the builder's own
+    default," never "no span."
+
+    Named to match its module (`tools.email_craft`), not `_render_paragraphs`
+    — every `_render_*` function is a compile-side function in
+    `tools.email_html` after the split, and this one mints no node id and
+    touches no `craft_json` (settled in BCLI-026's review).
+
+    `text` is rendered via `merge_fields.render()` — the sole owner of
+    `{{ namespace.field }}` -> `<span class="kzn-merge-field">` markup — in
+    place of a bare `html.escape(text)` call; nothing else about escaping
+    changes, since `render()` already HTML-escapes every non-token span
+    internally. `resolve_label`/`resolve_objectname` of `None` (the
+    `craft-config`/`--dry-run` offline path) is handled entirely by
+    `merge_fields.render()` itself: every namespace still gets a best-effort
+    label from its own fallback tables, but `data-merge-field-objectname`
+    is omitted for every namespace since there is no live object lookup to
+    answer it — see `_email_merge_field_resolvers` below.
+    """
+    parts: list[str] = []
+    default_size = int(EMAIL_ROOT_PROPS["fontSize"])
+    for para in paragraphs:
+        p_style = "line-height: 1.25;"
+        if para.align is not None:
+            p_style += f" text-align: {para.align};"
+        if para.text == "":
+            parts.append(f'<p data-line-height="default" style="{p_style}"></p>')
+            continue
+
+        rendered = merge_fields.render(
+            para.text,
+            resolve_label=resolve_label,
+            resolve_objectname=resolve_objectname,
+        )
+        if para.bold:
+            rendered = f"<strong>{rendered}</strong>"
+
+        size = para.size if para.size is not None else default_size
+        span_style = f"font-size: {size}px;"
+        if para.color:
+            span_style += f" color: {para.color};"
+        span = f'<span style="{span_style}">{rendered}</span>'
+
+        if para.link:
+            span = (
+                f'<a rel="noopener noreferrer nofollow" '
+                f'href="{escape(para.link, quote=True)}">{span}</a>'
+            )
+        parts.append(f'<p data-line-height="default" style="{p_style}">{span}</p>')
+    return "".join(parts)
+
+
+def _email_merge_field_resolvers() -> tuple[
+    merge_fields.ResolveLabel, merge_fields.ResolveObjectName
+]:
+    """The live `resolve_label`/`resolve_objectname` pair `merge_fields.render()`
+    needs for one spec-compile call, backed by `tools.objects.get_object` —
+    deliberately **no** `AutomationDef`/`LiveContext` import, matching
+    `merge_fields.py`'s own no-automation-dependency design.
+
+    Simpler than `tools.planners.automations._merge_field_resolvers`, not
+    just a copy of it: that resolver special-cases `entity_record`/
+    `custom_objects` against an automation's own `target_object`, because
+    those two pseudo-tokens mean "the triggering record"/"this automation's
+    own target object." A library email template has no target object at
+    all, so this resolver has nothing to resolve those two against — they
+    fall through to `merge_fields`'s own reserved-namespace handling like
+    any other reserved namespace (a bare title-cased guess, no namespace
+    prefix). This is a real, load-bearing behavioral difference from
+    automations, not an oversight — the real label for `entity_record`/
+    `custom_objects` can only be known once a template is cloned into an
+    automation-scoped message with a real target object.
+
+    Caches each looked-up object by api_name for the lifetime of this
+    resolver pair (a plain `dict[str, dict]`, the same lazy-cache shape
+    `LiveContext._objects_by_api` uses in `tools/planners/automations.py`,
+    without importing `LiveContext` itself) — a template can reference the
+    same custom object many times across paragraphs, and
+    `tools.objects.get_object` opens its own `KizenClient` per call.
+    """
+    cache: dict[str, dict[str, Any]] = {}
+
+    def _object(api_name: str) -> dict[str, Any] | None:
+        if api_name not in cache:
+            try:
+                cache[api_name] = objects.get_object(api_name)
+            except KizenAPIError:
+                return None
+        return cache[api_name]
+
+    def resolve_label(namespace: str, field_path: str) -> str | None:
+        if namespace in merge_fields.RESERVED_NAMESPACES:
+            return None
+        obj = _object(namespace)
+        if obj is None:
+            return None
+        match = next((f for f in obj["fields"] if f["api_name"] == field_path), None)
+        return match["display_name"] if match else None
+
+    def resolve_objectname(namespace: str) -> str | None:
+        obj = _object(namespace)
+        return obj.get("display_name") if obj else None
+
+    return resolve_label, resolve_objectname
+
+
 def _walk_blocks(
     spec: EmailTemplateDef,
     resolve_image: Callable[[ImageBlockDef], dict[str, Any]],
+    resolve_label: merge_fields.ResolveLabel | None = None,
+    resolve_objectname: merge_fields.ResolveObjectName | None = None,
 ) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
     for s in spec.sections:
@@ -635,7 +763,16 @@ def _walk_blocks(
                 blocks: list[dict[str, Any]] = []
                 for b in c.blocks:
                     if isinstance(b, TextBlockDef):
-                        blocks.append({"kind": "text", "html": b.html})
+                        blocks.append(
+                            {
+                                "kind": "text",
+                                "html": _paragraphs_to_html(
+                                    b.paragraphs,
+                                    resolve_label=resolve_label,
+                                    resolve_objectname=resolve_objectname,
+                                ),
+                            }
+                        )
                     elif isinstance(b, ButtonBlockDef):
                         blocks.append(
                             {
@@ -696,15 +833,27 @@ def resolve_spec_images(spec: EmailTemplateDef) -> list[dict[str, Any]]:
     from the CLI layer for a real apply, never from ``tools/planners/``.
     Under ``--dry-run`` the CLI calls :func:`offline_resolve_spec_images`
     instead, so a dry run uploads nothing — see that function.
+
+    Also builds the live merge-field resolvers (:func:`_email_merge_field_resolvers`)
+    and threads them through :func:`_walk_blocks`, so a ``Text`` block's
+    ``paragraphs`` render with real ``data-merge-field-fallback-label``/
+    ``data-merge-field-objectname`` values for any custom-object namespace
+    referenced.
     """
     config = load_env_config()
+    resolve_label, resolve_objectname = _email_merge_field_resolvers()
     with KizenClient(config) as client:
 
         def resolve_image(b: ImageBlockDef) -> dict[str, Any]:
             info = upload_email_image(client, config.base_url, b.file)
             return {**info, "alt": b.alt, "link": b.link, "width": b.width}
 
-        return _walk_blocks(spec, resolve_image)
+        return _walk_blocks(
+            spec,
+            resolve_image,
+            resolve_label=resolve_label,
+            resolve_objectname=resolve_objectname,
+        )
 
 
 def offline_resolve_spec_images(spec: EmailTemplateDef) -> list[dict[str, Any]]:
@@ -714,6 +863,19 @@ def offline_resolve_spec_images(spec: EmailTemplateDef) -> list[dict[str, Any]]:
     stands in obvious placeholder tokens for ``fileId``/``src`` — this
     output previews the compiled HTML, it is not meant to be pasted into a
     create/update spec.
+
+    Merge fields in a ``Text`` block's ``paragraphs`` get the same
+    no-network treatment: ``resolve_label=None, resolve_objectname=None``
+    passed to :func:`_walk_blocks`. ``merge_fields.render()`` still answers
+    every label from its own built-in fallback tables, but
+    ``data-merge-field-objectname`` is omitted entirely for **every**
+    namespace, including a real custom-object one — there is no live object
+    lookup to answer it offline. This is a real, visible divergence between
+    this preview output and what `create`/`update` would actually produce
+    for a spec referencing a custom-object merge field, the same class of
+    divergence this function already documents for Image blocks
+    (placeholder ``fileId``/``src`` rather than real ones) — not silently
+    produced as if it were full fidelity.
     """
 
     def resolve_image(b: ImageBlockDef) -> dict[str, Any]:
@@ -730,4 +892,6 @@ def offline_resolve_spec_images(spec: EmailTemplateDef) -> list[dict[str, Any]]:
             "width": b.width,
         }
 
-    return _walk_blocks(spec, resolve_image)
+    return _walk_blocks(
+        spec, resolve_image, resolve_label=None, resolve_objectname=None
+    )

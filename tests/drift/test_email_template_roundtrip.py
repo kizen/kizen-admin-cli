@@ -17,7 +17,7 @@ import pytest
 
 from kizen_builder.api import files as files_api
 from kizen_builder.api import messages as messages_api
-from kizen_builder.models.spec.email_templates import EmailTemplateDef
+from kizen_builder.models.spec.email_templates import EmailTemplateDef, ParagraphDef
 from kizen_builder.tools import email_craft as ec
 from kizen_builder.tools.messages import craft_summary
 from kizen_builder.tools.planners import messages as message_planners
@@ -61,7 +61,20 @@ def test_create_template_from_spec_roundtrips_live(
                         {
                             "layout": "1 Column",
                             "cells": [
-                                {"blocks": [{"kind": "text", "html": "<p>Hello</p>"}]}
+                                {
+                                    "blocks": [
+                                        {
+                                            "kind": "text",
+                                            "paragraphs": [
+                                                {
+                                                    "text": "Hello {{ business.city }}",
+                                                    "bold": True,
+                                                    "size": 18,
+                                                }
+                                            ],
+                                        }
+                                    ]
+                                }
                             ],
                         },
                         {
@@ -130,6 +143,35 @@ def test_create_template_from_spec_roundtrips_live(
     assert summary["structure_coupled"] is True, summary
     assert summary["text_in_sync"] is True, summary
     assert summary["coupled"] is True
+
+    # BCLI-023: `craft_summary` being green is not enough on its own — it
+    # only tag-strips and compares plain text, which would not catch a
+    # canonical-shape regression (the exact "green but wrong" gap BCLI-022's
+    # inverted-media-query defect shipped through undetected). Assert the
+    # stored `custom.text` structurally matches what `_paragraphs_to_html`
+    # emits for these exact paragraphs — tag names and style keys, not the
+    # server's byte-for-byte response, since whitespace/attribute-ordering
+    # is not something this test should be brittle against. `business.*` is
+    # a reserved namespace `merge_fields.render()` resolves identically with
+    # or without a live resolver (reserved namespaces short-circuit before
+    # any resolver call), so the offline-computed shape is a valid oracle
+    # for this live-created template's `text_in_sync`-passing text.
+    text_nodes = [
+        n
+        for n in live["craft_json"].values()
+        if isinstance(n, dict) and n.get("type", {}).get("resolvedName") == "Text"
+    ]
+    assert len(text_nodes) == 1
+    stored_text = text_nodes[0]["custom"]["text"]
+    expected_text = ec._paragraphs_to_html(
+        [ParagraphDef(text="Hello {{ business.city }}", bold=True, size=18)]
+    )
+    assert stored_text == expected_text
+    assert stored_text in live["content"]
+    assert 'data-merge-field-relationship="business.city"' in stored_text, (
+        "merge-field span missing from the stored craft_json text"
+    )
+    assert 'data-merge-field-relationship="business.city"' in live["content"]
 
     row_nodes = [
         n

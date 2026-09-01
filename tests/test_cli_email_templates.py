@@ -47,7 +47,14 @@ SPEC = {
                 {
                     "layout": "2 Columns",
                     "cells": [
-                        {"blocks": [{"kind": "text", "html": "<p>left</p>"}]},
+                        {
+                            "blocks": [
+                                {
+                                    "kind": "text",
+                                    "paragraphs": [{"text": "left"}],
+                                }
+                            ]
+                        },
                         {
                             "blocks": [
                                 {"kind": "button", "label": "Go", "url": "https://x"}
@@ -185,6 +192,56 @@ def test_create_dry_run_with_an_image_block_uploads_nothing(tmp_path):
         if isinstance(n, dict) and n.get("type", {}).get("resolvedName") == "Image"
     )
     assert image_node["props"]["fileId"] == ec.OFFLINE_FILE_PLACEHOLDER
+
+
+@respx.mock
+def test_craft_config_with_merge_field_text_makes_no_live_calls_and_omits_objectname(
+    tmp_path,
+):
+    """The same no-live-call proof as the image case above, for a
+    `paragraphs`-based text block carrying a custom-object merge-field
+    token: `craft-config` never resolves it live (an active `@respx.mock`
+    with no routes registered would fail on any http call that escaped),
+    and its output reflects that — `data-merge-field-objectname` is absent,
+    a real, documented divergence from what `create`/`update` would
+    produce."""
+    spec = {
+        "name": "Newsletter",
+        "sections": [
+            {
+                "rows": [
+                    {
+                        "layout": "1 Column",
+                        "cells": [
+                            {
+                                "blocks": [
+                                    {
+                                        "kind": "text",
+                                        "paragraphs": [
+                                            {"text": "{{ some_custom_object.stage }}"}
+                                        ],
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            }
+        ],
+    }
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(spec))
+    result = runner.invoke(
+        cli.app,
+        ["messages", "templates", "craft-config", "--spec-file", str(spec_file)],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert (
+        'data-merge-field-relationship="some_custom_object.stage"'
+        in (payload["content"])
+    )
+    assert "data-merge-field-objectname" not in payload["content"]
 
 
 @respx.mock

@@ -178,7 +178,24 @@ def _layout_for_columns(columns: list[float]) -> ColumnLayout:
 
 
 def _render_button(node: dict[str, Any]) -> str:
+    """The `<table><td><a>` Kizen compiles a Button node to. Only the `<a>`
+    tag's own `style` is confirmed byte-exact against a real Kizen-compiled
+    button (read-only, `cli-testing`, 2026-08-26, five buttons in the
+    reference template independently agreeing on both the `rgba()`->hex
+    conversion and this exact declaration order): `color` goes through
+    `_rgba_to_hex` (Kizen's own compiler emits `#ffffff`, never
+    `rgba(255,255,255,1)`, for the same `textColor`), and five declarations
+    Kizen always emits are added — `font-weight:normal`, `line-height:120%`,
+    `margin:0`, `text-transform:none`, `mso-padding-alt:0px` — in the same
+    position real captures show. The enclosing `<table>`/`<td>` markup is
+    NOT verified against that capture and is known, as of this update, to
+    also diverge (no `align` attribute on `<table>` at all; the real `<td>`
+    carries `align`/`role`/`valign` and a different `style` including a
+    second, non-zero `mso-padding-alt`) — out of this item's scope; see
+    `00-inbox/button-table-and-divider-markup-diverge-further.md`.
+    """
     p = node["props"]
+    text_color = _rgba_to_hex(p["textColor"])
     return (
         '<table role="presentation" '
         f'align="{p["alignment"]}" '
@@ -189,11 +206,14 @@ def _render_button(node: dict[str, Any]) -> str:
         f'text-align:center;" '
         f'bgcolor="{p["color"]}">'
         f'<a href="{escape(p["url"], quote=True)}" target="_blank" '
-        f'style="display:inline-block;background:{p["color"]};color:{p["textColor"]};'
+        f'style="display:inline-block;background:{p["color"]};color:{text_color};'
         f"font-family:{p['fontFamily']};font-size:{p['fontSize']}px;"
+        "font-weight:normal;line-height:120%;margin:0;text-decoration:none;"
+        "text-transform:none;"
         f"padding:{p['paddingTop']}px {p['paddingRight']}px "
-        f"{p['paddingBottom']}px {p['paddingLeft']}px;border-radius:{p['borderRadius']}px;"
-        'text-decoration:none;">'
+        f"{p['paddingBottom']}px {p['paddingLeft']}px;"
+        "mso-padding-alt:0px;"
+        f'border-radius:{p["borderRadius"]}px;">'
         f"{escape(p['label'])}</a></td></tr></table>"
     )
 
