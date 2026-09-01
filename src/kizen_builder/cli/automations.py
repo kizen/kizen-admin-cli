@@ -261,8 +261,12 @@ def autos_roundtrip(
                 console.print(f"  [red]-[/red] {p}")
         elif not result["executed"]:
             console.print(
-                "[green]translated + validated[/green] — dry run only; "
-                "re-run with --execute to prove the round-trip live"
+                "[green]translated + client-side validated[/green] — dry "
+                "run only. This does NOT prove the PUT will succeed: "
+                "validation here is structural (the step graph), not the "
+                "server's own field/dialect rules, so a payload can pass "
+                "this check and still 400. Re-run with --execute to prove "
+                "the round-trip live."
             )
         else:
             drift = result.get("drift") or []

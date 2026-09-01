@@ -42,6 +42,7 @@ Adding a new step type means: write a builder function, add it to
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -1313,8 +1314,89 @@ def _step_start_automation(
                 resolved.append(uuid)
     out["automation_ids"] = resolved
     if block.get("automation_variable_overrides"):
-        out["automation_variable_overrides"] = block["automation_variable_overrides"]
+        out["automation_variable_overrides"] = _collapse_variable_overrides(
+            block["automation_variable_overrides"]
+        )
     return out
+
+
+# Every value-carrying key an override entry can hold, and how the write
+# dialect wants it narrowed. Keyed by the payload key rather than by
+# `value_source`, deliberately: which key holds the value is observable on
+# any entry, whereas the `value_source` string that selects each one is only
+# knowable from a capture that exercises it. Driving off the key means an
+# override whose `value_source` we have never seen still round-trips.
+#
+# The two unwrap rules are this module's existing conventions, not new
+# guesses: automation-variable references resolve by name, field references
+# by UUID. `specific_value` is a bare scalar already.
+_OVERRIDE_VALUE_KEYS: dict[str, Callable[[Any], Any] | None] = {
+    "context_entity_field": _unwrap_id,
+    "automation_variable": _unwrap_variable_name,
+    "automation_entity_variable": _unwrap_variable_name,
+    "automation_entity_variable_field": _unwrap_id,
+    "relationship_field": _unwrap_id,
+    "related_record_field": _unwrap_id,
+    "specific_value": None,
+}
+
+
+def _collapse_variable_overrides(overrides: list[Any]) -> list[dict[str, Any]]:
+    """Read dialect is a flat list, one entry per override, every reference
+    expanded to a full object (`target_automation`, `variable_to_override`,
+    plus one or more `value_source`-specific references). Write dialect
+    groups entries by target automation id and narrows each reference — see
+    `_OVERRIDE_VALUE_KEYS`. Already-grouped input (hand-authored write
+    dialect) passes through unchanged.
+
+    Every non-null value key on the entry is carried across, whether or not
+    this code has seen its `value_source` before. That is what keeps an
+    automation editable: `activate`, `deactivate` and `steps` all PUT the
+    whole automation back, so a step nobody touched must survive the trip.
+    Refusing the write instead would strand an automation Kizen itself
+    accepted, and dropping the key silently is the bug this function exists
+    to fix — a `specific_value` override once collapsed to a payload with no
+    value at all while `roundtrip` reported clean.
+    """
+    has_grouped = any(isinstance(o, dict) and "automation_id" in o for o in overrides)
+    has_flat = any(isinstance(o, dict) and "automation_id" not in o for o in overrides)
+    if has_grouped and has_flat:
+        raise PlanError(
+            "automation_variable_overrides mixes grouped (write-dialect) and "
+            "flat (read-dialect) entries in one list; expected uniformly one "
+            "or the other"
+        )
+    if has_grouped:
+        return overrides
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for entry in overrides:
+        if not isinstance(entry, dict):
+            raise PlanError(
+                f"automation_variable_overrides entry is not an object: {entry!r}"
+            )
+        auto_id = _unwrap_id(entry.get("target_automation"))
+        if not auto_id:
+            raise PlanError(
+                f"automation_variable_overrides entry has no target_automation: {entry!r}"
+            )
+        item: dict[str, Any] = {
+            "variable_to_override": _unwrap_variable_name(
+                entry.get("variable_to_override")
+            ),
+            "value_source": entry.get("value_source"),
+        }
+        for key, unwrap in _OVERRIDE_VALUE_KEYS.items():
+            value = entry.get(key)
+            if value is None:
+                continue
+            item[key] = unwrap(value) if unwrap else value
+        if auto_id not in groups:
+            groups[auto_id] = []
+            order.append(auto_id)
+        groups[auto_id].append(item)
+    return [{"automation_id": aid, "variable_overrides": groups[aid]} for aid in order]
 
 
 def _step_change_field_value(
@@ -1341,7 +1423,11 @@ def _change_field_value_action(
         "field_resolution": a.get("field_resolution") or "overwrite",
         "update_mode": a.get("update_mode") or "update_fields",
         "field_value_mappings": a.get("field_value_mappings") or [],
-        "fields_to_clear": a.get("fields_to_clear") or [],
+        # Read expands each entry to a full field object; write wants bare
+        # UUIDs, same as the tag-list handling below.
+        "fields_to_clear": [
+            _unwrap_id(f) or f for f in (a.get("fields_to_clear") or [])
+        ],
     }
     # Dialect quirk: change_field_value actions use `change_type`;
     # modify_related_entities fields_to_modify items use `value_type`.

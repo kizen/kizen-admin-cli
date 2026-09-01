@@ -605,6 +605,19 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | Null keys everywhere (reads include every key as null) | dropped — writes reject them |
 | `email`/`text` message resources (expanded) | `{"id": uuid}` — and note these are bound to their automation, so a POSTed copy can't reference them ("Invalid pk") |
 | Step/trigger orders with gaps or nulls | sequential 0..N |
+| `change_field_value.fields_to_clear` (expanded field objects) | bare field UUIDs |
+| `start_automation.automation_variable_overrides` — flat list, every ref expanded (`target_automation`, `variable_to_override`, plus a `value_source`-specific ref) | grouped by target automation id: `[{automation_id, variable_overrides: [...]}]`, and the unwrapping is non-uniform — `context_entity_field` → bare UUID, `variable_to_override`/`automation_variable` → bare **name**, `specific_value` → passthrough (already a bare scalar on read), `blank` → no key at all |
+
+`automation_variable_overrides` items carry a fixed key set on read, most null
+per entry — `value_source` says which one is live: `context_entity_field`,
+`automation_variable`, `specific_value`, and `blank` are confirmed live
+2026-09-01 (`sets_variable_overrides`/`Receives Variable Overrides`, five
+overrides on one target automation, incl. one `specific_value` and one
+`blank`). Four more sibling keys are real on the wire but unconfirmed —
+null in every capture so far: `automation_entity_variable`,
+`automation_entity_variable_field`, `relationship_field`,
+`related_record_field`. The translator raises rather than guesses at their
+`value_source` names or unwrap shape.
 
 ### Graph rules the server enforces
 

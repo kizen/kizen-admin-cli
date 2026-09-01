@@ -184,6 +184,36 @@ called out explicitly under **Changed** or **Removed**.
   Every fix was checked against Kizen's real compiled `content` for the
   same layout, not inferred from `craft_json` alone — see `kizen docs
   show email-templates`.
+- **`change_field_value.fields_to_clear` and `start_automation.
+  automation_variable_overrides` now survive `activate`/`deactivate`,
+  `steps add|edit|remove`, and `roundtrip --execute`.** Both are
+  expand-on-read keys: GET returns full objects, but write dialect wants
+  something narrower, and the translator was handing the read shape straight
+  back to PUT. Previously any automation containing either key 400'd on
+  every one of those verbs — including on steps nobody touched, since a PUT
+  is a full replace — so `automations activate` (the flow `automation.md`
+  explicitly recommends) could not complete on such an automation.
+  `fields_to_clear` now collapses to bare field UUIDs.
+  `automation_variable_overrides` now collapses into the write dialect's
+  grouped-by-target-automation shape, narrowing each reference the write
+  dialect expects: field references (`context_entity_field`,
+  `relationship_field`, `related_record_field`,
+  `automation_entity_variable_field`) collapse to bare UUIDs,
+  variable references (`variable_to_override`, `automation_variable`,
+  `automation_entity_variable`) to bare names, and `specific_value` passes
+  through as-is. An earlier build of this fix carried through only two of
+  those and silently dropped the override's value whenever `value_source`
+  was `specific_value` — confirmed live against a real `boolean`-typed
+  override, which collapsed to a payload missing its value entirely while
+  `roundtrip` still reported clean.
+
+  Every value key present on an override is carried across, whether or not
+  this release has seen its `value_source` before, so an automation that
+  uses one stays editable: `activate`, `deactivate` and `steps` all PUT the
+  whole automation back, and a step nobody touched has to survive the trip.
+  `automations roundtrip` (without `--execute`) now also says plainly that
+  its validation is client-side only and does not prove the PUT will
+  succeed, rather than reporting "translated + validated" unqualified.
 
 - **Automation email/text merge-field markup now matches what Kizen's builder
   UI actually writes**, fixing three divergences in the `notify_member_via_email`/
