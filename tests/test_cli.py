@@ -2026,6 +2026,47 @@ def test_init_environment_picker_free_text_url(monkeypatch, tmp_path):
     assert stored is not None and stored.base_url == "https://self-hosted.example.com"
 
 
+def test_init_environment_picker_is_case_insensitive(monkeypatch, tmp_path):
+    """Rich's `choices` matching defaults to case-sensitive, so someone typing
+    their environment name as they'd naturally capitalize it (e.g. "Go") got
+    stuck in an infinite "please select one of the available options" loop
+    with no clue why — every retry of the same reasonable word failed."""
+    from kizen_builder import config, profiles
+
+    config.set_profile_override(None)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli.app,
+        ["init", "--profile", "epsilon", "--skip-validation"],
+        input="apikey\nEEEE\nuser1\nGo\n",
+    )
+    assert result.exit_code == 0, result.output
+
+    stored = profiles.get_profile("epsilon")
+    assert stored is not None and stored.base_url == "https://app.go.kizen.com"
+
+
+def test_init_environment_picker_mistyped_name_shows_url_hint(monkeypatch, tmp_path):
+    """A guess that isn't one of the curated names (e.g. a real tenant host)
+    used to loop on Rich's generic "please select one of the available
+    options" with no hint that "url" unlocks free-text entry. It should now
+    say so directly, and still let the retry succeed."""
+    from kizen_builder import config, profiles
+
+    config.set_profile_override(None)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli.app,
+        ["init", "--profile", "delta", "--skip-validation"],
+        input="apikey\nDDDD\nuser1\ndzcf.example.com\nurl\nhttps://dzcf.example.com\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert 'Type "url" to enter a custom address instead' in result.output
+
+    stored = profiles.get_profile("delta")
+    assert stored is not None and stored.base_url == "https://dzcf.example.com"
+
+
 def test_init_base_url_flag_accepts_named_host(monkeypatch, tmp_path):
     from kizen_builder import config, profiles
 

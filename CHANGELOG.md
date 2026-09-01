@@ -77,6 +77,17 @@ called out explicitly under **Changed** or **Removed**.
   these installs, so before a `vX.Y.Z` tag exists the answer stays
   inconclusive — just honestly ("the remote has no release tags yet") instead
   of implying no channel is configured at all.
+- **`kizen init`'s Environment prompt no longer rejects a correctly-typed
+  answer just because of its case.** Rich's `choices` matching defaults to
+  case-sensitive, so typing `Go` for a `go` business — the natural way to
+  capitalize it — looped forever on "please select one of the available
+  options" with no indication of why, indistinguishable from the prompt not
+  accepting input at all. Matching is now case-insensitive.
+- **`kizen init`'s Environment prompt now says what to do when your answer
+  genuinely isn't one of the curated names.** Rich's generic rejection
+  message never mentioned that `url` itself is the escape hatch to a
+  free-text address. The message now says so directly: `Type "url" to enter
+  a custom address instead.`
 
 - **`kizen objects list` now includes built-in objects like Contacts
   (`client_client`), not just custom ones.** The server excludes built-ins by
