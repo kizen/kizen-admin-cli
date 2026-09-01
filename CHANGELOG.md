@@ -55,6 +55,19 @@ called out explicitly under **Changed** or **Removed**.
   other non-interactive invocations print nothing new — the banner is gated
   on the same terminal-detection signal the rest of the CLI already relies
   on.
+- **`kizen team get <id|name|email>` — the first link in `person -> role ->
+  group -> control` is now discoverable from the CLI.** Previously the only
+  team-member lookup, `team search`, went through `/api/team/typeahead`,
+  which has no role field at all — answering "which role does this person
+  have" meant reading it out of the Kizen UI by hand. `team get` resolves a
+  team member (by UUID directly, or by a case-insensitive name/email match
+  against `team search`, falling back to the single result if nothing
+  matches exactly) and shows their role(s) by name, via `GET /api/team/{id}`
+  cross-referenced against `GET /api/role` (the retrieve endpoint's `roles`
+  field is bare UUIDs, not expanded objects — confirmed live). `team
+  search`'s existing output is unchanged. Name/email resolution shares its
+  matching logic with the webhook sample tool's team-member lookup
+  (`tools/team.team_member_candidates`).
 
 - **`kizen messages templates get/clone/update/delete` — the email-template
   surface can now be read and written, not just listed.** `list` only ever

@@ -1,0 +1,11 @@
+{
+  "id": "00000000-0000-4000-8000-000000000901",
+  "full_name": "Alex Example",
+  "title": "Account Manager",
+  "email": "alex@example.com",
+  "first_name": "Alex",
+  "last_name": "Example",
+  "roles": ["00000000-0000-4000-8000-000000000101"],
+  "permission_groups": ["00000000-0000-4000-8000-000000000201"],
+  "account_type": "user_standard"
+}

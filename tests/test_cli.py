@@ -20,6 +20,7 @@ from kizen_builder.tools import objects as obj_tools
 from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools import records as record_tools
+from kizen_builder.tools import team as team_tools
 from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.planners import forms as form_planners
@@ -2511,3 +2512,31 @@ def test_perms_group_renders_resolution_warnings_on_stderr(monkeypatch):
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == view  # stdout is pure result JSON
     assert "warning: could not resolve object and field names" in result.stderr
+
+
+def test_team_get_json_shows_resolved_roles(monkeypatch):
+    d = {
+        "id": "m1",
+        "full_name": "Alex Example",
+        "email": "alex@example.com",
+        "title": "Account Manager",
+        "roles": [{"id": "r1", "name": "Sales Rep"}],
+    }
+    monkeypatch.setattr(team_tools, "get_team_member", lambda ref: d)
+
+    result = runner.invoke(cli.app, ["team", "get", "m1", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == d
+
+
+def test_team_get_reports_ambiguous_ref_as_a_cli_error(monkeypatch):
+    def raise_ambiguous(ref):
+        raise LookupError(f"team member '{ref}' is ambiguous (2 matches: [...]).")
+
+    monkeypatch.setattr(team_tools, "get_team_member", raise_ambiguous)
+
+    result = runner.invoke(cli.app, ["team", "get", "alex"])
+
+    assert result.exit_code == 1
+    assert "ambiguous" in result.stderr

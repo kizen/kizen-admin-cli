@@ -26,6 +26,7 @@ field Kizen rejected.
 | `layouts update` | [layout.md](layout.md) | `LayoutDef` (record layout) |
 | `filter-groups`, `quick-filters`, `columns` create\|update | [saved-views.md](saved-views.md) | filter DSL / `configuration_json` |
 | `permissions group-create`, `roles …` | [permission-group.md](permission-group.md) | shaping-op list |
+| `team search\|get` | [team.md](team.md) | — |
 | `smart-connectors` (all but `configure-flow`) | [smart-connectors.md](smart-connectors.md) | — |
 | `smart-connectors configure-flow` | [smart-connector-flow.md](smart-connector-flow.md) | execution variables + load steps |
 | `messages …` (and email template ground truth) | [email-templates.md](email-templates.md) | — |
