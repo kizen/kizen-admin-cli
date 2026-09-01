@@ -16,6 +16,31 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Email template `text` blocks are now authored as structured paragraphs,
+  not raw HTML — and can carry inline merge fields.** `TextBlockDef.html` is
+  removed (a lingering `html` key on a `text` block now fails spec
+  validation, naming `paragraphs` as the expected field); each paragraph is
+  `{text, size, bold, color, link, align}`. The emitter renders that list
+  into the exact canonical markup Kizen's own rich-text editor normalises
+  **to** on save (`<p data-line-height="default" style="line-height:
+  1.25;">` + `<span style="font-size: Npx;">` + `<strong>` + `<a
+  rel="noopener noreferrer nofollow">`), so a template built from a spec no
+  longer loses its styling the first time a human opens and saves it in the
+  builder — previously, 7 of 9 raw-HTML text blocks in a real template were
+  silently rewritten by the builder's own save.
+
+  A paragraph's `text` may also contain `{{ namespace.field }}` merge-field
+  tokens — the same syntax automation notify steps already use — rendered
+  inline into Kizen's `<span class="kzn-merge-field">` wrapper via the
+  shared `tools/merge_fields.py`. `automation_variable.*` tokens are
+  rejected at spec-validation time: that namespace only exists inside an
+  automation-scoped message, not a portable library template. Under
+  `messages templates craft-config`/`--dry-run` (no live calls), every
+  namespace still gets a best-effort label, but `data-merge-field-objectname`
+  is omitted for custom-object namespaces — there's no live object lookup to
+  answer it offline, the same class of preview-vs-real divergence
+  `craft-config` already documents for Image blocks.
+
 - **`kizen messages templates get/clone/update/delete` — the email-template
   surface can now be read and written, not just listed.** `list` only ever
   returned summary fields, so there was no way to see a template's body at
@@ -37,7 +62,82 @@ called out explicitly under **Changed** or **Removed**.
   Generating a template from a spec file is still not wired; see `kizen docs
   show email-templates`.
 
+- **`kizen messages templates create --spec-file <f>` builds a complete email
+  template — `craft_json` and the compiled, Outlook-safe `content` HTML —
+  from one declarative spec.** `update <tmpl> --spec-file <f>` rewrites an
+  existing template the same way, as an alternative to its existing
+  field-level `--craft-json-file`/`--content-file` PATCH path. Both fields
+  come from one pass over one node tree, so a spec can never describe one
+  without the other — no flag and no spec key accepts a raw `craft_json` or
+  `content` value.
+
+  A spec's rows pick one of 4 column layouts by name (`1 Column`, `2
+  Columns`, `2 Columns (1/3 and 2/3)`, `2 Columns (2/3 and 1/3)`) and cells
+  hold `text`/`image`/`button`/`divider` blocks — both closed sets, so an
+  unsupported layout or block kind is a clear error, never a silent partial
+  template. An `image` block names a local PNG/JPEG file; it's uploaded
+  (`source="public_image"`, publicly readable so recipients can load it) and
+  its real pixel dimensions are read from the file's own header bytes — no
+  new dependency. `--dry-run` resolves images offline instead of uploading,
+  so it never writes. `messages templates craft-config` previews the
+  `{craft_json, content}` pair offline, with `--out-html` to drop the
+  compiled body somewhere a browser (or Outlook) can open it.
+
+  A real test send opened in Outlook is still the only way to confirm actual
+  rendering — nothing offline can substitute for that.
+
+- **Email template specs can now set the layout knobs a designed newsletter
+  needs — `Section`/`Row` width and padding, `Divider` thickness, `Button`
+  corner radius/padding/alignment — instead of every template landing at
+  this emitter's fixed defaults.** `sections[].max_width`/`container_width`/
+  `padding` and `sections[].rows[].width`/`container_width`/`padding` set
+  `Section`/`Row` props directly; `padding` is four independent
+  `{top, right, bottom, left}` strings, matching the wire format's four
+  independent `containerPadding*` keys rather than a lossy CSS-style
+  shorthand. `button` blocks gain `border_radius`/`padding_left`/
+  `padding_right`/`alignment`; `divider` blocks gain `size`. Every new field
+  defaults to this emitter's exact pre-existing hardcoded value, so a spec
+  that sets none of them produces the same output as before this change.
+  The compiled `content` HTML's row widths now track these same values too
+  (previously frozen at a hardcoded 880px regardless of what the spec set —
+  a real `craft_json`/`content` divergence, the exact failure this whole
+  surface exists to prevent), `content` now carries `Section`/`Row`
+  padding at all (previously absent entirely, on every template — text
+  always rendered flush against the canvas edge regardless of what
+  `craft_json` said), `content`'s `Button` markup now carries `align`
+  (previously every button rendered left-aligned regardless of the spec's
+  `alignment`), and a centered `Image` (`position: "center"`, the only
+  value this surface sets) now actually renders centered in `content`
+  instead of flush left.
+
 ### Fixed
+
+- **Compiled email `content` no longer diverges from what Kizen's own
+  builder produces for the same layout.** Every recipient's email now
+  carries a real `font-family` for body text (`Root.props.fontFamily`,
+  via the same `kizen-text-styles` wrapper class/`<style>` rules Kizen's
+  own compiler uses) — previously `content` carried no `font-family` at
+  all, so any template without hand-inlined font styles rendered in the
+  client's serif fallback on every send. Also fixed: the missing
+  `.moz-text-html` rule (Gecko-based clients like Thunderbird key
+  column-stacking behaviour off it), the missing MJML reset block, a
+  hardcoded `480px` mobile breakpoint that now reads
+  `Root.props.mobileBreak`, a dropped `<body>` background colour, and
+  `Section.container_width` now reaching `content` via an outer
+  background-table wrapper (previously `craft_json`-only, deferred from
+  the layout-knobs change above). `Image` blocks gain a genuine
+  full-bleed auto-sizing mode — omitting `width` in an `image` spec block
+  now sizes the image to its parent Section's `containerWidth` (capped at
+  its own natural width by a per-image CSS rule) instead of silently
+  defaulting to a fixed 150px — and their compiled markup now matches
+  Kizen's own attribute/style set exactly (`data-natural-width`/
+  `data-natural-height`, confirmed unused anywhere in this repo, are
+  gone). Finally, a float-formatting artifact that printed
+  `880.0px`-style widths in the compiled CSS (or any other row whose
+  computed width happened to land on a whole number) now prints `880px`.
+  Every fix was checked against Kizen's real compiled `content` for the
+  same layout, not inferred from `craft_json` alone — see `kizen docs
+  show email-templates`.
 
 - **Automation email/text merge-field markup now matches what Kizen's builder
   UI actually writes**, fixing three divergences in the `notify_member_via_email`/
@@ -54,9 +154,13 @@ called out explicitly under **Changed** or **Removed**.
     ever been observed to write. Previously this attribute was never emitted
     at all.
   - Fallback labels for `team_member`/`business` are now Kizen's real
-    stored field display names for the values confirmed live (e.g.
-    `business.postal_code` -> "Business Zip/Postal Code", not "Postal
-    Code") instead of a title-cased guess at the api_name;
+    stored field display names. The email builder's Business and Team Member
+    merge-field pickers were captured in full — all 17 entries, matching the
+    picker counts exactly — so these are pinned, verified values rather than
+    guesses (e.g. `business.postal_code` -> "Business Zip/Postal Code" and
+    `business.reply_to_email` -> "Business Notification Email", neither
+    reachable from the api_name by any transform). A token outside those
+    picker lists now at least keeps its namespace prefix;
     `automation_variable.<name>` now keeps the variable name literal, since
     Kizen never title-cases those. (`automation_history` labels turned out
     to vary by containing automation rather than being fixed per field, so

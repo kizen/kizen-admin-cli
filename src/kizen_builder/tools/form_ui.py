@@ -76,6 +76,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -496,14 +497,27 @@ def _assemble_block(
 
 
 def _assemble_cell(
-    cell_spec: dict[str, Any], parent_id: str, content: dict[str, Any]
+    cell_spec: dict[str, Any],
+    parent_id: str,
+    content: dict[str, Any],
+    *,
+    width: float | None = None,
+    cell_props: Callable[[float | None], dict[str, Any]] | None = None,
+    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
 ) -> str:
+    """``cell_props``/``block_assembler`` are additive hooks: both default to
+    today's behaviour (``props: {}``, this module's own block dispatch), so
+    forms/layouts callers that don't pass them are unaffected. A surface with
+    a different ``Cell.props`` shape (email's ``{"__width": <fraction>}`` —
+    see ``tools.email_craft``) or different leaf-block prop shapes passes its
+    own callables instead of forking this function."""
+    assemble = block_assembler or _assemble_block
     cell_id = _new_id()
-    block_ids = [_assemble_block(b, cell_id, content) for b in cell_spec["blocks"]]
+    block_ids = [assemble(b, cell_id, content) for b in cell_spec["blocks"]]
     content[cell_id] = {
         "type": {"resolvedName": "Cell"},
         "isCanvas": True,
-        "props": {},
+        "props": cell_props(width) if cell_props else {},
         "displayName": "Cell",
         "custom": {},
         "parent": parent_id,
@@ -515,23 +529,42 @@ def _assemble_cell(
 
 
 def _assemble_row(
-    row_spec: dict[str, Any], parent_id: str, content: dict[str, Any]
+    row_spec: dict[str, Any],
+    parent_id: str,
+    content: dict[str, Any],
+    *,
+    cell_props: Callable[[float | None], dict[str, Any]] | None = None,
+    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
+    row_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> str:
     row_id = _new_id()
     cells = row_spec["cells"]
     n = len(cells) or 1
     columns = row_spec.get("columns") or [1.0 / n] * n
-    cell_ids = [_assemble_cell(c, row_id, content) for c in cells]
+    cell_ids = [
+        _assemble_cell(
+            c,
+            row_id,
+            content,
+            width=columns[i] if i < len(columns) else None,
+            cell_props=cell_props,
+            block_assembler=block_assembler,
+        )
+        for i, c in enumerate(cells)
+    ]
+    props = {
+        "columns": columns,
+        **_CONTAINER_DEFAULTS,
+        "maxWidth": "900",
+        "width": "100",
+        "alignment": "center",
+    }
+    if row_props:
+        props.update(row_props(row_spec))
     content[row_id] = {
         "type": {"resolvedName": "Row"},
         "isCanvas": False,
-        "props": {
-            "columns": columns,
-            **_CONTAINER_DEFAULTS,
-            "maxWidth": "900",
-            "width": "100",
-            "alignment": "center",
-        },
+        "props": props,
         "displayName": "Row",
         "custom": {},
         "parent": parent_id,
@@ -543,20 +576,40 @@ def _assemble_row(
 
 
 def _assemble_section(
-    section_spec: dict[str, Any], parent_id: str, content: dict[str, Any]
+    section_spec: dict[str, Any],
+    parent_id: str,
+    content: dict[str, Any],
+    *,
+    cell_props: Callable[[float | None], dict[str, Any]] | None = None,
+    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
+    section_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    row_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> str:
     section_id = _new_id()
-    row_ids = [_assemble_row(r, section_id, content) for r in section_spec["rows"]]
+    row_ids = [
+        _assemble_row(
+            r,
+            section_id,
+            content,
+            cell_props=cell_props,
+            block_assembler=block_assembler,
+            row_props=row_props,
+        )
+        for r in section_spec["rows"]
+    ]
+    props = {
+        **_CONTAINER_DEFAULTS,
+        "containerBackgroundColor": section_spec.get("background_color", "#FFFFFF"),
+        "maxWidth": "900",
+        "width": "100",
+        "alignment": "center",
+    }
+    if section_props:
+        props.update(section_props(section_spec))
     content[section_id] = {
         "type": {"resolvedName": "Section"},
         "isCanvas": True,
-        "props": {
-            **_CONTAINER_DEFAULTS,
-            "containerBackgroundColor": section_spec.get("background_color", "#FFFFFF"),
-            "maxWidth": "900",
-            "width": "100",
-            "alignment": "center",
-        },
+        "props": props,
         "displayName": "Section",
         "custom": {},
         "parent": parent_id,
@@ -568,7 +621,13 @@ def _assemble_section(
 
 
 def build_content_tree(
-    sections: list[dict[str, Any]], *, root_props: dict[str, Any] | None = None
+    sections: list[dict[str, Any]],
+    *,
+    root_props: dict[str, Any] | None = None,
+    cell_props: Callable[[float | None], dict[str, Any]] | None = None,
+    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
+    section_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    row_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Assemble a ``Root`` → ``Section`` → ``Row`` → ``Cell`` → block
     camelCase craft.js tree from :func:`section`/:func:`row`/:func:`cell`/
@@ -587,9 +646,30 @@ def build_content_tree(
     ``height``/``maxWidth``/``hasShadow``/``tabletBreak``/``mobileBreak``
     (matching the dashboard static-content dashlet's Root shape, just
     camelCased instead of snake_case).
+
+    ``cell_props``/``block_assembler`` are additive hooks for a surface whose
+    ``Cell.props`` or leaf-block prop shapes differ from this module's forms
+    defaults — see ``tools.email_craft``, which needs ``Cell.props`` to carry
+    ``{"__width": <fraction>}`` and its own Button/Divider prop construction.
+    ``section_props``/``row_props`` are the same shape of hook for
+    ``Section``/``Row`` props — each takes the section/row spec dict and
+    returns a props-override dict merged over this module's defaults. All
+    four default to ``None``, which reproduces today's exact output — the
+    call sites in this file and in ``tools/layouts.py`` are unaffected.
     """
     content: dict[str, Any] = {}
-    section_ids = [_assemble_section(s, "ROOT", content) for s in sections]
+    section_ids = [
+        _assemble_section(
+            s,
+            "ROOT",
+            content,
+            cell_props=cell_props,
+            block_assembler=block_assembler,
+            section_props=section_props,
+            row_props=row_props,
+        )
+        for s in sections
+    ]
     content["ROOT"] = {
         "type": {"resolvedName": "Root"},
         "isCanvas": True,
