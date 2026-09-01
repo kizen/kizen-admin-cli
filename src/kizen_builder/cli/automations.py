@@ -15,6 +15,12 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.cli._mutations import _read_spec
+from kizen_builder.cli._run_render import (
+    history_duration,
+    print_step_log,
+    print_wait_outcome,
+    wait_exit_code,
+)
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
@@ -502,11 +508,6 @@ class _RunStream:
         self._consecutive_history_errors = 0
 
     def __call__(self, poll_summary: dict[str, Any]) -> None:
-        # Imported here, not at module scope: cli/runs.py imports `autos_app`
-        # from this module, so a top-level import back the other way would be
-        # circular. By call time both modules are fully loaded.
-        from kizen_builder.cli.runs import _print_step_log, history_duration
-
         execution_id = poll_summary.get("execution_id")
         if not execution_id:
             return
@@ -557,7 +558,7 @@ class _RunStream:
                     # BCLI-012's own per-row renderer — the same {"stdout",
                     # "traceback"}/logs-key/JSON-fallback formatting `runs
                     # logs` uses, called rather than duplicated.
-                    _print_step_log(i, row)
+                    print_step_log(i, row)
             self._last_line = time.monotonic()
             return
 
@@ -687,14 +688,10 @@ def autos_start(
         if execution_id:
             # Same "avoid failure language" outcome message runs view --wait
             # prints — reused, not a second copy.
-            from kizen_builder.cli.runs import print_wait_outcome
-
             print_wait_outcome(execution_id, result, timeout)
 
     # BCLI-012's completed/failed/cancelled/timeout/paused -> exit-code
     # mapping, reused as-is — no second copy of it here.
-    from kizen_builder.cli.runs import wait_exit_code
-
     exit_code = wait_exit_code(result)
     if exit_code:
         raise typer.Exit(code=exit_code)
