@@ -39,6 +39,32 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Automation email/text merge-field markup now matches what Kizen's builder
+  UI actually writes**, fixing three divergences in the `notify_member_via_email`/
+  `_via_text`, `call_llm`, and `file_content_extraction` steps' derived HTML:
+  - A `{{ ns.field.field }}`-shaped multi-segment relationship-hop token (a
+    real one, `custom_objects.primary_document_record.id`, is captured in
+    this repo's own fixtures) previously failed to match the merge-field
+    regex at all and rendered as literal, unconverted `{{ ... }}` braces in
+    the recipient's message. The token grammar now accepts one or more
+    dot-separated segments.
+  - A real custom-object namespace (e.g. a related record's own object
+    api_name) now gets `data-merge-field-objectname` holding that object's
+    display name, matching every custom-object merge field Kizen's UI has
+    ever been observed to write. Previously this attribute was never emitted
+    at all.
+  - Fallback labels for `team_member`/`business` are now Kizen's real
+    stored field display names for the values confirmed live (e.g.
+    `business.postal_code` -> "Business Zip/Postal Code", not "Postal
+    Code") instead of a title-cased guess at the api_name;
+    `automation_variable.<name>` now keeps the variable name literal, since
+    Kizen never title-cases those. (`automation_history` labels turned out
+    to vary by containing automation rather than being fixed per field, so
+    they still fall back to a title-cased guess rather than a pinned
+    value.) The rules are consolidated in a new `tools/merge_fields.py`,
+    shared with a future email-template emitter instead of being
+    re-derived.
+
 - **`kizen upgrade --check` can now find a release tag from a `uv tool
   install`/`pipx`/direct-VCS install, not just an editable checkout.**
   Previously any non-checkout install shape skipped straight to the

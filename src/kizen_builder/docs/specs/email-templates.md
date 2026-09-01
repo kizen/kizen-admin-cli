@@ -25,20 +25,32 @@ the returned UUID as the step's `email_template_id`.
 
 ## Merge fields in message content
 
-`{{ <namespace>.<field_api_name> }}`. Confirmed namespaces:
+A merge field is **not** a bare `{{ <namespace>.<field_api_name> }}` token —
+that renders as inert literal braces in a recipient's inbox. Kizen's builder
+UI always wraps the token in a `<span class="kzn-merge-field">` marker
+(confirmed live 2026-08-26), and that wrapper is the real authoring/wire
+format everywhere merge fields appear — automation notify steps, `call_llm`/
+`file_content_extraction` prompts, dashboard static-content text blocks, and
+email template `Text` blocks alike:
 
-- **`entity_record`** — the triggering record. Includes pseudo-fields that
-  aren't real object fields (`link_url`, `created`, `estimated_close_date`).
-- **`team_member`** — the notified team member's own fields.
-- **`business`** — tenant settings.
+```html
+<span class="kzn-merge-field"
+      data-merge-field-fallback-label="Stage"
+      data-merge-field-relationship="object_with_workflow.stage"
+      data-merge-field-objectname="object with workflow">{{ object_with_workflow.stage }}</span>
+```
 
-No API-queryable catalog exists. Note the namespace token varies by step type —
-`call_llm` prompts and variable static sources use the literal
-`custom_objects.<field>` instead, regardless of the target object's real
-api_name. Full table: `kizen docs show automation`.
-
-Same convention applies in dashboard static-content text blocks and email
-template `Text` blocks.
+`data-merge-field-objectname` (the object's *display* name) is present only
+when the namespace is a real custom object's api_name; reserved namespaces —
+`entity_record` (the triggering record, including pseudo-fields that aren't
+real object fields: `link_url`, `created`, `estimated_close_date`),
+`team_member` (the notified team member's own fields), `business` (tenant
+settings), `contact`, `automation_variable`, `automation_history`, and
+`custom_objects` (the literal token `call_llm`/`initialize_variable` use for
+the automation's own target_object) — never carry it. No API-queryable
+catalog of namespaces exists; any custom object's api_name can be one. Full
+table and the shared span-building rules: `kizen docs show automation`,
+`src/kizen_builder/tools/merge_fields.py`.
 
 ## Email template wire format
 
