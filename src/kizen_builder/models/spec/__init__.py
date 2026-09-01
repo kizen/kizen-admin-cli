@@ -1,4 +1,4 @@
-"""Pydantic models defining the Kizen Builder spec format.
+"""Pydantic models defining the Kizen Admin CLI spec format.
 
 This package is the single source of truth for what a valid spec looks like.
 The exported JSON Schema (in schema/solution.schema.json) is generated from

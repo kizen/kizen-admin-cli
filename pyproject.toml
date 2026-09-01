@@ -61,8 +61,8 @@ connectors = [
 kizen = "kizen_builder.cli:app"
 
 [project.urls]
-Repository = "https://github.com/kizen/builder-cli"
-Changelog = "https://github.com/kizen/builder-cli/blob/main/CHANGELOG.md"
+Repository = "https://github.com/kizen/kizen-admin-cli"
+Changelog = "https://github.com/kizen/kizen-admin-cli/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]

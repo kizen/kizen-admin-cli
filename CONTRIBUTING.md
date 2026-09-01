@@ -1,4 +1,4 @@
-# Contributing to Kizen Builder
+# Contributing to Kizen Admin CLI
 
 This is the source checkout of the `kizen` CLI. If you're here to *design a
 Kizen solution* rather than change the tool, that work happens in an environment
@@ -12,8 +12,8 @@ laid out, and tested.
 ## Setup
 
 ```bash
-git clone https://github.com/kizen/builder-cli.git "Kizen Builder"
-cd "Kizen Builder"
+git clone https://github.com/kizen/kizen-admin-cli.git "Kizen Admin CLI"
+cd "Kizen Admin CLI"
 uv sync --extra dev  # creates .venv from the committed uv.lock
 uv run pytest        # confirm green before changing anything
 ```

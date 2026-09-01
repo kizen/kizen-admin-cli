@@ -1,4 +1,4 @@
-# Kizen Builder — reference router & cross-surface conventions
+# Kizen Admin CLI — reference router & cross-surface conventions
 
 Everything specific to one kind of entity now lives with that entity. This file
 holds only what doesn't belong to any single surface: how to find the right

@@ -1,4 +1,4 @@
-# Kizen Builder
+# Kizen Admin CLI
 
 `kizen` is a command-line tool for designing and iterating on a Kizen
 environment. It talks to the Kizen REST API directly, so you can read the live
@@ -29,7 +29,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS/Linux
 (see the link above for Windows). Then:
 
 ```bash
-uv tool install https://github.com/kizen/builder-cli.git
+uv tool install https://github.com/kizen/kizen-admin-cli.git
 ```
 
 That puts `kizen` on your `PATH` as a standalone tool — no local clone to keep
@@ -41,7 +41,7 @@ patches your shell's startup file, which only takes effect in a new shell) or
 run `uv tool update-shell`.
 
 Without `uv`, `pip install --user
-git+https://github.com/kizen/builder-cli.git` into whichever user site owns
+git+https://github.com/kizen/kizen-admin-cli.git` into whichever user site owns
 your `PATH` works the same way — this needs Python 3.12 or newer, which `uv`
 would otherwise fetch for you automatically.
 
