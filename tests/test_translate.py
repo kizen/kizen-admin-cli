@@ -16,6 +16,8 @@ import json
 
 import pytest
 
+from kizen_builder.tools.planners.automations import _collapse_variable_overrides
+from kizen_builder.tools.plans import PlanError
 from kizen_builder.translate import (
     diff_wire_payloads,
     live_to_payload,
@@ -36,6 +38,7 @@ ALL_FIXTURES = [
     "automations/llm_comparison.raw.json",
     "automations/on_or_around_date_goto.raw.json",
     "automations/schedule_trigger.raw.json",
+    "automations/sets_variable_overrides.raw.json",
     "automations/two_code_steps.raw.json",
     "automations/update_variable_goto_branching.raw.json",
     "automations/webhook_delete_scheduled_activity.raw.json",
@@ -45,6 +48,28 @@ ALL_FIXTURES = [
 @pytest.fixture(scope="module")
 def kitchen() -> dict:
     raw = load_fixture("automations/kitchen_sink_triggers.raw.json")
+    return live_to_payload(raw)
+
+
+@pytest.fixture(scope="module")
+def archive() -> dict:
+    """`fields_to_clear` is a real capture; its `automation_variable_overrides`
+    are synthetic, transcribed from a previously captured live dialect
+    rather than taken from a raw GET — see sets_variable_overrides.raw.json
+    for the equivalent real capture."""
+    raw = load_fixture("automations/archive_record.raw.json")
+    return live_to_payload(raw)
+
+
+@pytest.fixture(scope="module")
+def form() -> dict:
+    raw = load_fixture("automations/form_submission.raw.json")
+    return live_to_payload(raw)
+
+
+@pytest.fixture(scope="module")
+def sets_overrides() -> dict:
+    raw = load_fixture("automations/sets_variable_overrides.raw.json")
     return live_to_payload(raw)
 
 
@@ -449,3 +474,158 @@ def test_diff_wire_payloads_active_is_diffed_like_any_top_level_field() -> None:
     assert entries == [
         {"path": "active", "before": live["active"], "after": spec["active"]}
     ]
+
+
+def test_fields_to_clear_collapses_to_bare_uuids(archive: dict) -> None:
+    """Read expands each fields_to_clear entry to a full field object; write
+    wants bare UUIDs, same as the tag-list handling in the same function
+    (`_change_field_value_action`). Affects every read-modify-write path
+    that touches this action."""
+    blk = _step_block(archive, "change_field_value")
+    action = blk["actions"][0]
+    assert action["fields_to_clear"] == [
+        "b3f6a3c1-2f8e-4a9d-9d0a-5c1f6e2a7b41",
+        "c7c696bd-4f21-4e2a-8b3e-1a9d6f0c8e52",
+    ]
+
+
+def test_automation_variable_overrides_groups_by_target_automation(
+    archive: dict,
+) -> None:
+    """Read is a flat list, one entry per override, every reference expanded
+    to a full object. Write groups entries by target automation id, and the
+    unwrapping is non-uniform: `context_entity_field` -> bare UUID,
+    `variable_to_override`/`automation_variable` -> bare name. Two
+    override-bearing entries targeting different automations is the shape
+    that actually exercises the grouping — a single-target step would pass
+    even a naive un-grouped implementation."""
+    blk = _step_block(archive, "start_automation")
+    overrides = blk["automation_variable_overrides"]
+    assert len(overrides) == 2
+    by_automation = {o["automation_id"]: o["variable_overrides"] for o in overrides}
+    assert by_automation["3e1d490a-9358-4c7d-ada3-a1f9c9cb9606"] == [
+        {
+            "variable_to_override": "contacts_file_id",
+            "value_source": "context_entity_field",
+            "context_entity_field": "22585898-3f4c-4a1b-9e2d-6c8a1f5b3d70",
+        }
+    ]
+    assert by_automation["ff3bd36b-9a2e-4c1d-8b7a-2e4f6a9c1d3e"] == [
+        {
+            "variable_to_override": "file_upload_record",
+            "value_source": "automation_variable",
+            "automation_variable": "file_upload_record",
+        }
+    ]
+
+
+def test_five_overrides_on_one_target_automation_group_into_one_entry(
+    sets_overrides: dict,
+) -> None:
+    """Real capture (`sets_variable_overrides`, business ff433e1f…, 2026-09-01):
+    one start_automation step sends five overrides all targeting the same
+    automation. Confirms grouping accumulates within a target instead of only
+    across targets (`tools/planners/automations.py:1296-1300`), and pins the
+    `specific_value` fix — the live bug this item was reopened for: the value
+    was silently dropped, collapsing to `{"variable_to_override": "bool",
+    "value_source": "specific_value"}` with no `specific_value` key at all."""
+    blk = _step_block(sets_overrides, "start_automation", idx=1)
+    overrides = blk["automation_variable_overrides"]
+    assert len(overrides) == 1
+    group = overrides[0]
+    assert group["automation_id"] == "c18c9d5a-fa95-4dd6-b3b2-05df03975677"
+    assert group["variable_overrides"] == [
+        {
+            "variable_to_override": "array_var",
+            "value_source": "automation_variable",
+            "automation_variable": "array_of_objects",
+        },
+        {
+            "variable_to_override": "bool",
+            "value_source": "specific_value",
+            "specific_value": "True",
+        },
+        {
+            "variable_to_override": "team_member",
+            "value_source": "automation_variable",
+            "automation_variable": "team_member",
+        },
+        {
+            "variable_to_override": "other_uuid",
+            "value_source": "automation_variable",
+            "automation_variable": "team_member",
+        },
+        {
+            "variable_to_override": "datetime",
+            "value_source": "blank",
+        },
+    ]
+
+
+def test_collapse_variable_overrides_carries_unseen_value_source() -> None:
+    """An override whose `value_source` no capture has exercised still has to
+    survive the trip: `activate`/`deactivate`/`steps` PUT the whole automation
+    back, so refusing would strand an automation Kizen itself accepted, and
+    dropping the key is the bug this function exists to fix. The value is
+    carried across and narrowed by its key — a `_field` reference to a bare
+    UUID, per this module's field convention."""
+    entry = {
+        "target_automation": {"id": "auto-1", "name": "Target"},
+        "variable_to_override": {"id": "v1", "name": "some_var"},
+        "value_source": "relationship_field",
+        "relationship_field": {"id": "field-1", "name": "Some Field"},
+    }
+    assert _collapse_variable_overrides([entry]) == [
+        {
+            "automation_id": "auto-1",
+            "variable_overrides": [
+                {
+                    "variable_to_override": "some_var",
+                    "value_source": "relationship_field",
+                    "relationship_field": "field-1",
+                }
+            ],
+        }
+    ]
+
+
+def test_collapse_variable_overrides_rejects_non_object_entry() -> None:
+    """A hand-authored spec can put anything in this list; a scalar must be a
+    named PlanError rather than an AttributeError traceback."""
+    with pytest.raises(PlanError, match="not an object"):
+        _collapse_variable_overrides(["oops"])
+
+
+def test_collapse_variable_overrides_rejects_mixed_grouped_and_flat() -> None:
+    """A list that is neither uniformly grouped (write dialect) nor uniformly
+    flat (read dialect) must raise instead of silently reinterpreting every
+    entry as one or the other — the shape this review flagged as a live
+    landmine."""
+    mixed = [
+        {"automation_id": "abc-123", "variable_overrides": []},
+        {
+            "target_automation": {"id": "def-456", "name": "Other"},
+            "variable_to_override": {"id": "x", "name": "other_var"},
+            "value_source": "automation_variable",
+            "automation_variable": {"id": "x", "name": "other_var"},
+        },
+    ]
+    with pytest.raises(PlanError, match="mixes grouped"):
+        _collapse_variable_overrides(mixed)
+
+
+def test_field_value_mappings_stay_bare_uuids(form: dict) -> None:
+    """Unlike fields_to_clear, source_values/target_values are bare option
+    UUID strings on read already — never expanded to objects. Pins the shape
+    so a future server-side change to this read dialect is caught rather
+    than assumed — checked deliberately, and not reproducing here."""
+    blocks = _step_block(form, "modify_related_entities")
+    mappings = [
+        m
+        for f in blocks["fields_to_modify"]
+        for m in f.get("field_value_mappings") or []
+    ]
+    assert mappings
+    for m in mappings:
+        assert all(isinstance(v, str) for v in m["source_values"])
+        assert all(isinstance(v, str) for v in m["target_values"])

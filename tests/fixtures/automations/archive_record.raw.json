@@ -139,7 +139,28 @@
               }
             ],
             "variable": null,
-            "fields_to_clear": [],
+            "fields_to_clear": [
+              {
+                "id": "b3f6a3c1-2f8e-4a9d-9d0a-5c1f6e2a7b41",
+                "name": "index_a_raw",
+                "display_name": "Index A - Raw",
+                "deleted": false,
+                "field_type": "longtext",
+                "options": [],
+                "relation": null,
+                "rating": null
+              },
+              {
+                "id": "c7c696bd-4f21-4e2a-8b3e-1a9d6f0c8e52",
+                "name": "index_a_baseline",
+                "display_name": "Index A - Baseline",
+                "deleted": false,
+                "field_type": "longtext",
+                "options": [],
+                "relation": null,
+                "rating": null
+              }
+            ],
             "update_mode": "update_fields"
           }
         ]
@@ -171,10 +192,57 @@
             "name": "Document Orchestration v2",
             "deleted": false,
             "active": false
+          },
+          {
+            "id": "ff3bd36b-9a2e-4c1d-8b7a-2e4f6a9c1d3e",
+            "name": "Trigger Upload Contacts SmartConnector",
+            "deleted": false,
+            "active": true
           }
         ],
         "resume_paused_automations": false,
-        "automation_variable_overrides": []
+        "automation_variable_overrides": [
+          {
+            "target_automation": {
+              "id": "3e1d490a-9358-4c7d-ada3-a1f9c9cb9606",
+              "name": "Document Orchestration v2",
+              "deleted": false,
+              "active": false
+            },
+            "variable_to_override": {
+              "id": "bb11b351-6a2f-4d8e-9c3a-7f1e5b9d2a64",
+              "name": "contacts_file_id",
+              "data_type": "string"
+            },
+            "value_source": "context_entity_field",
+            "context_entity_field": {
+              "id": "22585898-3f4c-4a1b-9e2d-6c8a1f5b3d70",
+              "name": "formatted_file",
+              "field_type": "files"
+            },
+            "automation_variable": null
+          },
+          {
+            "target_automation": {
+              "id": "ff3bd36b-9a2e-4c1d-8b7a-2e4f6a9c1d3e",
+              "name": "Trigger Upload Contacts SmartConnector",
+              "deleted": false,
+              "active": true
+            },
+            "variable_to_override": {
+              "id": "9d2c4e6a-1b3f-4a5c-8d7e-3f2a1b9c6d84",
+              "name": "file_upload_record",
+              "data_type": "string"
+            },
+            "value_source": "automation_variable",
+            "context_entity_field": null,
+            "automation_variable": {
+              "id": "9d2c4e6a-1b3f-4a5c-8d7e-3f2a1b9c6d84",
+              "name": "file_upload_record",
+              "data_type": "string"
+            }
+          }
+        ]
       },
       "action_on_failure": "notify_pause",
       "should_skip_execution": false,

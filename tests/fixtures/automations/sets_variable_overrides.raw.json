@@ -1,0 +1,580 @@
+{
+  "id": "42608e37-4558-42ff-bf29-ea5a62ede629",
+  "name": "Sets Variable Overrides",
+  "api_name": "sets_variable_overrides",
+  "ai_description": null,
+  "active": true,
+  "type": "global",
+  "custom_object": null,
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "a2bc307c-77b9-4992-82d4-fefe0d8ae525",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "63f0b415-0b79-42d9-bf1b-3989179c8b66",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "array_of_objects = [2 items]",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [
+          {
+            "source_type": "static",
+            "source_subtype": "entity",
+            "value_category": {
+              "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+              "name": "object_with_workflow",
+              "description": null,
+              "entity_name": "object with workflow",
+              "object_name": "object with workflow",
+              "object_class": "custom_objects",
+              "object_type": "pipeline",
+              "default_on_activities": true,
+              "deleted": false
+            },
+            "field": null,
+            "relationship_field": null,
+            "variable": null,
+            "value": [
+              {
+                "id": "8c4420ef-7117-4279-942e-4d32ff4c6dd3",
+                "name": "Obj 2",
+                "display_name": "Obj 2",
+                "created": "2026-07-20T16:31:38.945256-05:00",
+                "updated": "2026-08-10T13:01:43.438494-05:00",
+                "deleted": false
+              },
+              {
+                "id": "b71ae0d0-8a6f-48cb-894f-da224ad0e9e4",
+                "name": "obj 1",
+                "display_name": "obj 1",
+                "created": "2026-07-20T16:31:34.284978-05:00",
+                "updated": "2026-08-17T14:18:49.531972-05:00",
+                "deleted": false
+              }
+            ]
+          }
+        ],
+        "variable": {
+          "id": "1def7406-2f21-4fc6-ad12-e343530b9764",
+          "name": "array_of_objects",
+          "data_type": "entity",
+          "data_subtype": {
+            "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+            "name": "object_with_workflow",
+            "description": null,
+            "entity_name": "object with workflow",
+            "object_name": "object with workflow",
+            "object_class": "custom_objects",
+            "object_type": "pipeline",
+            "default_on_activities": true,
+            "deleted": false
+          },
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-09-01T17:38:58.135768Z",
+          "deleted": false,
+          "is_array": true
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "silent_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "1b6f7400-5530-4eff-9ebf-b8421c285013",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "date = current time",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "63f0b415-0b79-42d9-bf1b-3989179c8b66",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [
+          {
+            "source_type": "trigger_time",
+            "source_subtype": null,
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": null,
+            "value": null,
+            "value_html": ""
+          }
+        ],
+        "variable": {
+          "id": "514832ac-4a28-485a-a0b2-c4dbb5a51f2b",
+          "name": "date",
+          "data_type": "date",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": "%m/%d/%Y",
+          "created": "2026-09-01T17:38:58.150361Z",
+          "deleted": false,
+          "is_array": false
+        },
+        "is_required": true,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "03cc976d-c36c-4526-b339-6e8dc2abd322",
+      "step_type": "initialize_variable",
+      "order": 2,
+      "description": "team_member = \u2018Jeremy Bedient (jbedient@kizen.com)\u2019",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "1b6f7400-5530-4eff-9ebf-b8421c285013",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [
+          {
+            "source_type": "static",
+            "source_subtype": "employee",
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": null,
+            "value": {
+              "id": "916dac1b-5640-4268-9324-06132f342488",
+              "name": "Jeremy Bedient",
+              "full_name": "Jeremy Bedient",
+              "display_name": "Jeremy Bedient (jbedient@kizen.com)",
+              "email": "jbedient@kizen.com",
+              "deleted": false
+            },
+            "value_html": ""
+          }
+        ],
+        "variable": {
+          "id": "10a45650-0f6f-4163-8b66-f7a09bfb625c",
+          "name": "team_member",
+          "data_type": "employee",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-09-01T17:38:58.168938Z",
+          "deleted": false,
+          "is_array": false
+        },
+        "is_required": true,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "b0fb3ddf-c083-41f4-8a7f-4f079995b91e",
+      "step_type": "start_automation",
+      "order": 3,
+      "description": "Start Agentic Workflows 'new search records step' on Variable 'array_of_objects'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "03cc976d-c36c-4526-b339-6e8dc2abd322",
+      "parent_condition": "",
+      "action_start_automation": {
+        "record_source": "automation_variable",
+        "relationship_fields": [],
+        "automation_variable": {
+          "name": "array_of_objects",
+          "data_type": "entity",
+          "data_subtype": "8c3f0149-6915-4370-940f-2e61848d6842",
+          "deleted": false
+        },
+        "automations": [
+          {
+            "id": "359fbd3b-af29-4e11-ad4e-539817016eb8",
+            "name": "new search records step",
+            "deleted": false,
+            "active": true
+          }
+        ],
+        "resume_paused_automations": false,
+        "automation_variable_overrides": [
+          {
+            "target_automation": {
+              "id": "359fbd3b-af29-4e11-ad4e-539817016eb8",
+              "name": "new search records step",
+              "active": true,
+              "deleted": false
+            },
+            "variable_to_override": {
+              "id": "84294df9-844b-4483-baf8-a49d2278ffe1",
+              "name": "test_var",
+              "data_type": "entity",
+              "data_subtype": {
+                "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+                "name": "object_with_workflow",
+                "description": null,
+                "entity_name": "object with workflow",
+                "object_name": "object with workflow",
+                "object_class": "custom_objects",
+                "object_type": "pipeline",
+                "default_on_activities": true,
+                "deleted": false
+              },
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-08-10T17:50:04.260020Z",
+              "deleted": false,
+              "is_array": true
+            },
+            "value_source": "automation_variable",
+            "specific_value": null,
+            "context_entity_field": null,
+            "automation_variable": {
+              "id": "1def7406-2f21-4fc6-ad12-e343530b9764",
+              "name": "array_of_objects",
+              "data_type": "entity",
+              "data_subtype": {
+                "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+                "name": "object_with_workflow",
+                "description": null,
+                "entity_name": "object with workflow",
+                "object_name": "object with workflow",
+                "object_class": "custom_objects",
+                "object_type": "pipeline",
+                "default_on_activities": true,
+                "deleted": false
+              },
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-09-01T17:38:58.135768Z",
+              "deleted": false,
+              "is_array": true
+            },
+            "automation_entity_variable": null,
+            "automation_entity_variable_field": null,
+            "relationship_field": null,
+            "related_record_field": null
+          }
+        ]
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "2673286a-6e7a-4c35-b555-1054dc0fcbd6",
+      "step_type": "start_automation",
+      "order": 4,
+      "description": "Start Agentic Workflows 'Receives Variable Overrides'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "b0fb3ddf-c083-41f4-8a7f-4f079995b91e",
+      "parent_condition": "",
+      "action_start_automation": {
+        "record_source": "global",
+        "relationship_fields": [],
+        "automation_variable": null,
+        "automations": [
+          {
+            "id": "c18c9d5a-fa95-4dd6-b3b2-05df03975677",
+            "name": "Receives Variable Overrides",
+            "deleted": false,
+            "active": true
+          }
+        ],
+        "resume_paused_automations": false,
+        "automation_variable_overrides": [
+          {
+            "target_automation": {
+              "id": "c18c9d5a-fa95-4dd6-b3b2-05df03975677",
+              "name": "Receives Variable Overrides",
+              "active": true,
+              "deleted": false
+            },
+            "variable_to_override": {
+              "id": "902a70f4-d866-4e42-88ab-b7510392d14a",
+              "name": "array_var",
+              "data_type": "entity",
+              "data_subtype": {
+                "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+                "name": "object_with_workflow",
+                "description": null,
+                "entity_name": "object with workflow",
+                "object_name": "object with workflow",
+                "object_class": "custom_objects",
+                "object_type": "pipeline",
+                "default_on_activities": true,
+                "deleted": false
+              },
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-09-01T17:35:40.873570Z",
+              "deleted": false,
+              "is_array": true
+            },
+            "value_source": "automation_variable",
+            "specific_value": null,
+            "context_entity_field": null,
+            "automation_variable": {
+              "id": "1def7406-2f21-4fc6-ad12-e343530b9764",
+              "name": "array_of_objects",
+              "data_type": "entity",
+              "data_subtype": {
+                "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+                "name": "object_with_workflow",
+                "description": null,
+                "entity_name": "object with workflow",
+                "object_name": "object with workflow",
+                "object_class": "custom_objects",
+                "object_type": "pipeline",
+                "default_on_activities": true,
+                "deleted": false
+              },
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-09-01T17:38:58.135768Z",
+              "deleted": false,
+              "is_array": true
+            },
+            "automation_entity_variable": null,
+            "automation_entity_variable_field": null,
+            "relationship_field": null,
+            "related_record_field": null
+          },
+          {
+            "target_automation": {
+              "id": "c18c9d5a-fa95-4dd6-b3b2-05df03975677",
+              "name": "Receives Variable Overrides",
+              "active": true,
+              "deleted": false
+            },
+            "variable_to_override": {
+              "id": "d4bc2bbb-4b70-4597-b2a7-1cf0e3303a8d",
+              "name": "bool",
+              "data_type": "boolean",
+              "data_subtype": null,
+              "input_format": null,
+              "output_format": "on_off",
+              "created": "2026-09-01T17:35:40.885024Z",
+              "deleted": false,
+              "is_array": false
+            },
+            "value_source": "specific_value",
+            "specific_value": "True",
+            "context_entity_field": null,
+            "automation_variable": null,
+            "automation_entity_variable": null,
+            "automation_entity_variable_field": null,
+            "relationship_field": null,
+            "related_record_field": null
+          },
+          {
+            "target_automation": {
+              "id": "c18c9d5a-fa95-4dd6-b3b2-05df03975677",
+              "name": "Receives Variable Overrides",
+              "active": true,
+              "deleted": false
+            },
+            "variable_to_override": {
+              "id": "305bb535-edf5-4123-8fba-6dd21d1fc2c9",
+              "name": "team_member",
+              "data_type": "employee",
+              "data_subtype": null,
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-09-01T17:35:40.896207Z",
+              "deleted": false,
+              "is_array": false
+            },
+            "value_source": "automation_variable",
+            "specific_value": null,
+            "context_entity_field": null,
+            "automation_variable": {
+              "id": "10a45650-0f6f-4163-8b66-f7a09bfb625c",
+              "name": "team_member",
+              "data_type": "employee",
+              "data_subtype": null,
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-09-01T17:38:58.168938Z",
+              "deleted": false,
+              "is_array": false
+            },
+            "automation_entity_variable": null,
+            "automation_entity_variable_field": null,
+            "relationship_field": null,
+            "related_record_field": null
+          },
+          {
+            "target_automation": {
+              "id": "c18c9d5a-fa95-4dd6-b3b2-05df03975677",
+              "name": "Receives Variable Overrides",
+              "active": true,
+              "deleted": false
+            },
+            "variable_to_override": {
+              "id": "07effc45-c087-4cb9-a108-e5805cf00944",
+              "name": "other_uuid",
+              "data_type": "uuid",
+              "data_subtype": null,
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-09-01T17:35:40.907786Z",
+              "deleted": false,
+              "is_array": false
+            },
+            "value_source": "automation_variable",
+            "specific_value": null,
+            "context_entity_field": null,
+            "automation_variable": {
+              "id": "10a45650-0f6f-4163-8b66-f7a09bfb625c",
+              "name": "team_member",
+              "data_type": "employee",
+              "data_subtype": null,
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-09-01T17:38:58.168938Z",
+              "deleted": false,
+              "is_array": false
+            },
+            "automation_entity_variable": null,
+            "automation_entity_variable_field": null,
+            "relationship_field": null,
+            "related_record_field": null
+          },
+          {
+            "target_automation": {
+              "id": "c18c9d5a-fa95-4dd6-b3b2-05df03975677",
+              "name": "Receives Variable Overrides",
+              "active": true,
+              "deleted": false
+            },
+            "variable_to_override": {
+              "id": "cc113cd4-ef9f-4375-9237-52fdfddbd50e",
+              "name": "datetime",
+              "data_type": "datetime",
+              "data_subtype": null,
+              "input_format": null,
+              "output_format": "%m/%d/%Y %I:%M %p",
+              "created": "2026-09-01T17:35:40.919120Z",
+              "deleted": false,
+              "is_array": false
+            },
+            "value_source": "blank",
+            "specific_value": null,
+            "context_entity_field": null,
+            "automation_variable": null,
+            "automation_entity_variable": null,
+            "automation_entity_variable_field": null,
+            "relationship_field": null,
+            "related_record_field": null
+          }
+        ]
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "1def7406-2f21-4fc6-ad12-e343530b9764",
+      "name": "array_of_objects",
+      "data_type": "entity",
+      "data_subtype": {
+        "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+        "name": "object_with_workflow",
+        "description": null,
+        "entity_name": "object with workflow",
+        "object_name": "object with workflow",
+        "object_class": "custom_objects",
+        "object_type": "pipeline",
+        "default_on_activities": true,
+        "deleted": false
+      },
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-09-01T17:38:58.135768Z",
+      "deleted": false,
+      "is_array": true
+    },
+    {
+      "id": "514832ac-4a28-485a-a0b2-c4dbb5a51f2b",
+      "name": "date",
+      "data_type": "date",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": "%m/%d/%Y",
+      "created": "2026-09-01T17:38:58.150361Z",
+      "deleted": false,
+      "is_array": false
+    },
+    {
+      "id": "10a45650-0f6f-4163-8b66-f7a09bfb625c",
+      "name": "team_member",
+      "data_type": "employee",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-09-01T17:38:58.168938Z",
+      "deleted": false,
+      "is_array": false
+    }
+  ],
+  "revision": 2,
+  "error_notification_email": null,
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-09-01T12:36:00.268566-05:00",
+  "updated": "2026-09-01T12:38:58.075695-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}
