@@ -4041,6 +4041,23 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
 │ search  Search team members by name or email.                                                    │
+│ get     Show one team member, including the role(s) they hold.                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: team get [OPTIONS] {member}                                                                 
+                                                                                                    
+ Show one team member, including the role(s) they hold.                                             
+                                                                                                    
+ Resolves ``member`` by UUID directly, or by a case-insensitive name/email                          
+ match against `team search` when it isn't one.                                                     
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    member      <str>  Team member id, name, or email. [required]                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: team search [OPTIONS] {name}                                                                
@@ -4738,6 +4755,9 @@
 
 
 ===== team =====
+
+
+===== team get =====
 
 
 ===== team search =====

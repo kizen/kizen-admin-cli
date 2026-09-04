@@ -30,3 +30,14 @@ def list_roles(client: KizenClient) -> list[dict[str, Any]]:
     if isinstance(resp, dict) and "results" in resp:
         return list(resp["results"])
     return []
+
+
+def get_team_member(client: KizenClient, member_id: str) -> dict[str, Any]:
+    """GET /api/team/{id} — one employee's full detail.
+
+    Unlike the list endpoint (``/api/team``, whose entries embed expanded
+    ``roles: [{id, name, ...}]``), this retrieve endpoint's ``roles`` is a
+    bare list of role UUIDs — confirmed live 2026-09-01. Callers that need
+    names must cross-reference against ``list_roles``.
+    """
+    return client.get(f"/api/team/{member_id}")

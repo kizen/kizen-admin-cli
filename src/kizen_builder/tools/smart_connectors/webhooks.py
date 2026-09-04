@@ -31,18 +31,11 @@ def resolve_team_member(token: str) -> dict[str, Any]:
     """
     if _looks_like_uuid(token):
         return {"id": token, "email": None, "full_name": None}
-    from kizen_builder.api import team as team_api
+    from kizen_builder.tools.team import team_member_candidates
 
     config = load_env_config()
     with KizenClient(config) as client:
-        matches = team_api.search_team(client, token)
-    exact = [
-        m
-        for m in matches
-        if token.lower()
-        in {(m.get("email") or "").lower(), (m.get("full_name") or "").lower()}
-    ]
-    pool = exact or matches
+        pool = team_member_candidates(client, token)
     if not pool:
         raise PlanError(f"no team member matches '{token}' — try `kizen team search`")
     if len(pool) > 1:
