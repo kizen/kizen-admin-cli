@@ -1,7 +1,7 @@
                                                                                                     
  Usage: kizen [OPTIONS] COMMAND [ARGS]...                                                           
                                                                                                     
- Kizen Builder — drive a Kizen environment from the conversation. The working directory's           
+ Kizen Admin CLI — drive a Kizen environment from the conversation. The working directory's         
  .kizen/profile pin selects the environment. Read commands are safe. Mutation verbs (create/update) 
  build a plan from live state, show it, and confirm before applying; --dry-run previews without     
  applying.                                                                                          

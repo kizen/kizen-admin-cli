@@ -130,7 +130,7 @@ def _direct_url() -> dict | None:
 
 
 def _file_url_to_path(url: str) -> Path | None:
-    """``file:///Users/me/Kizen%20Builder`` -> ``/Users/me/Kizen Builder``.
+    """``file:///Users/me/Kizen%20Admin%20CLI`` -> ``/Users/me/Kizen Admin CLI``.
 
     The unquoting is load-bearing: install directories routinely contain
     spaces, and a percent-escaped path silently fails every ``is_dir`` check.

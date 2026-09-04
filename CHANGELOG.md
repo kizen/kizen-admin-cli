@@ -14,6 +14,15 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Changed
+
+- **The tool is now called Kizen Admin CLI.** `kizen --help`, the README,
+  `CONTRIBUTING.md`, and the bundled reference docs all say "Kizen Admin CLI"
+  where they said "Kizen Builder", and the repository URLs point at
+  `kizen/kizen-admin-cli`. The command is still `kizen` and the installed
+  package is still `kizen_builder`, so nothing about invoking or importing
+  the tool changes.
+
 ### Added
 
 - **Email template `text` blocks are now authored as structured paragraphs,
@@ -667,5 +676,5 @@ who isn't its author.
 The tool's history before versioning is recorded in [ROADMAP.md](ROADMAP.md)
 under "Shipped before 0.2.0".
 
-[Unreleased]: https://github.com/kizen/builder-cli/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/kizen/builder-cli/releases/tag/v0.2.0
+[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kizen/kizen-admin-cli/releases/tag/v0.2.0

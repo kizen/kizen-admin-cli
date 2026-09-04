@@ -1,4 +1,4 @@
-"""Kizen Builder — conversational solution-design CLI for Kizen."""
+"""Kizen Admin CLI — conversational solution-design tool for Kizen."""
 
 from importlib.metadata import PackageNotFoundError, version
 

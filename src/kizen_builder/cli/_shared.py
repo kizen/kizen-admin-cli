@@ -21,7 +21,7 @@ from kizen_builder.config import ConfigError, set_profile_override
 
 app = typer.Typer(
     help=(
-        "Kizen Builder — drive a Kizen environment from the conversation. "
+        "Kizen Admin CLI — drive a Kizen environment from the conversation. "
         "The working directory's .kizen/profile pin selects the environment. "
         "Read commands are safe. Mutation verbs (create/update) build a plan "
         "from live state, show it, and confirm before applying; "
@@ -104,7 +104,7 @@ def _root(
         is_eager=True,
     ),
 ) -> None:
-    """Kizen Builder — the active env is pinned to the directory by default."""
+    """Kizen Admin CLI — the active env is pinned to the directory by default."""
     set_profile_override(profile)
 
 

@@ -1,4 +1,4 @@
-# Kizen Builder — working in this repo
+# Kizen Admin CLI — working in this repo
 
 This repo is the source of the `kizen` CLI. Work here is building and
 maintaining the tool.

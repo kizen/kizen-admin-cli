@@ -27,8 +27,8 @@ runner = CliRunner()
 def test_file_url_unquotes_spaces():
     # Install directories routinely contain spaces; a percent-escaped path
     # silently fails every is_dir() check downstream.
-    path = upgrade._file_url_to_path("file:///Users/me/Kizen%20Builder")
-    assert path == Path("/Users/me/Kizen Builder")
+    path = upgrade._file_url_to_path("file:///Users/me/Kizen%20Admin%20CLI")
+    assert path == Path("/Users/me/Kizen Admin CLI")
 
 
 def test_non_file_url_is_not_a_path():
