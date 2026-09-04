@@ -49,6 +49,12 @@ called out explicitly under **Changed** or **Removed**.
   is omitted for custom-object namespaces — there's no live object lookup to
   answer it offline, the same class of preview-vs-real divergence
   `craft-config` already documents for Image blocks.
+- **`kizen init` shows the Kizen logo banner before the setup prompts**, when
+  run in a real terminal wide and tall enough for it (a compact wordmark or
+  a plain tagline show instead on a smaller one). Piped input, `--help`, and
+  other non-interactive invocations print nothing new — the banner is gated
+  on the same terminal-detection signal the rest of the CLI already relies
+  on.
 
 - **`kizen messages templates get/clone/update/delete` — the email-template
   surface can now be read and written, not just listed.** `list` only ever
