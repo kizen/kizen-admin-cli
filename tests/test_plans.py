@@ -317,3 +317,110 @@ def test_apply_skip_ops_never_hit_the_api():
     (r,) = result.results
     assert r.status == "skipped"
     assert result.all_ok
+
+
+def _permission_setting_op(**overrides) -> PlanOperation:
+    base = {
+        "action": "update",
+        "kind": "permission_setting",
+        "key": "Group.setting[0]",
+        "preview": {},
+        "payload": {
+            "mode": "object_update",
+            "body": {"custom_object": {"id": "obj-uuid"}, "permission_level": 2},
+            # False: no live entry at plan time — the genuine-defect case.
+            # The "present but normalized" test below overrides this.
+            "control_present": False,
+        },
+        "parent_object_uuid": "group-uuid",
+    }
+    base.update(overrides)
+    return PlanOperation(**base)
+
+
+@respx.mock
+def test_apply_permission_setting_fails_when_control_was_absent():
+    """object-update silently corrects the level it's given (e.g. a
+    freshly-inserted object always lands at "none") and reports it in the
+    response body instead of a 4xx — apply_plan must not report `ok` for a
+    write that didn't do what was asked. `control_present=False` (no live
+    entry at plan time) is what makes this the genuine-defect case, not a
+    legal server normalization."""
+    respx.patch(f"{FAKE_BASE_URL}/api/permission-group/group-uuid/object-update").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "key": "all_records",
+                "permission_level": 0,
+                "details": {
+                    "message": "Permission level was automatically corrected by rule."
+                },
+            },
+        )
+    )
+    plan = Plan.build(env="testenv", summary="t", operations=[_permission_setting_op()])
+
+    result = plan_tools.apply_plan(plan)
+
+    (r,) = result.results
+    assert r.status == "failed"
+    assert "permission_level=0, requested 2" in r.message
+    assert "automatically corrected by rule" in r.message
+    assert not result.all_ok
+
+
+@respx.mock
+def test_apply_permission_setting_adjusted_when_control_was_present():
+    """A live probe found the server clamping a legal,
+    in-range write on a control the group already carried (Companies'
+    `associated_records`, normalized up to satisfy `associated_records >=
+    all_records` after an earlier op in the same plan raised `all_records`).
+    That's the server doing exactly what this item's design delegates to it
+    — reported as "adjusted", not "failed", and must not flip the exit code."""
+    respx.patch(f"{FAKE_BASE_URL}/api/permission-group/group-uuid/object-update").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "key": "associated_records",
+                "permission_level": 3,
+                "details": {
+                    "message": "Permission level was automatically corrected by rule."
+                },
+            },
+        )
+    )
+    op = _permission_setting_op(
+        payload={
+            "mode": "object_update",
+            "body": {"custom_object": {"id": "obj-uuid"}, "permission_level": 1},
+            "control_present": True,
+        }
+    )
+    plan = Plan.build(env="testenv", summary="t", operations=[op])
+
+    result = plan_tools.apply_plan(plan)
+
+    (r,) = result.results
+    assert r.status == "adjusted"
+    assert r.message == (
+        "requested view, server normalized to remove "
+        "(Permission level was automatically corrected by rule.)"
+    )
+    assert result.all_ok
+
+
+@respx.mock
+def test_apply_permission_setting_ok_when_level_matches():
+    respx.patch(f"{FAKE_BASE_URL}/api/permission-group/group-uuid/object-update").mock(
+        return_value=httpx.Response(
+            200, json={"key": "all_records", "permission_level": 2}
+        )
+    )
+    plan = Plan.build(env="testenv", summary="t", operations=[_permission_setting_op()])
+
+    result = plan_tools.apply_plan(plan)
+
+    (r,) = result.results
+    assert r.status == "ok"
+    assert r.message is None
+    assert result.all_ok

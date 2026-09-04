@@ -48,7 +48,9 @@ def _render_result(result: plan_tools.ApplyResult) -> None:
     table.add_column("server uuid")
     table.add_column("note")
     for r in result.results:
-        symbol = {"ok": "✓", "skipped": "·", "failed": "✗"}.get(r.status, "?")
+        symbol = {"ok": "✓", "skipped": "·", "failed": "✗", "adjusted": "~"}.get(
+            r.status, "?"
+        )
         table.add_row(
             symbol,
             r.kind,

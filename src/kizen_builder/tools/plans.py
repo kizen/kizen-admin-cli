@@ -32,6 +32,7 @@ from kizen_builder.api import records as records_api
 from kizen_builder.api import saved_views as sv_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
+from kizen_builder.tools.permissions import LEVELS
 
 
 class PlanError(ValueError):
@@ -183,7 +184,10 @@ class OperationResult(BaseModel):
     key: str
     kind: Kind
     action: Action
-    status: Literal["ok", "failed", "skipped"]
+    # "adjusted": the write succeeded but the server normalized the value
+    # away from what was requested (e.g. a cross-field rule) — not a
+    # failure, just not exact. Excluded from all_ok the same as "ok".
+    status: Literal["ok", "failed", "skipped", "adjusted"]
     server_uuid: str | None = None
     message: str | None = None
     raw: dict[str, Any] | None = None
@@ -200,7 +204,7 @@ class ApplyResult(BaseModel):
 
     @property
     def all_ok(self) -> bool:
-        return all(r.status in ("ok", "skipped") for r in self.results)
+        return all(r.status in ("ok", "skipped", "adjusted") for r in self.results)
 
 
 # ---------------------------------------------------------------------------
@@ -303,14 +307,61 @@ def apply_plan(plan: Plan) -> ApplyResult:
             if server_uuid:
                 results_by_key[op.key] = server_uuid
             message = None
+            status: Literal["ok", "failed", "skipped", "adjusted"] = (
+                "ok" if op.action != "skip" else "skipped"
+            )
             if op.action == "upsert" and isinstance(resp, dict) and resp.get("action"):
                 message = resp["action"]  # "created" or "updated"
+            elif (
+                op.kind == "permission_setting"
+                and op.payload.get("mode") == "object_update"
+                and isinstance(resp, dict)
+            ):
+                # object-update silently corrects the level it's given instead
+                # of 4xx-ing, and reports it in the response body — but there
+                # are two different reasons, and only one is a failure:
+                #
+                # 1. The control had no entry in the group at plan time
+                #    (`control_present=False` — set in `_setting_op`). Insert
+                #    always lands at "none" regardless of what was asked, a
+                #    follow-up apply doesn't change that, and nothing the
+                #    caller wanted happened. Genuine failure.
+                # 2. The control was already present — a *legal* write that a
+                #    cross-field rule (e.g. `associated_records >= all_records`)
+                #    then normalized based on the group's final state, which
+                #    this planner doesn't simulate (see docs/specs/
+                #    permission-group.md). The write succeeded; it just didn't
+                #    land exactly where asked. Not a failure — reported as
+                #    "adjusted" so it doesn't flip `kizen apply`'s exit code.
+                requested = op.payload["body"].get("permission_level")
+                returned = resp.get("permission_level")
+                if (
+                    requested is not None
+                    and returned is not None
+                    and returned != requested
+                ):
+                    detail = (resp.get("details") or {}).get("message")
+                    if op.payload.get("control_present") is False:
+                        status = "failed"
+                        message = (
+                            f"server set permission_level={returned}, requested "
+                            f"{requested}" + (f" — {detail}" if detail else "")
+                        )
+                        failed_keys.add(op.key)
+                    else:
+                        status = "adjusted"
+                        requested_name = LEVELS.get(requested, str(requested))
+                        returned_name = LEVELS.get(returned, str(returned))
+                        message = (
+                            f"requested {requested_name}, server normalized to "
+                            f"{returned_name}" + (f" ({detail})" if detail else "")
+                        )
             results.append(
                 OperationResult(
                     key=op.key,
                     kind=op.kind,
                     action=op.action,
-                    status="ok" if op.action != "skip" else "skipped",
+                    status=status,
                     server_uuid=server_uuid,
                     message=message,
                     raw=resp if isinstance(resp, dict) else None,

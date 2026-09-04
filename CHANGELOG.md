@@ -137,6 +137,24 @@ called out explicitly under **Changed** or **Removed**.
   `alignment`), and a centered `Image` (`position: "center"`, the only
   value this surface sets) now actually renders centered in `content`
   instead of flush left.
+- **`kizen permissions group-update <group> --settings-file <f>`** raises or
+  lowers object/field/section controls on an *existing* permission group —
+  the same op shapes `group-create --settings-file` already accepts, now a
+  second consumer. Dry-run shows a `change` (current -> target) per op, read
+  from the live group. Object/field ops that target an object the group has
+  no entry for **add it at `none` and cannot raise it** (confirmed live: the
+  server silently corrects the requested level and reports it in the
+  response). Both `group-update` and `group-create --settings-file` catch
+  this in two ways: an `object`-op `level` outside the control's own
+  `allowed_access` (e.g. `associated_records: none`, which the server would
+  silently clamp to `view`) is rejected up front with a `PlanError`; and a
+  mismatch that survives that check because a *legal* value still got
+  adjusted by a cross-field rule (e.g. `associated_records >= all_records`)
+  is reported as an `adjusted` op with a plain-language message — not a
+  failure, since the server applied a value the design already delegates to
+  it — while a mismatch on a control that had **no entry at all** at plan
+  time (the fresh-insert case above) still surfaces as `failed`. See
+  `docs/specs/permission-group.md`.
 
 ### Fixed
 

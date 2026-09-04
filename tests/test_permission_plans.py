@@ -19,13 +19,14 @@ import httpx
 import respx
 
 from kizen_builder.api import permissions as perm_api
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.planners.permissions import (
     plan_create_permission_group,
     plan_create_role,
     plan_delete_permission_group,
     plan_delete_role,
+    plan_update_permission_group,
     plan_update_role,
 )
 from kizen_builder.tools.plans import PlanError
@@ -43,6 +44,10 @@ ROLE_DETAIL = load_fixture("permissions/role_detail.json")
 GROUP_LIST = load_fixture("permissions/permission_group_list.json")
 GROUP_DETAIL = load_fixture("permissions/permission_group_detail.json")
 META = load_fixture("permissions/permissions_meta_data.json")
+OBJECT_LIST = {
+    "results": [{"id": OBJ_ID, "name": "policies_policy", "entity_name": "Policy"}],
+    "next": None,
+}
 
 
 def _mock_role_list():
@@ -72,6 +77,12 @@ def _mock_group_detail(group_id: str = GROUP_ID, body: dict | None = None):
 def _mock_meta():
     return respx.get(f"{FAKE_BASE_URL}/api/permissions/meta-data").mock(
         return_value=httpx.Response(200, json=META)
+    )
+
+
+def _mock_object_list():
+    return respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        return_value=httpx.Response(200, json=OBJECT_LIST)
     )
 
 
@@ -356,6 +367,10 @@ def test_plan_create_permission_group_settings_build_object_field_and_section_op
             "permission_level": 2,
             "key": "records",
         },
+        # No live group to check at create time, but the group's own `create`
+        # op always inserts every currently-existing object — never the
+        # "no entry at all" case apply_plan treats as a genuine failure.
+        "control_present": True,
     }
 
     # A "field" setting only ever carries `field`, never `key` — the branch
@@ -369,6 +384,7 @@ def test_plan_create_permission_group_settings_build_object_field_and_section_op
             "permission_level": 1,
             "field": {"id": FIELD_ID},
         },
+        "control_present": True,
     }
 
     assert section_op.kind == "permission_setting"
@@ -380,6 +396,37 @@ def test_plan_create_permission_group_settings_build_object_field_and_section_op
         },
     }
     assert "3 setting(s)" in plan.summary
+
+
+@respx.mock
+def test_plan_create_permission_group_settings_reject_level_outside_allowed_access():
+    """The same out-of-range check `group-update` needs applies here too —
+    `--settings-file` ops are the same shapes on both commands, and the
+    server clamps an out-of-range level here exactly like it does on an
+    existing group."""
+    narrow_meta = json.loads(json.dumps(META))
+    narrow_meta["custom_objects"][0]["allowed_access"] = ["edit"]
+    _mock_group_list()
+    _mock_group_detail()
+    respx.get(f"{FAKE_BASE_URL}/api/permissions/meta-data").mock(
+        return_value=httpx.Response(200, json=narrow_meta)
+    )
+
+    try:
+        plan_create_permission_group(
+            name="New Group",
+            settings=[
+                {
+                    "type": "object",
+                    "object_id": OBJ_ID,
+                    "key": "records",
+                    "level": "remove",
+                }
+            ],
+        )
+        raise AssertionError("expected PlanError")
+    except PlanError as exc:
+        assert "'records'" in str(exc) and "edit" in str(exc)
 
 
 @respx.mock
@@ -426,6 +473,258 @@ def test_plan_delete_permission_group():
     assert op.kind == "permission_group"
     assert op.existing_uuid == GROUP_ID
     assert op.key == GROUP_DETAIL["name"]
+
+
+# ---------------------------------------------------------------------------
+# plan_update_permission_group
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_plan_update_permission_group_object_op_sets_group_id_directly_with_change():
+    """Unlike create, the group already exists: no
+    `deferred_parent_object_key` — `parent_object_uuid` is set immediately —
+    and the preview carries a `change` (current -> target), not just the
+    target level."""
+    _mock_group_detail()
+    _mock_meta()
+    _mock_object_list()
+
+    plan = plan_update_permission_group(
+        GROUP_ID,
+        settings=[
+            {"type": "object", "object_id": OBJ_ID, "key": "records", "level": "edit"}
+        ],
+    )
+
+    (op,) = plan.operations
+    assert op.kind == "permission_setting"
+    assert op.deferred_parent_object_key is None
+    assert op.parent_object_uuid == GROUP_ID
+    assert op.payload == {
+        "mode": "object_update",
+        "body": {
+            "custom_object": {"id": OBJ_ID},
+            "permission_level": 2,
+            "key": "records",
+        },
+        # A live leaf was found -> not the "no entry at all" case.
+        "control_present": True,
+    }
+    # GROUP_DETAIL's records leaf for OBJ_ID is {"view": true, ...} -> "view".
+    # A present control's target level is still a request, not a promise —
+    # a cross-field rule can still normalize it.
+    assert op.preview["change"] == "Records: view -> edit (subject to server rules)"
+
+
+@respx.mock
+def test_plan_update_permission_group_object_op_fills_label_placeholder():
+    """meta's object-control labels carry a `{0}` slot for the object's
+    display name (e.g. "All {0} Records") — only object ops need the extra
+    /api/custom-objects round trip to fill it in."""
+    templated_meta = json.loads(json.dumps(META))
+    templated_meta["custom_objects"][0]["label"] = "All {0} Records"
+    _mock_group_detail()
+    respx.get(f"{FAKE_BASE_URL}/api/permissions/meta-data").mock(
+        return_value=httpx.Response(200, json=templated_meta)
+    )
+    _mock_object_list()
+
+    plan = plan_update_permission_group(
+        GROUP_ID,
+        settings=[
+            {"type": "object", "object_id": OBJ_ID, "key": "records", "level": "edit"}
+        ],
+    )
+
+    (op,) = plan.operations
+    assert (
+        op.preview["change"]
+        == "All Policy Records: view -> edit (subject to server rules)"
+    )
+
+
+@respx.mock
+def test_plan_update_permission_group_object_op_rejects_level_outside_allowed_access():
+    """object-update silently clamps an out-of-range level
+    instead of 4xx-ing (e.g. requesting "none" on a control whose
+    allowed_access starts at "view"), and reports that clamp exactly like it
+    reports the real bug this item fixes (a fresh insert always landing at
+    "none"). Only a plan-time check against the control's own allowed_access
+    can tell the two apart, so `_setting_op` must reject an out-of-range
+    request before it ever reaches the server."""
+    narrow_meta = json.loads(json.dumps(META))
+    narrow_meta["custom_objects"][0]["allowed_access"] = ["view", "edit", "remove"]
+    _mock_group_detail()  # GROUP_DETAIL has a "records" entry for OBJ_ID
+    respx.get(f"{FAKE_BASE_URL}/api/permissions/meta-data").mock(
+        return_value=httpx.Response(200, json=narrow_meta)
+    )
+    _mock_object_list()
+
+    try:
+        plan_update_permission_group(
+            GROUP_ID,
+            settings=[
+                {
+                    "type": "object",
+                    "object_id": OBJ_ID,
+                    "key": "records",
+                    "level": "none",
+                }
+            ],
+        )
+        raise AssertionError("expected PlanError")
+    except PlanError as exc:
+        assert "'records'" in str(exc)
+        assert "view" in str(exc) and "edit" in str(exc)
+
+
+@respx.mock
+def test_plan_update_permission_group_object_op_rejects_level_for_missing_object():
+    """Same check, for an object with no entry in the group at all — the
+    `_find_leaf` miss falls back to meta's own control descriptor for
+    allowed_access, since there's no live leaf to read it from."""
+    narrow_meta = json.loads(json.dumps(META))
+    narrow_meta["custom_objects"][0]["allowed_access"] = ["edit"]
+    _mock_group_detail()
+    respx.get(f"{FAKE_BASE_URL}/api/permissions/meta-data").mock(
+        return_value=httpx.Response(200, json=narrow_meta)
+    )
+    _mock_object_list()
+
+    try:
+        plan_update_permission_group(
+            GROUP_ID,
+            settings=[
+                {
+                    "type": "object",
+                    # not in GROUP_DETAIL's custom_objects -> no leaf
+                    "object_id": "00000000-0000-4000-8000-000000000999",
+                    "key": "records",
+                    "level": "remove",
+                }
+            ],
+        )
+        raise AssertionError("expected PlanError")
+    except PlanError as exc:
+        assert "allowed" in str(exc) and "edit" in str(exc)
+
+
+@respx.mock
+def test_plan_update_permission_group_field_op_skips_validation_without_a_leaf():
+    """A field with no live entry has no allowed_access source at plan time
+    (meta only describes object controls) — unlike the object case, this is
+    left unvalidated rather than guessed at."""
+    _mock_group_detail()
+    _mock_meta()
+
+    plan = plan_update_permission_group(
+        GROUP_ID,
+        settings=[
+            {
+                "type": "field",
+                "object_id": OBJ_ID,
+                "field_id": "no-such-field-id",
+                "level": "remove",
+            }
+        ],
+    )
+
+    (op,) = plan.operations
+    assert op.preview["change"] == "no-such-field-id: (not present) -> remove"
+    # No leaf to skip validation against also means no leaf to prove the
+    # control is live -> apply_plan must still treat a later mismatch here
+    # as the genuine "no entry at all" defect, not a normalized write.
+    assert op.payload["control_present"] is False
+
+
+@respx.mock
+def test_plan_update_permission_group_field_op_reads_before_from_live_group():
+    _mock_group_detail()
+    _mock_meta()
+
+    plan = plan_update_permission_group(
+        GROUP_ID,
+        settings=[
+            {
+                "type": "field",
+                "object_id": OBJ_ID,
+                "field_id": FIELD_ID,
+                "level": "view",
+            }
+        ],
+    )
+
+    (op,) = plan.operations
+    assert op.parent_object_uuid == GROUP_ID
+    assert op.payload == {
+        "mode": "object_update",
+        "body": {
+            "custom_object": {"id": OBJ_ID},
+            "permission_level": 1,
+            "field": {"id": FIELD_ID},
+        },
+        "control_present": True,
+    }
+    # GROUP_DETAIL's field is {"view": true, "edit": true} -> highest = "edit".
+    assert op.preview["change"] == f"{FIELD_ID}: edit -> view (subject to server rules)"
+
+
+@respx.mock
+def test_plan_update_permission_group_section_op_diffs_every_subkey():
+    _mock_group_detail()
+    _mock_meta()
+
+    plan = plan_update_permission_group(
+        GROUP_ID,
+        settings=[
+            {
+                "type": "section",
+                "section_key": "dashboards_section",
+                "value": {"enabled": False, "view_all_dashboards": False},
+            }
+        ],
+    )
+
+    (op,) = plan.operations
+    assert op.parent_object_uuid == GROUP_ID
+    assert op.payload == {
+        "mode": "section",
+        "body": {
+            "dashboards_section": {"enabled": False, "view_all_dashboards": False}
+        },
+    }
+    # GROUP_DETAIL's dashboards_section is fully enabled -> both read "view".
+    assert op.preview["change"] == (
+        "Enabled: view -> none; View All Dashboards: view -> none"
+    )
+
+
+@respx.mock
+def test_plan_update_permission_group_raises_when_group_not_found():
+    respx.get(f"{FAKE_BASE_URL}/api/permission-group/{UNKNOWN_GROUP_ID}").mock(
+        return_value=httpx.Response(404, json={"detail": "not found"})
+    )
+
+    try:
+        plan_update_permission_group(
+            UNKNOWN_GROUP_ID,
+            settings=[
+                {"type": "object", "object_id": OBJ_ID, "key": "records", "level": 1}
+            ],
+        )
+        raise AssertionError("expected KizenAPIError")
+    except KizenAPIError as exc:
+        assert exc.status_code == 404
+
+
+@respx.mock
+def test_plan_update_permission_group_raises_when_settings_empty():
+    try:
+        plan_update_permission_group(GROUP_ID, settings=[])
+        raise AssertionError("expected PlanError")
+    except PlanError as exc:
+        assert "setting" in str(exc)
 
 
 # ---------------------------------------------------------------------------
