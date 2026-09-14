@@ -29,7 +29,7 @@ jobs:
       # ref, so the short form fails the run outright with "unable to find
       # version". Bump this deliberately. (actions/checkout does still publish
       # `v7`, which is why that one differs.)
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
@@ -60,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           python-version: "3.13"
@@ -88,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           python-version: "3.13"
