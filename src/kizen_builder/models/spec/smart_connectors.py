@@ -283,12 +283,24 @@ class SmartConnectorFlowDef(BaseModel):
     @model_validator(mode="after")
     def _unique_exposed_names(self) -> Self:
         declared = {v.name for v in self.execution_variables}
-        for load in self.loads:
-            if load.exposes_variable and load.exposes_variable in declared:
+        exposed_by: dict[str, str] = {}
+        for index, load in enumerate(self.loads):
+            name = load.exposes_variable
+            if not name:
+                continue
+            step = (
+                f"load step '{load.custom_object}' "
+                f"(order {index if load.order is None else load.order})"
+            )
+            if name in declared:
                 raise ValueError(
-                    f"'{load.exposes_variable}' is both an execution variable "
-                    f"and a load step's exposes_variable — pick distinct names"
+                    f"{step} exposes '{name}', which is also the name of an "
+                    f"execution variable — rename one of them"
                 )
-            if load.exposes_variable:
-                declared.add(load.exposes_variable)
+            if name in exposed_by:
+                raise ValueError(
+                    f"{exposed_by[name]} and {step} both expose '{name}' — "
+                    f"rename one of them"
+                )
+            exposed_by[name] = step
         return self

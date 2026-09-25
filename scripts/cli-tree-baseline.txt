@@ -3361,8 +3361,10 @@
                                                                                                     
  The spec refers to everything by name (object api_names, field api_names,                          
  variable names) and is resolved against live state before anything is                              
- written. Note that saving execution variables replaces the connector's                             
- existing set — the plan lists any that would be dropped.                                           
+ written. Re-running a spec updates the connector in place: live variables                          
+ and load steps are sent back by id. The spec is the whole flow, so a live                          
+ variable or load step it doesn't list is removed — the plan lists what it                          
+ would update, create, and delete.                                                                  
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │   connector      <str>  Connector UUID or api_name (else the spec's 'connector').                │

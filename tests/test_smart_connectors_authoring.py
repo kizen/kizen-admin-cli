@@ -8,6 +8,7 @@ the multi-round load-step save that relationship fields require.
 
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import time
@@ -694,6 +695,31 @@ def test_spec_rejects_a_last_rule_that_falls_through():
         )
 
 
+def test_spec_names_both_holders_of_an_exposed_name():
+    load = _flow_spec()["loads"][0]
+    with pytest.raises(
+        ValidationError,
+        match=r"load step 'orders' \(order 0\) exposes 'sku', which is also the "
+        r"name of an execution variable — rename one of them",
+    ):
+        SmartConnectorFlowDef.model_validate(
+            _flow_spec(loads=[{**load, "exposes_variable": "sku"}])
+        )
+    with pytest.raises(
+        ValidationError,
+        match=r"load step 'orders' \(order 0\) and load step 'orders' \(order 1\) "
+        r"both expose 'rec' — rename one of them",
+    ):
+        SmartConnectorFlowDef.model_validate(
+            _flow_spec(
+                loads=[
+                    {**load, "exposes_variable": "rec"},
+                    {**load, "exposes_variable": "rec"},
+                ]
+            )
+        )
+
+
 # ---------------------------------------------------------------------------
 # configure-flow: planning against live state
 # ---------------------------------------------------------------------------
@@ -1063,6 +1089,599 @@ def test_apply_configure_flow_single_round_when_nothing_is_related():
     result = sct.apply_configure_flow(plan)
     assert result["rounds"] == 1
     assert result["exposed_variables"] == {}
+
+
+class FakeConnector:
+    """One connector's GET/PATCH with the server's semantics, confirmed live
+    2026-09-25: a row with an id is updated, a row without one is created with a
+    fresh uuid, a live load step left out of ``flow.loads`` is deleted, a reused
+    exposed-variable name, a repeated load ``order`` or a rule pointing at a
+    uuid that doesn't exist 400s, a 400 writes nothing, and recreating a
+    variable drops every stored rule that pointed at its old uuid.
+
+    ``fail_on`` / ``timeout_on`` / ``down_on`` pick the nth PATCH: it 400s, it
+    lands but the response never arrives, or it and every later GET 503.
+    ``null_exposures`` makes a created step's exposed variable come back null.
+    """
+
+    def __init__(
+        self,
+        detail,
+        *,
+        fail_on=None,
+        timeout_on=None,
+        down_on=None,
+        null_exposures=False,
+    ):
+        self.state = copy.deepcopy(detail)
+        self.bodies = []
+        self.fail_on = fail_on
+        self.timeout_on = timeout_on
+        self.down_on = down_on
+        self.null_exposures = null_exposures
+        self._n = 0
+        respx.get(f"{BASE}/order_import").mock(side_effect=self.get)
+        respx.get(f"{BASE}/conn-uuid").mock(side_effect=self.get)
+        respx.patch(f"{BASE}/conn-uuid").mock(side_effect=self.patch)
+
+    def _uuid(self, prefix):
+        self._n += 1
+        return f"{prefix}-new-{self._n}"
+
+    def _down(self):
+        return self.down_on is not None and len(self.bodies) >= self.down_on
+
+    def get(self, request):
+        if self._down():
+            return httpx.Response(503, json={"detail": "unavailable"})
+        return httpx.Response(200, json=self.state)
+
+    def patch(self, request):
+        body = json.loads(request.content)
+        self.bodies.append(body)
+        if self.fail_on == len(self.bodies):
+            return httpx.Response(400, json={"detail": "something else was wrong"})
+        if self._down():
+            return httpx.Response(503, json={"detail": "unavailable"})
+        state = copy.deepcopy(self.state)
+        if "execution_variables" in body:
+            state["execution_variables"] = [
+                {**row, "id": row.get("id") or self._uuid("v")}
+                for row in body["execution_variables"]
+            ]
+        if "flow" in body:
+            error = self._apply_flow(state, body["flow"])
+            if error:
+                return httpx.Response(400, json={"detail": error})
+        alive = self._alive(state)
+        for load in state["flow"]["loads"]:
+            load["matching_rules"] = [
+                r for r in load["matching_rules"] if r["variable"] in alive
+            ]
+            load["field_mapping_rules"] = [
+                r
+                for r in load["field_mapping_rules"]
+                if all(v in alive for v in r["variables"])
+            ]
+        self.state = state
+        if self.timeout_on == len(self.bodies):
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(200, json=state)
+
+    @staticmethod
+    def _alive(state):
+        return {v["id"] for v in state["execution_variables"]} | {
+            load["execution_variable"]["id"]
+            for load in state["flow"]["loads"]
+            if load.get("execution_variable")
+        }
+
+    def _apply_flow(self, state, flow):
+        orders = [row["order"] for row in flow["loads"]]
+        if len(set(orders)) < len(orders):
+            return "Load step display orders must be unique"
+        old = {load["id"]: load for load in state["flow"]["loads"]}
+        taken = {v["name"] for v in state["execution_variables"]} | {
+            load["execution_variable"]["name"]
+            for load in old.values()
+            if load.get("execution_variable")
+        }
+        loads = []
+        for row in flow["loads"]:
+            load = copy.deepcopy(row)
+            load.setdefault("id", self._uuid("load"))
+            var = row.get("execution_variable")
+            if "execution_variable" not in row:
+                var = (old.get(load["id"]) or {}).get("execution_variable")
+            elif var and not var.get("id"):
+                if var["name"] in taken:
+                    return "An execution variable with this name already exists"
+                var = None if self.null_exposures else {**var, "id": self._uuid("xv")}
+            load["execution_variable"] = var
+            for rule in load["matching_rules"]:
+                rule.setdefault("id", self._uuid("mr"))
+            loads.append(load)
+        state["flow"] = {**flow, "loads": loads}
+        alive = self._alive(state)
+        for load in loads:
+            refs = [r["variable"] for r in load["matching_rules"]]
+            refs += [v for r in load["field_mapping_rules"] for v in r["variables"]]
+            if any(ref not in alive for ref in refs):
+                return "Invalid pk - object does not exist."
+        return None
+
+    def loads(self):
+        return sorted(self.state["flow"]["loads"], key=lambda d: d["order"])
+
+
+def _all_rows_have_ids(body):
+    for var in body.get("execution_variables") or []:
+        assert "id" in var, var
+    for load in (body.get("flow") or {}).get("loads") or []:
+        assert "id" in load, load
+        if load.get("execution_variable"):
+            assert "id" in load["execution_variable"], load
+
+
+@respx.mock
+def test_configure_flow_rerun_updates_in_place():
+    """The fmo incident: a re-run used to recreate every variable (wiping the
+    rules on them) and then 400 on the exposed name. Now it sends everything by
+    id, keeps every uuid, and needs one round."""
+    _mock_object_lookups()
+    fake = FakeConnector(DETAIL)
+    first = sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+    assert first["rounds"] == 2
+    before = copy.deepcopy(fake.loads())
+    var_ids = {v["name"]: v["id"] for v in fake.state["execution_variables"]}
+
+    fake.bodies.clear()
+    plan = sct.plan_configure_flow(MULTI_SPEC)
+    assert plan["load_changes"] == {
+        "update": ["orders (order 0)", "order_lines (order 1)"],
+        "create": [],
+        "delete": [],
+    }
+    assert plan["deferred_loads"] == []
+    second = sct.apply_configure_flow(plan)
+
+    assert second["rounds"] == 1
+    assert len(fake.bodies) == 2  # variables, then one flow round
+    for body in fake.bodies:
+        _all_rows_have_ids(body)
+    after = fake.loads()
+    assert {v["name"]: v["id"] for v in fake.state["execution_variables"]} == var_ids
+    assert [load["id"] for load in after] == [load["id"] for load in before]
+    assert after[0]["execution_variable"]["id"] == before[0]["execution_variable"]["id"]
+    for old, new in zip(before, after, strict=True):
+        assert len(new["matching_rules"]) == len(old["matching_rules"]) == 1
+        assert new["field_mapping_rules"] == old["field_mapping_rules"]
+    assert second["exposed_variables"] == first["exposed_variables"]
+
+
+# Live state for the pairing and ordering tests: `orders` exposes nothing yet,
+# `order_lines` appears twice (the second has no spec counterpart), and the
+# first `order_lines` step still maps a variable the spec no longer declares.
+LIVE_TWO_LINES = {
+    **DETAIL,
+    "status": "operational",
+    "execution_variables": [
+        {"id": "v-num", "name": "order_number", "scope": "orders"},
+        {"id": "v-old", "name": "legacy_column", "scope": "orders"},
+    ],
+    "flow": {
+        **DETAIL["flow"],
+        "loads": [
+            {
+                "id": "load-1",
+                "custom_object": "obj-orders",
+                "scope": "orders",
+                "type": "csv_load",
+                "order": 0,
+                "matching_rules": [
+                    {
+                        "id": "mr-1",
+                        "order": 0,
+                        "field": "f-orders-number",
+                        "variable": "v-num",
+                    }
+                ],
+                "field_mapping_rules": [
+                    {"field": "f-orders-name", "variables": ["v-num"]}
+                ],
+                "execution_variable": None,
+            },
+            {
+                "id": "load-2",
+                "custom_object": "obj-lines",
+                "scope": "orders",
+                "type": "csv_load",
+                "order": 1,
+                "matching_rules": [
+                    {
+                        "id": "mr-2",
+                        "order": 0,
+                        "field": "f-lines-sku",
+                        "variable": "v-old",
+                    }
+                ],
+                "field_mapping_rules": [
+                    {"field": "f-lines-name", "variables": ["v-old"]}
+                ],
+                "execution_variable": None,
+            },
+            {
+                "id": "load-3",
+                "custom_object": "obj-lines",
+                "scope": "orders",
+                "type": "csv_load",
+                "order": 2,
+                "matching_rules": [
+                    {
+                        "id": "mr-3",
+                        "order": 0,
+                        "field": "f-lines-sku",
+                        "variable": "v-num",
+                    }
+                ],
+                "field_mapping_rules": [
+                    {"field": "f-lines-name", "variables": ["v-num"]}
+                ],
+                "execution_variable": None,
+            },
+        ],
+    },
+}
+
+
+@respx.mock
+def test_plan_configure_flow_pairs_live_loads_and_carries_their_ids():
+    _mock_object_lookups()
+    FakeConnector(LIVE_TWO_LINES)
+    plan = sct.plan_configure_flow(MULTI_SPEC)
+
+    assert [v.get("id") for v in plan["execution_variables"]] == ["v-num", None]
+    assert plan["dropped_variables"] == ["legacy_column"]
+    assert [load.get("id") for load in plan["loads"]] == ["load-1", "load-2"]
+    # load-1 exposes nothing live, so there is no uuid to carry yet.
+    assert "execution_variable_id" not in plan["loads"][0]
+    assert plan["load_changes"] == {
+        "update": ["orders (order 0)", "order_lines (order 1)"],
+        "create": [],
+        "delete": ["order_lines (order 2)"],
+    }
+    assert [d["id"] for d in plan["deleted_loads"]] == ["load-3"]
+    assert plan["rounds"] == [[0], [1]]
+
+
+@respx.mock
+def test_apply_configure_flow_orders_writes_so_no_rule_is_lost():
+    _mock_object_lookups()
+    fake = FakeConnector(LIVE_TWO_LINES)
+    result = sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+    variables, round_1, round_2, drop = fake.bodies
+
+    # 1: the declared set plus the one being dropped, which load-2 still reads.
+    assert [(v["name"], v.get("id")) for v in variables["execution_variables"]] == [
+        ("order_number", "v-num"),
+        ("sku", None),
+        ("legacy_column", "v-old"),
+    ]
+    # 2 and 3: every live step rides along. The unpaired one (load-3) is only
+    # left out of the final round.
+    assert [load["id"] for load in round_1["flow"]["loads"]] == [
+        "load-1",
+        "load-2",
+        "load-3",
+    ]
+    assert round_1["flow"]["loads"][1]["matching_rules"][0]["variable"] == "v-old"
+    assert [load["id"] for load in round_2["flow"]["loads"]] == ["load-1", "load-2"]
+    exposed = fake.loads()[0]["execution_variable"]["id"]
+    rel = round_2["flow"]["loads"][1]["field_mapping_rules"][1]
+    assert rel == {**rel, "field": "f-lines-rel", "variables": [exposed]}
+    # 4: the declared set alone — the new variable by the id round 1 gave it.
+    sku_id = next(
+        v["id"] for v in fake.state["execution_variables"] if v["name"] == "sku"
+    )
+    assert drop["execution_variables"] == [
+        {**variables["execution_variables"][0]},
+        {**variables["execution_variables"][1], "id": sku_id},
+    ]
+
+    assert result["loads_deleted"] == 1
+    assert [load["id"] for load in fake.loads()] == ["load-1", "load-2"]
+    assert [len(load["field_mapping_rules"]) for load in fake.loads()] == [1, 2]
+
+
+@respx.mock
+def test_plan_configure_flow_refuses_names_that_wont_exist_after_the_save():
+    _mock_object_lookups()
+    FakeConnector(LIVE_TWO_LINES)
+    # legacy_column is live, but this spec drops it.
+    stale = copy.deepcopy(MULTI_SPEC)
+    stale["loads"][1]["field_mapping_rules"].append(
+        {"field": "sku", "variable": "legacy_column"}
+    )
+    with pytest.raises(PlanError, match="'legacy_column', which nothing provides"):
+        sct.plan_configure_flow(stale)
+
+    # matched_order is live on load-1, but no spec step pairs with load-1.
+    exposing = copy.deepcopy(LIVE_TWO_LINES)
+    exposing["flow"]["loads"][0]["execution_variable"] = {
+        "id": "xv-1",
+        "name": "matched_order",
+    }
+    FakeConnector(exposing)
+    orphan = {**MULTI_SPEC, "loads": [MULTI_SPEC["loads"][1]]}
+    with pytest.raises(PlanError, match="'matched_order', which nothing provides"):
+        sct.plan_configure_flow(orphan)
+
+
+@respx.mock
+def test_plan_configure_flow_refuses_an_exposed_name_already_taken():
+    _mock_object_lookups()
+    exposing = copy.deepcopy(LIVE_TWO_LINES)
+    exposing["flow"]["loads"][0]["execution_variable"] = {
+        "id": "xv-1",
+        "name": "matched_order",
+    }
+    FakeConnector(exposing)
+    # A step that doesn't pair with load-1 claims load-1's exposed name.
+    thief = copy.deepcopy(MULTI_SPEC)
+    thief["loads"][0]["exposes_variable"] = None
+    thief["loads"][1]["exposes_variable"] = "matched_order"
+    thief["loads"][1]["field_mapping_rules"].pop()
+    with pytest.raises(PlanError) as err:
+        sct.plan_configure_flow(thief)
+    assert "load step 'order_lines' (order 1)" in str(err.value)
+    assert "'orders' (order 0)" in str(err.value)
+    assert "rename 'matched_order'" in str(err.value)
+
+    # And one that claims a live data-source variable's name.
+    clash = copy.deepcopy(MULTI_SPEC)
+    del clash["execution_variables"]
+    clash["loads"][0]["exposes_variable"] = "legacy_column"
+    with pytest.raises(
+        PlanError, match="already the name of a live execution variable"
+    ):
+        sct.plan_configure_flow(clash)
+
+    # And a declared variable that shadows load-1's exposed name.
+    shadow = copy.deepcopy(MULTI_SPEC)
+    shadow["loads"][0]["exposes_variable"] = None
+    shadow["execution_variables"].append(
+        {"name": "matched_order", "data_source": "sku"}
+    )
+    with pytest.raises(
+        PlanError, match="execution variable 'matched_order' has the same name"
+    ):
+        sct.plan_configure_flow(shadow)
+
+
+@respx.mock
+def test_apply_configure_flow_reports_the_state_a_failed_round_left():
+    _mock_object_lookups()
+    fake = FakeConnector(LIVE_TWO_LINES, fail_on=3)  # variables, round 1, round 2
+    plan = sct.plan_configure_flow(MULTI_SPEC)
+    with pytest.raises(sct.PartialSaveError) as err:
+        sct.apply_configure_flow(plan)
+
+    report = err.value.report
+    assert report["failed_write"] == "flow round 2 of 2"
+    assert "something else was wrong" in report["error"]
+    assert report["completed_writes"] == [
+        "the execution-variables write",
+        "flow round 1 of 2",
+    ]
+    assert report["live"] is True
+    rows = {(r["load"], r["order"]): r for r in report["loads"]}
+    assert rows[("orders", 0)]["state"] == "updated"
+    assert rows[("order_lines", 1)] == {
+        "load": "order_lines",
+        "order": 1,
+        "state": "previous config",
+        "before": {"matching": 1, "mapping": 1},
+        "now": {"matching": 1, "mapping": 1},
+        "spec": {"matching": 1, "mapping": 2},
+    }
+    assert rows[("order_lines", 2)]["state"] == "not deleted yet"
+    # Nothing the spec keeps was lost: the dropped variable is still there for
+    # load-2's live rules.
+    assert "legacy_column" in {v["name"] for v in fake.state["execution_variables"]}
+
+
+@respx.mock
+def test_apply_configure_flow_first_write_failure_is_a_plain_error():
+    _mock_object_lookups()
+    FakeConnector(LIVE_TWO_LINES, fail_on=1)
+    with pytest.raises(KizenAPIError, match="HTTP 400"):
+        sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+
+
+@respx.mock
+def test_configure_flow_renames_an_exposed_variable_in_place():
+    _mock_object_lookups()
+    fake = FakeConnector(DETAIL)
+    sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+    before = fake.loads()
+    exposed_id = before[0]["execution_variable"]["id"]
+
+    # Once the rename lands the old name is gone, so nothing may reference it.
+    stale = copy.deepcopy(MULTI_SPEC)
+    stale["loads"][0]["exposes_variable"] = "order_record"
+    with pytest.raises(PlanError, match="'matched_order', which nothing provides"):
+        sct.plan_configure_flow(stale)
+
+    renamed = copy.deepcopy(stale)
+    renamed["loads"][1]["field_mapping_rules"][1]["variable"] = "order_record"
+    # Shift both orders too: round 1 then carries order_lines in its live form.
+    renamed["loads"][0]["order"] = 1
+    renamed["loads"][1]["order"] = 2
+    plan = sct.plan_configure_flow(renamed)
+    assert plan["loads"][0]["execution_variable_id"] == exposed_id
+    assert plan["rounds"] == [[0], [1]]
+    fake.bodies.clear()
+    sct.apply_configure_flow(plan)
+
+    round_1 = fake.bodies[1]["flow"]["loads"]
+    assert round_1[0]["execution_variable"]["id"] == exposed_id
+    assert round_1[0]["execution_variable"]["name"] == "order_record"
+    # Kizen 400s on two steps with one order, so the live-form step takes its
+    # new order already.
+    assert [(load["id"], load["order"]) for load in round_1] == [
+        (before[0]["id"], 1),
+        (before[1]["id"], 2),
+    ]
+    after = fake.loads()
+    assert [load["id"] for load in after] == [load["id"] for load in before]
+    assert after[0]["execution_variable"]["id"] == exposed_id
+    assert after[0]["execution_variable"]["name"] == "order_record"
+    assert after[1]["field_mapping_rules"] == before[1]["field_mapping_rules"]
+
+
+@respx.mock
+def test_apply_configure_flow_never_sends_two_steps_with_one_order():
+    _mock_object_lookups()
+    clash = copy.deepcopy(MULTI_SPEC)
+    clash["loads"][1]["order"] = 0
+    FakeConnector(LIVE_TWO_LINES)
+    with pytest.raises(PlanError, match=r"more than one load step has order \[0\]"):
+        sct.plan_configure_flow(clash)
+
+    # load-3 (live order 2) is being deleted, and the spec moves order_lines to 2.
+    shifted = copy.deepcopy(MULTI_SPEC)
+    shifted["loads"][0]["order"] = 1
+    shifted["loads"][1]["order"] = 2
+    fake = FakeConnector(LIVE_TWO_LINES)
+    sct.apply_configure_flow(sct.plan_configure_flow(shifted))
+    round_1 = fake.bodies[1]["flow"]["loads"]
+    # Until the last round, a step being deleted sits after every spec step.
+    assert [(load["id"], load["order"]) for load in round_1] == [
+        ("load-1", 1),
+        ("load-2", 2),
+        ("load-3", 3),
+    ]
+    assert [(load["id"], load["order"]) for load in fake.loads()] == [
+        ("load-1", 1),
+        ("load-2", 2),
+    ]
+
+
+@respx.mock
+def test_plan_configure_flow_creates_the_extra_step_when_the_spec_repeats_a_key():
+    _mock_object_lookups()
+    fake = FakeConnector(DETAIL)
+    sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+    ids = [load["id"] for load in fake.loads()]
+
+    spec = copy.deepcopy(MULTI_SPEC)
+    spec["loads"].append(copy.deepcopy(spec["loads"][1]))
+    plan = sct.plan_configure_flow(spec)
+    assert [load.get("id") for load in plan["loads"]] == [*ids, None]
+    assert plan["load_changes"] == {
+        "update": ["orders (order 0)", "order_lines (order 1)"],
+        "create": ["order_lines (order 2)"],
+        "delete": [],
+    }
+    sct.apply_configure_flow(plan)
+    assert [load["id"] for load in fake.loads()][:2] == ids
+    assert len(fake.loads()) == 3
+
+
+@respx.mock
+def test_apply_configure_flow_reports_a_failed_final_variables_write():
+    _mock_object_lookups()
+    fake = FakeConnector({**LIVE_TWO_LINES, "status": "inactive"}, fail_on=4)
+    with pytest.raises(sct.PartialSaveError) as err:
+        sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+
+    report = err.value.report
+    assert report["failed_write"] == (
+        "the final execution-variables write (dropping legacy_column)"
+    )
+    assert report["live"] is False
+    assert [(r["load"], r["state"]) for r in report["loads"]] == [
+        ("orders", "updated"),
+        ("order_lines", "updated"),
+        ("order_lines", "deleted"),
+    ]
+    assert "legacy_column" in {v["name"] for v in fake.state["execution_variables"]}
+
+
+@respx.mock
+def test_partial_report_states_come_from_the_re_read():
+    _mock_object_lookups()
+    # Round 2 lands but its response never arrives.
+    FakeConnector(LIVE_TWO_LINES, timeout_on=3)
+    with pytest.raises(sct.PartialSaveError) as err:
+        sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+    report = err.value.report
+    assert report["failed_write"] == "flow round 2 of 2"
+    assert "network error" in report["error"]
+    rows = {(r["load"], r["order"]): r for r in report["loads"]}
+    assert rows[("order_lines", 1)]["state"] == "updated"
+    assert rows[("order_lines", 1)]["now"] == rows[("order_lines", 1)]["spec"]
+    assert rows[("order_lines", 2)]["state"] == "deleted"
+
+    # A create that landed the same way is found by its object and scope.
+    FakeConnector(DETAIL, timeout_on=2)
+    with pytest.raises(sct.PartialSaveError) as err:
+        sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+    assert [r["state"] for r in err.value.report["loads"]] == [
+        "created",
+        "not created yet",
+    ]
+
+    # If the re-read fails too, nothing is claimed.
+    FakeConnector(LIVE_TWO_LINES, down_on=3)
+    with pytest.raises(sct.PartialSaveError) as err:
+        sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+    report = err.value.report
+    assert "HTTP 503" in report["reread_error"]
+    assert report["status"] is None
+    assert {r["state"] for r in report["loads"]} == {"unknown"}
+    assert {str(r["now"]) for r in report["loads"]} == {"None"}
+
+
+@respx.mock
+def test_apply_configure_flow_reports_the_state_when_a_round_gets_stuck():
+    _mock_object_lookups()
+    # The server saves orders but hands back no exposed variable for it.
+    FakeConnector(DETAIL, null_exposures=True)
+    with pytest.raises(sct.PartialSaveError) as err:
+        sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
+    report = err.value.report
+    assert report["failed_write"] == "flow round 2 of 2"
+    assert "stuck" in report["error"]
+    assert [r["state"] for r in report["loads"]] == [
+        "created, differs from spec",
+        "not created yet",
+    ]
+
+
+@respx.mock
+def test_cli_configure_flow_prints_the_partial_state(tmp_path):
+    from typer.testing import CliRunner
+
+    from kizen_builder import cli
+
+    spec = tmp_path / "flow.json"
+    spec.write_text(json.dumps(MULTI_SPEC))
+    args = ["smart-connectors", "configure-flow", "--spec-file", str(spec), "--yes"]
+    _mock_object_lookups()
+
+    FakeConnector(LIVE_TWO_LINES, fail_on=3)
+    result = CliRunner().invoke(cli.app, args)
+    assert result.exit_code == 1, result.output
+    assert "stopped at flow round 2 of 2" in result.stderr
+    assert "previous config" in result.stderr
+    assert "the connector is live in this state" in result.stderr
+    assert "Re-running the same spec is safe" in result.stderr
+
+    FakeConnector(LIVE_TWO_LINES, fail_on=3)
+    result = CliRunner().invoke(cli.app, [*args, "--json"])
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.stdout)["failed_write"] == "flow round 2 of 2"
 
 
 @respx.mock

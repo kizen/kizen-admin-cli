@@ -67,6 +67,7 @@ from kizen_builder.tools.smart_connectors.authoring._helpers import (
 from kizen_builder.tools.smart_connectors.authoring.configure_flow import (
     _LOAD_WIRE_KEYS,
     _MATCH_ACTION_KEYS,
+    PartialSaveError,
     _load_refs,
     _resolve_field,
     _validated_ref,
@@ -154,6 +155,7 @@ __all__ = [
     "CONNECTOR_TYPES",
     "ConnectorRuntimeMissing",
     "MARKER_NAME",
+    "PartialSaveError",
     "WEBHOOK_SAMPLE_COLUMNS",
     "WEBHOOK_SQL_VERSION",
     "add_input",
