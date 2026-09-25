@@ -5,7 +5,9 @@
 fields (with options), dynamictag/contact tags, subscription lists, and
 agentic workflows. Every lookup is cached for the life of the instance —
 schema data changes rarely, and one filter expression can trigger many
-lookups.
+lookups. A name lookup that misses an object or field list cached by an
+earlier call re-fetches that list once, so an object or field created after
+the cache filled still resolves.
 
 The endpoints and response handling mirror the internal ``kznclient``
 library the DSL was ported from; notably fields come from
@@ -49,6 +51,18 @@ class SchemaClient:
             self._cache[key] = fn()
         return self._cache[key]
 
+    def _find_cached(self, key: tuple, fetch, matches) -> tuple[Any, list]:
+        """The first item in the list cached at ``key`` that ``matches``, and
+        that list. A miss against a list cached by an earlier call re-fetches
+        it once; a list this call fetched is already fresh."""
+        was_cached = key in self._cache
+        items = self._cached(key, fetch)
+        match = next((i for i in items if matches(i)), None)
+        if match is None and was_cached:
+            items = self._cache[key] = fetch()
+            match = next((i for i in items if matches(i)), None)
+        return match, items
+
     def _all_pages(self, path: str, params: dict[str, Any] | None = None) -> list[dict]:
         items: list[dict] = []
         next_path: str | None = path
@@ -78,8 +92,9 @@ class SchemaClient:
                 ("object", api_name),
                 lambda: self._client.get(f"/api/custom-objects/{api_name}"),
             )
-        objects = self._cached(("objects",), self._list_objects)
-        match = next((o for o in objects if o.get("name") == api_name), None)
+        match, objects = self._find_cached(
+            ("objects",), self._list_objects, lambda o: o.get("name") == api_name
+        )
         if match is None:
             available = sorted(o.get("name") or "" for o in objects)
             raise LookupError(f"object '{api_name}' not found. Available: {available}")
@@ -99,18 +114,14 @@ class SchemaClient:
         ``options`` — or None if not found.
         """
         obj_id = obj if _is_uuid(obj) else self.custom_object(obj)["id"]
-        for field_data in self._fields(obj_id):
-            if field == field_data.get("id") or field == field_data.get("name"):
-                return field_data
-        return None
-
-    def _fields(self, obj_id: str) -> list[dict[str, Any]]:
-        return self._cached(
+        match, _ = self._find_cached(
             ("fields", obj_id),
             lambda: self._client.get(
                 f"/api/custom-objects/{obj_id}/fields/settings-search"
             ),
+            lambda f: field == f.get("id") or field == f.get("name"),
         )
+        return match
 
     # -- tags ---------------------------------------------------------------
 

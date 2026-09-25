@@ -6,8 +6,10 @@ import httpx
 import pytest
 import respx
 
+from kizen_builder import filtering
 from kizen_builder.api.client import KizenClient
 from kizen_builder.api.schema import SchemaClient
+from kizen_builder.filtering import filter_context
 from tests.conftest import FAKE_BASE_URL
 
 OBJ_ID = "7cb5ce29-bf20-4f0f-bdc9-412a8c777ff8"
@@ -82,7 +84,145 @@ def test_get_field_uses_settings_search_and_caches(schema):
     assert by_name["id"] == "field-1"
     assert by_id["name"] == "ftext"
     assert missing is None
-    assert fields_route.call_count == 1  # cached across the three lookups
+    # both hits served from one fetch; the miss re-fetched once before giving up
+    assert fields_route.call_count == 2
+
+
+NEW_ID = "0d6f3c55-8a51-4a57-9d0c-3f2e1b7a9c10"
+OBJECT_LIST_WITH_NEW = {
+    "results": [
+        *OBJECT_LIST["results"],
+        {"id": NEW_ID, "name": "service_tickets", "object_name": "Service Tickets"},
+    ],
+    "next": None,
+}
+
+
+@respx.mock
+def test_custom_object_created_after_cache_filled_resolves(schema):
+    route = respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        side_effect=[
+            httpx.Response(200, json=OBJECT_LIST),
+            httpx.Response(200, json=OBJECT_LIST_WITH_NEW),
+        ]
+    )
+    schema.custom_object("policies_policy")  # warms the cache
+    assert route.call_count == 1
+
+    assert schema.custom_object("service_tickets")["id"] == NEW_ID
+    assert route.call_count == 2
+    assert schema.custom_object("service_tickets")["id"] == NEW_ID
+    assert route.call_count == 2  # the refreshed list is cached
+
+
+@respx.mock
+def test_custom_object_unknown_name_refetches_only_a_warm_cache(schema):
+    route = respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        side_effect=[
+            httpx.Response(200, json=OBJECT_LIST),
+            httpx.Response(200, json=OBJECT_LIST_WITH_NEW),
+        ]
+    )
+    with pytest.raises(LookupError, match="'nope' not found"):
+        schema.custom_object("nope")
+    assert route.call_count == 1  # the list was fetched by this call
+
+    with pytest.raises(LookupError, match="'nope' not found.*service_tickets"):
+        schema.custom_object("nope")
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_custom_object_repeated_hit_makes_one_request(schema):
+    route = respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        return_value=httpx.Response(200, json=OBJECT_LIST)
+    )
+    schema.custom_object("policies_policy")
+    schema.custom_object("client_client")
+    schema.custom_object("policies_policy")
+    assert route.call_count == 1
+
+
+NEW_FIELD = {
+    "id": "field-2",
+    "name": "fnew",
+    "field_type": "checkbox",
+    "is_default": False,
+    "options": [],
+}
+
+
+@respx.mock
+def test_get_field_created_after_cache_filled_resolves(schema):
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        return_value=httpx.Response(200, json=OBJECT_LIST)
+    )
+    fields_route = respx.get(
+        f"{FAKE_BASE_URL}/api/custom-objects/{OBJ_ID}/fields/settings-search"
+    ).mock(
+        side_effect=[
+            httpx.Response(200, json=FIELDS),
+            httpx.Response(200, json=[*FIELDS, NEW_FIELD]),
+        ]
+    )
+    schema.get_field("policies_policy", "ftext")  # warms the cache
+    assert fields_route.call_count == 1
+
+    assert schema.get_field("policies_policy", "fnew")["id"] == "field-2"
+    assert fields_route.call_count == 2
+    assert schema.get_field("policies_policy", "fnew")["id"] == "field-2"
+    assert fields_route.call_count == 2
+
+
+@respx.mock
+def test_get_field_unknown_name_refetches_only_a_warm_cache(schema):
+    fields_route = respx.get(
+        f"{FAKE_BASE_URL}/api/custom-objects/{OBJ_ID}/fields/settings-search"
+    ).mock(return_value=httpx.Response(200, json=FIELDS))
+    assert schema.get_field(OBJ_ID, "nope") is None
+    assert fields_route.call_count == 1
+
+    assert schema.get_field(OBJ_ID, "nope") is None
+    assert fields_route.call_count == 2
+
+
+@respx.mock
+def test_get_field_repeated_hit_makes_one_request(schema):
+    fields_route = respx.get(
+        f"{FAKE_BASE_URL}/api/custom-objects/{OBJ_ID}/fields/settings-search"
+    ).mock(return_value=httpx.Response(200, json=FIELDS))
+    schema.get_field(OBJ_ID, "ftext")
+    schema.get_field(OBJ_ID, "field-1")
+    schema.get_field(OBJ_ID, "ftext")
+    assert fields_route.call_count == 1
+
+
+@respx.mock
+def test_filter_context_unknown_object_raises_unchained_lookup_error(schema):
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        return_value=httpx.Response(200, json=OBJECT_LIST)
+    )
+    with (
+        pytest.raises(LookupError, match="'service_tickets' not found") as exc_info,
+        filter_context("service_tickets", client=schema),
+    ):
+        pass
+    assert exc_info.value.__context__ is None
+
+
+@respx.mock
+def test_filter_context_restores_state_when_body_raises(schema):
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        return_value=httpx.Response(200, json=OBJECT_LIST)
+    )
+    with (
+        pytest.raises(RuntimeError),
+        filter_context("policies_policy", client=schema),
+    ):
+        assert filtering.get_cx_obj_id() == OBJ_ID
+        raise RuntimeError("boom")
+    assert filtering._local_filter_cx.client is None
+    assert filtering.get_cx_obj_id() is None
 
 
 @respx.mock
