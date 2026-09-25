@@ -1263,12 +1263,30 @@ SEED_TABLE = {
 }
 
 
+def _mock_record_counts(object_id: str, *, segment: int, total: int):
+    """Serve `count_records`: a search with a query is the segment, without is
+    the whole object."""
+
+    def respond(request):
+        query = json.loads(request.content)["query"]
+        return httpx.Response(
+            200,
+            json={"count": segment if query else total, "next": None, "results": []},
+        )
+
+    return respx.post(f"{FAKE_BASE_URL}/api/records/{object_id}/search").mock(
+        side_effect=respond
+    )
+
+
 def _mock_filter_groups(object_id: str = "obj-lines") -> None:
     respx.get(f"{FAKE_BASE_URL}/api/custom-objects/{object_id}/filter-groups").mock(
         return_value=httpx.Response(
             200, json={"count": 1, "next": None, "results": FILTER_GROUPS}
         )
     )
+    # A default for the coverage counts; a test that cares re-mocks the route.
+    _mock_record_counts(object_id, segment=7, total=7)
 
 
 @respx.mock
@@ -1561,6 +1579,185 @@ def test_apply_seed_change_says_when_it_cant_refresh_yet():
     assert "no reference file" in result["warning"]
 
 
+@respx.mock
+def test_plan_add_seed_without_a_group_seeds_every_record():
+    _mock_object_lookups()
+    groups = respx.get(f"{FAKE_BASE_URL}/api/custom-objects/obj-lines/filter-groups")
+    respx.get(f"{BASE}/metadata").mock(return_value=httpx.Response(200, json=METADATA))
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW]}
+        )
+    )
+
+    plan = sct.plan_add_seed(
+        "order_import", custom_object="order_lines", fields=["sku"]
+    )
+
+    # An explicit null, matching the schema (nullable + required); the row id is
+    # reused because this replaces the existing order_lines seed.
+    assert plan["payload"] == [
+        {
+            "custom_object_id": "obj-lines",
+            "group_id": None,
+            "fields_ids": ["f-lines-sku"],
+            "id": "seed-1",
+        }
+    ]
+    assert plan["filter_group"] == "all records"
+    assert "coverage" not in plan
+    assert not groups.called
+
+
+@respx.mock
+def test_plan_add_seed_with_a_group_carries_its_coverage():
+    _mock_object_lookups()
+    _mock_filter_groups()
+    counts = _mock_record_counts("obj-lines", segment=5, total=7)
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+
+    plan = sct.plan_add_seed(
+        "order_import", custom_object="order_lines", group="Active Only"
+    )
+
+    assert plan["coverage"] == {"segment": 5, "total": 7}
+    assert plan["payload"] == [{"custom_object_id": "obj-lines", "group_id": "grp-1"}]
+    queries = [json.loads(c.request.content)["query"] for c in counts.calls]
+    assert queries == [FILTER_GROUPS[0]["config"]["query"], []]
+    assert all(c.request.url.params["page_size"] == "1" for c in counts.calls)
+
+
+@respx.mock
+def test_plan_add_seed_survives_a_failed_count():
+    _mock_object_lookups()
+    _mock_filter_groups()
+    respx.post(f"{FAKE_BASE_URL}/api/records/obj-lines/search").mock(
+        return_value=httpx.Response(500, json={"detail": "boom"})
+    )
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+
+    plan = sct.plan_add_seed(
+        "order_import", custom_object="order_lines", group="Active Only"
+    )
+
+    # The counts only feed a warning, so losing them costs the warning, not the plan.
+    assert "coverage" not in plan
+    assert plan["payload"] == [{"custom_object_id": "obj-lines", "group_id": "grp-1"}]
+
+
+def _seed_add_plan(**overrides):
+    return {
+        "env": "test",
+        "connector": "conn-uuid",
+        "connector_api_name": "order_import",
+        "custom_object": "order_lines",
+        "filter_group": "Active Only",
+        "fields": None,
+        "view": "kizen.order_lines",
+        "replacing": False,
+        "payload": [{"custom_object_id": "obj-lines", "group_id": "grp-1"}],
+        "regenerate": True,
+        "script_id": "draft-1",
+        "source_file_id": None,
+        **overrides,
+    }
+
+
+def _seeds_add(monkeypatch, plan, *args):
+    from typer.testing import CliRunner
+
+    import kizen_builder.cli as cli
+
+    planned: dict = {}
+
+    def fake_plan(*a, **k):
+        planned.update(k)
+        return plan
+
+    monkeypatch.setattr(sct, "plan_add_seed", fake_plan)
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "seeds", "add", "order_import", "-o", "order_lines"]
+        + list(args),
+    )
+    return result, planned
+
+
+def test_seeds_add_preview_warns_when_the_segment_leaves_records_out(monkeypatch):
+    plan = _seed_add_plan(coverage={"segment": 5, "total": 7})
+
+    result, _ = _seeds_add(monkeypatch, plan, "-g", "Active Only", "--dry-run")
+    assert result.exit_code == 0
+    assert "covers 5 of 7 records" in result.stdout
+    assert "match-or-create connector re-creates them" in result.stdout
+    assert "kizen_id only" in result.stdout
+
+    # --json keeps the warning on stderr with the rest of the preview.
+    result, _ = _seeds_add(
+        monkeypatch, plan, "-g", "Active Only", "--dry-run", "--json"
+    )
+    assert result.exit_code == 0
+    assert "covers 5 of 7 records" in result.stderr
+    assert json.loads(result.stdout)["coverage"] == {"segment": 5, "total": 7}
+
+
+def test_seeds_add_preview_is_quiet_when_the_segment_covers_everything(monkeypatch):
+    plan = _seed_add_plan(coverage={"segment": 7, "total": 7})
+    result, _ = _seeds_add(monkeypatch, plan, "-g", "Active Only", "--dry-run")
+    assert result.exit_code == 0
+    assert "records outside it" not in result.stdout
+    assert "couldn't count" not in result.stdout
+
+
+def test_seeds_add_preview_says_when_it_couldnt_check_coverage(monkeypatch):
+    # A failed count leaves no `coverage`; that must not read as full coverage.
+    result, _ = _seeds_add(
+        monkeypatch, _seed_add_plan(), "-g", "Active Only", "--dry-run"
+    )
+    assert result.exit_code == 0
+    assert "couldn't count the segment's records" in result.stdout
+
+
+def test_seeds_add_preview_shows_all_records_for_a_null_group(monkeypatch):
+    plan = _seed_add_plan(
+        filter_group="all records",
+        payload=[{"custom_object_id": "obj-lines", "group_id": None}],
+    )
+    result, planned = _seeds_add(monkeypatch, plan, "--dry-run")
+    assert result.exit_code == 0
+    assert planned["group"] is None
+    assert "all records" in result.stdout
+    assert "records outside it" not in result.stdout
+    assert "couldn't count" not in result.stdout
+
+
+@respx.mock
+def test_list_seeds_shows_a_null_group_as_all_records():
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                **DETAIL,
+                "kizen_data_seeds": [{**SEED_ROW, "group_id": None, "group": None}],
+            },
+        )
+    )
+    respx.get(f"{BASE}/order_import/sql-scripts/draft-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": "draft-1", "config_metadata": {"seed_tables": [SEED_TABLE]}},
+        )
+    )
+    rows = sct.list_seeds("order_import")
+    assert rows[0]["filter_group"] == "all records"
+    # The raw value stays visible in JSON/CSV.
+    assert rows[0]["group_id"] is None
+
+
 # ---------------------------------------------------------------------------
 # seed data export (so `run` exercises the same joins locally)
 # ---------------------------------------------------------------------------
@@ -1622,3 +1819,37 @@ def test_export_seed_data_warns_instead_of_failing_the_pull(tmp_path, env_config
         )
     assert exported == []
     assert "hand-author data/order_lines.csv" in warnings[0]
+
+
+@respx.mock
+def test_export_seed_data_exports_every_record_for_a_null_group(tmp_path, env_config):
+    search = respx.post(f"{FAKE_BASE_URL}/api/records/obj-lines/search").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "next": None,
+                "results": [
+                    {
+                        "id": "rec-1",
+                        "fields": {"f-lines-sku": {"name": "sku", "value": "SKU-1"}},
+                    }
+                ],
+            },
+        )
+    )
+    with KizenClient(env_config) as client:
+        exported, warnings = sct._export_seed_data(
+            client,
+            {"kizen_data_seeds": [{**SEED_ROW, "group_id": None, "group": None}]},
+            [SEED_TABLE],
+            tmp_path,
+            limit=100,
+        )
+
+    # No filter group to resolve, so no filter-groups call (respx would raise).
+    assert not warnings
+    assert exported[0]["filter_group"] == "all records"
+    assert json.loads(search.calls.last.request.content)["query"] == []
+    rows = list(csv.reader((tmp_path / "order_lines.csv").read_text().splitlines()))
+    assert rows == [["kizen_id", "sku"], ["rec-1", "SKU-1"]]
