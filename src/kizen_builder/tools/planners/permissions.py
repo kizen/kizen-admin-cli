@@ -341,6 +341,12 @@ def _setting_op(
                 )
                 preview["change"] = f"{label}: {before} -> {shown_after}"
     elif stype == "section":
+        if not isinstance(s.get("value"), dict):
+            raise PlanError(
+                f"setting[{idx}]: a section op's value must be the complete "
+                f"{s.get('section_key')!r} dict ({{'enabled': ..., <every "
+                f"control>}}), got {type(s.get('value')).__name__}"
+            )
         preview = {"target": f"section:{s['section_key']}", "value": s["value"]}
         payload = {"mode": "section", "body": {s["section_key"]: s["value"]}}
         if existing_group_id is not None:
