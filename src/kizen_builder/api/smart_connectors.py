@@ -282,7 +282,11 @@ def update_sql_script(
 
 
 def start_sql_script(
-    client: KizenClient, connector: str, script_id: str
+    client: KizenClient,
+    connector: str,
+    script_id: str,
+    *,
+    source_file_id: str | None = None,
 ) -> dict[str, Any]:
     """POST .../sql-scripts/{script_id}/start — generate the server-side output sample.
 
@@ -292,10 +296,18 @@ def start_sql_script(
     not generated yet" until the sample exists, and ``execution_variables``
     validates each variable's ``scope`` against ``headers``.
 
+    ``source_file_id`` in the body is the only thing that stamps the script's
+    ``config_metadata.triggered.fileupload_file_id``, the file the executor
+    reads. Without it the script keeps the file it was last triggered on, so a
+    start after a reference-file swap leaves the executor on the old file.
+    ``PATCH sql-scripts/{id}`` accepts the same field and ignores it. Confirmed
+    live 2026-09-25.
+
     Generation is asynchronous — poll the script's ``state`` (``in_progress`` →
     ``success`` / ``failed``) via :func:`get_sql_script`.
     """
-    resp = client.post(f"{_BASE}/{connector}/sql-scripts/{script_id}/start")
+    body = {"source_file_id": source_file_id} if source_file_id else {}
+    resp = client.post(f"{_BASE}/{connector}/sql-scripts/{script_id}/start", json=body)
     return resp if isinstance(resp, dict) else {}
 
 

@@ -3689,23 +3689,27 @@
  Each connector type wants a differently shaped file; the required shape is                         
  validated server-side and named in the plan.                                                       
                                                                                                     
+ Replacing an attached file keeps the draft's SQL (unless --template-sql),                          
+ regenerates only its config, and runs the output sample. The exit code is 1                        
+ if that sample fails.                                                                              
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    input_file      <str>  Local file to attach as the reference/sample file. [required]        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --connector   -c                     <str>  Connector UUID or api_name. [required]            │
-│    --regenerate      --no-regenerate           Generate the SQL template + config from the       │
-│                                                file's columns and write them onto the draft      │
-│                                                script (default), or just attach the file.        │
-│                                                [default: regenerate]                             │
-│    --force                                     Replace an existing reference file. Refused by    │
-│                                                default — swapping one is a known-broken          │
-│                                                operation in Kizen (see the error text).          │
-│    --dry-run                                   Show the plan without uploading.                  │
-│    --yes         -y                            Skip the confirmation prompt.                     │
-│    --json                                      Emit JSON (plan with --dry-run, result            │
-│                                                otherwise).                                       │
-│    --help                                      Show this message and exit.                       │
+│ *  --connector     -c                     <str>  Connector UUID or api_name. [required]          │
+│    --regenerate        --no-regenerate           Generate the SQL template + config from the     │
+│                                                  file's columns and write them onto the draft    │
+│                                                  script (default), or just attach the file.      │
+│                                                  [default: regenerate]                           │
+│    --template-sql                                When replacing a reference file, overwrite the  │
+│                                                  draft's SQL with the generated template instead │
+│                                                  of keeping it.                                  │
+│    --dry-run                                     Show the plan without uploading.                │
+│    --yes           -y                            Skip the confirmation prompt.                   │
+│    --json                                        Emit JSON (plan with --dry-run, result          │
+│                                                  otherwise).                                     │
+│    --help                                        Show this message and exit.                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors start-flow [OPTIONS] {connector}                                           

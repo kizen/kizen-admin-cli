@@ -242,15 +242,15 @@ kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # writ
 # smart connectors — building one from scratch, in order. Spec: kizen docs show smart-connector-flow
 kizen smart-connectors create <name> --object <api_name> [--type spreadsheet|webhook|schedule|activity|...]
                               [--cadence secs] [--activity-object <activity type>] [--sql-version 4.1.x]
-kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--force]  # upload the reference file + generate the SQL template
+kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--template-sql]  # upload the reference file + generate the SQL template
 # → iterate on the SQL with pull → run → push
 kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; publish is blocked until this succeeds
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
 kizen smart-connectors activate <connector> [--status operational] # a LIVE run without this sits queued forever, silently
 kizen smart-connectors start-flow <connector> [--live] [--force]   # queue a run; dry run unless --live
-# `set-input` refuses to REPLACE an existing reference file: swapping one is broken server-side (the executor
-# keeps reading the old file). Build a fresh connector instead.
+# `set-input` on a connector that already has a file replaces it, keeping your SQL. What that leaves stale:
+# kizen docs show smart-connectors (Replacing the reference file).
 
 # smart connectors — read from other Kizen objects (exposed to the SQL as a kizen.<object> view)
 kizen smart-connectors seeds list <connector>

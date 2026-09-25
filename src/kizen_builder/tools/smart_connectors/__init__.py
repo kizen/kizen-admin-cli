@@ -84,7 +84,6 @@ from kizen_builder.tools.smart_connectors.authoring.sample import (
 )
 from kizen_builder.tools.smart_connectors.authoring.set_input import (
     _CREATE_OUTPUT_TABLE,
-    _SWAP_WARNING,
     _drop_phantom_output_tables,
     apply_set_input,
     plan_set_input,
@@ -196,7 +195,6 @@ __all__ = [
     "_MATCH_ACTION_KEYS",
     "_META_KEYS",
     "_SAMPLE_FILE_SHAPES",
-    "_SWAP_WARNING",
     "_VARIABLE_WIRE_KEYS",
     "_build_config",
     "_connector_ref",

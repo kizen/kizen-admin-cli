@@ -29,14 +29,19 @@ def generate_output_sample(
     """
     config = load_env_config()
     with KizenClient(config) as client:
+        detail = sc_api.get_smart_connector(client, connector)
         if script_id is None:
-            detail = sc_api.get_smart_connector(client, connector)
             draft = detail.get("last_draft_script") or {}
             script_id = draft.get("id")
             if not script_id:
                 raise PlanError(f"'{connector}' has no draft SQL script to run.")
 
-        sc_api.start_sql_script(client, connector, script_id)
+        sc_api.start_sql_script(
+            client,
+            connector,
+            script_id,
+            source_file_id=(detail.get("source_file") or {}).get("id"),
+        )
         script = sc_api.get_sql_script(client, connector, script_id)
 
         deadline = time.monotonic() + timeout

@@ -189,7 +189,9 @@ legible:
    `headers` — the recognized output columns, keyed by scope — which every
    execution variable's `scope` is validated against, so nothing in steps 6–7
    can be configured until this succeeds. Generation is async: poll the script's
-   `state`.
+   `state`. Send `{"source_file_id": "<the connector's file>"}` as the body, or
+   the script stays on whatever file it last ran against; see [Replacing the
+   reference file](#replacing-the-reference-file).
 
 5. **`POST .../sql-scripts/{id}/publish`** promotes the draft live.
 
@@ -270,24 +272,42 @@ UI; there is no API endpoint for it. `configure-flow` warns at plan time when a
 catchable before the executor. Treat that as a partial mitigation — catching the
 general case needs Kizen to expose it over the API first.
 
-## ⚠️ Confirmed bug: swapping a connector's `source_file_id` breaks live execution
+## Replacing the reference file
 
-Re-attaching a *different* file to an existing connector (`PATCH
-source_file_id` after the connector already had one) leaves
-`config_metadata.triggered.fileupload_file_id` permanently stuck on the
-**original** file — even after PATCHing the new id again, regenerating the
-template, and re-publishing.
+`set-input` on a connector that already has a file replaces it. Confirmed live
+2026-09-25, through publish and a dry run on the new file:
 
-Sample generation can still report `state: success` in this broken state, but
-the real executor then reads the **old** file's bytes against the **new** schema
-and fails with a ClickHouse `UNKNOWN_IDENTIFIER` error. Confirmed live
-2026-07-28.
+- **`start` needs `source_file_id` in its body.** The script's
+  `config_metadata.triggered.fileupload_file_id` is the file the executor
+  reads, and `POST .../sql-scripts/{id}/start` only sets it from the body. A
+  start with no body keeps the old value, and a draft forked by `publish`
+  inherits it. `PATCH .../sql-scripts/{id}` takes `source_file_id` too, returns
+  200, and ignores it. That was the whole "can't swap a file" bug: the CLI
+  started samples with no body. `generate-sample` now sends the connector's
+  file.
+- **What `set-input` does on a replace:** uploads and attaches the file, then
+  regenerates the template and writes only its `config_metadata` onto the
+  draft. The draft's `user_script` and `sql_version` are kept, the same way
+  `seeds add` refreshes config (`--template-sql` takes the generated SQL
+  instead). It then runs the output sample itself.
+- **Input tables are renamed from the file name** (`zz_ref_b.csv` →
+  `input.zz_ref_b_csv`), so kept SQL can read a table that no longer exists.
+  `set-input` prints each renamed table. If the SQL still reads the old one,
+  the sample ends in state `failed` and `set-input` exits 1.
+- **Attaching the file rewrites the draft's `input_tables` straight away**
+  (`PATCH` of the connector's `source_file_id`, before any template call), so
+  the old table names are only readable before the attach.
 
-**Workaround: never swap `source_file_id` on an existing connector.** If the
-reference file has to change, build a fresh connector with the final file as its
-first-ever upload. `set-input` refuses to attach a file to a connector that
-already has one for this reason (`--force` overrides, for a connector that will
-only ever be dry-run). This is a Kizen platform bug, not a CLI defect.
+A replace leaves this stale until you act:
+
+- **The draft's sample.** A PATCH never resets `state`, so the draft stays at
+  `success` against the old file. `set-input` runs the sample for this reason.
+- **The live script** keeps running the old file until the next
+  `push --publish`.
+- **`headers`.** On a replace, `start` left them on the old columns and
+  `publish` refreshed them.
+- **Execution variables** whose `data_source` column is gone survive the
+  publish. Re-check them with `suggest-variables`.
 
 ## Non-spreadsheet types: `get-file-template` works — upload a shaped CSV first
 

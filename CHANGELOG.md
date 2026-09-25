@@ -22,6 +22,20 @@ called out explicitly under **Changed** or **Removed**.
   `kizen/kizen-admin-cli`. The command is still `kizen` and the installed
   package is still `kizen_builder`, so nothing about invoking or importing
   the tool changes.
+- **`smart-connectors set-input` can replace a connector's reference file.**
+  It used to refuse, calling the swap a Kizen platform bug. It wasn't: the
+  CLI started sample generation without the connector's file id, so the
+  script stayed pinned to the first file. `generate-sample` now sends it. A
+  replace keeps your draft SQL, regenerates only the config (`--template-sql`
+  takes the generated script instead), names any input table the new file
+  renamed, and runs the output sample, exiting 1 if that fails.
+  **If you passed `--force`, the result is different.** The flag is still
+  accepted but has no effect, and a replace no longer does what `--force`
+  used to: it keeps the draft SQL instead of writing the template SQL, waits
+  for the output sample (up to 300 s), and exits 1 if the sample fails —
+  which it will if the kept SQL still reads the old `input.<file>_csv`
+  table. To get the old result, pass `--template-sql` instead, and expect
+  exit 1 when the sample fails.
 
 ### Added
 

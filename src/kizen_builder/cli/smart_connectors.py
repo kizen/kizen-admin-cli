@@ -230,11 +230,14 @@ def smart_connectors_set_input(
         help="Generate the SQL template + config from the file's columns and "
         "write them onto the draft script (default), or just attach the file.",
     ),
-    force: bool = typer.Option(
+    template_sql: bool = typer.Option(
         False,
-        "--force",
-        help="Replace an existing reference file. Refused by default — swapping "
-        "one is a known-broken operation in Kizen (see the error text).",
+        "--template-sql",
+        help="When replacing a reference file, overwrite the draft's SQL with the "
+        "generated template instead of keeping it.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", hidden=True, help="No longer needed; does nothing."
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the plan without uploading."
@@ -255,10 +258,14 @@ def smart_connectors_set_input(
 
     Each connector type wants a differently shaped file; the required shape is
     validated server-side and named in the plan.
+
+    Replacing an attached file keeps the draft's SQL (unless --template-sql),
+    regenerates only its config, and runs the output sample. The exit code is 1
+    if that sample fails.
     """
     with _connector_errors(FileNotFoundError):
         plan = sc_tools.plan_set_input(
-            connector, input_file, regenerate=regenerate, allow_replace=force
+            connector, input_file, regenerate=regenerate, template_sql=template_sql
         )
 
     def render(target: Console) -> None:
@@ -275,6 +282,13 @@ def smart_connectors_set_input(
         if plan.get("replacing"):
             t.add_row("replacing", f"[yellow]{plan['replacing']}[/yellow]")
         t.add_row("regenerate template", "yes" if plan["regenerate"] else "no")
+        if plan.get("replacing") and plan["regenerate"]:
+            t.add_row(
+                "draft SQL",
+                "replaced by the template" if plan["template_sql"] else "kept",
+            )
+        if plan.get("next_steps"):
+            t.add_row("after attach", " → ".join(plan["next_steps"]))
         target.print(t)
 
     if not _preview_and_confirm(
@@ -290,20 +304,34 @@ def smart_connectors_set_input(
     with cli_errors(PlanError):
         result = sc_tools.apply_set_input(plan)
 
+    sample = result.get("sample")
+    sample_failed = sample is not None and sample.get("state") != "success"
     if json_out:
         out.emit_json(result)
+        if sample_failed:
+            raise typer.Exit(code=1)
         return
     console.print(
         f"[green]attached[/green] {result['file_name']} → {result['connector']}"
     )
     if result["regenerated"]:
+        what = (
+            "config regenerated, SQL kept"
+            if result.get("kept_user_script")
+            else "regenerated"
+        )
         console.print(
             f"  draft script {result['script_id']}"
-            f"{' (new)' if result.get('new_draft') else ''} regenerated "
+            f"{' (new)' if result.get('new_draft') else ''} {what} "
             f"({result['sql_lines']} lines, SQL {result.get('sql_version')}; "
             f"input tables: "
             f"{', '.join(t for t in result['input_tables'] if t) or 'none'})"
         )
+        for renamed in result.get("renamed_input_tables") or []:
+            console.print(
+                f"  [yellow]input table renamed[/yellow]: input.{renamed['old']} → "
+                f"input.{renamed['new']} — update any SQL that reads the old name"
+            )
         if result.get("sql_version_restored"):
             console.print(
                 f"  [dim]template generation downgraded the SQL version; "
@@ -315,6 +343,33 @@ def smart_connectors_set_input(
                 f"{', '.join(result['dropped_output_tables'])} — no such Kizen "
                 "object, and sample generation crashes on them[/dim]"
             )
+    if sample is not None:
+        state = sample.get("state")
+        colour = {"success": "green", "failed": "red"}.get(state or "", "yellow")
+        console.print(f"  sample generation: [{colour}]{state}[/{colour}]")
+        if sample.get("error"):
+            err_console.print(f"  [red]{sample['error']}[/red]")
+        if sample.get("timed_out"):
+            console.print(
+                "[yellow]still running[/yellow] — re-check with `smart-connectors "
+                "scripts`, then publish once it succeeds."
+            )
+        elif sample_failed:
+            console.print(
+                f"[dim]Next: fix the SQL (`smart-connectors pull {result['connector']}`, "
+                f"edit, `push`), then `smart-connectors generate-sample "
+                f"{result['connector']}`.[/dim]"
+            )
+        else:
+            console.print(
+                f"[dim]Next: `smart-connectors push --publish` (the live script runs "
+                f"the old file until then), then `smart-connectors suggest-variables "
+                f"{result['connector']}` to re-check variables against the new "
+                f"columns.[/dim]"
+            )
+        if sample_failed:
+            raise typer.Exit(code=1)
+    elif result["regenerated"]:
         console.print(
             f"[dim]Next: `smart-connectors pull {result['connector']}` to iterate "
             f"on the SQL, or `smart-connectors generate-sample {result['connector']}` "

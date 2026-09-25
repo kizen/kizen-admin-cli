@@ -2,7 +2,7 @@
 
 Everything here is respx-mocked. The interesting cases aren't the happy paths
 (they're thin PATCHes) but the wire quirks the CLI exists to absorb: the
-three-legged S3 upload, the source-file swap refusal, name-based resolution, and
+three-legged S3 upload, the reference-file replace, name-based resolution, and
 the multi-round load-step save that relationship fields require.
 """
 
@@ -16,7 +16,9 @@ import httpx
 import pytest
 import respx
 from pydantic import ValidationError
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
 from kizen_builder.api import files as files_api
 from kizen_builder.api import smart_connectors as sc
 from kizen_builder.api.client import KizenAPIError, KizenClient
@@ -352,7 +354,7 @@ def test_plan_create_enforces_per_type_requirements():
 
 
 @respx.mock
-def test_plan_set_input_refuses_to_swap_an_attached_file(tmp_path):
+def test_plan_set_input_replaces_an_attached_file(tmp_path):
     src = tmp_path / "new.csv"
     src.write_bytes(b"a\n")
     detail = {**DETAIL, "source_file": {"id": "file-old", "name": "old.csv"}}
@@ -360,11 +362,13 @@ def test_plan_set_input_refuses_to_swap_an_attached_file(tmp_path):
         return_value=httpx.Response(200, json=detail)
     )
 
-    with pytest.raises(PlanError, match="known-broken"):
-        sct.plan_set_input("order_import", src)
+    plan = sct.plan_set_input("order_import", src)
 
-    plan = sct.plan_set_input("order_import", src, allow_replace=True)
     assert plan["replacing"] == "old.csv"
+    assert plan["template_sql"] is False
+    assert plan["next_steps"][0] == "generate-sample (run automatically)"
+    assert plan["next_steps"][1] == "push --publish"
+    assert plan["next_steps"][2].startswith("suggest-variables")
 
 
 @respx.mock
@@ -429,6 +433,228 @@ def test_apply_set_input_uploads_attaches_then_regenerates(tmp_path):
     assert set(body) == {"user_script", "config_metadata", "sql_version"}
     assert body["sql_version"] == "4.1.x"
     assert result["sql_version_restored"] == "4.1.x"
+
+
+OLD_FILE = {"id": "file-old", "name": "zz_ref_a.csv"}
+KEPT_SQL = "create table output.orders as select ext_id from input.zz_ref_a_csv;"
+
+
+def _mock_replace(
+    tmp_path,
+    *,
+    sample_state="success",
+    sample_error=None,
+    template_sql="create table output.orders as select * from input.zz_ref_b_csv;",
+):
+    """A connector that already has zz_ref_a.csv, getting zz_ref_b.csv.
+
+    The template forks draft-2 (at a downgraded version), exactly as a first
+    attach does; draft-1 is the hand-edited script the replace must keep.
+    """
+    src = tmp_path / "zz_ref_b.csv"
+    src.write_bytes(b"ext_id,new_col\n1,x\n")
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json={**DETAIL, "source_file": OLD_FILE})
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/s3/presigned-post").mock(
+        return_value=httpx.Response(
+            200, json={"url": S3_URL, "fields": {"key": "k"}, "s3object_id": "s"}
+        )
+    )
+    respx.post(S3_URL).mock(return_value=httpx.Response(204, headers={"etag": '"e"'}))
+    respx.post(f"{FAKE_BASE_URL}/api/s3/success").mock(
+        return_value=httpx.Response(
+            200, json={"id": "file-new", "name": "zz_ref_b.csv"}
+        )
+    )
+    attach = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+
+    # Attaching the file rewrites the draft's input_tables on the server
+    # (confirmed live 2026-09-25), so only a read before the attach sees the
+    # old table name.
+    def _draft_1(_request):
+        table = "zz_ref_b_csv" if attach.called else "zz_ref_a_csv"
+        return httpx.Response(
+            200,
+            json={
+                "id": "draft-1",
+                "user_script": KEPT_SQL,
+                "sql_version": "4.1.x",
+                "config_metadata": {"input_tables": [{"table_name": table}]},
+            },
+        )
+
+    respx.get(f"{BASE}/conn-uuid/sql-scripts/draft-1").mock(side_effect=_draft_1)
+    new_cfg = {
+        "input_tables": [{"file_id": "file-new", "table_name": "zz_ref_b_csv"}],
+        "seed_tables": [],
+    }
+    respx.post(f"{BASE}/conn-uuid/get-file-template").mock(
+        return_value=httpx.Response(
+            200,
+            json={"user_script": template_sql, "config_metadata": new_cfg},
+        )
+    )
+    respx.get(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                **DETAIL,
+                "source_file": {"id": "file-new", "name": "zz_ref_b.csv"},
+                "last_draft_script": {"id": "draft-2", "sql_version": "1.3.x"},
+            },
+        )
+    )
+    write = respx.patch(f"{BASE}/conn-uuid/sql-scripts/draft-2").mock(
+        return_value=httpx.Response(200, json={"id": "draft-2"})
+    )
+    start = respx.post(f"{BASE}/conn-uuid/sql-scripts/draft-2/start").mock(
+        return_value=httpx.Response(200, json={"id": "draft-2"})
+    )
+    respx.get(f"{BASE}/conn-uuid/sql-scripts/draft-2").mock(
+        return_value=httpx.Response(
+            200, json={"id": "draft-2", "state": sample_state, "error": sample_error}
+        )
+    )
+    return src, new_cfg, write, start
+
+
+@respx.mock
+def test_apply_set_input_replace_keeps_the_sql_and_takes_the_fresh_config(tmp_path):
+    src, new_cfg, write, _ = _mock_replace(tmp_path)
+
+    result = sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    body = json.loads(write.calls.last.request.content)
+    assert body == {
+        "config_metadata": new_cfg,
+        "user_script": KEPT_SQL,
+        "sql_version": "4.1.x",
+    }
+    assert result["script_id"] == "draft-2"
+    assert result["kept_user_script"] is True
+    assert result["sql_version"] == "4.1.x"
+
+
+@respx.mock
+def test_apply_set_input_replace_with_template_sql_takes_the_template(tmp_path):
+    src, _, write, _ = _mock_replace(tmp_path)
+
+    plan = sct.plan_set_input("order_import", src, template_sql=True)
+    result = sct.apply_set_input(plan)
+
+    body = json.loads(write.calls.last.request.content)
+    assert "input.zz_ref_b_csv" in body["user_script"]
+    assert result["kept_user_script"] is False
+    # The first-attach version restore still applies to the template path.
+    assert body["sql_version"] == "4.1.x"
+
+
+@respx.mock
+def test_apply_set_input_replace_names_the_renamed_input_table(tmp_path):
+    src, *_ = _mock_replace(tmp_path)
+
+    result = sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    assert result["renamed_input_tables"] == [
+        {"old": "zz_ref_a_csv", "new": "zz_ref_b_csv"}
+    ]
+
+
+@respx.mock
+def test_apply_set_input_replace_runs_the_sample_on_the_new_file(tmp_path):
+    src, _, _, start = _mock_replace(tmp_path)
+
+    result = sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    # The file id in the start body is what re-stamps the file the executor reads.
+    assert json.loads(start.calls.last.request.content) == {
+        "source_file_id": "file-new"
+    }
+    assert result["sample"]["state"] == "success"
+
+
+@respx.mock
+def test_apply_set_input_replace_reports_a_failed_sample_without_raising(tmp_path):
+    src, *_ = _mock_replace(
+        tmp_path, sample_state="failed", sample_error="UNKNOWN_IDENTIFIER"
+    )
+
+    result = sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    assert result["file_id"] == "file-new"
+    assert result["sample"]["state"] == "failed"
+    assert result["sample"]["error"] == "UNKNOWN_IDENTIFIER"
+
+
+@respx.mock
+def test_apply_set_input_replace_checks_an_empty_template_before_writing(tmp_path):
+    src, _, write, start = _mock_replace(tmp_path, template_sql="")
+
+    with pytest.raises(PlanError, match="empty template"):
+        sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    assert not write.called
+    # The new file is attached regardless, so the sample still runs rather than
+    # leaving the draft at `success` against the old file.
+    assert start.called
+
+
+@pytest.mark.parametrize("json_flag", [[], ["--json"]])
+def test_set_input_cli_exits_non_zero_when_the_replace_sample_fails(
+    monkeypatch, json_flag
+):
+    monkeypatch.setattr(
+        sct,
+        "plan_set_input",
+        lambda *_a, **_k: {
+            "connector_api_name": "order_import",
+            "file": "b.csv",
+            "file_size": 1,
+            "connector_type": "spreadsheet",
+            "replacing": "a.csv",
+            "regenerate": True,
+            "template_sql": False,
+            "next_steps": [],
+        },
+    )
+    monkeypatch.setattr(
+        sct,
+        "apply_set_input",
+        lambda _plan: {
+            "file_name": "b.csv",
+            "connector": "order_import",
+            "regenerated": True,
+            "script_id": "draft-2",
+            "sql_lines": 1,
+            "input_tables": [],
+            "kept_user_script": True,
+            "renamed_input_tables": [{"old": "a_csv", "new": "b_csv"}],
+            "sample": {"state": "failed", "error": "UNKNOWN_IDENTIFIER"},
+        },
+    )
+
+    # --force is hidden and does nothing, but still parses.
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "set-input",
+            "b.csv",
+            "-c",
+            "order_import",
+            "--force",
+            "-y",
+            *json_flag,
+        ],
+    )
+
+    assert result.exit_code == 1
+    if not json_flag:
+        assert "input.a_csv → input.b_csv" in result.output
 
 
 # The webhook template's second statement builds `output.webhooks` — a debug
@@ -552,6 +778,36 @@ def test_generate_output_sample_polls_until_the_state_settles(monkeypatch):
     assert result["state"] == "success"
     assert result["timed_out"] is False
     assert result["scopes"] == {"orders": 2}
+
+
+@respx.mock
+def test_generate_output_sample_sends_the_attached_file_even_with_a_script_id():
+    detail = {**DETAIL, "source_file": {"id": "file-b", "name": "b.csv"}}
+    read = respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    start = respx.post(f"{BASE}/order_import/sql-scripts/draft-9/start").mock(
+        return_value=httpx.Response(200, json={"id": "draft-9"})
+    )
+    respx.get(f"{BASE}/order_import/sql-scripts/draft-9").mock(
+        return_value=httpx.Response(200, json={"id": "draft-9", "state": "success"})
+    )
+
+    sct.generate_output_sample("order_import", script_id="draft-9")
+
+    assert read.called
+    assert json.loads(start.calls.last.request.content) == {"source_file_id": "file-b"}
+
+
+@respx.mock
+def test_start_sql_script_sends_an_empty_body_without_a_file(client):
+    start = respx.post(f"{BASE}/c/sql-scripts/s/start").mock(
+        return_value=httpx.Response(200, json={})
+    )
+
+    sc.start_sql_script(client, "c", "s")
+
+    assert json.loads(start.calls.last.request.content) == {}
 
 
 @respx.mock
