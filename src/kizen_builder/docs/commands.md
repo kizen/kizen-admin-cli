@@ -50,8 +50,11 @@ kizen messages templates list                # email templates (source for `mess
 kizen smart-connectors list [--search <t>] [--type <t>] [--status <s>]  # ETL/data-ingestion connectors
 kizen smart-connectors get <connector>                  # one connector: detail + draft/live SQL script ids
 kizen smart-connectors metadata                         # connector-type / matching-rule catalog (raw)
-kizen smart-connectors executions <connector>           # run history (most recent first)
-kizen smart-connectors execution-sql <connector> <eid>  # the SQL used in one execution
+kizen smart-connectors executions list <connector>      # run history (most recent first)
+kizen smart-connectors executions get <connector> <eid> # one run: status, full error, step counts, files
+kizen smart-connectors executions download <connector> <eid> [--file report|output|input] [--out path]
+                                                        # save its .xlsx report (default), output zip, or input file
+kizen smart-connectors executions sql <connector> <eid> # the SQL used in one execution
 kizen smart-connectors scripts <connector>              # the connector's draft + live SQL scripts
 kizen smart-connectors download-sample <connector> [--live] [--out path]  # save a script's output-sample zip
 kizen smart-connectors events <connector-uuid>          # event history / audit trail (UUID only)
