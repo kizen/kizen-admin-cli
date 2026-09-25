@@ -820,8 +820,70 @@ def test_plan_set_status_reports_the_gaps_that_make_a_live_run_pointless():
     assert plan["changed"] is True
     assert plan["has_live_script"] is False
     assert plan["load_steps"] == 0
+    assert plan["execution_variables"] == 0
     with pytest.raises(PlanError, match="unknown status"):
         sct.plan_set_status("order_import", "sideways")
+
+
+@respx.mock
+@pytest.mark.parametrize("status", ["setup", "need_attention"])
+def test_activate_rejects_a_server_owned_status_before_any_call(status):
+    # respx.mock fails any request with no route, so reaching Kizen fails too.
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "activate", "order_import", "--status", status]
+    )
+
+    assert result.exit_code == 1
+    assert "set by the server" in result.output
+    assert "operational, inactive" in result.output
+    assert not respx.calls
+
+
+@respx.mock
+def test_activate_preview_warns_about_every_missing_prerequisite():
+    detail = {**DETAIL, "live_script": {}, "flow": {"loads": []}}
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "activate", "order_import", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "no execution variables" in result.output
+    assert "no load steps" in result.output
+    assert "no published script" in result.output
+
+
+@respx.mock
+def test_deactivate_sets_inactive_after_the_preview():
+    detail = {**DETAIL, "status": "operational"}
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    write = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200, json={"api_name": "order_import", "status": "inactive"}
+        )
+    )
+
+    dry = CliRunner().invoke(
+        cli.app, ["smart-connectors", "deactivate", "order_import", "--dry-run"]
+    )
+    assert dry.exit_code == 0, dry.output
+    assert "operational → inactive" in dry.output
+    assert not write.called
+
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "deactivate", "order_import", "--yes", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(write.calls.last.request.content) == {"status": "inactive"}
+    assert json.loads(result.stdout) == {
+        "connector": "order_import",
+        "status": "inactive",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -979,12 +1041,12 @@ def test_plan_configure_flow_resolves_names_and_defaults_the_scope():
 
 
 @respx.mock
-def test_plan_configure_flow_needs_a_generated_sample_first():
+def test_plan_configure_flow_needs_recognized_output_columns_first():
     _mock_object_lookups()
     respx.get(f"{BASE}/order_import").mock(
         return_value=httpx.Response(200, json={**DETAIL, "headers": {}})
     )
-    with pytest.raises(PlanError, match="generate-sample"):
+    with pytest.raises(PlanError, match="push --publish"):
         sct.plan_configure_flow(_flow_spec())
 
 
@@ -997,9 +1059,9 @@ def test_plan_configure_flow_rejects_a_column_the_output_sample_doesnt_have():
     spec = _flow_spec(
         execution_variables=[{"name": "order_number"}, {"name": "invented"}]
     )
-    # The sample's columns are the contract — and a stale sample is the usual
-    # reason a column the SQL clearly selects looks missing.
-    with pytest.raises(PlanError, match="generate-sample"):
+    # `headers` are the contract, and they refresh on publish, so unpublished
+    # SQL is the usual reason a column the SQL clearly selects looks missing.
+    with pytest.raises(PlanError, match="push --publish"):
         sct.plan_configure_flow(spec)
 
 

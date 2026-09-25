@@ -12,13 +12,22 @@ from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors.authoring._helpers import _connector_ref
 
 CONNECTOR_STATUSES = ("setup", "operational", "need_attention", "inactive")
+# An update can set only these. The server sets the other two and 400s any
+# attempt to: "Status can only be set to 'Operational' or 'Inactive' on an
+# update." Confirmed live 2026-09-25.
+SETTABLE_CONNECTOR_STATUSES = ("operational", "inactive")
 
 
 def plan_set_status(connector: str, status: str) -> dict[str, Any]:
     """Preview a status change. ``operational`` is what a live run requires."""
-    if status not in CONNECTOR_STATUSES:
+    if status not in SETTABLE_CONNECTOR_STATUSES:
+        known = (
+            f"'{status}' is set by the server, not by an update"
+            if status in CONNECTOR_STATUSES
+            else f"unknown status '{status}'"
+        )
         raise PlanError(
-            f"unknown status '{status}'. Choose one of: {', '.join(CONNECTOR_STATUSES)}"
+            f"{known}. Choose one of: {', '.join(SETTABLE_CONNECTOR_STATUSES)}"
         )
     config = load_env_config()
     with KizenClient(config) as client:
@@ -34,6 +43,7 @@ def plan_set_status(connector: str, status: str) -> dict[str, Any]:
         "changed": detail.get("status") != status,
         "has_live_script": bool(live),
         "load_steps": len((detail.get("flow") or {}).get("loads") or []),
+        "execution_variables": len(detail.get("execution_variables") or []),
     }
 
 

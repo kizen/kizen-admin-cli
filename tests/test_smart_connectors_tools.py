@@ -7,12 +7,15 @@ The pull tests stub the vendored normalizer so they don't need the optional
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import httpx
 import pytest
 import respx
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
 from kizen_builder.tools import smart_connectors as sct
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors import pull as sc_pull
@@ -257,40 +260,224 @@ def test_plan_push_warns_when_marker_points_at_a_stray_draft(tmp_path):
     assert "draft-1" in plan["warning"]
 
 
+def _mock_publish_path(*, sample_states, forked="draft-2"):
+    """PATCH → detail → start → poll → publish → detail, as a publish walks it.
+
+    Publish forks ``forked`` as the new draft; ``draft-1`` becomes the live one.
+    """
+    detail = {**DETAIL, "source_file": {"id": "file-1", "name": "records.csv"}}
+    after = {
+        **detail,
+        "status": "inactive",
+        "last_draft_script": {"id": forked, "status": "draft"},
+        "live_script": {"id": "draft-1", "status": "live"},
+    }
+    return {
+        "patch": respx.patch(f"{BASE}/conn-uuid/sql-scripts/draft-1").mock(
+            return_value=httpx.Response(200, json={"id": "draft-1"})
+        ),
+        "detail": respx.get(f"{BASE}/conn-uuid").mock(
+            side_effect=[
+                httpx.Response(200, json=detail),
+                httpx.Response(200, json=after),
+            ]
+        ),
+        "start": respx.post(f"{BASE}/conn-uuid/sql-scripts/draft-1/start").mock(
+            return_value=httpx.Response(200, json={"id": "draft-1"})
+        ),
+        "script": respx.get(f"{BASE}/conn-uuid/sql-scripts/draft-1").mock(
+            side_effect=[
+                httpx.Response(200, json={"id": "draft-1", "state": st, **extra})
+                for st, extra in sample_states
+            ]
+        ),
+        "publish": respx.post(f"{BASE}/conn-uuid/sql-scripts/draft-1/publish").mock(
+            return_value=httpx.Response(200, json={"id": "draft-1"})
+        ),
+    }
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+
+
 @respx.mock
-def test_apply_push_updates_and_publishes(tmp_path):
-    patch = respx.patch(f"{BASE}/conn-uuid/sql-scripts/draft-1").mock(
-        return_value=httpx.Response(200, json={"id": "draft-1"})
+def test_apply_push_runs_the_sample_then_publishes(no_sleep):
+    routes = _mock_publish_path(
+        sample_states=[("queued", {}), ("in_progress", {}), ("success", {})]
     )
-    respx.get(f"{BASE}/conn-uuid/sql-scripts/draft-1").mock(
-        return_value=httpx.Response(200, json={"id": "draft-1", "state": "success"})
-    )
-    pub = respx.post(f"{BASE}/conn-uuid/sql-scripts/draft-1/publish").mock(
-        return_value=httpx.Response(200, json={"id": "draft-1"})
-    )
+
     result = sct.apply_push("conn-uuid", "draft-1", "SELECT 9;", publish=True)
-    assert patch.called and pub.called
+
+    assert json.loads(routes["patch"].calls.last.request.content) == {
+        "user_script": "SELECT 9;"
+    }
+    assert json.loads(routes["start"].calls.last.request.content) == {
+        "source_file_id": "file-1"
+    }
+    order = [c.request.url.path.rsplit("/", 1)[-1] for c in respx.calls]
+    assert order.index("start") < order.index("publish")
+    assert routes["publish"].call_count == 1
+    assert routes["script"].call_count == 3
     assert result["published"] is True
-    body = json.loads(patch.calls.last.request.content)
-    assert body["user_script"] == "SELECT 9;"
+    assert result["new_draft_id"] == "draft-2"
+    assert result["connector_status"] == "inactive"
 
 
 @respx.mock
-def test_apply_push_blocks_publish_without_a_successful_sample():
-    """publish 400s with a generic 'Output sample file is not generated yet'
-    otherwise — this should fail fast with a message pointing at the actual
-    missing step instead of surfacing that passthrough error."""
+def test_apply_push_reports_the_publish_when_the_connector_reread_fails(no_sleep):
+    routes = _mock_publish_path(sample_states=[("success", {})])
+    routes["detail"].side_effect = [
+        next(routes["detail"].side_effect),
+        httpx.Response(500, json={"detail": "boom"}),
+    ]
+
+    result = sct.apply_push("conn-uuid", "draft-1", "SELECT 9;", publish=True)
+
+    assert routes["publish"].called
+    assert result["published"] is True
+    assert result["new_draft_id"] is None
+    assert "re-reading the connector failed" in result["warning"]
+
+
+@respx.mock
+def test_apply_push_does_not_publish_when_the_sample_fails(no_sleep):
+    routes = _mock_publish_path(
+        sample_states=[("failed", {"error": "Code: 47. UNKNOWN_IDENTIFIER"})]
+    )
+
+    with pytest.raises(
+        PlanError, match="updated but not published.*UNKNOWN_IDENTIFIER"
+    ):
+        sct.apply_push("conn-uuid", "draft-1", "SELECT nope;", publish=True)
+
+    assert routes["patch"].called and routes["start"].called
+    assert not routes["publish"].called
+
+
+@respx.mock
+@pytest.mark.parametrize("running", ["queued", "in_progress"])
+def test_apply_push_does_not_publish_when_the_sample_times_out(monkeypatch, running):
+    clock = iter(range(0, 10_000, 200))
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+    routes = _mock_publish_path(sample_states=[])
+    routes["script"].side_effect = None
+    routes["script"].return_value = httpx.Response(
+        200, json={"id": "draft-1", "state": running}
+    )
+
+    with pytest.raises(PlanError, match="still running"):
+        sct.apply_push("conn-uuid", "draft-1", "SELECT 9;", publish=True)
+
+    assert not routes["publish"].called
+
+
+@respx.mock
+def test_apply_push_without_publish_only_patches():
     patch = respx.patch(f"{BASE}/conn-uuid/sql-scripts/draft-1").mock(
         return_value=httpx.Response(200, json={"id": "draft-1"})
     )
-    respx.get(f"{BASE}/conn-uuid/sql-scripts/draft-1").mock(
-        return_value=httpx.Response(200, json={"id": "draft-1", "state": None})
+
+    result = sct.apply_push("conn-uuid", "draft-1", "SELECT 9;")
+
+    assert result == {"updated_script_id": "draft-1", "published": False}
+    assert len(respx.calls) == 1 and patch.called
+
+
+def _pulled_dir_publish_path(tmp_path, *, sample_states):
+    """A pulled directory plus the calls ``push --dir <wd> --publish`` makes."""
+    wd = tmp_path / "wd"
+    (wd / "data").mkdir(parents=True)
+    (wd / "connector.sql").write_text("SELECT 9;")
+    marker = {
+        "connector_id": "conn-uuid",
+        "connector_api_name": "upload_counties",
+        "connector_name": "Upload Counties",
+        "script_id": "draft-1",
+        "script_status": "draft",
+        "env": "testenv",
+        "business_id": "biz-1",
+    }
+    (wd / sct.MARKER_NAME).write_text(json.dumps(marker))
+    routes = _mock_publish_path(sample_states=sample_states)
+    # plan_push reads the detail and the script before the publish path does.
+    routes["detail"].side_effect = [
+        httpx.Response(200, json=DETAIL),
+        *routes["detail"].side_effect,
+    ]
+    routes["script"].side_effect = [
+        httpx.Response(
+            200, json={"id": "draft-1", "status": "draft", "user_script": "SELECT 1;"}
+        ),
+        *routes["script"].side_effect,
+    ]
+    return wd, marker, routes
+
+
+def _push_publish(wd):
+    return CliRunner().invoke(
+        cli.app, ["smart-connectors", "push", "--dir", str(wd), "--publish", "--yes"]
     )
-    pub = respx.post(f"{BASE}/conn-uuid/sql-scripts/draft-1/publish")
-    with pytest.raises(PlanError, match="generate-sample"):
-        sct.apply_push("conn-uuid", "draft-1", "SELECT 9;", publish=True)
-    assert patch.called
-    assert not pub.called
+
+
+@respx.mock
+def test_push_publish_moves_the_marker_so_the_next_push_targets_the_new_draft(
+    tmp_path, no_sleep
+):
+    wd, marker, routes = _pulled_dir_publish_path(
+        tmp_path, sample_states=[("success", {})]
+    )
+
+    result = _push_publish(wd)
+
+    assert result.exit_code == 0, result.output
+    assert routes["publish"].called
+    assert "script published — live runs now use it" in result.output
+    assert "Connector status: inactive" in result.output
+    assert json.loads((wd / sct.MARKER_NAME).read_text()) == {
+        **marker,
+        "script_id": "draft-2",
+    }
+
+    # The next push from the same directory reads the rewritten marker.
+    respx.get(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "last_draft_script": {"id": "draft-2"}}
+        )
+    )
+    respx.get(f"{BASE}/conn-uuid/sql-scripts/draft-2").mock(
+        return_value=httpx.Response(
+            200, json={"id": "draft-2", "status": "draft", "user_script": "SELECT 9;"}
+        )
+    )
+    again = sct.plan_push(str(wd))
+    assert again["script_id"] == "draft-2"
+    assert again["warning"] is None
+
+
+@respx.mock
+def test_push_publish_prints_the_sample_error_as_text_not_markup(tmp_path, no_sleep):
+    wd, marker, routes = _pulled_dir_publish_path(
+        tmp_path, sample_states=[("failed", {"error": "bad [/red] :smile:"})]
+    )
+
+    result = _push_publish(wd)
+
+    assert result.exit_code == 1
+    assert "bad [/red] :smile:" in result.output
+    assert not routes["publish"].called
+    assert json.loads((wd / sct.MARKER_NAME).read_text()) == marker
+
+
+def test_advance_marker_leaves_a_marker_for_another_script_alone(tmp_path):
+    (tmp_path / sct.MARKER_NAME).write_text(json.dumps({"script_id": "other"}))
+
+    assert not sct.advance_marker(tmp_path, from_script_id="draft-1", to_script_id="d2")
+    assert json.loads((tmp_path / sct.MARKER_NAME).read_text()) == {
+        "script_id": "other"
+    }
 
 
 def test_events_requires_uuid(monkeypatch):
