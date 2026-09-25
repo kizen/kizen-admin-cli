@@ -14,6 +14,7 @@ from typing import Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from kizen_builder import __version__
 from kizen_builder.api.client import KizenAPIError
@@ -71,7 +72,7 @@ def cli_errors(*also: type[Exception]) -> Iterator[None]:
     try:
         yield
     except _ALWAYS_EXPECTED + also as e:
-        err_console.print(f"[red]error:[/red] {e}")
+        err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)
         raise typer.Exit(code=1) from e
 
 

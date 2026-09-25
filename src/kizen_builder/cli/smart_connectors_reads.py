@@ -212,7 +212,10 @@ def smart_connectors_execution_sql(
     """Print the SQL script used in a specific execution."""
     with cli_errors():
         script = sc_tools.get_execution_script(connector, execution_id)
-    console.print(script.get("user_script") or "[dim](empty)[/dim]")
+    if script.get("user_script"):
+        console.print(script["user_script"], markup=False, emoji=False, soft_wrap=True)
+    else:
+        console.print("[dim](empty)[/dim]")
 
 
 @smart_connectors_app.command("scripts")

@@ -15,6 +15,7 @@ from typing import Any
 import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.markup import escape
 from rich.prompt import Confirm
 from rich.table import Table
 
@@ -85,7 +86,7 @@ def _run_mutation(
         try:
             plan = build_plan()
         except PlanError as e:
-            err_console.print(f"[red]plan error:[/red] {e}")
+            err_console.print(f"[red]plan error:[/red] {escape(str(e))}", emoji=False)
             raise typer.Exit(code=1) from e
         except ValidationError as e:
             for err in e.errors():

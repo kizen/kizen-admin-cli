@@ -158,6 +158,22 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`smart-connectors push` no longer crashes on bracketed SQL, and code,
+  logs and errors print in full.** A changed SQL line containing something
+  like `[/.-]` made `push` (with or without `--dry-run`/`--json`) exit 1 with
+  a `MarkupError` before showing the diff. The same parsing silently deleted
+  anything shaped like `[word]` from text the CLI prints but didn't write:
+  `row[field]` in a code_step diff showed as `row`, the step status in
+  `automations start --wait` (`[completed]`, `[failed]`) never appeared, and
+  server or runner error messages could crash the error handler itself.
+  Emoji shortcodes were swapped in too, so an IPv6 address like
+  `2001:db8:ab:cd::1` lost its `:cd:`. SQL, code_step values in diffs, run
+  logs and tracebacks, `code test` output and HTTP bodies, errors reported
+  through the shared `error:` handler, and the `run failed:`, `SQL error:`
+  and `plan error:` lines now print character for character, and long SQL,
+  JSON and log lines are no longer hard-wrapped at 220 columns. Table cells
+  are unchanged.
+
 - **Compiled email `content` no longer diverges from what Kizen's own
   builder produces for the same layout.** Every recipient's email now
   carries a real `font-family` for body text (`Root.props.fontFamily`,

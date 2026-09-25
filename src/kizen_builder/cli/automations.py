@@ -10,6 +10,7 @@ from typing import Any
 
 import typer
 from pydantic import ValidationError
+from rich.markup import escape
 from rich.table import Table
 
 from kizen_builder import output as out
@@ -278,8 +279,9 @@ def autos_roundtrip(
                 console.print(f"[red]FAIL[/red] — {len(drift)} drift(s):")
                 for d in drift:
                     console.print(
-                        f"  [yellow]{d['path']}[/yellow]: "
-                        f"{d['before']!r} → {d['after']!r}"
+                        f"  [yellow]{escape(str(d['path']))}[/yellow]: "
+                        f"{escape(repr(d['before']))} → {escape(repr(d['after']))}",
+                        emoji=False,
                     )
             else:
                 console.print("[green]PASS — zero semantic drift[/green]")
@@ -350,7 +352,9 @@ def autos_diff(
     console.print(f"[yellow]{len(diff)} change(s):[/yellow]")
     for d in diff:
         console.print(
-            f"  [yellow]{d['path']}[/yellow]: {d['before']!r} → {d['after']!r}"
+            f"  [yellow]{escape(str(d['path']))}[/yellow]: "
+            f"{escape(repr(d['before']))} → {escape(repr(d['after']))}",
+            emoji=False,
         )
 
 
@@ -480,7 +484,12 @@ def _print_start_result(result: dict[str, Any]) -> None:
         console.print(f"[dim]View it with:[/dim] kizen automations runs view {exec_id}")
     else:
         console.print("[yellow]started — no execution ID in response[/yellow]")
-        console.print(json.dumps(result.get("raw"), indent=2))
+        console.print(
+            json.dumps(result.get("raw"), indent=2),
+            markup=False,
+            emoji=False,
+            soft_wrap=True,
+        )
 
 
 # Fixed, not a flag: the queue-latency data (§0's runtime table) shows gaps up
@@ -549,15 +558,16 @@ class _RunStream:
 
         if new_rows:
             for i, row in new_rows:
+                status = escape(f"[{row.get('status') or ''}]")
                 line = (
-                    f"[dim]#{i}[/dim] {row.get('kind') or ''} "
-                    f"{row.get('type') or ''} — {row.get('description') or ''} "
-                    f"[{row.get('status') or ''}]"
+                    f"[dim]#{i}[/dim] {escape(str(row.get('kind') or ''))} "
+                    f"{escape(str(row.get('type') or ''))} — "
+                    f"{escape(str(row.get('description') or ''))} {status}"
                 )
                 duration = history_duration(row)
                 if duration:
                     line += f" ({duration})"
-                console.print(line)
+                console.print(line, emoji=False)
                 if self.show_logs and row.get("detailed_log") is not None:
                     # BCLI-012's own per-row renderer — the same {"stdout",
                     # "traceback"}/logs-key/JSON-fallback formatting `runs
