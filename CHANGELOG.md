@@ -22,8 +22,23 @@ called out explicitly under **Changed** or **Removed**.
   `kizen/kizen-admin-cli`. The command is still `kizen` and the installed
   package is still `kizen_builder`, so nothing about invoking or importing
   the tool changes.
+- **`smart-connectors generate-sample` reports the tables its sample actually
+  holds.** The `output tables` line now comes from the sample zip the run just
+  produced, with row and column counts (`contacts (4 rows, 12 cols)`), rather
+  than from the connector's recognized scopes, which can be stale and made a
+  working SQL change look broken. When the two disagree, a yellow line names
+  both and notes that `configure-flow` validates against the recognized scopes,
+  which refresh on `push --publish`. `--json` gains `outputs`, `sample_file` and
+  `warnings`; `scopes` is unchanged. A sample that can't be downloaded or read
+  is a warning, not a failure.
 
 ### Added
+
+- **`kizen smart-connectors download-sample <connector>`** saves a script's
+  output-sample zip (one `<scope>.csv` per output table) without the web UI.
+  It takes the latest draft by default, `--live` for the live script, or
+  `--script <id>`, writes to `--out` or `./<server filename>`, and refuses to
+  overwrite an existing file without `--force`.
 
 - **Email template `text` blocks are now authored as structured paragraphs,
   not raw HTML — and can carry inline merge fields.** `TextBlockDef.html` is

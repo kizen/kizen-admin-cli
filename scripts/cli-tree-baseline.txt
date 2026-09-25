@@ -3301,6 +3301,7 @@
 │ executions         List a connector's execution (run) history, most recent first.                │
 │ execution-sql      Print the SQL script used in a specific execution.                            │
 │ scripts            List a connector's SQL scripts (draft + live).                                │
+│ download-sample    Save a script's output-sample zip (one <scope>.csv per output table).         │
 │ events             List a connector's event history (audit trail). Requires the UUID.            │
 │ pull               Assemble a local working directory (connector.sql + __config.json + data/)    │
 │                    for a connector so you can iterate on its SQL locally.                        │
@@ -3408,6 +3409,25 @@
 │    --help                            Show this message and exit.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: smart-connectors download-sample [OPTIONS] {connector}                                      
+                                                                                                    
+ Save a script's output-sample zip (one <scope>.csv per output table).                              
+                                                                                                    
+ Writes the local file only. The sample is the one `generate-sample` last                           
+ produced for that script.                                                                          
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector      <str>  Connector UUID or api_name. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --live                   The live script's sample instead of the draft's.                        │
+│ --script          <str>  Script id (overrides the draft/live choice).                            │
+│ --out             <str>  File or directory (default: ./<server filename>).                       │
+│ --force   -f             Overwrite an existing file.                                             │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
  Usage: smart-connectors events [OPTIONS] {smart_connector_id}                                      
                                                                                                     
  List a connector's event history (audit trail). Requires the UUID.                                 
@@ -3461,10 +3481,10 @@
                                                                                                     
  Run the draft server-side to generate its output sample.                                           
                                                                                                     
- Writes no records. Two things depend on it: `push --publish` 400s with                             
- "Output sample file is not generated yet" until the sample exists, and the                         
- connector's recognized output columns (which every execution variable's                            
- scope is validated against) only appear once it has run.                                           
+ Writes no records. `push --publish` 400s with "Output sample file is not                           
+ generated yet" until the sample exists. The tables it reports are read from                        
+ that sample. They can differ from the connector's recognized scopes, which                         
+ `configure-flow` validates against and which refresh on `push --publish`.                          
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
@@ -4671,6 +4691,9 @@
 
 
 ===== smart-connectors create =====
+
+
+===== smart-connectors download-sample =====
 
 
 ===== smart-connectors events =====

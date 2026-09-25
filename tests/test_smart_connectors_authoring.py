@@ -9,14 +9,18 @@ the multi-round load-step save that relationship fields require.
 from __future__ import annotations
 
 import csv
+import io
 import json
 import time
+import zipfile
 
 import httpx
 import pytest
 import respx
 from pydantic import ValidationError
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
 from kizen_builder.api import files as files_api
 from kizen_builder.api import smart_connectors as sc
 from kizen_builder.api.client import KizenAPIError, KizenClient
@@ -527,7 +531,7 @@ def test_apply_set_input_explains_an_empty_template(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# generate-sample + activate
+# generate-sample + download-sample + activate
 # ---------------------------------------------------------------------------
 
 
@@ -552,6 +556,366 @@ def test_generate_output_sample_polls_until_the_state_settles(monkeypatch):
     assert result["state"] == "success"
     assert result["timed_out"] is False
     assert result["scopes"] == {"orders": 2}
+
+
+def _sample_zip(members: dict[str, str]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, text in members.items():
+            zf.writestr(name, text)
+    return buf.getvalue()
+
+
+# The draft's sample as `GET sql-scripts/{id}` returns it once `state` is
+# `success` (confirmed live 2026-09-25).
+SAMPLE_FILE = {
+    "id": "sample-1",
+    "name": "Draft_order_import_sample_output_20260925.zip",
+    "content_type": "application/zip",
+}
+TWO_TABLE_ZIP = _sample_zip(
+    {
+        # A quoted newline is still one row.
+        "contacts.csv": 'email,note\na@x.test,"line one\nline two"\nb@x.test,hi\n',
+        "policies.csv": "number,holder,premium\nP1,a,10\n",
+    }
+)
+
+
+def _mock_generate(state: str, sample: dict | None = SAMPLE_FILE):
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+    respx.post(f"{BASE}/order_import/sql-scripts/draft-1/start").mock(
+        return_value=httpx.Response(200, json={"id": "draft-1"})
+    )
+    respx.get(f"{BASE}/order_import/sql-scripts/draft-1").mock(
+        return_value=httpx.Response(
+            200, json={"id": "draft-1", "state": state, "output_csv_file": sample}
+        )
+    )
+
+
+@respx.mock
+def test_generate_output_sample_reports_the_tables_the_sample_holds():
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    result = sct.generate_output_sample("order_import")
+    assert result["outputs"] == [
+        {"table": "contacts", "rows": 2, "columns": 2},
+        {"table": "policies", "rows": 1, "columns": 3},
+    ]
+    assert result["sample_file"] == {"id": "sample-1", "name": SAMPLE_FILE["name"]}
+    # `headers` is still reported as it was, even though it disagrees.
+    assert result["scopes"] == {"orders": 2}
+    assert result["warnings"] == []
+
+
+@respx.mock
+def test_generate_output_sample_does_not_download_after_a_failed_run():
+    # The failed script still carries the previous run's sample.
+    _mock_generate("failed")
+    download = respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download")
+    result = sct.generate_output_sample("order_import")
+    assert result["outputs"] is None
+    assert result["sample_file"] is None
+    assert not download.called
+
+
+def _corrupt_deflated_zip() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("orders.csv", "a,b\n" + "1,2\n" * 200)
+    data = bytearray(buf.getvalue())
+    # The first byte of the deflate stream, past the 30-byte local header and
+    # the member name: zlib rejects it before any CRC check runs.
+    data[30 + len("orders.csv")] ^= 0xFF
+    return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(500),
+        httpx.Response(200, content=b"not a zip"),
+        httpx.Response(200, content=_corrupt_deflated_zip()),
+    ],
+    ids=["download-error", "bad-zip", "corrupt-member"],
+)
+@respx.mock
+def test_generate_output_sample_warns_when_the_sample_cannot_be_read(response):
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=response
+    )
+    result = sct.generate_output_sample("order_import")
+    assert result["state"] == "success"
+    assert result["outputs"] is None
+    assert len(result["warnings"]) == 1
+    assert "output sample" in result["warnings"][0]
+
+
+@respx.mock
+def test_generate_output_sample_warns_when_success_has_no_sample_file():
+    _mock_generate("success", sample=None)
+    result = sct.generate_output_sample("order_import")
+    assert result["outputs"] is None
+    assert result["warnings"] == ["the script succeeded but has no output sample file."]
+
+
+@respx.mock
+def test_generate_sample_cli_flags_tables_that_differ_from_the_recognized_scopes():
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "generate-sample", "order_import"]
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert "output tables: contacts (2 rows, 2 cols), policies (1 rows, 3 cols)" in text
+    assert "recognized scopes are orders" in text
+    assert "push --publish" in text
+
+
+@respx.mock
+def test_generate_sample_cli_is_quiet_when_the_tables_match():
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(
+            200, content=_sample_zip({"orders.csv": "order_number,sku\n1,a\n"})
+        )
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "generate-sample", "order_import"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "orders (1 rows, 2 cols)" in result.output
+    assert "recognized scopes" not in result.output
+
+
+@respx.mock
+def test_generate_sample_cli_exit_code_follows_the_state_not_the_download():
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(500)
+    )
+    ok = CliRunner().invoke(
+        cli.app, ["smart-connectors", "generate-sample", "order_import", "--json"]
+    )
+    assert ok.exit_code == 0
+    assert json.loads(ok.stdout)["outputs"] is None
+
+
+def _mock_script(
+    script_id: str,
+    *,
+    status: str,
+    sample: dict | None = SAMPLE_FILE,
+    state: str | None = None,
+):
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+    respx.get(f"{BASE}/order_import/sql-scripts/{script_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": script_id,
+                "status": status,
+                "state": state or ("success" if sample else "setup"),
+                "output_csv_file": sample,
+            },
+        )
+    )
+    return respx.get(f"{FAKE_BASE_URL}/api/files/{(sample or {}).get('id')}/download")
+
+
+@respx.mock
+def test_download_sample_saves_the_drafts_zip_under_the_server_filename(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _mock_script("draft-1", status="draft").mock(
+        return_value=httpx.Response(
+            200,
+            content=TWO_TABLE_ZIP,
+            headers={"content-disposition": 'attachment; filename="server.zip"'},
+        )
+    )
+    res = sct.download_sample("order_import")
+    assert res["script_id"] == "draft-1"
+    assert res["path"] == "server.zip"
+    assert (tmp_path / "server.zip").read_bytes() == TWO_TABLE_ZIP
+    assert [o["table"] for o in res["outputs"]] == ["contacts", "policies"]
+
+
+@respx.mock
+def test_download_sample_live_picks_the_live_script(tmp_path):
+    live_sample = {**SAMPLE_FILE, "id": "sample-live", "name": "Live.zip"}
+    _mock_script("live-1", status="live", sample=live_sample).mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    res = sct.download_sample("order_import", use_live=True, dest=tmp_path)
+    assert res["script_id"] == "live-1"
+    # No Content-Disposition: the S3Object's name is the fallback, and a
+    # directory `dest` gets the file inside it.
+    assert res["path"] == str(tmp_path / "Live.zip")
+    assert res["bytes"] == len(TWO_TABLE_ZIP)
+
+
+@respx.mock
+def test_download_sample_live_refuses_when_there_is_no_live_script(tmp_path):
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json={**DETAIL, "live_script": None})
+    )
+    with pytest.raises(LookupError, match="has no live SQL script"):
+        sct.download_sample("order_import", use_live=True, dest=tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+@respx.mock
+def test_download_sample_script_overrides_the_draft_live_choice(tmp_path):
+    # Only the named script's routes exist, so a connector lookup would fail.
+    respx.get(f"{BASE}/order_import/sql-scripts/other-9").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": "other-9", "state": "success", "output_csv_file": SAMPLE_FILE},
+        )
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    res = sct.download_sample(
+        "order_import", use_live=True, script_id="other-9", dest=tmp_path
+    )
+    assert res["script_id"] == "other-9"
+    assert res["warnings"] == []
+
+
+@respx.mock
+def test_download_sample_cli_warns_when_the_script_did_not_succeed(tmp_path):
+    _mock_script("draft-1", status="draft", state="failed").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "download-sample", "order_import", "--out", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert "script state is failed, so this sample may be from an earlier run" in text
+
+
+@respx.mock
+def test_download_sample_cli_names_the_state_when_there_is_no_sample(tmp_path):
+    download = _mock_script("draft-1", status="draft", sample=None)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "download-sample",
+            "order_import",
+            "--out",
+            str(tmp_path / "s.zip"),
+        ],
+    )
+    assert result.exit_code == 1
+    text = " ".join(result.output.split())
+    assert "state: setup" in text
+    assert "generate-sample order_import" in text
+    assert not download.called
+    assert not (tmp_path / "s.zip").exists()
+
+
+@respx.mock
+def test_download_sample_refuses_to_overwrite_without_force(tmp_path):
+    target = tmp_path / "s.zip"
+    target.write_bytes(b"keep me")
+    _mock_script("draft-1", status="draft").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    args = ["smart-connectors", "download-sample", "order_import", "--out", str(target)]
+    refused = CliRunner().invoke(cli.app, args)
+    assert refused.exit_code == 1
+    assert "--force" in refused.output
+    assert target.read_bytes() == b"keep me"
+
+    forced = CliRunner().invoke(cli.app, [*args, "--force", "--json"])
+    assert forced.exit_code == 0, forced.output
+    assert json.loads(forced.stdout)["path"] == str(target)
+    assert target.read_bytes() == TWO_TABLE_ZIP
+
+
+@pytest.mark.parametrize(
+    ("disposition", "fallback", "expected"),
+    [
+        ('attachment; filename="../x.zip"', "unused.zip", ".._x.zip"),
+        (None, "../x.zip", ".._x.zip"),
+        (
+            'attachment; filename="Orders / Returns_dry_run.xlsx"',
+            "unused.xlsx",
+            "Orders _ Returns_dry_run.xlsx",
+        ),
+        (None, "Orders / Returns_dry_run.xlsx", "Orders _ Returns_dry_run.xlsx"),
+        ('attachment; filename=".."', "..", "download"),
+    ],
+    ids=[
+        "traversal-header",
+        "traversal-fallback",
+        "slash-header",
+        "slash-fallback",
+        "nothing-usable",
+    ],
+)
+@respx.mock
+def test_save_file_keeps_the_name_inside_the_destination(
+    tmp_path, monkeypatch, env_config, disposition, fallback, expected
+):
+    monkeypatch.chdir(tmp_path)
+    headers = {"content-disposition": disposition} if disposition else {}
+    respx.get(f"{FAKE_BASE_URL}/api/files/f1/download").mock(
+        return_value=httpx.Response(200, content=b"data", headers=headers)
+    )
+    saved = sct.save_file(env_config, "f1", fallback_name=fallback)
+    assert saved.name == expected
+    assert [p.name for p in tmp_path.iterdir()] == [expected]
+    assert not (tmp_path.parent / "x.zip").exists()
+
+
+@respx.mock
+def test_save_file_refuses_an_existing_path_before_downloading(tmp_path, env_config):
+    target = tmp_path / "s.zip"
+    target.write_bytes(b"keep me")
+    download = respx.get(f"{FAKE_BASE_URL}/api/files/f1/download")
+    with pytest.raises(FileExistsError, match="--force"):
+        sct.save_file(env_config, "f1", target, fallback_name="s.zip")
+    assert not download.called
+
+
+@respx.mock
+def test_save_file_keeps_the_old_file_when_a_forced_write_fails(
+    tmp_path, monkeypatch, env_config
+):
+    target = tmp_path / "s.zip"
+    target.write_bytes(b"keep me")
+    respx.get(f"{FAKE_BASE_URL}/api/files/f1/download").mock(
+        return_value=httpx.Response(200, content=b"new bytes")
+    )
+
+    def disk_full(self, data):
+        with open(self, "wb") as f:
+            f.write(data[:3])
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(type(target), "write_bytes", disk_full)
+    with pytest.raises(OSError, match="No space"):
+        sct.save_file(env_config, "f1", target, fallback_name="s.zip", force=True)
+    assert target.read_bytes() == b"keep me"
+    assert [p.name for p in tmp_path.iterdir()] == ["s.zip"]
 
 
 @respx.mock

@@ -51,7 +51,9 @@ from __future__ import annotations
 from kizen_builder.tools.smart_connectors._common import (
     _META_KEYS,
     MARKER_NAME,
+    SavedFile,
     _looks_like_uuid,
+    save_file,
 )
 from kizen_builder.tools.smart_connectors.authoring._helpers import (
     _SAMPLE_FILE_SHAPES,
@@ -80,6 +82,7 @@ from kizen_builder.tools.smart_connectors.authoring.create import (
     plan_create_connector,
 )
 from kizen_builder.tools.smart_connectors.authoring.sample import (
+    download_sample,
     generate_output_sample,
 )
 from kizen_builder.tools.smart_connectors.authoring.set_input import (
@@ -154,6 +157,7 @@ __all__ = [
     "CONNECTOR_TYPES",
     "ConnectorRuntimeMissing",
     "MARKER_NAME",
+    "SavedFile",
     "WEBHOOK_SAMPLE_COLUMNS",
     "WEBHOOK_SQL_VERSION",
     "add_input",
@@ -166,6 +170,7 @@ __all__ = [
     "apply_set_status",
     "apply_start_flow",
     "build_webhook_sample",
+    "download_sample",
     "generate_output_sample",
     "get_connector",
     "get_execution_script",
@@ -187,6 +192,7 @@ __all__ = [
     "pull_connector",
     "resolve_team_member",
     "run_connector",
+    "save_file",
     "suggest_execution_variables",
     # Private, but reached directly by tests and/or other modules through the
     # `sct.` / `sc_tools.` module-attribute style — re-exported for the same

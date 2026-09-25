@@ -1,4 +1,5 @@
-"""`kizen smart-connectors` reads — connectors, executions, scripts, events."""
+"""`kizen smart-connectors` reads — connectors, executions, scripts, output
+samples, events."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
 )
-from kizen_builder.cli.smart_connectors import smart_connectors_app
+from kizen_builder.cli.smart_connectors import _output_tables, smart_connectors_app
 from kizen_builder.tools import smart_connectors as sc_tools
 
 
@@ -263,6 +264,46 @@ def smart_connectors_scripts(
             )
         ],
     )
+
+
+@smart_connectors_app.command("download-sample")
+def smart_connectors_download_sample(
+    connector: str = typer.Argument(..., help="Connector UUID or api_name."),
+    live: bool = typer.Option(
+        False, "--live", help="The live script's sample instead of the draft's."
+    ),
+    script_id: str = typer.Option(
+        None, "--script", help="Script id (overrides the draft/live choice)."
+    ),
+    dest: str = typer.Option(
+        None, "--out", help="File or directory (default: ./<server filename>)."
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite an existing file."
+    ),
+    json_out: bool = JSON_OPTION,
+) -> None:
+    """Save a script's output-sample zip (one <scope>.csv per output table).
+
+    Writes the local file only. The sample is the one `generate-sample` last
+    produced for that script.
+    """
+    with cli_errors(LookupError, OSError):
+        res = sc_tools.download_sample(
+            connector, use_live=live, script_id=script_id, dest=dest, force=force
+        )
+
+    if json_out:
+        out.emit_json(res)
+        return
+    console.print(
+        f"[green]saved[/green] {res['path']} ({res['bytes']} bytes, "
+        f"{res['script_status'] or 'script'} {res['script_id']})"
+    )
+    if res["outputs"] is not None:
+        console.print(f"  output tables: {_output_tables(res['outputs'])}")
+    for w in res["warnings"]:
+        console.print(f"  [yellow]![/yellow] {w}")
 
 
 @smart_connectors_app.command("events")

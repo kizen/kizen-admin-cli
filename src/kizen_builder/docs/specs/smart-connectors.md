@@ -366,7 +366,15 @@ payload, so the sample should carry every field you intend to read.
 ## Command surface
 
 Read: `list` / `get` / `metadata` / `executions` / `execution-sql` / `scripts` /
-`events`, plus `suggest-variables` (a POST that saves nothing).
+`download-sample` / `events`, plus `suggest-variables` (a POST that saves
+nothing). `download-sample` saves a script's output-sample zip, which the
+`SQLScript` carries as `output_csv_file` (an S3Object, though the OpenAPI schema
+types it `string`) and which `GET /api/files/{id}/download` fetches. The zip holds
+one `<scope>.csv` per output table. Confirmed live 2026-09-25.
+
+`generate-sample` reports the tables and row counts from the sample it just
+produced, and warns when they differ from the connector's recognized scopes
+(`headers`).
 
 Authoring: `create` → `set-input` → `generate-sample` → `configure-flow` →
 `activate` → `start-flow`. Plus `seeds list|add|remove`, and for webhook

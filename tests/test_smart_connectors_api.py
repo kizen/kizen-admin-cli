@@ -107,13 +107,19 @@ def test_update_and_publish_script(client):
     assert pub["id"] == "s1"
 
 
+@pytest.mark.parametrize(
+    "disposition",
+    [
+        'inline; filename="data.csv"',
+        "attachment; filename=\"data.csv\"; filename*=UTF-8''data.csv",
+    ],
+    ids=["plain", "trailing-param"],
+)
 @respx.mock
-def test_download_file_returns_bytes_and_filename(env_config):
+def test_download_file_returns_bytes_and_filename(env_config, disposition):
     respx.get(f"{FAKE_BASE_URL}/api/files/f1/download").mock(
         return_value=httpx.Response(
-            200,
-            content=b"col\n1\n",
-            headers={"content-disposition": 'inline; filename="data.csv"'},
+            200, content=b"col\n1\n", headers={"content-disposition": disposition}
         )
     )
     content, name = sc.download_file(env_config, "f1")
