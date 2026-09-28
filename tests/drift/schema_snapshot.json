@@ -1,7 +1,7 @@
 {
   "_meta": {
     "base_url": "https://app.go.kizen.com",
-    "captured": "2026-08-13",
+    "captured": "2026-09-25",
     "contracts_tracked": 66,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
@@ -22,9 +22,10 @@
       "responses": [
         "204"
       ],
+      "schema_path": "/api/automation2/automations/{automation_identifier}",
       "surface": "automations"
     },
-    "DELETE /api/custom-objects/{id}": {
+    "DELETE /api/custom-objects/{object_identifier}": {
       "label": "delete custom object",
       "operation_id": "custom_objects_destroy",
       "present": true,
@@ -35,9 +36,10 @@
       "responses": [
         "204"
       ],
+      "schema_path": "/api/custom-objects/{object_identifier}",
       "surface": "objects"
     },
-    "DELETE /api/custom-objects/{object_pk}/fields/{id}": {
+    "DELETE /api/custom-objects/{object_identifier}/fields/{id}": {
       "label": "delete field",
       "operation_id": "custom_objects_fields_destroy",
       "present": true,
@@ -48,6 +50,7 @@
       "responses": [
         "204"
       ],
+      "schema_path": "/api/custom-objects/{object_identifier}/fields/{id}",
       "surface": "fields"
     },
     "DELETE /api/permission-group/{id}": {
@@ -61,6 +64,7 @@
       "responses": [
         "204"
       ],
+      "schema_path": "/api/permission-group/{id}",
       "surface": "permissions"
     },
     "DELETE /api/records/{object_identifier}/{entity_id}": {
@@ -72,6 +76,7 @@
       "responses": [
         "204"
       ],
+      "schema_path": "/api/records/{object_identifier}/{entity_id}",
       "surface": "records"
     },
     "DELETE /api/role/{id}": {
@@ -85,9 +90,10 @@
       "responses": [
         "204"
       ],
+      "schema_path": "/api/role/{id}",
       "surface": "permissions"
     },
-    "PATCH /api/custom-objects/{id}": {
+    "PATCH /api/custom-objects/{object_identifier}": {
       "label": "update custom object",
       "operation_id": "custom_objects_partial_update",
       "present": true,
@@ -133,9 +139,10 @@
       "responses": [
         "200"
       ],
+      "schema_path": "/api/custom-objects/{object_identifier}",
       "surface": "objects"
     },
-    "PATCH /api/custom-objects/{object_pk}/fields/{id}": {
+    "PATCH /api/custom-objects/{object_identifier}/fields/{id}": {
       "label": "update field",
       "operation_id": "custom_objects_fields_partial_update",
       "present": true,
@@ -176,6 +183,7 @@
       "responses": [
         "200"
       ],
+      "schema_path": "/api/custom-objects/{object_identifier}/fields/{id}",
       "surface": "fields"
     },
     "PATCH /api/permission-group/{id}": {
@@ -189,6 +197,7 @@
       "responses": [
         "200"
       ],
+      "schema_path": "/api/permission-group/{id}",
       "surface": "permissions"
     },
     "PATCH /api/permission-group/{permission_group_id}/object-update": {
@@ -212,6 +221,7 @@
       "responses": [
         "200"
       ],
+      "schema_path": "/api/permission-group/{permission_group_id}/object-update",
       "surface": "permissions"
     },
     "PATCH /api/records/{object_identifier}/{entity_id}": {
@@ -236,6 +246,7 @@
         "200",
         "400"
       ],
+      "schema_path": "/api/records/{object_identifier}/{entity_id}",
       "surface": "records"
     },
     "PATCH /api/records/{object_identifier}/{entity_id}/unarchive": {
@@ -248,6 +259,7 @@
         "200",
         "400"
       ],
+      "schema_path": "/api/records/{object_identifier}/{entity_id}/unarchive",
       "surface": "records"
     },
     "PATCH /api/role/{id}": {
@@ -273,6 +285,7 @@
       "responses": [
         "200"
       ],
+      "schema_path": "/api/role/{id}",
       "surface": "permissions"
     },
     "POST /api/automation2/automations": {
@@ -313,6 +326,7 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/automation2/automations",
       "surface": "automations"
     },
     "POST /api/custom-objects": {
@@ -366,90 +380,10 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/custom-objects",
       "surface": "objects"
     },
-    "POST /api/custom-objects/{object_pk}/bulk-archive-entity-record": {
-      "label": "archive record",
-      "operation_id": "custom_objects_bulk_archive_entity_record_create",
-      "present": true,
-      "query_params": [],
-      "request_body": {
-        "present": true,
-        "properties": {
-          "bytes_end_index": "integer?",
-          "bytes_start_index": "integer?",
-          "entity_records_set_key": "string?",
-          "record_ids": "array[string<uuid>]?",
-          "send_email_notification": "boolean"
-        },
-        "required": [],
-        "type": "object"
-      },
-      "request_required": false,
-      "request_schema": "BulkArchiveEntityRecordRequest",
-      "responses": [
-        "200"
-      ],
-      "surface": "records"
-    },
-    "POST /api/custom-objects/{object_pk}/bulk-change-field-value": {
-      "label": "bulk change field value",
-      "operation_id": "custom_objects_bulk_change_field_value_create",
-      "present": true,
-      "query_params": [],
-      "request_body": {
-        "present": true,
-        "properties": {
-          "bytes_end_index": "integer?",
-          "bytes_start_index": "integer?",
-          "entity_records_set_key": "string?",
-          "field_id": "string",
-          "field_resolution": "DestinationVariableResolutionEnum{overwrite,add_only,remove_only,update_if_blank,overwrite_except_null}",
-          "field_value": "object?",
-          "record_ids": "array[string<uuid>]?",
-          "send_email_notification": "boolean",
-          "tags_to_add": "object",
-          "tags_to_remove": "array[string<uuid>]"
-        },
-        "required": [
-          "field_id"
-        ],
-        "type": "object"
-      },
-      "request_required": true,
-      "request_schema": "CustomObjectBulkChangeFieldValueRequest",
-      "responses": [
-        "200"
-      ],
-      "surface": "records"
-    },
-    "POST /api/custom-objects/{object_pk}/categories": {
-      "label": "create field category",
-      "operation_id": "custom_objects_categories_create",
-      "present": true,
-      "query_params": [
-        "ordering"
-      ],
-      "request_body": {
-        "present": true,
-        "properties": {
-          "meta": "any",
-          "name": "string",
-          "order": "integer"
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      },
-      "request_required": true,
-      "request_schema": "FieldCategoryRequest",
-      "responses": [
-        "201"
-      ],
-      "surface": "objects"
-    },
-    "POST /api/custom-objects/{object_pk}/fields": {
+    "POST /api/custom-objects/{object_identifier}/fields": {
       "label": "create field",
       "operation_id": "custom_objects_fields_create",
       "present": true,
@@ -494,9 +428,10 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/custom-objects/{object_identifier}/fields",
       "surface": "fields"
     },
-    "POST /api/custom-objects/{object_pk}/fields/{field_pk}/options": {
+    "POST /api/custom-objects/{object_identifier}/fields/{field_identifier}/options": {
       "label": "add field option",
       "operation_id": "custom_objects_fields_options_create",
       "present": true,
@@ -520,9 +455,10 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/custom-objects/{object_identifier}/fields/{field_identifier}/options",
       "surface": "fields"
     },
-    "POST /api/custom-objects/{object_pk}/fields/{field_pk}/options/{id}/replace": {
+    "POST /api/custom-objects/{object_identifier}/fields/{field_identifier}/options/{id}/replace": {
       "label": "replace field option",
       "operation_id": "custom_objects_fields_options_replace_create",
       "present": true,
@@ -550,7 +486,92 @@
       "responses": [
         "200"
       ],
+      "schema_path": "/api/custom-objects/{object_identifier}/fields/{field_identifier}/options/{id}/replace",
       "surface": "fields"
+    },
+    "POST /api/custom-objects/{object_pk}/bulk-archive-entity-record": {
+      "label": "archive record",
+      "operation_id": "custom_objects_bulk_archive_entity_record_create",
+      "present": true,
+      "query_params": [],
+      "request_body": {
+        "present": true,
+        "properties": {
+          "bytes_end_index": "integer?",
+          "bytes_start_index": "integer?",
+          "entity_records_set_key": "string?",
+          "record_ids": "array[string<uuid>]?",
+          "send_email_notification": "boolean"
+        },
+        "required": [],
+        "type": "object"
+      },
+      "request_required": false,
+      "request_schema": "BulkArchiveEntityRecordRequest",
+      "responses": [
+        "200"
+      ],
+      "schema_path": "/api/custom-objects/{object_pk}/bulk-archive-entity-record",
+      "surface": "records"
+    },
+    "POST /api/custom-objects/{object_pk}/bulk-change-field-value": {
+      "label": "bulk change field value",
+      "operation_id": "custom_objects_bulk_change_field_value_create",
+      "present": true,
+      "query_params": [],
+      "request_body": {
+        "present": true,
+        "properties": {
+          "bytes_end_index": "integer?",
+          "bytes_start_index": "integer?",
+          "entity_records_set_key": "string?",
+          "field_id": "string",
+          "field_resolution": "DestinationVariableResolutionEnum{overwrite,add_only,remove_only,update_if_blank,overwrite_except_null}",
+          "field_value": "object?",
+          "record_ids": "array[string<uuid>]?",
+          "send_email_notification": "boolean",
+          "tags_to_add": "object",
+          "tags_to_remove": "array[string<uuid>]"
+        },
+        "required": [
+          "field_id"
+        ],
+        "type": "object"
+      },
+      "request_required": true,
+      "request_schema": "CustomObjectBulkChangeFieldValueRequest",
+      "responses": [
+        "200"
+      ],
+      "schema_path": "/api/custom-objects/{object_pk}/bulk-change-field-value",
+      "surface": "records"
+    },
+    "POST /api/custom-objects/{object_pk}/categories": {
+      "label": "create field category",
+      "operation_id": "custom_objects_categories_create",
+      "present": true,
+      "query_params": [
+        "ordering"
+      ],
+      "request_body": {
+        "present": true,
+        "properties": {
+          "meta": "any",
+          "name": "string",
+          "order": "integer"
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "request_required": true,
+      "request_schema": "FieldCategoryRequest",
+      "responses": [
+        "201"
+      ],
+      "schema_path": "/api/custom-objects/{object_pk}/categories",
+      "surface": "objects"
     },
     "POST /api/custom-objects/{object_pk}/filter-groups": {
       "label": "create filter group",
@@ -580,6 +601,7 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/custom-objects/{object_pk}/filter-groups",
       "surface": "saved_views"
     },
     "POST /api/custom-objects/{object_pk}/quick-filters": {
@@ -609,6 +631,7 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/custom-objects/{object_pk}/quick-filters",
       "surface": "saved_views"
     },
     "POST /api/permission-group": {
@@ -633,6 +656,7 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/permission-group",
       "surface": "permissions"
     },
     "POST /api/pipelines/{object_pk}/stages": {
@@ -663,6 +687,7 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/pipelines/{object_pk}/stages",
       "surface": "objects"
     },
     "POST /api/records/{object_identifier}/add": {
@@ -687,6 +712,7 @@
         "200",
         "400"
       ],
+      "schema_path": "/api/records/{object_identifier}/add",
       "surface": "records"
     },
     "POST /api/records/{object_identifier}/upsert": {
@@ -715,6 +741,7 @@
         "201",
         "400"
       ],
+      "schema_path": "/api/records/{object_identifier}/upsert",
       "surface": "records"
     },
     "POST /api/role": {
@@ -742,6 +769,7 @@
       "responses": [
         "201"
       ],
+      "schema_path": "/api/role",
       "surface": "permissions"
     },
     "PUT /api/automation2/automations/{automation_identifier}": {
@@ -782,6 +810,7 @@
       "responses": [
         "200"
       ],
+      "schema_path": "/api/automation2/automations/{automation_identifier}",
       "surface": "automations"
     },
     "schema:WriteAutomationRequest": {

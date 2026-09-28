@@ -5,8 +5,9 @@ A seed exposes rows from another Kizen object to the SQL script as a
 already in Kizen. Three things about the wire format are easy to get wrong:
 
 * `group_id` is a **saved filter group** (segment) id on the seeded object,
-  from GET /api/custom-objects/{object}/filter-groups. A field *category* id
-  400s with a misleading "object does not exist".
+  from GET /api/custom-objects/{object}/filter-groups, or `null` for every
+  record of the object. A field *category* id 400s with a misleading "object
+  does not exist".
 * `fields_ids` is write-only — it doesn't come back on a read, so the CLI shows
   what the generated seed table actually carries instead.
 * Saving a seed does nothing on its own. The `kizen.<table>` view only appears
@@ -20,8 +21,9 @@ from __future__ import annotations
 from typing import Any
 
 from kizen_builder.api import custom_objects as co_api
+from kizen_builder.api import records as records_api
 from kizen_builder.api import smart_connectors as sc_api
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors.authoring._helpers import (
@@ -37,14 +39,18 @@ from kizen_builder.tools.smart_connectors.authoring._helpers import (
 # already in Kizen. Three things about the wire format are easy to get wrong:
 #
 # * `group_id` is a **saved filter group** (segment) id on the seeded object,
-#   from GET /api/custom-objects/{object}/filter-groups. A field *category* id
-#   400s with a misleading "object does not exist".
+#   from GET /api/custom-objects/{object}/filter-groups, or `null` for every
+#   record of the object. A field *category* id 400s with a misleading "object
+#   does not exist".
 # * `fields_ids` is write-only — it doesn't come back on a read, so the CLI shows
 #   what the generated seed table actually carries instead.
 # * Saving a seed does nothing on its own. The `kizen.<table>` view only appears
 #   in a script's `config_metadata.seed_tables` when a template is regenerated
 #   afterwards; PATCHing seeds does not retroactively update an existing script.
 #   That's why these commands refresh the config by default.
+
+# How a null-group seed is labelled wherever a filter group name would appear.
+ALL_RECORDS = "all records"
 
 
 def _seed_rows(detail: dict[str, Any]) -> list[dict[str, Any]]:
@@ -141,8 +147,11 @@ def list_seeds(connector: str) -> list[dict[str, Any]]:
             {
                 "id": seed.get("id"),
                 "custom_object": name or seed.get("custom_object_id"),
-                "filter_group": (seed.get("group") or {}).get("name")
-                or seed.get("group_id"),
+                "filter_group": (
+                    ((seed.get("group") or {}).get("name") or seed["group_id"])
+                    if seed.get("group_id")
+                    else ALL_RECORDS
+                ),
                 "group_id": seed.get("group_id"),
                 # What the script can actually select — the authoritative answer,
                 # since fields_ids is write-only.
@@ -171,22 +180,44 @@ def _resolve_filter_group(
     )
 
 
+def _segment_coverage(
+    client: KizenClient, object_id: str, filter_group: dict[str, Any]
+) -> dict[str, int] | None:
+    """How many of the object's records the segment covers, or None if the
+    counts can't be had — they only feed a warning, so they never sink a plan."""
+    query = (filter_group.get("config") or {}).get("query") or []
+    try:
+        return {
+            "segment": records_api.count_records(client, object_id, query),
+            "total": records_api.count_records(client, object_id, []),
+        }
+    except (KizenAPIError, KeyError, TypeError, ValueError):
+        return None
+
+
 def plan_add_seed(
     connector: str,
     *,
     custom_object: str,
-    group: str,
+    group: str | None = None,
     fields: list[str] | None = None,
     regenerate: bool = True,
 ) -> dict[str, Any]:
-    """Preview adding (or replacing) one seeded object on a connector."""
+    """Preview adding (or replacing) one seeded object on a connector.
+
+    Without a ``group`` the seed covers every record of the object. With one,
+    the plan also carries ``coverage`` (segment vs. object record counts) so the
+    preview can say how many records the segment leaves out.
+    """
     config = load_env_config()
     with KizenClient(config) as client:
         detail = sc_api.get_smart_connector(client, connector)
         by_api, by_id = _object_lookup(client)
         object_id = _resolved(custom_object, by_api, by_id, "custom object")
         object_name = by_id.get(object_id, custom_object)
-        filter_group = _resolve_filter_group(client, object_id, group)
+        filter_group = (
+            _resolve_filter_group(client, object_id, group) if group else None
+        )
 
         field_ids: list[str] = []
         field_names: list[str] = []
@@ -234,7 +265,7 @@ def plan_add_seed(
         ]
         new_seed: dict[str, Any] = {
             "custom_object_id": object_id,
-            "group_id": filter_group["id"],
+            "group_id": filter_group["id"] if filter_group else None,
         }
         if field_ids:
             new_seed["fields_ids"] = field_ids
@@ -242,13 +273,21 @@ def plan_add_seed(
             # Reuse the row so the seed is updated rather than swapped out.
             new_seed["id"] = replacing["id"]
 
+        coverage = (
+            _segment_coverage(client, object_id, filter_group) if filter_group else None
+        )
+
     draft = detail.get("last_draft_script") or {}
-    return {
+    plan: dict[str, Any] = {
         "env": config.name,
         "connector": _connector_ref(detail),
         "connector_api_name": detail.get("api_name"),
         "custom_object": object_name,
-        "filter_group": filter_group.get("name") or filter_group["id"],
+        "filter_group": (
+            (filter_group.get("name") or filter_group["id"])
+            if filter_group
+            else ALL_RECORDS
+        ),
         "fields": field_names or None,
         "view": f"kizen.{object_name}",
         "replacing": bool(replacing),
@@ -257,6 +296,9 @@ def plan_add_seed(
         "script_id": draft.get("id"),
         "source_file_id": (detail.get("source_file") or {}).get("id"),
     }
+    if coverage:
+        plan["coverage"] = coverage
+    return plan
 
 
 def plan_remove_seed(

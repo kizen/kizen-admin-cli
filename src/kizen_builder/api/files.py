@@ -69,7 +69,8 @@ def download_file(
     filename: str | None = None
     disp = resp.headers.get("content-disposition", "")
     if "filename=" in disp:
-        filename = disp.split("filename=", 1)[1].strip().strip('"') or None
+        value = disp.split("filename=", 1)[1].split(";", 1)[0]
+        filename = value.strip().strip('"') or None
     return resp.content, filename
 
 

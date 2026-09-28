@@ -24,7 +24,8 @@ The `--settings-file` is an optional **JSON list of shaping ops** applied
 [
   { "type": "object",  "object_id": "<object_uuid>", "key": "all_records", "level": "edit" },
   { "type": "field",   "object_id": "<object_uuid>", "field_id": "<field_uuid>", "level": "view" },
-  { "type": "section", "section_key": "automations", "value": true }
+  { "type": "section", "section_key": "homepages_section",
+    "value": { "enabled": true, "customize_homepages": true } }
 ]
 ```
 
@@ -43,7 +44,7 @@ kizen permissions group-create --name "Sales Ops" --settings-file ops.json --dry
 |--------|------|--------|
 | `object` | `object_id`, `key`, `level` | Set an object-level permission (e.g. `all_records`, `create_record`) to `level`. |
 | `field`  | `object_id`, `field_id`, `level` | Set a per-field control to `level`. |
-| `section` | `section_key`, `value` | Toggle/set an app-section permission. |
+| `section` | `section_key`, `value` | Replace one `*_section` (the wire key, e.g. `dashboards_section`) with its **complete** dict — `enabled` plus every control the section carries. Read the current one with `permissions group <name> --raw`. |
 
 `level` is a level **name** (`none`, `view`, `edit`, `remove`, …) or its integer
 index — the valid range per control comes from that control's `allowed_access`
@@ -52,7 +53,8 @@ and `group-update` reject an out-of-range `level` for an `object` op at plan
 time (e.g. `associated_records: none`, which has no `none` in its
 `allowed_access`) with a `PlanError` naming the control and its valid
 levels, instead of sending it and letting the server silently clamp it — see
-"Write model" below. *(confirmed live 2026-09-01)*
+"Write model" below. *(confirmed live 2026-09-01)* A `section` op whose `value`
+is not a dict (e.g. `true`) is also a `PlanError`, naming the op's index.
 
 ## Gotchas
 
@@ -99,6 +101,16 @@ and only resets leaf values, which is why `group-create` needs a `--base`.
 - **Sections** are written with `PATCH /api/permission-group/{id}` and the
   **complete** section dict — partials 400
   (`"customize_homepages: This field is required."`).
+- **A disabled `automations_section` reads back as just `{"enabled": false}`**,
+  even when a create sent the complete dict. Enabled, it reads back as
+  `{"enabled": true, "automations": {"view": bool, "edit": bool, "remove":
+  bool}, "execution_history": {"view": bool}}`. Other sections, e.g.
+  `dashboards_section`, keep their controls when disabled, with the values
+  zeroed. *(confirmed live 2026-09-25)* So to enable a disabled
+  `automations_section`, write that complete shape out yourself: the
+  read-back has no controls to copy, and by the partials rule above a bare
+  `{"enabled": true}` should 400. That last step follows from the rule and
+  has not been exercised on its own.
 - **Custom object + field perms** go through a different endpoint:
   `PATCH /api/permission-group/{id}/object-update` with
   `{custom_object: {id}, field?: {id}, key?, permission_level: 0-3}`. Three
@@ -166,8 +178,8 @@ full-group PUT, so the server's cross-field-rule normalization on those two
 endpoints still applies (see "Write model" above, case 2) — deliberately:
 reimplementing that rule engine client-side isn't in scope. Two consequences
 in the CLI:
-- A `change` preview line for an `object`/`field` op reads e.g. `"Records:
-  view -> edit (subject to server rules)"` when the control already has a
+- A `change` preview line for an `object`/`field` op reads e.g. `"All Policy
+  Records: view -> edit (subject to server rules)"` when the control already has a
   live entry — the target level is what was asked for, not a guarantee, since
   a later op in the same plan (or the group's pre-existing state) can still
   trigger a cross-field normalization that changes the outcome.

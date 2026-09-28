@@ -29,8 +29,8 @@ seeds_app = typer.Typer(
     help=(
         "Seed a connector with rows from other Kizen objects, exposed to its SQL "
         "as a `kizen.<object>` view so incoming data can be joined against what's "
-        "already in Kizen. A seed selects rows via a saved filter group (segment) "
-        "on the seeded object."
+        "already in Kizen. A seed covers every record of the seeded object, or "
+        "only those in a saved filter group (segment) given with --group."
     ),
     no_args_is_help=True,
 )
@@ -72,7 +72,7 @@ def smart_connectors_seeds_list(
         if not results:
             console.print(
                 "[dim]No seeds. Add one with `smart-connectors seeds add "
-                f"{connector} --object <o> --group <filter group>`.[/dim]"
+                f"{connector} --object <o>`.[/dim]"
             )
 
     out.render(
@@ -93,12 +93,13 @@ def smart_connectors_seeds_add(
     obj: str = typer.Option(
         ..., "--object", "-o", help="Object api_name (or UUID) to seed from."
     ),
-    group: str = typer.Option(
-        ...,
+    group: str | None = typer.Option(
+        None,
         "--group",
         "-g",
         help="Saved filter group (segment) name or UUID on that object — see "
-        "`kizen filter-groups list <object>`. NOT a field category.",
+        "`kizen filter-groups list <object>`. NOT a field category. Omit it to "
+        "seed all records.",
     ),
     field: list[str] = typer.Option(
         [],
@@ -144,7 +145,7 @@ def smart_connectors_seeds_add(
         t.add_row("object", plan["custom_object"])
         t.add_row("filter group", plan["filter_group"])
         t.add_row(
-            "fields", ", ".join(plan["fields"]) if plan["fields"] else "all seedable"
+            "fields", ", ".join(plan["fields"]) if plan["fields"] else "kizen_id only"
         )
         t.add_row("SQL view", plan["view"])
         t.add_row(
@@ -152,6 +153,17 @@ def smart_connectors_seeds_add(
             "yes" if plan["regenerate"] else "[yellow]no[/yellow]",
         )
         target.print(t)
+        coverage = plan.get("coverage")
+        if coverage and coverage["segment"] < coverage["total"]:
+            target.print(
+                f"[yellow]![/yellow] the segment covers {coverage['segment']} of "
+                f"{coverage['total']} records — records outside it read as not "
+                "found to the SQL, so a match-or-create connector re-creates them"
+            )
+        elif group and not coverage:
+            target.print(
+                "[dim]couldn't count the segment's records to check coverage[/dim]"
+            )
         if not plan["regenerate"]:
             target.print(
                 "[yellow]![/yellow] without a refresh the view won't exist for the "

@@ -92,7 +92,7 @@ def smart_connectors_run(
         err_console.print(f"[red]error:[/red] {e}")
         raise typer.Exit(code=1) from e
     except Exception as e:  # runner surfaces SQL errors as exceptions
-        err_console.print(f"[red]run failed:[/red] {e}")
+        err_console.print(f"[red]run failed:[/red] {escape(str(e))}", emoji=False)
         raise typer.Exit(code=1) from e
 
     if json_out:
@@ -122,7 +122,9 @@ def smart_connectors_run(
         f"{stats.get('num_rows', '?')} total rows.[/dim]"
     )
     if meta.get("error"):
-        err_console.print(f"[yellow]SQL error:[/yellow] {meta['error']}")
+        err_console.print(
+            f"[yellow]SQL error:[/yellow] {escape(str(meta['error']))}", emoji=False
+        )
 
 
 @smart_connectors_app.command("add-input")
@@ -205,7 +207,10 @@ def smart_connectors_push(
         diff_console.print(
             f"[bold]Diff vs remote {plan['script_status'] or 'draft'} {plan['script_id']}:[/bold]"
         )
-        diff_console.print(plan["diff"] or "[dim](no textual diff)[/dim]")
+        if plan["diff"]:
+            diff_console.print(plan["diff"], markup=False, emoji=False, soft_wrap=True)
+        else:
+            diff_console.print("[dim](no textual diff)[/dim]")
     if publish:
         diff_console.print(
             "[yellow]--publish set:[/yellow] after the update the output sample "

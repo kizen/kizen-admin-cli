@@ -24,14 +24,25 @@ automation steps).
 - `errors/html_404.html` — the HTML body the API returns on 404 (e.g. a wrong
   path such as the old trailing-slash execution-detail URL), used to test
   error extraction.
-- `permissions/*.json` — hand-authored (not captured live) to a trimmed but
-  representative shape: `permission_group_detail.json` carries one section
-  permission in each wire dialect (`view_all_dashboards` as a bare bool,
-  `manage_automations` as `{view, edit, remove}`) plus one contacts block and
-  one custom object, each with a field. `permissions_meta_data.json` is the
-  matching catalog. `permission_group_list.json`, `role_list.json`, and
-  `role_detail.json` round out the read/resolve surface. Invented UUIDs
-  follow `conftest.py`'s `00000000-0000-4000-8000-…` convention.
+- `permissions/permission_group_detail.json` and `permissions_meta_data.json`
+  — trimmed live captures (`kizen permissions group --raw` / `meta`),
+  2026-09-25. The group carries one section control in each wire dialect
+  (`homepages_section.customize_homepages` as a bare bool,
+  `dashboards_section.customize_dashboards` as `{view, edit, remove}`) plus
+  the contacts block and one custom object, each with `all_records`,
+  `associated_records` and its field entries. The captured group is a
+  `plan_create_permission_group()` default build, read back as-is, except
+  for two values set before the create: `customize_homepages: true` and
+  `dashboards_section = {enabled: true, customize_dashboards: {view: true,
+  edit: true, remove: false}}`. A plain default build zeroes both, which
+  breaks the `describe_group`, section-diff and reset tests that rely on
+  them, so recapture with the same two values. `summary` is recounted to
+  match the trimmed controls rather than the tenant's. The meta file is the
+  matching catalog: those two sections, those two control descriptors, and
+  `order` trimmed to match. `permission_group_list.json`, `role_list.json`, and
+  `role_detail.json` are still hand-authored and round out the read/resolve
+  surface. UUIDs and the group name are replaced with `conftest.py`'s
+  `00000000-0000-4000-8000-…` convention and `Sample Group`.
 
 ## Coverage
 

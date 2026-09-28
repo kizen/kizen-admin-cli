@@ -106,7 +106,7 @@ def smart_connectors_send_webhook(
     Webhook connectors have no dry run — the receiver is the trigger, and
     `start-flow` doesn't apply to them. Requests are batched on the connector's
     cadence rather than processed per request, so expect up to a full cadence
-    interval before an execution shows up in `executions`.
+    interval before an execution shows up in `executions list`.
     """
     text = Path(body[1:]).read_text() if body.startswith("@") else body
     try:
@@ -161,7 +161,7 @@ def smart_connectors_send_webhook(
     console.print(
         f"[dim]Processing is batched on the connector's cadence "
         f"({result['cadence']}s) — an execution should appear within that window: "
-        f"`smart-connectors executions {result['connector']}`.[/dim]"
+        f"`smart-connectors executions list {result['connector']}`.[/dim]"
     )
 
 
@@ -300,8 +300,8 @@ def smart_connectors_start_flow(
 ) -> None:
     """Queue an execution of the connector (dry run unless --live).
 
-    Runs are asynchronous; watch them with `smart-connectors executions`, which
-    surfaces the executor's own error for a failed run.
+    Runs are asynchronous; watch one with `smart-connectors executions get`,
+    which shows the executor's own error for a failed run.
 
     Webhook connectors aren't started this way — they run on a real inbound POST
     to their webhook endpoint, batched on the connector's cadence.
@@ -349,6 +349,7 @@ def smart_connectors_start_flow(
         f"{result['connector']} — execution {result['execution']}"
     )
     console.print(
-        f"[dim]Watch it: `smart-connectors executions {result['connector']}"
-        f"{' --include-dry-run' if not live else ''}`.[/dim]"
+        f"[dim]Watch it: `smart-connectors executions get {result['connector']} "
+        f"{result['execution']}`; history: `smart-connectors executions list "
+        f"{result['connector']}{' --include-dry-run' if not live else ''}`.[/dim]"
     )
