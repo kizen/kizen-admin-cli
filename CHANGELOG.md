@@ -22,6 +22,16 @@ called out explicitly under **Changed** or **Removed**.
   `kizen/kizen-admin-cli`. The command is still `kizen` and the installed
   package is still `kizen_builder`, so nothing about invoking or importing
   the tool changes.
+- **`smart-connectors seeds add` no longer requires `--group`, and leaving it
+  out seeds every record of the object.** That's the safe default: a segment
+  seed makes records outside the segment read as "not found" to the SQL, so a
+  match-or-create connector re-creates them on every run. When you do pass
+  `--group`, the preview now warns (without blocking) if the segment covers
+  fewer records than the object has, e.g. "covers 5 of 7 records". `seeds list`
+  shows such a seed's filter group as `all records` instead of `—`, and `pull`
+  now exports its rows instead of warning you to hand-author the file. The
+  preview's `fields` line now says `kizen_id only` when no `--field` is given,
+  which is what the server actually exposes; it used to claim "all seedable".
 
 ### Added
 
