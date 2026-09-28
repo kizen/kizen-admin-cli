@@ -267,6 +267,16 @@ uv run python scripts/dump_cli_tree.py | diff scripts/cli-tree-baseline.txt -
 `code-steps` — goes at the root of `src/kizen_builder/docs/` rather than under
 `specs/`, and must be added to `GUIDE_TOPICS` in `docs.py`.
 
+**Printing text the CLI didn't write.** `console.print` parses its string as
+rich markup and emoji shortcodes, so SQL, code, logs and server messages can
+crash it (`[/.-]`) or lose text (`row[field]`, the `:cd:` in an IPv6
+address). When the whole string is remote, pass
+`markup=False, emoji=False, soft_wrap=True` (the last stops the 220-column
+console from hard-wrapping long lines). When a remote value sits inside our
+own styling, escape only the value and pass `emoji=False`:
+`err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)`, with
+`escape` from `rich.markup`. A table cell takes `rich.text.Text(value)`.
+
 **A new automation trigger or step type**, in order:
 
 1. Create `Action*Config(BaseModel, extra="allow")` in

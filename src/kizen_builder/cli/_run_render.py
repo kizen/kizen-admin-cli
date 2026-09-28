@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from rich.markup import escape
+
 from kizen_builder import output as out
 from kizen_builder.cli._shared import console
 from kizen_builder.tools import automations as auto_tools
@@ -80,16 +82,16 @@ def print_step_log(index: int, entry: dict[str, Any]) -> None:
         label += f" ({step_type})"
     if desc:
         label += f" — {desc}"
-    console.print(f"[bold]{label}[/bold]")
+    console.print(f"[bold]{escape(label)}[/bold]", emoji=False)
 
     log = entry.get("detailed_log")
     if isinstance(log, dict) and ("stdout" in log or "traceback" in log):
         stdout = log.get("stdout") or ""
         if stdout:
-            console.print(f"  stdout: {stdout}")
+            console.print(f"  stdout: {escape(str(stdout))}", emoji=False)
         traceback = log.get("traceback")
         if traceback:
-            console.print(f"  [red]{traceback}[/red]")
+            console.print(f"  [red]{escape(str(traceback))}[/red]", emoji=False)
         if not stdout and not traceback:
             console.print("  [dim](empty)[/dim]")
     elif isinstance(log, dict) and set(log) == {"logs"}:
@@ -99,7 +101,7 @@ def print_step_log(index: int, entry: dict[str, Any]) -> None:
         if lines:
             console.print(f"  [bold]logs[/bold] ({len(lines)})")
             for line in lines:
-                console.print(f"    {line}")
+                console.print(f"    {line}", markup=False, emoji=False, soft_wrap=True)
         else:
             console.print(
                 '  [dim]logs: (none — use outputs.log("…") to emit; plain '
@@ -107,7 +109,12 @@ def print_step_log(index: int, entry: dict[str, Any]) -> None:
             )
     else:
         dumped = json.dumps(log, indent=2, default=str)
-        console.print("  " + dumped.replace("\n", "\n  "))
+        console.print(
+            "  " + dumped.replace("\n", "\n  "),
+            markup=False,
+            emoji=False,
+            soft_wrap=True,
+        )
     console.print()
 
 

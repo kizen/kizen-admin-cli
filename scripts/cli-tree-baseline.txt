@@ -3312,8 +3312,8 @@
 │                    and optionally publish it live. Previews the diff and confirms first.         │
 │ seeds              Seed a connector with rows from other Kizen objects, exposed to its SQL as a  │
 │                    `kizen.<object>` view so incoming data can be joined against what's already   │
-│                    in Kizen. A seed selects rows via a saved filter group (segment) on the       │
-│                    seeded object.                                                                │
+│                    in Kizen. A seed covers every record of the seeded object, or only those in a │
+│                    saved filter group (segment) given with --group.                              │
 │ executions         Inspect a connector's executions (runs). `list <connector>` shows its run     │
 │                    history; `get <connector> <id>` shows one run — status, the full error,       │
 │                    per-step record counts, and its files; `download` saves the run's Excel       │
@@ -3656,8 +3656,8 @@
  Usage: smart-connectors seeds [OPTIONS] COMMAND [ARGS]...                                          
                                                                                                     
  Seed a connector with rows from other Kizen objects, exposed to its SQL as a `kizen.<object>` view 
- so incoming data can be joined against what's already in Kizen. A seed selects rows via a saved    
- filter group (segment) on the seeded object.                                                       
+ so incoming data can be joined against what's already in Kizen. A seed covers every record of the  
+ seeded object, or only those in a saved filter group (segment) given with --group.                 
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -3680,10 +3680,10 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ *  --object      -o                     <str>  Object api_name (or UUID) to seed from.           │
 │                                                [required]                                        │
-│ *  --group       -g                     <str>  Saved filter group (segment) name or UUID on that │
+│    --group       -g                     <str>  Saved filter group (segment) name or UUID on that │
 │                                                object — see `kizen filter-groups list <object>`. │
-│                                                NOT a field category.                             │
-│                                                [required]                                        │
+│                                                NOT a field category. Omit it to seed all         │
+│                                                records.                                          │
 │    --field       -f                     <str>  Field api_name to bring along (repeatable).       │
 │                                                kizen_id always comes.                            │
 │    --regenerate      --no-regenerate           Refresh the draft's config so the kizen.<object>  │

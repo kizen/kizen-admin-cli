@@ -236,8 +236,16 @@ CLI: `kizen smart-connectors seeds list|add|remove`. The wire details:
   seeded object — confirmed against
   `GET /api/custom-objects/{object}/filter-groups`, and *not* a field category
   id. A category id 400s with the misleading "object does not exist".
+- **`group_id: null` seeds every record of the object** (the schema marks it
+  `nullable`; stored and regenerated into a working seed table, confirmed live
+  2026-09-25). `seeds add` sends it when `--group` is omitted.
+- A segment seed exposes only the segment's records, so a record outside it
+  reads as not found to the SQL — a match-or-create connector re-creates it on
+  every run. `seeds add --group` warns when the segment covers fewer records
+  than the object has.
 - `fields_ids` (write-only — it doesn't come back on a read) picks which fields
-  come along; the server always includes `kizen_id`.
+  come along; the server always includes `kizen_id`. Omitting it exposes only
+  `kizen_id` (confirmed live 2026-09-25).
 - Only the field types in `metadata.kizen_data_seeds_allowed_field_types` can be
   seeded.
 
@@ -253,7 +261,8 @@ adding a seed doesn't discard SQL you've been iterating on.
 `pull` **exports each seeded object's rows** to `data/<seed name>` — the seed
 table's `name` verbatim, since the runtime appends no extension, so
 `orders.csv` and `webhooks` both mean what they say. Rows come from the same
-saved filter group the live run uses, following the seed table's
+saved filter group the live run uses — or from every record, for a null
+group — following the seed table's
 `columns_mapping` exactly. `--seed-limit` caps rows per object (default 1000,
 `0` for all).
 
