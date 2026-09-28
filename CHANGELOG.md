@@ -22,6 +22,16 @@ called out explicitly under **Changed** or **Removed**.
   `kizen/kizen-admin-cli`. The command is still `kizen` and the installed
   package is still `kizen_builder`, so nothing about invoking or importing
   the tool changes.
+- **`smart-connectors seeds add` no longer requires `--group`, and leaving it
+  out seeds every record of the object.** That's the safe default: a segment
+  seed makes records outside the segment read as "not found" to the SQL, so a
+  match-or-create connector re-creates them on every run. When you do pass
+  `--group`, the preview now warns (without blocking) if the segment covers
+  fewer records than the object has, e.g. "covers 5 of 7 records". `seeds list`
+  shows such a seed's filter group as `all records` instead of `—`, and `pull`
+  now exports its rows instead of warning you to hand-author the file. The
+  preview's `fields` line now says `kizen_id only` when no `--field` is given,
+  which is what the server actually exposes; it used to claim "all seedable".
 
 ### Added
 
@@ -169,6 +179,22 @@ called out explicitly under **Changed** or **Removed**.
   the op's index and the expected shape. `group-update` used to fail with an
   `AttributeError` traceback, and `group-create` sent the bad value to the
   server.
+- **`smart-connectors push` no longer crashes on bracketed SQL, and code,
+  logs and errors print in full.** A changed SQL line containing something
+  like `[/.-]` made `push` (with or without `--dry-run`/`--json`) exit 1 with
+  a `MarkupError` before showing the diff. The same parsing silently deleted
+  anything shaped like `[word]` from text the CLI prints but didn't write:
+  `row[field]` in a code_step diff showed as `row`, the step status in
+  `automations start --wait` (`[completed]`, `[failed]`) never appeared, and
+  server or runner error messages could crash the error handler itself.
+  Emoji shortcodes were swapped in too, so an IPv6 address like
+  `2001:db8:ab:cd::1` lost its `:cd:`. SQL, code_step values in diffs, run
+  logs and tracebacks, `code test` output and HTTP bodies, errors reported
+  through the shared `error:` handler, and the `run failed:`, `SQL error:`
+  and `plan error:` lines now print character for character, and long SQL,
+  JSON and log lines are no longer hard-wrapped at 220 columns. Table cells
+  are unchanged.
+
 - **Compiled email `content` no longer diverges from what Kizen's own
   builder produces for the same layout.** Every recipient's email now
   carries a real `font-family` for body text (`Root.props.fontFamily`,

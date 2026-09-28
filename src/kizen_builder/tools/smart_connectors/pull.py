@@ -19,7 +19,11 @@ from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors._common import _META_KEYS, MARKER_NAME
-from kizen_builder.tools.smart_connectors.seeds import _resolve_filter_group, _seed_rows
+from kizen_builder.tools.smart_connectors.seeds import (
+    ALL_RECORDS,
+    _resolve_filter_group,
+    _seed_rows,
+)
 
 
 def _pick_script(detail: dict[str, Any], *, use_live: bool) -> dict[str, Any]:
@@ -103,8 +107,9 @@ def _export_seed_data(
     """Write each seeded object's rows to ``data/<seed name>`` for local runs.
 
     The rows come from the seed's saved filter group — whose stored
-    ``config.query`` is already in the record-search format — so the local copy
-    is the same population the live run sees. Columns follow the seed table's
+    ``config.query`` is already in the record-search format — or from every
+    record for a null group, so the local copy is the same population the live
+    run sees. Columns follow the seed table's
     ``columns_mapping`` exactly, since that's the schema the script was written
     against; ``kizen_id`` is the record's own id, which the server always
     includes.
@@ -140,8 +145,13 @@ def _export_seed_data(
             continue
 
         try:
-            group = _resolve_filter_group(
-                client, seed["custom_object_id"], seed["group_id"]
+            # A null group seeds every record, so it searches with no query.
+            group: dict[str, Any] = (
+                _resolve_filter_group(
+                    client, seed["custom_object_id"], seed["group_id"]
+                )
+                if seed["group_id"]
+                else {"name": ALL_RECORDS}
             )
             rows = records_api.search_records(
                 client,

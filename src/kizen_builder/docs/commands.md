@@ -254,11 +254,12 @@ kizen smart-connectors start-flow <connector> [--live] [--force]   # queue a run
 
 # smart connectors — read from other Kizen objects (exposed to the SQL as a kizen.<object> view)
 kizen smart-connectors seeds list <connector>
-kizen smart-connectors seeds add <connector> --object <o> --group <saved filter group> [--field f ...]
+kizen smart-connectors seeds add <connector> --object <o> [--group <saved filter group>] [--field f ...]
 kizen smart-connectors seeds remove <connector> --object <o>
 # --group is a saved filter group / segment (`kizen filter-groups list <o>`), NOT a field category.
+# Omit it to seed all records; why a segment seed can duplicate records: kizen docs show smart-connectors.
 # `add` refreshes the script config so the view exists (your SQL is kept) — without that a seed does nothing.
-# `pull` exports each seeded object's rows to data/ from the same filter group, so `run` hits the same joins.
+# `pull` exports each seeded object's rows to data/ from the same filter group (or all records), so `run` hits the same joins.
 
 # smart connectors — webhook connectors (triggered by a real inbound POST, never by start-flow)
 kizen smart-connectors webhook-sample <path> --body '<json>' --employee <email|name|uuid>  # the reference file they need

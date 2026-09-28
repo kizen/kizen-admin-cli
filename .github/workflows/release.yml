@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0 # the changelog step reads the whole file, not the diff
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           python-version: "3.13"
@@ -95,7 +95,7 @@ jobs:
   #     id-token: write            # PyPI trusted publishing — no API token
   #   steps:
   #     - uses: actions/checkout@v7
-  #     - uses: astral-sh/setup-uv@v10.0.1
+  #     - uses: astral-sh/setup-uv@v10.2.0
   #     - run: uv build
   #     - run: uv publish          # resolves OIDC credentials automatically
   # ---------------------------------------------------------------------------
