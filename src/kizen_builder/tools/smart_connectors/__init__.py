@@ -72,6 +72,7 @@ from kizen_builder.tools.smart_connectors.authoring._helpers import (
 from kizen_builder.tools.smart_connectors.authoring.configure_flow import (
     _LOAD_WIRE_KEYS,
     _MATCH_ACTION_KEYS,
+    PartialSaveError,
     _load_refs,
     _resolve_field,
     _validated_ref,
@@ -167,6 +168,7 @@ __all__ = [
     "EXECUTION_FILES",
     "ExecutionFile",
     "MARKER_NAME",
+    "PartialSaveError",
     "SETTABLE_CONNECTOR_STATUSES",
     "SavedFile",
     "WEBHOOK_SAMPLE_COLUMNS",

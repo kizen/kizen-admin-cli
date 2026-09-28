@@ -103,8 +103,8 @@ can't work.
 | Key | Type | Notes |
 |-----|------|-------|
 | `connector` | string | Connector api_name or UUID. Optional — the CLI argument wins when both are given. |
-| `execution_variables` | `ExecutionVariable[]` | Optional. **Saving replaces the connector's existing set**; anything live but not re-declared is dropped (the plan lists them). Omit the key entirely to leave the live set alone and only write load steps. |
-| `loads` | `LoadStep[]` | **Required**, at least one. One entry per object written to. |
+| `execution_variables` | `ExecutionVariable[]` | Optional. **Saving replaces the connector's existing set.** A re-declared variable is updated in place: the CLI sends it by id, so its uuid and every rule that references it survive. Anything live but not re-declared is dropped (the plan lists them), and a spec rule can't reference it. The drop is the save's **last** write, and the rules still pointing at a dropped variable are removed with it. Omit the key entirely to leave the live set alone and only write load steps. Confirmed live 2026-09-25. |
+| `loads` | `LoadStep[]` | **Required**, at least one. One entry per object written to. The spec is the whole flow: each entry updates the live step with the same `custom_object` and `scope` in place (by id, several with one key pair in `order` order), an entry with no live counterpart is created, and **a live step the spec no longer lists is deleted** along with its rules. The plan lists all three. An updated step keeps the automations picked for it in the UI (new-record and other-match lists). Confirmed live 2026-09-25. |
 
 ## `ExecutionVariable`
 
@@ -133,9 +133,9 @@ type's legal `input_format` / `output_format` values.
 | `matching_rules` | `MatchingRule[]` | **Required**, at least one. How to tell whether the row is an existing record. |
 | `field_mapping_rules` | `FieldMappingRule[]` | **Required**, at least one. Which variable writes to which field. |
 | `scope` | string | Output table feeding this step. Defaults to the connector's only output table when it has exactly one. |
-| `order` | int | Execution order (0-based). Defaults to the order listed here. |
+| `order` | int | Execution order (0-based). Defaults to the order listed here. Must be unique across the spec's steps: Kizen rejects a flow in which two steps share one, so the plan refuses it. Confirmed live 2026-09-25. |
 | `type` | `"csv_load"` | The only load type. Default. |
-| `exposes_variable` | string | Name for the uuid variable carrying this step's matched/created record id, for a later step to reference. |
+| `exposes_variable` | string | Name for the uuid variable carrying this step's matched/created record id, for a later step to reference. On a step that already exposes one, a new name renames it and keeps its uuid; leaving the key out keeps the live one. A name already held by a live execution variable or by a *different* live step is refused at plan time, since Kizen rejects a reused name even when its holder is deleted in the same save. |
 | `automation_trigger_config` | string | Whether automations fire for records this step writes (e.g. `fire_all`). Server default when unset. |
 
 ## `MatchingRule`
@@ -205,6 +205,20 @@ All confirmed end-to-end from CSV text values:
 - **Load steps are saved in rounds**, not one call, when a step references a
   record id an earlier step creates — that variable only gets a UUID once the
   earlier step exists. The CLI handles the rounds and reports how many it needed.
+  Re-running a spec updates the connector in place, usually in one round, since
+  the live steps' exposed variables already have uuids. Every round sends every
+  live step, the ones not yet saved as they were, so no round removes a rule the
+  spec keeps. Confirmed live 2026-09-25.
+- **A save is several PATCHes, and only each one is all-or-nothing.** Kizen checks
+  a PATCH in full before writing any of it, but a later one can still fail after
+  an earlier one landed. When that happens, `configure-flow` re-reads the
+  connector and reports which write failed, each load step's state as the
+  re-read shows it (`updated`, `previous config`, `created`, `not created yet`,
+  `deleted`, `not deleted yet`, or `unknown` when the re-read fails too) with
+  its matching/mapping rule counts before, now, and in the spec, and the
+  connector's `status` (an `operational` one is live in that state). A write
+  that timed out but landed shows as landed. Re-running the spec picks up from
+  there. With `--json` the report is the JSON on stdout. Exit code 1.
 - **`configure-flow` doesn't make the connector run.** A live run also needs a
   published script (`push --publish`) and `status: operational`
   (`smart-connectors activate`) — without the latter a live run sits queued

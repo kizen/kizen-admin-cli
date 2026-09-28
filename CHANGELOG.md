@@ -246,6 +246,25 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Re-running `smart-connectors configure-flow` updates the connector in place.**
+  It used to recreate every execution variable, which silently deleted every
+  matching and mapping rule that referenced one, and then fail with `An
+  execution variable with this name already exists` before it could rebuild
+  them. It now sends live variables, load steps and exposed variables back by
+  id, so a re-run changes only what the spec changed. A live load step the spec
+  no longer lists is deleted, and the plan lists which load steps it will
+  update, create and delete, in place of "replacing N existing load step(s)".
+  Dropped variables are removed last, and a step's UI-picked automations are
+  kept. An exposed-variable name another live step already holds, a variable
+  named like a live exposed one, two load steps with one `order`, and a
+  reference to a variable that won't exist after the save are now refused at
+  plan time instead of failing partway through.
+- **A `configure-flow` save that fails partway now says what state it left.**
+  If a write fails after an earlier one succeeded, the command re-reads the
+  connector and prints which write failed, each load step's state and rule
+  counts before, now and in the spec as the re-read shows them, and whether the
+  connector is live in that state (JSON with `--json`). Re-running the spec is
+  safe.
 - **The `permission-group` doc's `section` op example now works.** It showed
   `{"section_key": "automations", "value": true}`, which matches no section
   and crashed `group-update`. The example now uses a real wire key

@@ -522,6 +522,53 @@ def smart_connectors_suggest_variables(
     )
 
 
+def _partial_save_failure(report: dict[str, Any], *, json_out: bool) -> NoReturn:
+    """Report a configure-flow save that stopped after earlier writes landed."""
+    if json_out:
+        out.emit_json(report)
+        raise typer.Exit(code=1)
+
+    def counts(c: dict[str, int] | None) -> str:
+        return f"{c['matching']} / {c['mapping']}" if c else "-"
+
+    err_console.print(
+        f"[red]error:[/red] configure-flow stopped at {report['failed_write']}: "
+        f"{report['error']}"
+    )
+    err_console.print("Already saved: " + ", ".join(report["completed_writes"]) + ".")
+    if report["reread_error"]:
+        err_console.print(
+            f"[yellow]Couldn't re-read the connector ({report['reread_error']}), "
+            f"so the state of every load step is unknown.[/yellow]"
+        )
+    err_console.print(
+        f"Load steps of {report['connector']} (matching / mapping rule counts):"
+    )
+    t = Table()
+    for col in ("load", "order", "state", "before", "now", "spec"):
+        t.add_column(col)
+    for row in report["loads"]:
+        t.add_row(
+            row["load"],
+            str(row["order"]),
+            row["state"],
+            counts(row["before"]),
+            counts(row["now"]),
+            counts(row["spec"]),
+        )
+    err_console.print(t)
+    status = report["status"] or "unknown"
+    err_console.print(
+        f"status: {status}"
+        + (" — the connector is live in this state." if report["live"] else "")
+    )
+    err_console.print(
+        "Re-running the same spec is safe: it addresses every variable and load "
+        "step by id, so it picks up from this state."
+    )
+    raise typer.Exit(code=1)
+
+
 @smart_connectors_app.command(
     "configure-flow",
     epilog="Spec shape (execution variables + load steps): see `kizen docs show smart-connector-flow`",
@@ -552,8 +599,10 @@ def smart_connectors_configure_flow(
 
     The spec refers to everything by name (object api_names, field api_names,
     variable names) and is resolved against live state before anything is
-    written. Note that saving execution variables replaces the connector's
-    existing set — the plan lists any that would be dropped.
+    written. Re-running a spec updates the connector in place: live variables
+    and load steps are sent back by id. The spec is the whole flow, so a live
+    variable or load step it doesn't list is removed — the plan lists what it
+    would update, create, and delete.
     """
     spec, from_stdin = _read_spec(spec_file, "smart-connector flow")
     with _connector_errors(ValidationError):
@@ -616,9 +665,21 @@ def smart_connectors_configure_flow(
             if load["exposes_variable"]:
                 lt.add_row("exposes", "(record id)", load["exposes_variable"], "")
             target.print(lt)
-        if plan["existing_loads"]:
+        changes = plan["load_changes"]
+        for verb, colour in (
+            ("update", "cyan"),
+            ("create", "green"),
+            ("delete", "red"),
+        ):
+            if changes[verb]:
+                target.print(
+                    f"[{colour}]{verb}:[/{colour}] load step(s) "
+                    + ", ".join(changes[verb])
+                )
+        if changes["delete"]:
             target.print(
-                f"[yellow]replacing[/yellow] {plan['existing_loads']} existing load step(s)"
+                "[dim]Live load steps the spec doesn't list are deleted, "
+                "with their rules.[/dim]"
             )
         if plan["deferred_loads"]:
             target.print(
@@ -639,8 +700,11 @@ def smart_connectors_configure_flow(
     ):
         return
 
-    with cli_errors(PlanError):
-        result = sc_tools.apply_configure_flow(plan)
+    try:
+        with cli_errors(PlanError):
+            result = sc_tools.apply_configure_flow(plan)
+    except sc_tools.PartialSaveError as e:
+        _partial_save_failure(e.report, json_out=json_out)
 
     if json_out:
         out.emit_json(result)
@@ -649,6 +713,7 @@ def smart_connectors_configure_flow(
         f"[green]configured[/green] {result['connector']} — "
         f"{result['loads_saved']} load step(s), "
         f"{result['variables_saved']} variable(s), in {result['rounds']} round(s)"
+        + (f", {result['loads_deleted']} deleted" if result["loads_deleted"] else "")
     )
     for name, uuid_ in (result["exposed_variables"] or {}).items():
         console.print(f"  exposes [bold]{name}[/bold] → {uuid_}")
