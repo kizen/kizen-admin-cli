@@ -1,68 +1,186 @@
 {
-  "order": [
-    "dashboards_section",
-    "automations_section",
-    "custom_object_entities",
-    "contacts_section"
-  ],
   "sections": [
     {
-      "key": "dashboards_section",
-      "label": "Dashboards",
+      "label": "Homepage",
+      "key": "homepages_section",
       "default": true,
+      "allowed_access": [
+        "view"
+      ],
+      "affordance": "switch",
       "permissions": [
         {
-          "key": "view_all_dashboards",
-          "label": "View All Dashboards",
-          "affordance": "switch",
-          "allowed_access": ["none", "view"],
-          "default": true
+          "label": "Customize Homepages",
+          "key": "customize_homepages",
+          "default": false,
+          "allowed_access": [
+            "none",
+            "remove"
+          ],
+          "affordance": "range"
         }
       ]
     },
     {
-      "key": "automations_section",
-      "label": "Automations",
-      "default": true,
+      "label": "Dashboards",
+      "key": "dashboards_section",
+      "default": false,
+      "allowed_access": [
+        "none",
+        "view"
+      ],
+      "affordance": "switch",
       "permissions": [
         {
-          "key": "manage_automations",
-          "label": "Manage Automations",
-          "affordance": "range",
-          "allowed_access": ["none", "view", "edit", "remove"],
-          "default": "view"
+          "label": "Customize Dashboards",
+          "key": "customize_dashboards",
+          "default": "remove",
+          "allowed_access": [
+            "view",
+            "edit",
+            "remove"
+          ],
+          "affordance": "range"
         }
+      ]
+    }
+  ],
+  "contacts": [
+    {
+      "label": "All Contacts",
+      "key": "all_records",
+      "default": "view",
+      "allowed_access": [
+        "none",
+        "view",
+        "edit",
+        "remove"
+      ],
+      "affordance": "range"
+    },
+    {
+      "label": "My Associated Contacts",
+      "key": "associated_records",
+      "default": "edit",
+      "allowed_access": [
+        "view",
+        "edit",
+        "remove"
+      ],
+      "affordance": "range",
+      "tooltip": "Must be at least View permission and at least the maximum permissions set on \"All Contacts\"",
+      "rule": [
+        "contacts_section__all_records",
+        "min-value"
       ]
     }
   ],
   "custom_objects": [
     {
-      "key": "records",
-      "label": "Records",
-      "affordance": "range",
-      "allowed_access": ["none", "view", "edit", "remove"],
-      "default": "view"
-    }
-  ],
-  "contacts": [
+      "label": "All {0} Records",
+      "key": "all_records",
+      "default": "view",
+      "allowed_access": [
+        "none",
+        "view",
+        "edit",
+        "remove"
+      ],
+      "affordance": "range"
+    },
     {
-      "key": "records",
-      "label": "Records",
+      "label": "My Associated {0} Records",
+      "key": "associated_records",
+      "default": "edit",
+      "allowed_access": [
+        "view",
+        "edit",
+        "remove"
+      ],
       "affordance": "range",
-      "allowed_access": ["none", "view", "edit", "remove"],
-      "default": "view"
+      "tooltip": "Must be at least View permission and at least the maximum permissions set on \"All {0} Records",
+      "rule": [
+        "__all_records",
+        "min-value"
+      ]
     }
   ],
   "default_contact_fields": {
     "email": {
-      "allowed_access": ["none", "view", "edit"],
-      "default": "edit"
+      "default": "edit",
+      "allowed_access": [
+        "none",
+        "view",
+        "edit"
+      ],
+      "rule": [
+        "or",
+        [
+          [
+            "or",
+            [
+              [
+                "contacts_section__all_records",
+                ">=",
+                "edit"
+              ],
+              [
+                "contacts_section__associated_records",
+                ">=",
+                "edit"
+              ]
+            ],
+            {
+              "return": {
+                "value": "edit",
+                "allowed_access": [
+                  "edit"
+                ]
+              },
+              "text": "Since records can be created, this required field must also have creation permissions."
+            }
+          ],
+          [
+            "and",
+            [
+              [
+                "contacts_section__all_records",
+                "<",
+                "edit"
+              ],
+              [
+                "contacts_section__associated_records",
+                "<",
+                "edit"
+              ]
+            ],
+            {
+              "return": {
+                "allowed_access": [
+                  "none",
+                  "view"
+                ]
+              }
+            }
+          ]
+        ],
+        "take-first"
+      ]
     }
   },
   "default_custom_object_fields": {
-    "notes": {
-      "allowed_access": ["none", "view", "edit"],
-      "default": "view"
+    "created": {
+      "default": "view",
+      "allowed_access": [
+        "none",
+        "view"
+      ]
     }
-  }
+  },
+  "order": [
+    "homepages_section",
+    "dashboards_section",
+    "contacts_section",
+    "custom_object_entities"
+  ]
 }

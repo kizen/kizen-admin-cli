@@ -3,8 +3,8 @@
 The default (offline) suite fakes every live-state lookup by serving
 pre-captured JSON from ``tests/fixtures/``. Most of those files are real
 sanitized captures, but nothing in this repo has ever checked whether they
-still match live — and ``tests/fixtures/permissions/*.json`` in particular are
-explicitly hand-authored, never captured live at all (see
+still match live — ``tests/fixtures/permissions/*.json`` in particular were
+hand-authored until their 2026-09-25 live recapture (see
 ``tests/fixtures/README.md``).
 
 This module is a **structural key-shape diff**, deliberately not a value
@@ -91,20 +91,21 @@ def _missing_keys(fixture: Any, live: Any, path: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# 1. permissions/permission_group_detail.json — never captured live
+# 1. permissions/permission_group_detail.json
 # ---------------------------------------------------------------------------
 
 
 def test_permission_group_detail_fixture_fidelity(drift_permission_group):  # noqa: F811
-    """The highest-value check here: this fixture was hand-authored, never
-    captured live, and nothing has ever verified it against reality.
+    """The highest-value check here: this fixture was hand-authored until it
+    was recaptured live on 2026-09-25, and three of its original control keys
+    were nowhere in live.
 
     Checks the container-level shape (always present regardless of the
     business's permission catalog) plus, for whichever `*_section` keys the
     fixture and a freshly built default group actually have in common, the
     inner shape — including the two wire dialects the fixture claims coexist:
-    `dashboards_section.view_all_dashboards` as a bare bool and
-    `automations_section.manage_automations` as a `{view, edit, remove}` dict.
+    `homepages_section.customize_homepages` as a bare bool and
+    `dashboards_section.customize_dashboards` as a `{view, edit, remove}` dict.
 
     A `*_section` key in the fixture but absent from live is *not* asserted as
     a failure — section availability is driven by the business's own
@@ -115,8 +116,8 @@ def test_permission_group_detail_fixture_fidelity(drift_permission_group):  # no
     live = drift_permission_group["live"]
 
     # Collect every finding into one report instead of stopping at the first
-    # — this fixture was never checked against reality at all, so a single
-    # failure hiding the next one behind it would waste a maintainer's time.
+    # — a single failure hiding the next one behind it would waste a
+    # maintainer's time.
     problems: list[str] = []
 
     # Container-level keys every permission group carries, whatever the
@@ -148,19 +149,19 @@ def test_permission_group_detail_fixture_fidelity(drift_permission_group):  # no
 
     # The fixture's two headline claims about wire dialects. Only assertable
     # for whichever of the two sections actually overlaps live.
-    if "dashboards_section" in overlap:
-        live_val = live["dashboards_section"].get("view_all_dashboards")
+    if "homepages_section" in overlap:
+        live_val = live["homepages_section"].get("customize_homepages")
         if not isinstance(live_val, bool):
             problems.append(
-                "dashboards_section.view_all_dashboards is no longer a bare "
+                "homepages_section.customize_homepages is no longer a bare "
                 f"bool live (got {live_val!r}, {type(live_val).__name__}) — the "
                 "fixture's bare-bool dialect claim for this key does not hold"
             )
-    if "automations_section" in overlap:
-        live_val = live["automations_section"].get("manage_automations")
+    if "dashboards_section" in overlap:
+        live_val = live["dashboards_section"].get("customize_dashboards")
         if not isinstance(live_val, dict):
             problems.append(
-                "automations_section.manage_automations is no longer a "
+                "dashboards_section.customize_dashboards is no longer a "
                 f"{{view, edit, remove}} dict live (got {live_val!r}, "
                 f"{type(live_val).__name__}) — the fixture's dict-dialect claim "
                 "for this key does not hold"
@@ -169,7 +170,7 @@ def test_permission_group_detail_fixture_fidelity(drift_permission_group):  # no
             missing_dialect_keys = {"view", "edit", "remove"} - set(live_val)
             if missing_dialect_keys:
                 problems.append(
-                    "automations_section.manage_automations is missing "
+                    "dashboards_section.customize_dashboards is missing "
                     f"{sorted(missing_dialect_keys)} from its "
                     "{view, edit, remove} dialect"
                 )

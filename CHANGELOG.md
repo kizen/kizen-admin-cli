@@ -16,14 +16,102 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Breaking: `smart-connectors executions` is now a command group, like
+  `automations runs`.** Scripts that call the old flat forms need updating:
+
+  | Before | After |
+  |---|---|
+  | `smart-connectors executions <connector>` | `smart-connectors executions list <connector>` |
+  | `smart-connectors execution-sql <connector> <eid>` | `smart-connectors executions sql <connector> <eid>` |
+
+  The old forms are removed, not aliased. `executions <connector>` now exits
+  2 with a message naming `executions list <connector>`. `executions list`
+  takes the same options and prints the same columns, CSV, and JSON as the
+  old command. `start-flow` and `send-webhook` hints point at the new
+  commands.
 - **The tool is now called Kizen Admin CLI.** `kizen --help`, the README,
   `CONTRIBUTING.md`, and the bundled reference docs all say "Kizen Admin CLI"
   where they said "Kizen Builder", and the repository URLs point at
   `kizen/kizen-admin-cli`. The command is still `kizen` and the installed
   package is still `kizen_builder`, so nothing about invoking or importing
   the tool changes.
+- **`smart-connectors set-input` can replace a connector's reference file.**
+  It used to refuse, calling the swap a Kizen platform bug. It wasn't: the
+  CLI started sample generation without the connector's file id, so the
+  script stayed pinned to the first file. `generate-sample` now sends it. A
+  replace keeps your draft SQL, regenerates only the config (`--template-sql`
+  takes the generated script instead), names any input table the new file
+  renamed, and runs the output sample, exiting 1 if that fails.
+  **If you passed `--force`, the result is different.** The flag is still
+  accepted but has no effect, and a replace no longer does what `--force`
+  used to: it keeps the draft SQL instead of writing the template SQL, waits
+  for the output sample (up to 300 s), and exits 1 if the sample fails —
+  which it will if the kept SQL still reads the old `input.<file>_csv`
+  table. To get the old result, pass `--template-sql` instead, and expect
+  exit 1 when the sample fails.
+- **`smart-connectors push --publish` runs the output sample itself.** It
+  writes the SQL, runs the sample on the connector's file, waits for it (up
+  to 300 s), and publishes only if it succeeds. It used to check the draft's
+  existing sample instead. That check refused every draft a previous publish
+  had just forked, and let an edited draft through on a sample of its old SQL.
+  If the sample fails or times out, `push --publish` exits 1 with nothing
+  published; the draft keeps your SQL. After a publish, `push` moves the
+  pull marker onto the new draft the server forks, so the next `push` from
+  the same directory works without a re-pull. The success line now says
+  "script published — live runs now use it" and shows the connector's status,
+  instead of "connector is now live". Plain `push` is unchanged.
+- **`smart-connectors activate --status` accepts only `operational` or
+  `inactive`**, the only two an update can set. `setup` and `need_attention`
+  used to reach the server and 400. The preview also warns when the
+  connector has no execution variables, which the server requires.
+
+- **`smart-connectors generate-sample` reports the tables its sample actually
+  holds.** The `output tables` line now comes from the sample zip the run just
+  produced, with row and column counts (`contacts (4 rows, 12 cols)`), rather
+  than from the connector's recognized scopes, which can be stale and made a
+  working SQL change look broken. When the two disagree, a yellow line names
+  both and notes that `configure-flow` validates against the recognized scopes,
+  which refresh on `push --publish`. `--json` gains `outputs`, `sample_file` and
+  `warnings`; `scopes` is unchanged. A sample that can't be downloaded or read
+  is a warning, not a failure.
+- **`smart-connectors seeds add` no longer requires `--group`, and leaving it
+  out seeds every record of the object.** That's the safe default: a segment
+  seed makes records outside the segment read as "not found" to the SQL, so a
+  match-or-create connector re-creates them on every run. When you do pass
+  `--group`, the preview now warns (without blocking) if the segment covers
+  fewer records than the object has, e.g. "covers 5 of 7 records". `seeds list`
+  shows such a seed's filter group as `all records` instead of `—`, and `pull`
+  now exports its rows instead of warning you to hand-author the file. The
+  preview's `fields` line now says `kizen_id only` when no `--field` is given,
+  which is what the server actually exposes; it used to claim "all seedable".
 
 ### Added
+
+- **`smart-connectors deactivate <connector>`** sets a connector `inactive`,
+  with the same preview, `--dry-run`, `--yes`, and `--json` as `activate`.
+  Edits and dry runs still work while inactive, and `activate` brings it back
+  with nothing re-done. `kizen docs show smart-connectors` gains a Lifecycle
+  section: which verbs need which status, and how to edit a live connector.
+- **`kizen smart-connectors executions get <connector> <eid>`** shows one run:
+  status, trigger, who started it, the **full** executor error, a step table
+  with valid/invalid/total record counts per stage and scope, and which of
+  its three files exist. `--json` emits the run as the API returns it, with
+  `started_by` flattened to a name. Kizen has no single-execution endpoint,
+  so this reads the executions list filtered to that id. `start-flow` now
+  prints this command for the run it queued.
+- **`kizen smart-connectors executions download <connector> <eid>`** saves a
+  run's files without the web UI. `--file report` (the default) is the
+  `.xlsx` results workbook, the only place the per-row errors and warnings
+  behind a partial success appear. `--file output` is the zip of SQL-output
+  CSVs, and `--file input` is the file the run consumed. It writes to `--out`
+  or `./<server filename>`, refuses to overwrite without `--force`, and exits
+  1 without writing when the run has no such file (a failed run has no
+  report or output zip).
+- **`kizen smart-connectors download-sample <connector>`** saves a script's
+  output-sample zip (one `<scope>.csv` per output table) without the web UI.
+  It takes the latest draft by default, `--live` for the live script, or
+  `--script <id>`, writes to `--out` or `./<server filename>`, and refuses to
+  overwrite an existing file without `--force`.
 
 - **Email template `text` blocks are now authored as structured paragraphs,
   not raw HTML — and can carry inline merge fields.** `TextBlockDef.html` is
@@ -177,6 +265,32 @@ called out explicitly under **Changed** or **Removed**.
   counts before, now and in the spec as the re-read shows them, and whether the
   connector is live in that state (JSON with `--json`). Re-running the spec is
   safe.
+- **The `permission-group` doc's `section` op example now works.** It showed
+  `{"section_key": "automations", "value": true}`, which matches no section
+  and crashed `group-update`. The example now uses a real wire key
+  (`homepages_section`) with its complete section dict, and the op table
+  says a `section` op replaces the whole section. The doc also notes that a
+  disabled `automations_section` reads back as just `{"enabled": false}`.
+- **A `section` op whose `value` is not a dict is now a `PlanError`**, on
+  both `permissions group-create --settings-file` and `group-update`, naming
+  the op's index and the expected shape. `group-update` used to fail with an
+  `AttributeError` traceback, and `group-create` sent the bad value to the
+  server.
+- **`smart-connectors push` no longer crashes on bracketed SQL, and code,
+  logs and errors print in full.** A changed SQL line containing something
+  like `[/.-]` made `push` (with or without `--dry-run`/`--json`) exit 1 with
+  a `MarkupError` before showing the diff. The same parsing silently deleted
+  anything shaped like `[word]` from text the CLI prints but didn't write:
+  `row[field]` in a code_step diff showed as `row`, the step status in
+  `automations start --wait` (`[completed]`, `[failed]`) never appeared, and
+  server or runner error messages could crash the error handler itself.
+  Emoji shortcodes were swapped in too, so an IPv6 address like
+  `2001:db8:ab:cd::1` lost its `:cd:`. SQL, code_step values in diffs, run
+  logs and tracebacks, `code test` output and HTTP bodies, errors reported
+  through the shared `error:` handler, and the `run failed:`, `SQL error:`
+  and `plan error:` lines now print character for character, and long SQL,
+  JSON and log lines are no longer hard-wrapped at 220 columns. Table cells
+  are unchanged.
 
 - **Compiled email `content` no longer diverges from what Kizen's own
   builder produces for the same layout.** Every recipient's email now
@@ -580,11 +694,11 @@ called out explicitly under **Changed** or **Removed**.
   `generate-sample` afterwards so the column list catches up. A webhook connector
   mapping fields pulled out of a JSON body proves it. The CLI's error now points
   at the stale sample instead of at the file.
-- **`smart-connectors executions` now shows why a run failed.** The executor's
-  own error (the real ClickHouse or validation message) was already in the API
-  response but dropped on the floor; it's now an `error` column, truncated in the
-  table and complete under `--json` / `--output csv`. This list is the only place
-  Kizen exposes it — there's no per-execution endpoint.
+- **`smart-connectors executions list` now shows why a run failed.** The
+  executor's own error (the real ClickHouse or validation message) was already
+  in the API response but dropped on the floor; it's now an `error` column,
+  truncated in the table and complete under `--json` / `--output csv` and in
+  `executions get`.
 
 - **Spec-file docs (`kizen docs show <shape>`) no longer point back into this
   repo's source tree.** They previously hedged incomplete sections with
@@ -664,8 +778,8 @@ called out explicitly under **Changed** or **Removed**.
 - **`configure-flow` warns when a `date`/`datetime` execution variable has no
   `output_format`.** Kizen defaults the unset format to `%m/%d/%Y`, which a
   native ISO-only date field then rejects per row — a silent "Partial
-  Success" that never appears in `executions --json`, only in an `.xlsx`
-  report downloadable from the web UI. The plan now flags it up front so the
+  Success" that never appears in `executions list --json`, only in the run's
+  `.xlsx` report (`executions download`). The plan now flags it up front so the
   format can be set explicitly before saving.
 - **`automations folders update --parent` no longer 500s.** Two stacked bugs:
   the CLI sent the parent as `parent_id`, but the wire field is

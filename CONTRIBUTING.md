@@ -194,8 +194,9 @@ src/kizen_builder/
     apply.py                     #   kizen apply
     smart_connectors.py          #   kizen smart-connectors — app, shared helpers, build/configure
     smart_connectors_seeds.py    #   kizen smart-connectors seeds
-    smart_connectors_run.py      #   webhook samples, activate, start-flow
-    smart_connectors_reads.py    #   connectors, executions, scripts, events
+    smart_connectors_run.py      #   webhook samples, activate/deactivate, start-flow
+    smart_connectors_reads.py    #   connectors, scripts, output samples, events
+    smart_connectors_executions.py #   kizen smart-connectors executions
     smart_connectors_dev.py      #   the local dev loop: pull, run, add-input, push
     upgrade.py                   #   kizen upgrade
     init.py                      #   kizen init
@@ -265,6 +266,16 @@ uv run python scripts/dump_cli_tree.py | diff scripts/cli-tree-baseline.txt -
 **A new cross-cutting topic** — one that spans surfaces, like `filters` or
 `code-steps` — goes at the root of `src/kizen_builder/docs/` rather than under
 `specs/`, and must be added to `GUIDE_TOPICS` in `docs.py`.
+
+**Printing text the CLI didn't write.** `console.print` parses its string as
+rich markup and emoji shortcodes, so SQL, code, logs and server messages can
+crash it (`[/.-]`) or lose text (`row[field]`, the `:cd:` in an IPv6
+address). When the whole string is remote, pass
+`markup=False, emoji=False, soft_wrap=True` (the last stops the 220-column
+console from hard-wrapping long lines). When a remote value sits inside our
+own styling, escape only the value and pass `emoji=False`:
+`err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)`, with
+`escape` from `rich.markup`. A table cell takes `rich.text.Text(value)`.
 
 **A new automation trigger or step type**, in order:
 

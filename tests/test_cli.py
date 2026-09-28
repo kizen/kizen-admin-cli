@@ -672,6 +672,7 @@ def test_start_wait_streams_new_history_rows_once(monkeypatch):
 
     assert result.exit_code == 0
     assert result.stdout.count("Manual") == 1
+    assert "Manual [completed]" in result.stdout
 
 
 @respx.mock

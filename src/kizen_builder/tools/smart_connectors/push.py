@@ -10,10 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from kizen_builder.api import smart_connectors as sc_api
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors._common import MARKER_NAME
+from kizen_builder.tools.smart_connectors.authoring.sample import (
+    SAMPLE_RUNNING_STATES,
+    run_output_sample,
+)
 
 
 def _read_marker(workdir: Path) -> dict[str, Any]:
@@ -130,33 +134,92 @@ def apply_push(
 ) -> dict[str, Any]:
     """Write local_sql onto the draft script (PATCH), optionally publish it.
 
-    ``publish`` requires a successful output sample generated *for the SQL
-    just written* — a sample from a previous version of the script doesn't
-    count, so this re-checks ``state`` after the PATCH rather than trusting
-    one taken before it. Without this, ``publish`` 400s with a generic
-    "Output sample file is not generated yet" that gives no hint that
-    ``generate-sample`` is the actual missing step.
+    ``publish`` runs the output sample for the SQL just written first, then
+    publishes only if it succeeds. The existing ``state`` can't be trusted: a
+    PATCH never resets it, so it's ``setup`` on a draft that publish just forked
+    and a stale ``success`` on one edited since its last sample. On failure or
+    timeout this raises ``PlanError`` and publishes nothing.
+
+    Publish keeps the script's id (now live) and forks a new draft, returned as
+    ``new_draft_id`` for the caller to point its marker at. If the connector
+    can't be re-read after the publish, the result still says ``published``,
+    with ``new_draft_id`` None and the failure in ``warning``.
     """
     config = load_env_config()
     with KizenClient(config) as client:
         updated = sc_api.update_sql_script(
             client, connector, script_id, {"user_script": local_sql}
         )
-        result = {
+        result: dict[str, Any] = {
             "updated_script_id": updated.get("id") or script_id,
             "published": False,
         }
-        if publish:
-            current = sc_api.get_sql_script(client, connector, script_id)
-            state = current.get("state")
-            if state != "success":
+        if not publish:
+            return result
+
+        detail = sc_api.get_smart_connector(client, connector)
+        script = run_output_sample(
+            client,
+            connector,
+            script_id,
+            source_file_id=(detail.get("source_file") or {}).get("id"),
+        )
+        state = script.get("state")
+        if state != "success":
+            prefix = f"draft script {script_id} was updated but not published: "
+            if state in SAMPLE_RUNNING_STATES:
                 raise PlanError(
-                    f"can't publish script {script_id}: no successful output "
-                    f"sample for the SQL just pushed (state: {state or 'none'}). "
-                    f"Run `smart-connectors generate-sample` first, then "
-                    f"`push --publish` again."
+                    prefix + "its output sample is still running. Check on it "
+                    f"with `smart-connectors scripts {connector}`, then "
+                    "`push --publish` again."
                 )
-            pub = sc_api.publish_sql_script(client, connector, script_id)
-            result["published"] = True
-            result["published_id"] = pub.get("id")
+            error = script.get("error") or script.get("error_details")
+            raise PlanError(
+                prefix
+                + f"its output sample ended '{state or 'none'}'"
+                + (f": {error}" if error else "")
+                + ". Fix the SQL (try it with `run`), then `push --publish` again."
+            )
+
+        pub = sc_api.publish_sql_script(client, connector, script_id)
+        result.update(
+            published=True,
+            published_id=pub.get("id") or script_id,
+            new_draft_id=None,
+            connector_status=None,
+        )
+        try:
+            after = sc_api.get_smart_connector(client, connector)
+        except KizenAPIError as e:
+            result["warning"] = (
+                f"the script is published, but re-reading the connector failed "
+                f"({e}), so its new draft is unknown"
+            )
+            return result
+
+    new_draft_id = (after.get("last_draft_script") or {}).get("id")
+    result.update(
+        new_draft_id=new_draft_id if new_draft_id != script_id else None,
+        connector_status=after.get("status"),
+    )
     return result
+
+
+def advance_marker(
+    workdir: str | os.PathLike[str], *, from_script_id: str, to_script_id: str
+) -> bool:
+    """Point a pull marker at the draft publish forked, keeping every other key.
+
+    Only a marker that names ``from_script_id`` is rewritten, so a push with an
+    explicit ``--script`` for some other script leaves the directory alone.
+    Returns whether the marker changed.
+    """
+    marker_path = Path(workdir).resolve() / MARKER_NAME
+    if not marker_path.exists():
+        return False
+    marker = json.loads(marker_path.read_text())
+    if marker.get("script_id") != from_script_id:
+        return False
+    marker.update(script_id=to_script_id, script_status="draft")
+    marker_path.write_text(json.dumps(marker, indent=2))
+    return True

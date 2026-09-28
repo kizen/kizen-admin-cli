@@ -28,11 +28,11 @@ list, with each type's legal `input_format` / `output_format` values, is
 class ExecutionVariableDef(BaseModel):
     """One value the connector reads out of a column of its SQL output.
 
-    `data_source` names a column of the *generated output sample* — what the SQL
-    selects, which need not exist in the reference file at all. The catch is that
-    the column list Kizen validates against is only refreshed by sample
-    generation, so new output columns need a `generate-sample` before they can be
-    mapped.
+    `data_source` names an output column of the SQL — what it selects, which
+    need not exist in the reference file at all. The catch is that the column
+    list Kizen validates against (the connector's `headers`) is only refreshed
+    by publishing the SQL, so new output columns need a `push --publish` before
+    they can be mapped.
     """
 
     model_config = ConfigDict(extra="forbid")

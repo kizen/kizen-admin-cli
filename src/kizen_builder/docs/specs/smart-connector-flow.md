@@ -13,9 +13,11 @@ variables onto fields.
 Everything refers to things by name — object api_names, field api_names, variable
 names — and is resolved to UUIDs against live state before anything is written.
 
-> **Run `generate-sample` first.** Kizen only knows a connector's output columns
-> after the server has generated its output sample, and it validates every
-> variable's `scope` against them. `configure-flow` refuses to plan until then.
+> **Publish the SQL first.** Kizen validates every variable's `scope` and
+> `data_source` against the connector's recognized output columns (`headers`),
+> and only a publish refreshes them. After changing what the SQL outputs, run
+> `push --publish`, then `configure-flow`. See `kizen docs show
+> smart-connectors` (Lifecycle).
 
 ---
 
@@ -188,10 +190,10 @@ All confirmed end-to-end from CSV text values:
 - **`data_source` names a column of the generated output sample** — what your SQL
   selects, not what the reference file contains. Inventing output columns in SQL
   is fine (a webhook connector maps fields pulled out of a JSON body this way);
-  what isn't fine is inventing them without re-running `generate-sample`, since
-  that's the only thing that refreshes the column list Kizen validates against. A
-  `data_source` rejected for a column you can see in your SQL means the sample is
-  stale.
+  what isn't fine is inventing them without publishing, since `publish` is the
+  only thing that refreshes the column list Kizen validates against. A
+  `data_source` rejected for a column you can see in your SQL means that SQL
+  isn't published yet: `push --publish`.
 - **`conflict_resolution` 400s with "not valid for this field type"** on plain
   text/email fields. Omitting it lets the server default to `only_update_blank`,
   which is what you'd pick anyway.

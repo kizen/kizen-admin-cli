@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from kizen_builder.api.client import KizenAPIError
@@ -178,11 +179,17 @@ def _render_http_request_detail(r: dict[str, Any]) -> None:
     console.print(heading)
     console.print("  [dim]request headers:[/dim]")
     console.print(
-        f"    {_fmt_http_body(r.get('headers')).replace(chr(10), chr(10) + '    ')}"
+        f"    {_fmt_http_body(r.get('headers')).replace(chr(10), chr(10) + '    ')}",
+        markup=False,
+        emoji=False,
+        soft_wrap=True,
     )
     console.print("  [dim]request body:[/dim]")
     console.print(
-        f"    {_fmt_http_body(r.get('body')).replace(chr(10), chr(10) + '    ')}"
+        f"    {_fmt_http_body(r.get('body')).replace(chr(10), chr(10) + '    ')}",
+        markup=False,
+        emoji=False,
+        soft_wrap=True,
     )
     rb = r.get("responseBody")
     note = ""
@@ -194,7 +201,12 @@ def _render_http_request_detail(r: dict[str, Any]) -> None:
             # is often truncated mid-JSON — flag it rather than look malformed.
             note = "  [dim](may be truncated by the sandbox's ~1KB capture)[/dim]"
     console.print(f"  [dim]response body:[/dim]{note}")
-    console.print(f"    {_fmt_http_body(rb).replace(chr(10), chr(10) + '    ')}")
+    console.print(
+        f"    {_fmt_http_body(rb).replace(chr(10), chr(10) + '    ')}",
+        markup=False,
+        emoji=False,
+        soft_wrap=True,
+    )
 
 
 def _render_coderunner_result(
@@ -220,12 +232,15 @@ def _render_coderunner_result(
     if error:
         # The sandbox raised — error is {error, detail} with a full traceback.
         if isinstance(error, dict):
-            console.print(f"[red]script error:[/red] {error.get('error')}")
+            console.print(
+                f"[red]script error:[/red] {escape(str(error.get('error')))}",
+                emoji=False,
+            )
             detail = error.get("detail")
             if detail:
-                console.print(f"[red]{detail}[/red]")
+                console.print(f"[red]{escape(str(detail))}[/red]", emoji=False)
         else:
-            console.print(f"[red]script error:[/red] {error}")
+            console.print(f"[red]script error:[/red] {escape(str(error))}", emoji=False)
 
     values = result.get("values") or {}
     if values:
@@ -247,7 +262,7 @@ def _render_coderunner_result(
     if logs:
         console.print(f"[bold]logs[/bold] ({len(logs)})")
         for line in logs:
-            console.print(f"  {line}")
+            console.print(f"  {line}", markup=False, emoji=False, soft_wrap=True)
     else:
         console.print(
             '[dim]logs: (none — use outputs.log("…") to emit; plain '

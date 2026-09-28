@@ -60,14 +60,21 @@ def filter_context(obj_id, client=None):
 
     try:
         UUID(obj_id)
+        is_uuid = True
     except ValueError:
+        is_uuid = False
+    # Resolved outside the except block so a LookupError isn't chained to
+    # the UUID parse failure.
+    if not is_uuid:
         obj_id = client.custom_object(obj_id)["id"]
 
     _local_filter_cx.client = client
     _local_filter_cx.obj_id = obj_id
-    yield
-    _local_filter_cx.client = prev_client
-    _local_filter_cx.obj_id = prev_obj_id
+    try:
+        yield
+    finally:
+        _local_filter_cx.client = prev_client
+        _local_filter_cx.obj_id = prev_obj_id
 
 
 def get_cx_client():

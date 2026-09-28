@@ -57,6 +57,7 @@ from kizen_builder.cli import smart_connectors  # noqa: F401
 from kizen_builder.cli import smart_connectors_seeds  # noqa: F401
 from kizen_builder.cli import smart_connectors_run  # noqa: F401
 from kizen_builder.cli import smart_connectors_reads  # noqa: F401
+from kizen_builder.cli import smart_connectors_executions  # noqa: F401
 from kizen_builder.cli import smart_connectors_dev  # noqa: F401
 from kizen_builder.cli import upgrade  # noqa: F401
 from kizen_builder.cli import init  # noqa: F401

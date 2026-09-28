@@ -50,9 +50,13 @@ kizen messages templates list                # email templates (source for `mess
 kizen smart-connectors list [--search <t>] [--type <t>] [--status <s>]  # ETL/data-ingestion connectors
 kizen smart-connectors get <connector>                  # one connector: detail + draft/live SQL script ids
 kizen smart-connectors metadata                         # connector-type / matching-rule catalog (raw)
-kizen smart-connectors executions <connector>           # run history (most recent first)
-kizen smart-connectors execution-sql <connector> <eid>  # the SQL used in one execution
+kizen smart-connectors executions list <connector>      # run history (most recent first)
+kizen smart-connectors executions get <connector> <eid> # one run: status, full error, step counts, files
+kizen smart-connectors executions download <connector> <eid> [--file report|output|input] [--out path]
+                                                        # save its .xlsx report (default), output zip, or input file
+kizen smart-connectors executions sql <connector> <eid> # the SQL used in one execution
 kizen smart-connectors scripts <connector>              # the connector's draft + live SQL scripts
+kizen smart-connectors download-sample <connector> [--live] [--out path]  # save a script's output-sample zip
 kizen smart-connectors events <connector-uuid>          # event history / audit trail (UUID only)
 
 kizen filter-groups list <object> [--search <text>]     # per-object saved filters (segments)
@@ -242,23 +246,28 @@ kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # writ
 # smart connectors — building one from scratch, in order. Spec: kizen docs show smart-connector-flow
 kizen smart-connectors create <name> --object <api_name> [--type spreadsheet|webhook|schedule|activity|...]
                               [--cadence secs] [--activity-object <activity type>] [--sql-version 4.1.x]
-kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--force]  # upload the reference file + generate the SQL template
+kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--template-sql]  # upload the reference file + generate the SQL template
 # → iterate on the SQL with pull → run → push
-kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; publish is blocked until this succeeds
+kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; reports its tables; publish is blocked until this succeeds
+kizen smart-connectors push --publish [--dir path]               # sample, then publish; refreshes the output columns configure-flow checks
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
-kizen smart-connectors activate <connector> [--status operational] # a LIVE run without this sits queued forever, silently
+kizen smart-connectors activate <connector> [--status operational|inactive] # a LIVE run without this sits queued forever, silently
+kizen smart-connectors deactivate <connector>                      # status inactive: no live runs; every edit and dry runs still work
 kizen smart-connectors start-flow <connector> [--live] [--force]   # queue a run; dry run unless --live
-# `set-input` refuses to REPLACE an existing reference file: swapping one is broken server-side (the executor
-# keeps reading the old file). Build a fresh connector instead.
+# `set-input` on a connector that already has a file replaces it, keeping your SQL. What that leaves stale:
+# kizen docs show smart-connectors (Replacing the reference file).
+# Editing a live connector: pull → edit → run → push --publish, repeatable from one directory. Which
+# verbs need which status: kizen docs show smart-connectors (Lifecycle).
 
 # smart connectors — read from other Kizen objects (exposed to the SQL as a kizen.<object> view)
 kizen smart-connectors seeds list <connector>
-kizen smart-connectors seeds add <connector> --object <o> --group <saved filter group> [--field f ...]
+kizen smart-connectors seeds add <connector> --object <o> [--group <saved filter group>] [--field f ...]
 kizen smart-connectors seeds remove <connector> --object <o>
 # --group is a saved filter group / segment (`kizen filter-groups list <o>`), NOT a field category.
+# Omit it to seed all records; why a segment seed can duplicate records: kizen docs show smart-connectors.
 # `add` refreshes the script config so the view exists (your SQL is kept) — without that a seed does nothing.
-# `pull` exports each seeded object's rows to data/ from the same filter group, so `run` hits the same joins.
+# `pull` exports each seeded object's rows to data/ from the same filter group (or all records), so `run` hits the same joins.
 
 # smart connectors — webhook connectors (triggered by a real inbound POST, never by start-flow)
 kizen smart-connectors webhook-sample <path> --body '<json>' --employee <email|name|uuid>  # the reference file they need

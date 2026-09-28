@@ -2,7 +2,7 @@
 
 Everything here is respx-mocked. The interesting cases aren't the happy paths
 (they're thin PATCHes) but the wire quirks the CLI exists to absorb: the
-three-legged S3 upload, the source-file swap refusal, name-based resolution, and
+three-legged S3 upload, the reference-file replace, name-based resolution, and
 the multi-round load-step save that relationship fields require.
 """
 
@@ -10,14 +10,18 @@ from __future__ import annotations
 
 import copy
 import csv
+import io
 import json
 import time
+import zipfile
 
 import httpx
 import pytest
 import respx
 from pydantic import ValidationError
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
 from kizen_builder.api import files as files_api
 from kizen_builder.api import smart_connectors as sc
 from kizen_builder.api.client import KizenAPIError, KizenClient
@@ -353,7 +357,7 @@ def test_plan_create_enforces_per_type_requirements():
 
 
 @respx.mock
-def test_plan_set_input_refuses_to_swap_an_attached_file(tmp_path):
+def test_plan_set_input_replaces_an_attached_file(tmp_path):
     src = tmp_path / "new.csv"
     src.write_bytes(b"a\n")
     detail = {**DETAIL, "source_file": {"id": "file-old", "name": "old.csv"}}
@@ -361,11 +365,13 @@ def test_plan_set_input_refuses_to_swap_an_attached_file(tmp_path):
         return_value=httpx.Response(200, json=detail)
     )
 
-    with pytest.raises(PlanError, match="known-broken"):
-        sct.plan_set_input("order_import", src)
+    plan = sct.plan_set_input("order_import", src)
 
-    plan = sct.plan_set_input("order_import", src, allow_replace=True)
     assert plan["replacing"] == "old.csv"
+    assert plan["template_sql"] is False
+    assert plan["next_steps"][0] == "generate-sample (run automatically)"
+    assert plan["next_steps"][1] == "push --publish"
+    assert plan["next_steps"][2].startswith("suggest-variables")
 
 
 @respx.mock
@@ -430,6 +436,228 @@ def test_apply_set_input_uploads_attaches_then_regenerates(tmp_path):
     assert set(body) == {"user_script", "config_metadata", "sql_version"}
     assert body["sql_version"] == "4.1.x"
     assert result["sql_version_restored"] == "4.1.x"
+
+
+OLD_FILE = {"id": "file-old", "name": "zz_ref_a.csv"}
+KEPT_SQL = "create table output.orders as select ext_id from input.zz_ref_a_csv;"
+
+
+def _mock_replace(
+    tmp_path,
+    *,
+    sample_state="success",
+    sample_error=None,
+    template_sql="create table output.orders as select * from input.zz_ref_b_csv;",
+):
+    """A connector that already has zz_ref_a.csv, getting zz_ref_b.csv.
+
+    The template forks draft-2 (at a downgraded version), exactly as a first
+    attach does; draft-1 is the hand-edited script the replace must keep.
+    """
+    src = tmp_path / "zz_ref_b.csv"
+    src.write_bytes(b"ext_id,new_col\n1,x\n")
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json={**DETAIL, "source_file": OLD_FILE})
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/s3/presigned-post").mock(
+        return_value=httpx.Response(
+            200, json={"url": S3_URL, "fields": {"key": "k"}, "s3object_id": "s"}
+        )
+    )
+    respx.post(S3_URL).mock(return_value=httpx.Response(204, headers={"etag": '"e"'}))
+    respx.post(f"{FAKE_BASE_URL}/api/s3/success").mock(
+        return_value=httpx.Response(
+            200, json={"id": "file-new", "name": "zz_ref_b.csv"}
+        )
+    )
+    attach = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+
+    # Attaching the file rewrites the draft's input_tables on the server
+    # (confirmed live 2026-09-25), so only a read before the attach sees the
+    # old table name.
+    def _draft_1(_request):
+        table = "zz_ref_b_csv" if attach.called else "zz_ref_a_csv"
+        return httpx.Response(
+            200,
+            json={
+                "id": "draft-1",
+                "user_script": KEPT_SQL,
+                "sql_version": "4.1.x",
+                "config_metadata": {"input_tables": [{"table_name": table}]},
+            },
+        )
+
+    respx.get(f"{BASE}/conn-uuid/sql-scripts/draft-1").mock(side_effect=_draft_1)
+    new_cfg = {
+        "input_tables": [{"file_id": "file-new", "table_name": "zz_ref_b_csv"}],
+        "seed_tables": [],
+    }
+    respx.post(f"{BASE}/conn-uuid/get-file-template").mock(
+        return_value=httpx.Response(
+            200,
+            json={"user_script": template_sql, "config_metadata": new_cfg},
+        )
+    )
+    respx.get(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                **DETAIL,
+                "source_file": {"id": "file-new", "name": "zz_ref_b.csv"},
+                "last_draft_script": {"id": "draft-2", "sql_version": "1.3.x"},
+            },
+        )
+    )
+    write = respx.patch(f"{BASE}/conn-uuid/sql-scripts/draft-2").mock(
+        return_value=httpx.Response(200, json={"id": "draft-2"})
+    )
+    start = respx.post(f"{BASE}/conn-uuid/sql-scripts/draft-2/start").mock(
+        return_value=httpx.Response(200, json={"id": "draft-2"})
+    )
+    respx.get(f"{BASE}/conn-uuid/sql-scripts/draft-2").mock(
+        return_value=httpx.Response(
+            200, json={"id": "draft-2", "state": sample_state, "error": sample_error}
+        )
+    )
+    return src, new_cfg, write, start
+
+
+@respx.mock
+def test_apply_set_input_replace_keeps_the_sql_and_takes_the_fresh_config(tmp_path):
+    src, new_cfg, write, _ = _mock_replace(tmp_path)
+
+    result = sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    body = json.loads(write.calls.last.request.content)
+    assert body == {
+        "config_metadata": new_cfg,
+        "user_script": KEPT_SQL,
+        "sql_version": "4.1.x",
+    }
+    assert result["script_id"] == "draft-2"
+    assert result["kept_user_script"] is True
+    assert result["sql_version"] == "4.1.x"
+
+
+@respx.mock
+def test_apply_set_input_replace_with_template_sql_takes_the_template(tmp_path):
+    src, _, write, _ = _mock_replace(tmp_path)
+
+    plan = sct.plan_set_input("order_import", src, template_sql=True)
+    result = sct.apply_set_input(plan)
+
+    body = json.loads(write.calls.last.request.content)
+    assert "input.zz_ref_b_csv" in body["user_script"]
+    assert result["kept_user_script"] is False
+    # The first-attach version restore still applies to the template path.
+    assert body["sql_version"] == "4.1.x"
+
+
+@respx.mock
+def test_apply_set_input_replace_names_the_renamed_input_table(tmp_path):
+    src, *_ = _mock_replace(tmp_path)
+
+    result = sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    assert result["renamed_input_tables"] == [
+        {"old": "zz_ref_a_csv", "new": "zz_ref_b_csv"}
+    ]
+
+
+@respx.mock
+def test_apply_set_input_replace_runs_the_sample_on_the_new_file(tmp_path):
+    src, _, _, start = _mock_replace(tmp_path)
+
+    result = sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    # The file id in the start body is what re-stamps the file the executor reads.
+    assert json.loads(start.calls.last.request.content) == {
+        "source_file_id": "file-new"
+    }
+    assert result["sample"]["state"] == "success"
+
+
+@respx.mock
+def test_apply_set_input_replace_reports_a_failed_sample_without_raising(tmp_path):
+    src, *_ = _mock_replace(
+        tmp_path, sample_state="failed", sample_error="UNKNOWN_IDENTIFIER"
+    )
+
+    result = sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    assert result["file_id"] == "file-new"
+    assert result["sample"]["state"] == "failed"
+    assert result["sample"]["error"] == "UNKNOWN_IDENTIFIER"
+
+
+@respx.mock
+def test_apply_set_input_replace_checks_an_empty_template_before_writing(tmp_path):
+    src, _, write, start = _mock_replace(tmp_path, template_sql="")
+
+    with pytest.raises(PlanError, match="empty template"):
+        sct.apply_set_input(sct.plan_set_input("order_import", src))
+
+    assert not write.called
+    # The new file is attached regardless, so the sample still runs rather than
+    # leaving the draft at `success` against the old file.
+    assert start.called
+
+
+@pytest.mark.parametrize("json_flag", [[], ["--json"]])
+def test_set_input_cli_exits_non_zero_when_the_replace_sample_fails(
+    monkeypatch, json_flag
+):
+    monkeypatch.setattr(
+        sct,
+        "plan_set_input",
+        lambda *_a, **_k: {
+            "connector_api_name": "order_import",
+            "file": "b.csv",
+            "file_size": 1,
+            "connector_type": "spreadsheet",
+            "replacing": "a.csv",
+            "regenerate": True,
+            "template_sql": False,
+            "next_steps": [],
+        },
+    )
+    monkeypatch.setattr(
+        sct,
+        "apply_set_input",
+        lambda _plan: {
+            "file_name": "b.csv",
+            "connector": "order_import",
+            "regenerated": True,
+            "script_id": "draft-2",
+            "sql_lines": 1,
+            "input_tables": [],
+            "kept_user_script": True,
+            "renamed_input_tables": [{"old": "a_csv", "new": "b_csv"}],
+            "sample": {"state": "failed", "error": "UNKNOWN_IDENTIFIER"},
+        },
+    )
+
+    # --force is hidden and does nothing, but still parses.
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "set-input",
+            "b.csv",
+            "-c",
+            "order_import",
+            "--force",
+            "-y",
+            *json_flag,
+        ],
+    )
+
+    assert result.exit_code == 1
+    if not json_flag:
+        assert "input.a_csv → input.b_csv" in result.output
 
 
 # The webhook template's second statement builds `output.webhooks` — a debug
@@ -528,7 +756,7 @@ def test_apply_set_input_explains_an_empty_template(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# generate-sample + activate
+# generate-sample + download-sample + activate
 # ---------------------------------------------------------------------------
 
 
@@ -555,6 +783,396 @@ def test_generate_output_sample_polls_until_the_state_settles(monkeypatch):
     assert result["scopes"] == {"orders": 2}
 
 
+def _sample_zip(members: dict[str, str]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, text in members.items():
+            zf.writestr(name, text)
+    return buf.getvalue()
+
+
+# The draft's sample as `GET sql-scripts/{id}` returns it once `state` is
+# `success` (confirmed live 2026-09-25).
+SAMPLE_FILE = {
+    "id": "sample-1",
+    "name": "Draft_order_import_sample_output_20260925.zip",
+    "content_type": "application/zip",
+}
+TWO_TABLE_ZIP = _sample_zip(
+    {
+        # A quoted newline is still one row.
+        "contacts.csv": 'email,note\na@x.test,"line one\nline two"\nb@x.test,hi\n',
+        "policies.csv": "number,holder,premium\nP1,a,10\n",
+    }
+)
+
+
+def _mock_generate(state: str, sample: dict | None = SAMPLE_FILE):
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+    respx.post(f"{BASE}/order_import/sql-scripts/draft-1/start").mock(
+        return_value=httpx.Response(200, json={"id": "draft-1"})
+    )
+    respx.get(f"{BASE}/order_import/sql-scripts/draft-1").mock(
+        return_value=httpx.Response(
+            200, json={"id": "draft-1", "state": state, "output_csv_file": sample}
+        )
+    )
+
+
+@respx.mock
+def test_generate_output_sample_reports_the_tables_the_sample_holds():
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    result = sct.generate_output_sample("order_import")
+    assert result["outputs"] == [
+        {"table": "contacts", "rows": 2, "columns": 2},
+        {"table": "policies", "rows": 1, "columns": 3},
+    ]
+    assert result["sample_file"] == {"id": "sample-1", "name": SAMPLE_FILE["name"]}
+    # `headers` is still reported as it was, even though it disagrees.
+    assert result["scopes"] == {"orders": 2}
+    assert result["warnings"] == []
+
+
+@respx.mock
+def test_generate_output_sample_does_not_download_after_a_failed_run():
+    # The failed script still carries the previous run's sample.
+    _mock_generate("failed")
+    download = respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download")
+    result = sct.generate_output_sample("order_import")
+    assert result["outputs"] is None
+    assert result["sample_file"] is None
+    assert not download.called
+
+
+def _corrupt_deflated_zip() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("orders.csv", "a,b\n" + "1,2\n" * 200)
+    data = bytearray(buf.getvalue())
+    # The first byte of the deflate stream, past the 30-byte local header and
+    # the member name: zlib rejects it before any CRC check runs.
+    data[30 + len("orders.csv")] ^= 0xFF
+    return bytes(data)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(500),
+        httpx.Response(200, content=b"not a zip"),
+        httpx.Response(200, content=_corrupt_deflated_zip()),
+    ],
+    ids=["download-error", "bad-zip", "corrupt-member"],
+)
+@respx.mock
+def test_generate_output_sample_warns_when_the_sample_cannot_be_read(response):
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=response
+    )
+    result = sct.generate_output_sample("order_import")
+    assert result["state"] == "success"
+    assert result["outputs"] is None
+    assert len(result["warnings"]) == 1
+    assert "output sample" in result["warnings"][0]
+
+
+@respx.mock
+def test_generate_output_sample_warns_when_success_has_no_sample_file():
+    _mock_generate("success", sample=None)
+    result = sct.generate_output_sample("order_import")
+    assert result["outputs"] is None
+    assert result["warnings"] == ["the script succeeded but has no output sample file."]
+
+
+@respx.mock
+def test_generate_sample_cli_flags_tables_that_differ_from_the_recognized_scopes():
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "generate-sample", "order_import"]
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert "output tables: contacts (2 rows, 2 cols), policies (1 rows, 3 cols)" in text
+    assert "recognized scopes are orders" in text
+    assert "push --publish" in text
+
+
+@respx.mock
+def test_generate_sample_cli_is_quiet_when_the_tables_match():
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(
+            200, content=_sample_zip({"orders.csv": "order_number,sku\n1,a\n"})
+        )
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "generate-sample", "order_import"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "orders (1 rows, 2 cols)" in result.output
+    assert "recognized scopes" not in result.output
+
+
+@respx.mock
+def test_generate_sample_cli_exit_code_follows_the_state_not_the_download():
+    _mock_generate("success")
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(500)
+    )
+    ok = CliRunner().invoke(
+        cli.app, ["smart-connectors", "generate-sample", "order_import", "--json"]
+    )
+    assert ok.exit_code == 0
+    assert json.loads(ok.stdout)["outputs"] is None
+
+
+def _mock_script(
+    script_id: str,
+    *,
+    status: str,
+    sample: dict | None = SAMPLE_FILE,
+    state: str | None = None,
+):
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+    respx.get(f"{BASE}/order_import/sql-scripts/{script_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": script_id,
+                "status": status,
+                "state": state or ("success" if sample else "setup"),
+                "output_csv_file": sample,
+            },
+        )
+    )
+    return respx.get(f"{FAKE_BASE_URL}/api/files/{(sample or {}).get('id')}/download")
+
+
+@respx.mock
+def test_download_sample_saves_the_drafts_zip_under_the_server_filename(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _mock_script("draft-1", status="draft").mock(
+        return_value=httpx.Response(
+            200,
+            content=TWO_TABLE_ZIP,
+            headers={"content-disposition": 'attachment; filename="server.zip"'},
+        )
+    )
+    res = sct.download_sample("order_import")
+    assert res["script_id"] == "draft-1"
+    assert res["path"] == "server.zip"
+    assert (tmp_path / "server.zip").read_bytes() == TWO_TABLE_ZIP
+    assert [o["table"] for o in res["outputs"]] == ["contacts", "policies"]
+
+
+@respx.mock
+def test_download_sample_live_picks_the_live_script(tmp_path):
+    live_sample = {**SAMPLE_FILE, "id": "sample-live", "name": "Live.zip"}
+    _mock_script("live-1", status="live", sample=live_sample).mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    res = sct.download_sample("order_import", use_live=True, dest=tmp_path)
+    assert res["script_id"] == "live-1"
+    # No Content-Disposition: the S3Object's name is the fallback, and a
+    # directory `dest` gets the file inside it.
+    assert res["path"] == str(tmp_path / "Live.zip")
+    assert res["bytes"] == len(TWO_TABLE_ZIP)
+
+
+@respx.mock
+def test_download_sample_live_refuses_when_there_is_no_live_script(tmp_path):
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json={**DETAIL, "live_script": None})
+    )
+    with pytest.raises(LookupError, match="has no live SQL script"):
+        sct.download_sample("order_import", use_live=True, dest=tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+@respx.mock
+def test_download_sample_script_overrides_the_draft_live_choice(tmp_path):
+    # Only the named script's routes exist, so a connector lookup would fail.
+    respx.get(f"{BASE}/order_import/sql-scripts/other-9").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": "other-9", "state": "success", "output_csv_file": SAMPLE_FILE},
+        )
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/files/sample-1/download").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    res = sct.download_sample(
+        "order_import", use_live=True, script_id="other-9", dest=tmp_path
+    )
+    assert res["script_id"] == "other-9"
+    assert res["warnings"] == []
+
+
+@respx.mock
+def test_download_sample_cli_warns_when_the_script_did_not_succeed(tmp_path):
+    _mock_script("draft-1", status="draft", state="failed").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "download-sample", "order_import", "--out", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert "script state is failed, so this sample may be from an earlier run" in text
+
+
+@respx.mock
+def test_download_sample_cli_names_the_state_when_there_is_no_sample(tmp_path):
+    download = _mock_script("draft-1", status="draft", sample=None)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "download-sample",
+            "order_import",
+            "--out",
+            str(tmp_path / "s.zip"),
+        ],
+    )
+    assert result.exit_code == 1
+    text = " ".join(result.output.split())
+    assert "state: setup" in text
+    assert "generate-sample order_import" in text
+    assert not download.called
+    assert not (tmp_path / "s.zip").exists()
+
+
+@respx.mock
+def test_download_sample_refuses_to_overwrite_without_force(tmp_path):
+    target = tmp_path / "s.zip"
+    target.write_bytes(b"keep me")
+    _mock_script("draft-1", status="draft").mock(
+        return_value=httpx.Response(200, content=TWO_TABLE_ZIP)
+    )
+    args = ["smart-connectors", "download-sample", "order_import", "--out", str(target)]
+    refused = CliRunner().invoke(cli.app, args)
+    assert refused.exit_code == 1
+    assert "--force" in refused.output
+    assert target.read_bytes() == b"keep me"
+
+    forced = CliRunner().invoke(cli.app, [*args, "--force", "--json"])
+    assert forced.exit_code == 0, forced.output
+    assert json.loads(forced.stdout)["path"] == str(target)
+    assert target.read_bytes() == TWO_TABLE_ZIP
+
+
+@pytest.mark.parametrize(
+    ("disposition", "fallback", "expected"),
+    [
+        ('attachment; filename="../x.zip"', "unused.zip", ".._x.zip"),
+        (None, "../x.zip", ".._x.zip"),
+        (
+            'attachment; filename="Orders / Returns_dry_run.xlsx"',
+            "unused.xlsx",
+            "Orders _ Returns_dry_run.xlsx",
+        ),
+        (None, "Orders / Returns_dry_run.xlsx", "Orders _ Returns_dry_run.xlsx"),
+        ('attachment; filename=".."', "..", "download"),
+    ],
+    ids=[
+        "traversal-header",
+        "traversal-fallback",
+        "slash-header",
+        "slash-fallback",
+        "nothing-usable",
+    ],
+)
+@respx.mock
+def test_save_file_keeps_the_name_inside_the_destination(
+    tmp_path, monkeypatch, env_config, disposition, fallback, expected
+):
+    monkeypatch.chdir(tmp_path)
+    headers = {"content-disposition": disposition} if disposition else {}
+    respx.get(f"{FAKE_BASE_URL}/api/files/f1/download").mock(
+        return_value=httpx.Response(200, content=b"data", headers=headers)
+    )
+    saved = sct.save_file(env_config, "f1", fallback_name=fallback)
+    assert saved.name == expected
+    assert [p.name for p in tmp_path.iterdir()] == [expected]
+    assert not (tmp_path.parent / "x.zip").exists()
+
+
+@respx.mock
+def test_save_file_refuses_an_existing_path_before_downloading(tmp_path, env_config):
+    target = tmp_path / "s.zip"
+    target.write_bytes(b"keep me")
+    download = respx.get(f"{FAKE_BASE_URL}/api/files/f1/download")
+    with pytest.raises(FileExistsError, match="--force"):
+        sct.save_file(env_config, "f1", target, fallback_name="s.zip")
+    assert not download.called
+
+
+@respx.mock
+def test_save_file_keeps_the_old_file_when_a_forced_write_fails(
+    tmp_path, monkeypatch, env_config
+):
+    target = tmp_path / "s.zip"
+    target.write_bytes(b"keep me")
+    respx.get(f"{FAKE_BASE_URL}/api/files/f1/download").mock(
+        return_value=httpx.Response(200, content=b"new bytes")
+    )
+
+    def disk_full(self, data):
+        with open(self, "wb") as f:
+            f.write(data[:3])
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(type(target), "write_bytes", disk_full)
+    with pytest.raises(OSError, match="No space"):
+        sct.save_file(env_config, "f1", target, fallback_name="s.zip", force=True)
+    assert target.read_bytes() == b"keep me"
+    assert [p.name for p in tmp_path.iterdir()] == ["s.zip"]
+
+
+@respx.mock
+def test_generate_output_sample_sends_the_attached_file_even_with_a_script_id():
+    detail = {**DETAIL, "source_file": {"id": "file-b", "name": "b.csv"}}
+    read = respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    start = respx.post(f"{BASE}/order_import/sql-scripts/draft-9/start").mock(
+        return_value=httpx.Response(200, json={"id": "draft-9"})
+    )
+    respx.get(f"{BASE}/order_import/sql-scripts/draft-9").mock(
+        return_value=httpx.Response(200, json={"id": "draft-9", "state": "success"})
+    )
+
+    sct.generate_output_sample("order_import", script_id="draft-9")
+
+    assert read.called
+    assert json.loads(start.calls.last.request.content) == {"source_file_id": "file-b"}
+
+
+@respx.mock
+def test_start_sql_script_sends_an_empty_body_without_a_file(client):
+    start = respx.post(f"{BASE}/c/sql-scripts/s/start").mock(
+        return_value=httpx.Response(200, json={})
+    )
+
+    sc.start_sql_script(client, "c", "s")
+
+    assert json.loads(start.calls.last.request.content) == {}
+
+
 @respx.mock
 def test_plan_set_status_reports_the_gaps_that_make_a_live_run_pointless():
     detail = {**DETAIL, "live_script": {}, "flow": {"loads": []}}
@@ -565,8 +1183,70 @@ def test_plan_set_status_reports_the_gaps_that_make_a_live_run_pointless():
     assert plan["changed"] is True
     assert plan["has_live_script"] is False
     assert plan["load_steps"] == 0
+    assert plan["execution_variables"] == 0
     with pytest.raises(PlanError, match="unknown status"):
         sct.plan_set_status("order_import", "sideways")
+
+
+@respx.mock
+@pytest.mark.parametrize("status", ["setup", "need_attention"])
+def test_activate_rejects_a_server_owned_status_before_any_call(status):
+    # respx.mock fails any request with no route, so reaching Kizen fails too.
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "activate", "order_import", "--status", status]
+    )
+
+    assert result.exit_code == 1
+    assert "set by the server" in result.output
+    assert "operational, inactive" in result.output
+    assert not respx.calls
+
+
+@respx.mock
+def test_activate_preview_warns_about_every_missing_prerequisite():
+    detail = {**DETAIL, "live_script": {}, "flow": {"loads": []}}
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "activate", "order_import", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "no execution variables" in result.output
+    assert "no load steps" in result.output
+    assert "no published script" in result.output
+
+
+@respx.mock
+def test_deactivate_sets_inactive_after_the_preview():
+    detail = {**DETAIL, "status": "operational"}
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    write = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200, json={"api_name": "order_import", "status": "inactive"}
+        )
+    )
+
+    dry = CliRunner().invoke(
+        cli.app, ["smart-connectors", "deactivate", "order_import", "--dry-run"]
+    )
+    assert dry.exit_code == 0, dry.output
+    assert "operational → inactive" in dry.output
+    assert not write.called
+
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "deactivate", "order_import", "--yes", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(write.calls.last.request.content) == {"status": "inactive"}
+    assert json.loads(result.stdout) == {
+        "connector": "order_import",
+        "status": "inactive",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -616,6 +1296,408 @@ def test_list_executions_surfaces_the_whole_executor_error():
     )
     rows = sct.list_executions("order_import")
     assert rows[0]["error_details"] == long_error
+
+
+# ---------------------------------------------------------------------------
+# executions get / download / the retired flat verbs
+# ---------------------------------------------------------------------------
+
+EID = "1d8d2633-312d-4848-a5fb-95325dcea6df"
+
+
+def _s3(file_id: str, name: str) -> dict:
+    return {
+        "id": file_id,
+        "name": name,
+        "size_bytes": 7234,
+        "size_formatted": "7.1KB",
+        "url": f"{FAKE_BASE_URL}/api/files/{file_id}/download",
+    }
+
+
+# The live shape (cli-testing, 2026-09-25): three S3Objects, a nested
+# started_by, and step_progress grouped by stage.
+EXEC_ROW = {
+    "id": EID,
+    "status": "success",
+    "trigger_type": "fileupload",
+    "is_dry_run": True,
+    "started_by": {"id": "u1", "display_name": "Pat Admin (pat@example.test)"},
+    "created": "2026-07-28T12:43:05-05:00",
+    "ended_at": "2026-07-28T12:43:10-05:00",
+    "error_details": None,
+    "final_report": _s3("f-report", "Order Import_dry_run_output_1.xlsx"),
+    "sql_output_zip": _s3("f-output", "Live_order_import_sample_output_1.zip"),
+    "input_file": _s3("f-input", "orders.csv"),
+    "step_progress": [
+        {
+            "type": "smart_connector_sql_run",
+            "status": "completed",
+            "steps": [
+                {
+                    "status": "completed",
+                    "scope": None,
+                    "custom_object": None,
+                    "valid_records": 1,
+                    "invalid_records": 0,
+                    "total": 1,
+                }
+            ],
+        },
+        {
+            "type": "smart_connector_load_step_run",
+            "status": "completed",
+            "steps": [
+                {
+                    "status": "completed",
+                    "scope": "orders",
+                    "custom_object": {
+                        "id": "obj-orders",
+                        "name": "orders",
+                        "object_name": "Orders",
+                    },
+                    "valid_records": 2,
+                    "invalid_records": 1,
+                    "total": 3,
+                }
+            ],
+        },
+    ],
+}
+
+# A failed run keeps its input file but has no report or output zip, and a
+# cancelled stage can come back with no steps at all.
+FAILED_ERROR = (
+    "Error running connector SQL script: Code: 47. DB::Exception: There's no "
+    "column 's.sku' in table 's': While processing row[field] AS [/.-]. "
+    "(UNKNOWN_IDENTIFIER)"
+)
+FAILED_ROW = {
+    **EXEC_ROW,
+    "status": "failed",
+    "error_details": FAILED_ERROR,
+    "final_report": None,
+    "sql_output_zip": None,
+    "step_progress": [
+        {
+            "type": "smart_connector_execution_variable_eval",
+            "status": "cancelled",
+            "steps": [],
+        }
+    ],
+}
+
+
+def _mock_execution(row: dict) -> respx.Route:
+    return respx.get(f"{BASE}/order_import/executions").mock(
+        return_value=httpx.Response(
+            200, json={"count": 1, "next": None, "results": [row]}
+        )
+    )
+
+
+@respx.mock
+def test_get_execution_flattens_started_by_and_keeps_the_rest_raw():
+    _mock_execution(EXEC_ROW)
+    row = sct.get_execution("order_import", EID)
+    assert row["started_by"] == "Pat Admin (pat@example.test)"
+    assert {k: v for k, v in row.items() if k != "started_by"} == {
+        k: v for k, v in EXEC_ROW.items() if k != "started_by"
+    }
+
+
+@respx.mock
+def test_executions_get_cli_shows_the_full_error_steps_and_files():
+    _mock_execution(FAILED_ROW)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "get", "order_import", EID]
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    # In full, and verbatim despite the brackets.
+    assert FAILED_ERROR in text
+    assert "execution_variable_eval │ cancelled" in text
+    assert "report: — · output: — · input: orders.csv (7.1KB)" in text
+
+
+@respx.mock
+def test_executions_get_cli_step_table_strips_the_type_prefix():
+    _mock_execution(EXEC_ROW)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "get", "order_import", EID]
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert "load_step_run │ completed │ orders │ Orders │ 2 │ 1 │ 3" in text
+    assert "smart_connector_" not in text
+    assert "report: Order Import_dry_run_output_1.xlsx (7.1KB)" in text
+
+
+@respx.mock
+def test_executions_get_cli_json_emits_the_row():
+    _mock_execution(EXEC_ROW)
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "executions", "get", "order_import", EID, "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        **EXEC_ROW,
+        "started_by": "Pat Admin (pat@example.test)",
+    }
+
+
+@respx.mock
+def test_executions_get_cli_names_a_missing_execution():
+    respx.get(f"{BASE}/order_import/executions").mock(
+        return_value=httpx.Response(200, json={"count": 0, "next": None, "results": []})
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "get", "order_import", EID]
+    )
+    assert result.exit_code == 1
+    assert f"no execution {EID}" in " ".join(result.output.split())
+
+
+SERVED = b"PK\x03\x04 bytes as served"
+
+
+@pytest.mark.parametrize(
+    ("args", "kind", "file_id", "name"),
+    [
+        ([], "report", "f-report", "Order Import_dry_run_output_1.xlsx"),
+        (
+            ["--file", "report"],
+            "report",
+            "f-report",
+            "Order Import_dry_run_output_1.xlsx",
+        ),
+        (
+            ["--file", "output"],
+            "output",
+            "f-output",
+            "Live_order_import_sample_output_1.zip",
+        ),
+        (["--file", "input"], "input", "f-input", "orders.csv"),
+    ],
+    ids=["default-is-report", "report", "output", "input"],
+)
+@respx.mock
+def test_executions_download_saves_the_chosen_file(tmp_path, args, kind, file_id, name):
+    _mock_execution(EXEC_ROW)
+    respx.get(f"{FAKE_BASE_URL}/api/files/{file_id}/download").mock(
+        return_value=httpx.Response(200, content=SERVED)
+    )
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "executions",
+            "download",
+            "order_import",
+            EID,
+            *args,
+            "--out",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    path = tmp_path / name
+    assert json.loads(result.stdout) == {
+        "path": str(path),
+        "name": name,
+        "bytes": len(SERVED),
+        "kind": kind,
+    }
+    assert path.read_bytes() == SERVED
+
+
+@respx.mock
+def test_executions_download_prints_the_path_and_size(tmp_path):
+    _mock_execution(EXEC_ROW)
+    respx.get(f"{FAKE_BASE_URL}/api/files/f-report/download").mock(
+        return_value=httpx.Response(200, content=b"xlsx")
+    )
+    target = tmp_path / "report.xlsx"
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "executions",
+            "download",
+            "order_import",
+            EID,
+            "--out",
+            str(target),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"saved {target} (4 bytes, report)" in " ".join(result.output.split())
+
+
+@pytest.mark.parametrize("kind", ["report", "output"])
+@respx.mock
+def test_executions_download_refuses_a_failed_runs_missing_file(tmp_path, kind):
+    _mock_execution(FAILED_ROW)
+    download = respx.get(url__regex=rf"{FAKE_BASE_URL}/api/files/.*")
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "executions",
+            "download",
+            "order_import",
+            EID,
+            "--file",
+            kind,
+            "--out",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 1
+    text = " ".join(result.output.split())
+    assert (
+        f"execution {EID} is `failed`; failed runs have no output zip or report" in text
+    )
+    assert not download.called
+    assert list(tmp_path.iterdir()) == []
+
+
+@respx.mock
+def test_executions_download_refuses_to_overwrite_without_force(tmp_path):
+    target = tmp_path / "orders.csv"
+    target.write_bytes(b"keep me")
+    _mock_execution(EXEC_ROW)
+    respx.get(f"{FAKE_BASE_URL}/api/files/f-input/download").mock(
+        return_value=httpx.Response(200, content=b"new")
+    )
+    args = [
+        "smart-connectors",
+        "executions",
+        "download",
+        "order_import",
+        EID,
+        "--file",
+        "input",
+        "--out",
+        str(target),
+    ]
+    refused = CliRunner().invoke(cli.app, args)
+    assert refused.exit_code == 1
+    assert "--force" in refused.output
+    assert target.read_bytes() == b"keep me"
+
+    forced = CliRunner().invoke(cli.app, [*args, "--force"])
+    assert forced.exit_code == 0, forced.output
+    assert target.read_bytes() == b"new"
+
+
+def test_executions_download_rejects_an_unknown_file_kind():
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "executions", "download", "c", EID, "--file", "zip"],
+    )
+    assert result.exit_code == 2
+    text = " ".join(result.output.split())
+    assert "'report', 'output', 'input'" in text
+
+
+@respx.mock
+def test_start_flow_names_the_queued_execution_in_its_hint():
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json={**DETAIL, "status": "operational"})
+    )
+    respx.post(f"{BASE}/conn-uuid/start-connector-flow").mock(
+        return_value=httpx.Response(200, json={"execution_id": EID})
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "start-flow", "order_import", "--force"]
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert f"`smart-connectors executions get order_import {EID}`" in text
+    assert "`smart-connectors executions list order_import --include-dry-run`" in text
+
+
+@respx.mock
+def test_executions_list_cli_prints_a_bracketed_error_verbatim():
+    _mock_execution(FAILED_ROW)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "list", "order_import"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "[/.-]" in "".join(result.output.split())
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["order_import"],
+        ["order_import", "--status", "failed", "--json"],
+        ["order_import", "--help"],
+    ],
+    ids=["bare", "with-options", "help"],
+)
+def test_the_old_list_form_points_at_executions_list(args):
+    result = CliRunner().invoke(cli.app, ["smart-connectors", "executions", *args])
+    assert result.exit_code == 2
+    assert "smart-connectors executions list order_import" in " ".join(
+        result.output.split()
+    )
+
+
+@pytest.mark.parametrize(
+    ("args", "hint"),
+    [
+        (["view", "c", EID], "Did you mean 'get'?"),
+        (["show", "c", EID], "Did you mean 'get'?"),
+        (["lst", "c"], "Did you mean 'list'?"),
+        (["nope", "c", EID], "No such command 'nope'."),
+    ],
+    ids=["view", "show", "near-miss", "unknown"],
+)
+def test_other_unknown_executions_verbs_do_not_get_the_old_form_pointer(args, hint):
+    result = CliRunner().invoke(cli.app, ["smart-connectors", "executions", *args])
+    assert result.exit_code == 2
+    text = " ".join(result.output.split())
+    assert hint in text
+    assert "run history" not in text
+
+
+def test_the_retired_execution_sql_verb_is_gone():
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "execution-sql", "c", EID]
+    )
+    assert result.exit_code == 2
+
+
+def test_tab_completion_after_an_old_form_connector_lists_subcommands():
+    words = "kizen smart-connectors executions my_conn "
+    result = CliRunner().invoke(
+        cli.app,
+        [],
+        prog_name="kizen",
+        env={
+            "_KIZEN_COMPLETE": "complete_bash",
+            "COMP_WORDS": words,
+            "COMP_CWORD": "4",
+        },
+    )
+    assert result.exit_code == 0, result.exception
+    assert result.output.split() == ["list", "get", "download", "sql"]
+
+
+@respx.mock
+def test_executions_sql_prints_the_script_verbatim():
+    respx.get(f"{BASE}/order_import/executions/{EID}/sql-script").mock(
+        return_value=httpx.Response(200, json={"user_script": "SELECT row[field]"})
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "sql", "order_import", EID]
+    )
+    assert result.exit_code == 0, result.output
+    assert "SELECT row[field]" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -749,12 +1831,12 @@ def test_plan_configure_flow_resolves_names_and_defaults_the_scope():
 
 
 @respx.mock
-def test_plan_configure_flow_needs_a_generated_sample_first():
+def test_plan_configure_flow_needs_recognized_output_columns_first():
     _mock_object_lookups()
     respx.get(f"{BASE}/order_import").mock(
         return_value=httpx.Response(200, json={**DETAIL, "headers": {}})
     )
-    with pytest.raises(PlanError, match="generate-sample"):
+    with pytest.raises(PlanError, match="push --publish"):
         sct.plan_configure_flow(_flow_spec())
 
 
@@ -767,9 +1849,9 @@ def test_plan_configure_flow_rejects_a_column_the_output_sample_doesnt_have():
     spec = _flow_spec(
         execution_variables=[{"name": "order_number"}, {"name": "invented"}]
     )
-    # The sample's columns are the contract — and a stale sample is the usual
-    # reason a column the SQL clearly selects looks missing.
-    with pytest.raises(PlanError, match="generate-sample"):
+    # `headers` are the contract, and they refresh on publish, so unpublished
+    # SQL is the usual reason a column the SQL clearly selects looks missing.
+    with pytest.raises(PlanError, match="push --publish"):
         sct.plan_configure_flow(spec)
 
 
@@ -887,7 +1969,7 @@ def test_plan_configure_flow_warns_about_variables_it_would_drop():
 def test_plan_configure_flow_warns_about_a_date_variable_with_no_output_format():
     """Kizen defaults an unset output_format to %m/%d/%Y, which a native
     ISO-only date field then rejects per row — a silent partial-success that
-    doesn't surface in `executions --json`. Flag it at plan time instead."""
+    doesn't surface in `executions list --json`. Flag it at plan time instead."""
     _mock_object_lookups()
     respx.get(f"{BASE}/order_import").mock(
         return_value=httpx.Response(200, json=DETAIL)
@@ -1882,12 +2964,30 @@ SEED_TABLE = {
 }
 
 
+def _mock_record_counts(object_id: str, *, segment: int, total: int):
+    """Serve `count_records`: a search with a query is the segment, without is
+    the whole object."""
+
+    def respond(request):
+        query = json.loads(request.content)["query"]
+        return httpx.Response(
+            200,
+            json={"count": segment if query else total, "next": None, "results": []},
+        )
+
+    return respx.post(f"{FAKE_BASE_URL}/api/records/{object_id}/search").mock(
+        side_effect=respond
+    )
+
+
 def _mock_filter_groups(object_id: str = "obj-lines") -> None:
     respx.get(f"{FAKE_BASE_URL}/api/custom-objects/{object_id}/filter-groups").mock(
         return_value=httpx.Response(
             200, json={"count": 1, "next": None, "results": FILTER_GROUPS}
         )
     )
+    # A default for the coverage counts; a test that cares re-mocks the route.
+    _mock_record_counts(object_id, segment=7, total=7)
 
 
 @respx.mock
@@ -2180,6 +3280,185 @@ def test_apply_seed_change_says_when_it_cant_refresh_yet():
     assert "no reference file" in result["warning"]
 
 
+@respx.mock
+def test_plan_add_seed_without_a_group_seeds_every_record():
+    _mock_object_lookups()
+    groups = respx.get(f"{FAKE_BASE_URL}/api/custom-objects/obj-lines/filter-groups")
+    respx.get(f"{BASE}/metadata").mock(return_value=httpx.Response(200, json=METADATA))
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW]}
+        )
+    )
+
+    plan = sct.plan_add_seed(
+        "order_import", custom_object="order_lines", fields=["sku"]
+    )
+
+    # An explicit null, matching the schema (nullable + required); the row id is
+    # reused because this replaces the existing order_lines seed.
+    assert plan["payload"] == [
+        {
+            "custom_object_id": "obj-lines",
+            "group_id": None,
+            "fields_ids": ["f-lines-sku"],
+            "id": "seed-1",
+        }
+    ]
+    assert plan["filter_group"] == "all records"
+    assert "coverage" not in plan
+    assert not groups.called
+
+
+@respx.mock
+def test_plan_add_seed_with_a_group_carries_its_coverage():
+    _mock_object_lookups()
+    _mock_filter_groups()
+    counts = _mock_record_counts("obj-lines", segment=5, total=7)
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+
+    plan = sct.plan_add_seed(
+        "order_import", custom_object="order_lines", group="Active Only"
+    )
+
+    assert plan["coverage"] == {"segment": 5, "total": 7}
+    assert plan["payload"] == [{"custom_object_id": "obj-lines", "group_id": "grp-1"}]
+    queries = [json.loads(c.request.content)["query"] for c in counts.calls]
+    assert queries == [FILTER_GROUPS[0]["config"]["query"], []]
+    assert all(c.request.url.params["page_size"] == "1" for c in counts.calls)
+
+
+@respx.mock
+def test_plan_add_seed_survives_a_failed_count():
+    _mock_object_lookups()
+    _mock_filter_groups()
+    respx.post(f"{FAKE_BASE_URL}/api/records/obj-lines/search").mock(
+        return_value=httpx.Response(500, json={"detail": "boom"})
+    )
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+
+    plan = sct.plan_add_seed(
+        "order_import", custom_object="order_lines", group="Active Only"
+    )
+
+    # The counts only feed a warning, so losing them costs the warning, not the plan.
+    assert "coverage" not in plan
+    assert plan["payload"] == [{"custom_object_id": "obj-lines", "group_id": "grp-1"}]
+
+
+def _seed_add_plan(**overrides):
+    return {
+        "env": "test",
+        "connector": "conn-uuid",
+        "connector_api_name": "order_import",
+        "custom_object": "order_lines",
+        "filter_group": "Active Only",
+        "fields": None,
+        "view": "kizen.order_lines",
+        "replacing": False,
+        "payload": [{"custom_object_id": "obj-lines", "group_id": "grp-1"}],
+        "regenerate": True,
+        "script_id": "draft-1",
+        "source_file_id": None,
+        **overrides,
+    }
+
+
+def _seeds_add(monkeypatch, plan, *args):
+    from typer.testing import CliRunner
+
+    import kizen_builder.cli as cli
+
+    planned: dict = {}
+
+    def fake_plan(*a, **k):
+        planned.update(k)
+        return plan
+
+    monkeypatch.setattr(sct, "plan_add_seed", fake_plan)
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "seeds", "add", "order_import", "-o", "order_lines"]
+        + list(args),
+    )
+    return result, planned
+
+
+def test_seeds_add_preview_warns_when_the_segment_leaves_records_out(monkeypatch):
+    plan = _seed_add_plan(coverage={"segment": 5, "total": 7})
+
+    result, _ = _seeds_add(monkeypatch, plan, "-g", "Active Only", "--dry-run")
+    assert result.exit_code == 0
+    assert "covers 5 of 7 records" in result.stdout
+    assert "match-or-create connector re-creates them" in result.stdout
+    assert "kizen_id only" in result.stdout
+
+    # --json keeps the warning on stderr with the rest of the preview.
+    result, _ = _seeds_add(
+        monkeypatch, plan, "-g", "Active Only", "--dry-run", "--json"
+    )
+    assert result.exit_code == 0
+    assert "covers 5 of 7 records" in result.stderr
+    assert json.loads(result.stdout)["coverage"] == {"segment": 5, "total": 7}
+
+
+def test_seeds_add_preview_is_quiet_when_the_segment_covers_everything(monkeypatch):
+    plan = _seed_add_plan(coverage={"segment": 7, "total": 7})
+    result, _ = _seeds_add(monkeypatch, plan, "-g", "Active Only", "--dry-run")
+    assert result.exit_code == 0
+    assert "records outside it" not in result.stdout
+    assert "couldn't count" not in result.stdout
+
+
+def test_seeds_add_preview_says_when_it_couldnt_check_coverage(monkeypatch):
+    # A failed count leaves no `coverage`; that must not read as full coverage.
+    result, _ = _seeds_add(
+        monkeypatch, _seed_add_plan(), "-g", "Active Only", "--dry-run"
+    )
+    assert result.exit_code == 0
+    assert "couldn't count the segment's records" in result.stdout
+
+
+def test_seeds_add_preview_shows_all_records_for_a_null_group(monkeypatch):
+    plan = _seed_add_plan(
+        filter_group="all records",
+        payload=[{"custom_object_id": "obj-lines", "group_id": None}],
+    )
+    result, planned = _seeds_add(monkeypatch, plan, "--dry-run")
+    assert result.exit_code == 0
+    assert planned["group"] is None
+    assert "all records" in result.stdout
+    assert "records outside it" not in result.stdout
+    assert "couldn't count" not in result.stdout
+
+
+@respx.mock
+def test_list_seeds_shows_a_null_group_as_all_records():
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                **DETAIL,
+                "kizen_data_seeds": [{**SEED_ROW, "group_id": None, "group": None}],
+            },
+        )
+    )
+    respx.get(f"{BASE}/order_import/sql-scripts/draft-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": "draft-1", "config_metadata": {"seed_tables": [SEED_TABLE]}},
+        )
+    )
+    rows = sct.list_seeds("order_import")
+    assert rows[0]["filter_group"] == "all records"
+    # The raw value stays visible in JSON/CSV.
+    assert rows[0]["group_id"] is None
+
+
 # ---------------------------------------------------------------------------
 # seed data export (so `run` exercises the same joins locally)
 # ---------------------------------------------------------------------------
@@ -2241,3 +3520,37 @@ def test_export_seed_data_warns_instead_of_failing_the_pull(tmp_path, env_config
         )
     assert exported == []
     assert "hand-author data/order_lines.csv" in warnings[0]
+
+
+@respx.mock
+def test_export_seed_data_exports_every_record_for_a_null_group(tmp_path, env_config):
+    search = respx.post(f"{FAKE_BASE_URL}/api/records/obj-lines/search").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "next": None,
+                "results": [
+                    {
+                        "id": "rec-1",
+                        "fields": {"f-lines-sku": {"name": "sku", "value": "SKU-1"}},
+                    }
+                ],
+            },
+        )
+    )
+    with KizenClient(env_config) as client:
+        exported, warnings = sct._export_seed_data(
+            client,
+            {"kizen_data_seeds": [{**SEED_ROW, "group_id": None, "group": None}]},
+            [SEED_TABLE],
+            tmp_path,
+            limit=100,
+        )
+
+    # No filter group to resolve, so no filter-groups call (respx would raise).
+    assert not warnings
+    assert exported[0]["filter_group"] == "all records"
+    assert json.loads(search.calls.last.request.content)["query"] == []
+    rows = list(csv.reader((tmp_path / "order_lines.csv").read_text().splitlines()))
+    assert rows == [["kizen_id", "sku"], ["rec-1", "SKU-1"]]

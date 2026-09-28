@@ -1,4 +1,5 @@
-"""`kizen smart-connectors` reads — connectors, executions, scripts, events."""
+"""`kizen smart-connectors` reads — connectors, scripts, output samples,
+events. Executions are their own group, in `smart_connectors_executions`."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
 )
-from kizen_builder.cli.smart_connectors import smart_connectors_app
+from kizen_builder.cli.smart_connectors import _output_tables, smart_connectors_app
 from kizen_builder.tools import smart_connectors as sc_tools
 
 
@@ -129,92 +130,6 @@ def smart_connectors_metadata() -> None:
     out.emit_json(meta)
 
 
-@smart_connectors_app.command("executions")
-def smart_connectors_executions(
-    connector: str = typer.Argument(..., help="Connector UUID or api_name."),
-    status: str = typer.Option(None, "--status", help="Filter by execution status."),
-    search: str = typer.Option(None, "--search", "-s", help="Search executions."),
-    include_dry_run: bool = typer.Option(
-        False, "--include-dry-run", help="Include dry-run executions."
-    ),
-    output: str = OUTPUT_OPTION,
-    json_out: bool = JSON_OPTION,
-) -> None:
-    """List a connector's execution (run) history, most recent first.
-
-    The `error` column is the executor's own failure message (the real
-    ClickHouse or validation error). This list is the only place Kizen exposes
-    it — there's no per-execution endpoint — so it's shown truncated here and in
-    full under --json / --output csv.
-    """
-    fmt = out.resolve_format(output, json_out)
-    with cli_errors():
-        results = sc_tools.list_executions(
-            connector,
-            status=status,
-            search=search,
-            include_dry_run=include_dry_run or None,
-        )
-
-    def table() -> None:
-        t = Table(title=f"Executions — {connector}")
-        t.add_column("id", style="dim")
-        t.add_column("status")
-        t.add_column("trigger")
-        t.add_column("dry_run")
-        t.add_column("started_by")
-        t.add_column("created")
-        t.add_column("error", style="red", max_width=60, overflow="fold")
-        for e in results:
-            t.add_row(
-                e.get("id") or "—",
-                e.get("status") or "—",
-                e.get("trigger_type") or "—",
-                "yes" if e.get("is_dry_run") else "",
-                str(e.get("started_by") or "—"),
-                str(e.get("created") or "—"),
-                (e.get("error_details") or "").strip() or "",
-            )
-        console.print(t)
-        if not results:
-            console.print("[dim]No executions found.[/dim]")
-        elif any(e.get("error_details") for e in results):
-            console.print(
-                "[dim]Full error text: re-run with --json (or --output csv).[/dim]"
-            )
-
-    out.render(
-        fmt,
-        json_data=results,
-        table=table,
-        csv_rows=results,
-        csv_columns=[
-            out.Column(k, k)
-            for k in (
-                "id",
-                "status",
-                "trigger_type",
-                "is_dry_run",
-                "started_by",
-                "created",
-                "ended_at",
-                "error_details",
-            )
-        ],
-    )
-
-
-@smart_connectors_app.command("execution-sql")
-def smart_connectors_execution_sql(
-    connector: str = typer.Argument(..., help="Connector UUID or api_name."),
-    execution_id: str = typer.Argument(..., help="Execution UUID (from `executions`)."),
-) -> None:
-    """Print the SQL script used in a specific execution."""
-    with cli_errors():
-        script = sc_tools.get_execution_script(connector, execution_id)
-    console.print(script.get("user_script") or "[dim](empty)[/dim]")
-
-
 @smart_connectors_app.command("scripts")
 def smart_connectors_scripts(
     connector: str = typer.Argument(..., help="Connector UUID or api_name."),
@@ -263,6 +178,46 @@ def smart_connectors_scripts(
             )
         ],
     )
+
+
+@smart_connectors_app.command("download-sample")
+def smart_connectors_download_sample(
+    connector: str = typer.Argument(..., help="Connector UUID or api_name."),
+    live: bool = typer.Option(
+        False, "--live", help="The live script's sample instead of the draft's."
+    ),
+    script_id: str = typer.Option(
+        None, "--script", help="Script id (overrides the draft/live choice)."
+    ),
+    dest: str = typer.Option(
+        None, "--out", help="File or directory (default: ./<server filename>)."
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Overwrite an existing file."
+    ),
+    json_out: bool = JSON_OPTION,
+) -> None:
+    """Save a script's output-sample zip (one <scope>.csv per output table).
+
+    Writes the local file only. The sample is the one `generate-sample` last
+    produced for that script.
+    """
+    with cli_errors(LookupError, OSError):
+        res = sc_tools.download_sample(
+            connector, use_live=live, script_id=script_id, dest=dest, force=force
+        )
+
+    if json_out:
+        out.emit_json(res)
+        return
+    console.print(
+        f"[green]saved[/green] {res['path']} ({res['bytes']} bytes, "
+        f"{res['script_status'] or 'script'} {res['script_id']})"
+    )
+    if res["outputs"] is not None:
+        console.print(f"  output tables: {_output_tables(res['outputs'])}")
+    for w in res["warnings"]:
+        console.print(f"  [yellow]![/yellow] {w}")
 
 
 @smart_connectors_app.command("events")

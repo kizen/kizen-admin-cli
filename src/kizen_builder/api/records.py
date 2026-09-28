@@ -74,6 +74,23 @@ def search_records(
     return results
 
 
+def count_records(
+    client: KizenClient,
+    object_identifier: str,
+    filters: list[dict[str, Any]] | None = None,
+) -> int:
+    """How many records match ``filters`` (same format as :func:`search_records`).
+
+    One ``page_size=1`` search; the response's ``count`` is the full total.
+    """
+    data = client.post(
+        f"/api/records/{object_identifier}/search",
+        json={"query": filters or [], "and": True},
+        params={"page": 1, "page_size": 1},
+    )
+    return int(data["count"])
+
+
 def create_record(
     client: KizenClient,
     object_identifier: str,

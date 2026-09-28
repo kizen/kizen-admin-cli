@@ -238,8 +238,8 @@ def test_plan_create_permission_group_default_base_posts_full_structure():
     assert op.kind == "permission_group"
     assert op.payload["name"] == "New Group"
     assert "custom_objects" in op.payload
+    assert "homepages_section" in op.payload
     assert "dashboards_section" in op.payload
-    assert "automations_section" in op.payload
     assert "contacts_section" in op.payload
     for key in ("id", "summary", "user_count", "role_count"):
         assert key not in op.payload
@@ -259,15 +259,17 @@ def test_plan_create_permission_group_default_base_resets_leaves_to_meta_default
     plan = plan_create_permission_group(name="New Group", base="default")
 
     (op,) = plan.operations
-    # template had manage_automations at view-only; meta default is also
-    # "view", so this pins the dict dialect is preserved through a reset.
-    assert op.payload["automations_section"]["manage_automations"] == {
+    # template had customize_dashboards at edit; meta default is "remove", so
+    # this pins both the reset and the dict dialect surviving it.
+    assert op.payload["dashboards_section"]["customize_dashboards"] == {
         "view": True,
-        "edit": False,
-        "remove": False,
+        "edit": True,
+        "remove": True,
     }
-    # dashboards default True -> highest non-none allowed ("view")
-    assert op.payload["dashboards_section"]["view_all_dashboards"] is True
+    # dashboards section default False -> the switch turns off
+    assert op.payload["dashboards_section"]["enabled"] is False
+    # template had customize_homepages on; meta default False -> bare bool off
+    assert op.payload["homepages_section"]["customize_homepages"] is False
 
 
 @respx.mock
@@ -286,7 +288,7 @@ def test_plan_create_permission_group_clone_base_copies_template_verbatim():
     assert op.payload["name"] == "Cloned Group"
     # verbatim copy of the source group's contacts_section, dialects intact
     assert op.payload["contacts_section"] == GROUP_DETAIL["contacts_section"]
-    assert op.payload["automations_section"] == GROUP_DETAIL["automations_section"]
+    assert op.payload["dashboards_section"] == GROUP_DETAIL["dashboards_section"]
     for key in ("id", "summary", "user_count", "role_count"):
         assert key not in op.payload
 
@@ -340,7 +342,12 @@ def test_plan_create_permission_group_settings_build_object_field_and_section_op
     plan = plan_create_permission_group(
         name="New Group",
         settings=[
-            {"type": "object", "object_id": OBJ_ID, "key": "records", "level": "edit"},
+            {
+                "type": "object",
+                "object_id": OBJ_ID,
+                "key": "all_records",
+                "level": "edit",
+            },
             {
                 "type": "field",
                 "object_id": OBJ_ID,
@@ -350,7 +357,14 @@ def test_plan_create_permission_group_settings_build_object_field_and_section_op
             {
                 "type": "section",
                 "section_key": "dashboards_section",
-                "value": {"enabled": False, "view_all_dashboards": False},
+                "value": {
+                    "enabled": False,
+                    "customize_dashboards": {
+                        "view": False,
+                        "edit": False,
+                        "remove": False,
+                    },
+                },
             },
         ],
     )
@@ -365,7 +379,7 @@ def test_plan_create_permission_group_settings_build_object_field_and_section_op
         "body": {
             "custom_object": {"id": OBJ_ID},
             "permission_level": 2,
-            "key": "records",
+            "key": "all_records",
         },
         # No live group to check at create time, but the group's own `create`
         # op always inserts every currently-existing object — never the
@@ -392,7 +406,10 @@ def test_plan_create_permission_group_settings_build_object_field_and_section_op
     assert section_op.payload == {
         "mode": "section",
         "body": {
-            "dashboards_section": {"enabled": False, "view_all_dashboards": False}
+            "dashboards_section": {
+                "enabled": False,
+                "customize_dashboards": {"view": False, "edit": False, "remove": False},
+            }
         },
     }
     assert "3 setting(s)" in plan.summary
@@ -419,14 +436,14 @@ def test_plan_create_permission_group_settings_reject_level_outside_allowed_acce
                 {
                     "type": "object",
                     "object_id": OBJ_ID,
-                    "key": "records",
+                    "key": "all_records",
                     "level": "remove",
                 }
             ],
         )
         raise AssertionError("expected PlanError")
     except PlanError as exc:
-        assert "'records'" in str(exc) and "edit" in str(exc)
+        assert "'all_records'" in str(exc) and "edit" in str(exc)
 
 
 @respx.mock
@@ -493,7 +510,12 @@ def test_plan_update_permission_group_object_op_sets_group_id_directly_with_chan
     plan = plan_update_permission_group(
         GROUP_ID,
         settings=[
-            {"type": "object", "object_id": OBJ_ID, "key": "records", "level": "edit"}
+            {
+                "type": "object",
+                "object_id": OBJ_ID,
+                "key": "all_records",
+                "level": "edit",
+            }
         ],
     )
 
@@ -506,41 +528,45 @@ def test_plan_update_permission_group_object_op_sets_group_id_directly_with_chan
         "body": {
             "custom_object": {"id": OBJ_ID},
             "permission_level": 2,
-            "key": "records",
+            "key": "all_records",
         },
         # A live leaf was found -> not the "no entry at all" case.
         "control_present": True,
     }
-    # GROUP_DETAIL's records leaf for OBJ_ID is {"view": true, ...} -> "view".
-    # A present control's target level is still a request, not a promise —
-    # a cross-field rule can still normalize it.
-    assert op.preview["change"] == "Records: view -> edit (subject to server rules)"
+    # GROUP_DETAIL's all_records leaf for OBJ_ID is {"view": true, ...} ->
+    # "view". A present control's target level is still a request, not a
+    # promise — a cross-field rule can still normalize it.
+    assert (
+        op.preview["change"]
+        == "All Policy Records: view -> edit (subject to server rules)"
+    )
 
 
 @respx.mock
 def test_plan_update_permission_group_object_op_fills_label_placeholder():
     """meta's object-control labels carry a `{0}` slot for the object's
-    display name (e.g. "All {0} Records") — only object ops need the extra
-    /api/custom-objects round trip to fill it in."""
-    templated_meta = json.loads(json.dumps(META))
-    templated_meta["custom_objects"][0]["label"] = "All {0} Records"
+    display name (live: "All {0} Records", "My Associated {0} Records") — only
+    object ops need the extra /api/custom-objects round trip to fill it in."""
     _mock_group_detail()
-    respx.get(f"{FAKE_BASE_URL}/api/permissions/meta-data").mock(
-        return_value=httpx.Response(200, json=templated_meta)
-    )
+    _mock_meta()
     _mock_object_list()
 
     plan = plan_update_permission_group(
         GROUP_ID,
         settings=[
-            {"type": "object", "object_id": OBJ_ID, "key": "records", "level": "edit"}
+            {
+                "type": "object",
+                "object_id": OBJ_ID,
+                "key": "associated_records",
+                "level": "remove",
+            }
         ],
     )
 
     (op,) = plan.operations
     assert (
         op.preview["change"]
-        == "All Policy Records: view -> edit (subject to server rules)"
+        == "My Associated Policy Records: edit -> remove (subject to server rules)"
     )
 
 
@@ -555,7 +581,7 @@ def test_plan_update_permission_group_object_op_rejects_level_outside_allowed_ac
     request before it ever reaches the server."""
     narrow_meta = json.loads(json.dumps(META))
     narrow_meta["custom_objects"][0]["allowed_access"] = ["view", "edit", "remove"]
-    _mock_group_detail()  # GROUP_DETAIL has a "records" entry for OBJ_ID
+    _mock_group_detail()  # GROUP_DETAIL has an "all_records" entry for OBJ_ID
     respx.get(f"{FAKE_BASE_URL}/api/permissions/meta-data").mock(
         return_value=httpx.Response(200, json=narrow_meta)
     )
@@ -568,14 +594,14 @@ def test_plan_update_permission_group_object_op_rejects_level_outside_allowed_ac
                 {
                     "type": "object",
                     "object_id": OBJ_ID,
-                    "key": "records",
+                    "key": "all_records",
                     "level": "none",
                 }
             ],
         )
         raise AssertionError("expected PlanError")
     except PlanError as exc:
-        assert "'records'" in str(exc)
+        assert "'all_records'" in str(exc)
         assert "view" in str(exc) and "edit" in str(exc)
 
 
@@ -600,7 +626,7 @@ def test_plan_update_permission_group_object_op_rejects_level_for_missing_object
                     "type": "object",
                     # not in GROUP_DETAIL's custom_objects -> no leaf
                     "object_id": "00000000-0000-4000-8000-000000000999",
-                    "key": "records",
+                    "key": "all_records",
                     "level": "remove",
                 }
             ],
@@ -681,7 +707,14 @@ def test_plan_update_permission_group_section_op_diffs_every_subkey():
             {
                 "type": "section",
                 "section_key": "dashboards_section",
-                "value": {"enabled": False, "view_all_dashboards": False},
+                "value": {
+                    "enabled": False,
+                    "customize_dashboards": {
+                        "view": False,
+                        "edit": False,
+                        "remove": False,
+                    },
+                },
             }
         ],
     )
@@ -691,13 +724,44 @@ def test_plan_update_permission_group_section_op_diffs_every_subkey():
     assert op.payload == {
         "mode": "section",
         "body": {
-            "dashboards_section": {"enabled": False, "view_all_dashboards": False}
+            "dashboards_section": {
+                "enabled": False,
+                "customize_dashboards": {"view": False, "edit": False, "remove": False},
+            }
         },
     }
-    # GROUP_DETAIL's dashboards_section is fully enabled -> both read "view".
+    # GROUP_DETAIL's dashboards_section is enabled with customize_dashboards
+    # at edit; the dict dialect reads back through the same diff.
     assert op.preview["change"] == (
-        "Enabled: view -> none; View All Dashboards: view -> none"
+        "Enabled: view -> none; Customize Dashboards: edit -> none"
     )
+
+
+@respx.mock
+def test_section_op_with_a_non_dict_value_raises_on_create_and_update():
+    """A section op replaces one `*_section` with its complete dict. A bare
+    `value: true` used to reach `.items()` on `group-update` as an
+    AttributeError, and on `group-create` went to the server as-is."""
+    _mock_group_list()
+    _mock_group_detail()
+    _mock_meta()
+    _mock_object_list()
+    settings = [
+        {"type": "object", "object_id": OBJ_ID, "key": "all_records", "level": "edit"},
+        {"type": "section", "section_key": "dashboards_section", "value": True},
+    ]
+
+    for plan_it in (
+        lambda: plan_create_permission_group(name="New Group", settings=settings),
+        lambda: plan_update_permission_group(GROUP_ID, settings=settings),
+    ):
+        try:
+            plan_it()
+            raise AssertionError("expected PlanError")
+        except PlanError as exc:
+            assert "setting[1]" in str(exc)
+            assert "complete 'dashboards_section' dict" in str(exc)
+            assert "got bool" in str(exc)
 
 
 @respx.mock
@@ -710,7 +774,12 @@ def test_plan_update_permission_group_raises_when_group_not_found():
         plan_update_permission_group(
             UNKNOWN_GROUP_ID,
             settings=[
-                {"type": "object", "object_id": OBJ_ID, "key": "records", "level": 1}
+                {
+                    "type": "object",
+                    "object_id": OBJ_ID,
+                    "key": "all_records",
+                    "level": 1,
+                }
             ],
         )
         raise AssertionError("expected KizenAPIError")
@@ -739,7 +808,12 @@ def test_patch_permission_group_hits_the_group_endpoint_with_a_full_section():
     route = respx.patch(f"{FAKE_BASE_URL}/api/permission-group/{GROUP_ID}").mock(
         return_value=httpx.Response(200, json={"id": GROUP_ID})
     )
-    body = {"dashboards_section": {"enabled": True, "view_all_dashboards": True}}
+    body = {
+        "dashboards_section": {
+            "enabled": True,
+            "customize_dashboards": {"view": True, "edit": True, "remove": True},
+        }
+    }
 
     with KizenClient(load_env_config()) as client:
         perm_api.patch_permission_group(client, GROUP_ID, body)
@@ -755,7 +829,7 @@ def test_object_update_permission_hits_the_object_update_endpoint():
     ).mock(return_value=httpx.Response(200, json={"id": GROUP_ID}))
     body = {
         "custom_object": {"id": OBJ_ID},
-        "key": "records",
+        "key": "all_records",
         "permission_level": 2,
     }
 

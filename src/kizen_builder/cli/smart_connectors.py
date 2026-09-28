@@ -12,6 +12,7 @@ from typing import Any, NoReturn
 import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.markup import escape
 from rich.prompt import Confirm
 from rich.table import Table
 
@@ -230,11 +231,14 @@ def smart_connectors_set_input(
         help="Generate the SQL template + config from the file's columns and "
         "write them onto the draft script (default), or just attach the file.",
     ),
-    force: bool = typer.Option(
+    template_sql: bool = typer.Option(
         False,
-        "--force",
-        help="Replace an existing reference file. Refused by default — swapping "
-        "one is a known-broken operation in Kizen (see the error text).",
+        "--template-sql",
+        help="When replacing a reference file, overwrite the draft's SQL with the "
+        "generated template instead of keeping it.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", hidden=True, help="No longer needed; does nothing."
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the plan without uploading."
@@ -255,10 +259,14 @@ def smart_connectors_set_input(
 
     Each connector type wants a differently shaped file; the required shape is
     validated server-side and named in the plan.
+
+    Replacing an attached file keeps the draft's SQL (unless --template-sql),
+    regenerates only its config, and runs the output sample. The exit code is 1
+    if that sample fails.
     """
     with _connector_errors(FileNotFoundError):
         plan = sc_tools.plan_set_input(
-            connector, input_file, regenerate=regenerate, allow_replace=force
+            connector, input_file, regenerate=regenerate, template_sql=template_sql
         )
 
     def render(target: Console) -> None:
@@ -275,6 +283,13 @@ def smart_connectors_set_input(
         if plan.get("replacing"):
             t.add_row("replacing", f"[yellow]{plan['replacing']}[/yellow]")
         t.add_row("regenerate template", "yes" if plan["regenerate"] else "no")
+        if plan.get("replacing") and plan["regenerate"]:
+            t.add_row(
+                "draft SQL",
+                "replaced by the template" if plan["template_sql"] else "kept",
+            )
+        if plan.get("next_steps"):
+            t.add_row("after attach", " → ".join(plan["next_steps"]))
         target.print(t)
 
     if not _preview_and_confirm(
@@ -290,20 +305,34 @@ def smart_connectors_set_input(
     with cli_errors(PlanError):
         result = sc_tools.apply_set_input(plan)
 
+    sample = result.get("sample")
+    sample_failed = sample is not None and sample.get("state") != "success"
     if json_out:
         out.emit_json(result)
+        if sample_failed:
+            raise typer.Exit(code=1)
         return
     console.print(
         f"[green]attached[/green] {result['file_name']} → {result['connector']}"
     )
     if result["regenerated"]:
+        what = (
+            "config regenerated, SQL kept"
+            if result.get("kept_user_script")
+            else "regenerated"
+        )
         console.print(
             f"  draft script {result['script_id']}"
-            f"{' (new)' if result.get('new_draft') else ''} regenerated "
+            f"{' (new)' if result.get('new_draft') else ''} {what} "
             f"({result['sql_lines']} lines, SQL {result.get('sql_version')}; "
             f"input tables: "
             f"{', '.join(t for t in result['input_tables'] if t) or 'none'})"
         )
+        for renamed in result.get("renamed_input_tables") or []:
+            console.print(
+                f"  [yellow]input table renamed[/yellow]: input.{renamed['old']} → "
+                f"input.{renamed['new']} — update any SQL that reads the old name"
+            )
         if result.get("sql_version_restored"):
             console.print(
                 f"  [dim]template generation downgraded the SQL version; "
@@ -315,11 +344,48 @@ def smart_connectors_set_input(
                 f"{', '.join(result['dropped_output_tables'])} — no such Kizen "
                 "object, and sample generation crashes on them[/dim]"
             )
+    if sample is not None:
+        state = sample.get("state")
+        colour = {"success": "green", "failed": "red"}.get(state or "", "yellow")
+        console.print(f"  sample generation: [{colour}]{state}[/{colour}]")
+        if sample.get("error"):
+            err_console.print(f"  [red]{sample['error']}[/red]")
+        if sample.get("timed_out"):
+            console.print(
+                "[yellow]still running[/yellow] — re-check with `smart-connectors "
+                "scripts`, then publish once it succeeds."
+            )
+        elif sample_failed:
+            console.print(
+                f"[dim]Next: fix the SQL (`smart-connectors pull {result['connector']}`, "
+                f"edit, `push`), then `smart-connectors generate-sample "
+                f"{result['connector']}`.[/dim]"
+            )
+        else:
+            console.print(
+                f"[dim]Next: `smart-connectors push --publish` (the live script runs "
+                f"the old file until then), then `smart-connectors suggest-variables "
+                f"{result['connector']}` to re-check variables against the new "
+                f"columns.[/dim]"
+            )
+        if sample_failed:
+            raise typer.Exit(code=1)
+    elif result["regenerated"]:
         console.print(
             f"[dim]Next: `smart-connectors pull {result['connector']}` to iterate "
             f"on the SQL, or `smart-connectors generate-sample {result['connector']}` "
             f"to produce the output sample publish requires.[/dim]"
         )
+
+
+def _output_tables(outputs: list[dict[str, Any]]) -> str:
+    """`contacts (4 rows, 12 cols), policies (3 rows, 9 cols)`."""
+    return (
+        ", ".join(
+            f"{o['table']} ({o['rows']} rows, {o['columns']} cols)" for o in outputs
+        )
+        or "none"
+    )
 
 
 @smart_connectors_app.command("generate-sample")
@@ -338,10 +404,10 @@ def smart_connectors_generate_sample(
 ) -> None:
     """Run the draft server-side to generate its output sample.
 
-    Writes no records. Two things depend on it: `push --publish` 400s with
-    "Output sample file is not generated yet" until the sample exists, and the
-    connector's recognized output columns (which every execution variable's
-    scope is validated against) only appear once it has run.
+    Writes no records. `push --publish` 400s with "Output sample file is not
+    generated yet" until the sample exists. The tables it reports are read from
+    that sample. They can differ from the connector's recognized scopes, which
+    `configure-flow` validates against and which refresh on `push --publish`.
     """
     with _connector_errors():
         result = sc_tools.generate_output_sample(
@@ -356,13 +422,23 @@ def smart_connectors_generate_sample(
     console.print(
         f"sample generation: [{colour}]{state}[/{colour}] (script {result['script_id']})"
     )
-    if result["scopes"]:
-        console.print(
-            "  output tables: "
-            + ", ".join(f"{k} ({v} columns)" for k, v in result["scopes"].items())
-        )
+    outputs = result["outputs"]
+    if outputs is not None:
+        console.print(f"  output tables: {_output_tables(outputs)}")
+        tables = {o["table"] for o in outputs}
+        scopes = set(result["scopes"])
+        if tables != scopes:
+            console.print(
+                f"  [yellow]the sample wrote {', '.join(sorted(tables)) or 'nothing'}, "
+                f"but the connector's recognized scopes are "
+                f"{', '.join(sorted(scopes)) or 'none'}.[/yellow] `configure-flow` "
+                "validates against the recognized scopes, which refresh on "
+                "`push --publish`."
+            )
+    for w in result["warnings"]:
+        console.print(f"  [yellow]![/yellow] {w}")
     if result.get("error"):
-        err_console.print(f"  [red]{result['error']}[/red]")
+        err_console.print(f"  [red]{escape(str(result['error']))}[/red]", emoji=False)
     if result["timed_out"]:
         console.print(
             "[yellow]still running[/yellow] — re-check with `smart-connectors scripts`."

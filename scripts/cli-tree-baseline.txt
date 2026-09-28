@@ -3294,13 +3294,13 @@
 │ webhook-sample     Write the reference CSV a webhook connector's template generator needs.       │
 │ send-webhook       Fire a connector's real inbound webhook. This writes records.                 │
 │ activate           Flip a connector to `operational` so live runs actually execute.              │
+│ deactivate         Set a connector to `inactive` so no live run starts.                          │
 │ start-flow         Queue an execution of the connector (dry run unless --live).                  │
 │ list               List smart connectors in the current env.                                     │
 │ get                Show one connector's detail, including its draft/live SQL scripts.            │
 │ metadata           Dump the connector-type / matching-rule metadata catalog (JSON).              │
-│ executions         List a connector's execution (run) history, most recent first.                │
-│ execution-sql      Print the SQL script used in a specific execution.                            │
 │ scripts            List a connector's SQL scripts (draft + live).                                │
+│ download-sample    Save a script's output-sample zip (one <scope>.csv per output table).         │
 │ events             List a connector's event history (audit trail). Requires the UUID.            │
 │ pull               Assemble a local working directory (connector.sql + __config.json + data/)    │
 │                    for a connector so you can iterate on its SQL locally.                        │
@@ -3313,8 +3313,12 @@
 │                    and optionally publish it live. Previews the diff and confirms first.         │
 │ seeds              Seed a connector with rows from other Kizen objects, exposed to its SQL as a  │
 │                    `kizen.<object>` view so incoming data can be joined against what's already   │
-│                    in Kizen. A seed selects rows via a saved filter group (segment) on the       │
-│                    seeded object.                                                                │
+│                    in Kizen. A seed covers every record of the seeded object, or only those in a │
+│                    saved filter group (segment) given with --group.                              │
+│ executions         Inspect a connector's executions (runs). `list <connector>` shows its run     │
+│                    history; `get <connector> <id>` shows one run — status, the full error,       │
+│                    per-step record counts, and its files; `download` saves the run's Excel       │
+│                    report, SQL-output zip, or input file; `sql` prints the SQL it ran.           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors activate [OPTIONS] {connector}                                             
@@ -3324,12 +3328,15 @@
  A connector created through the API starts in `setup`. Dry runs work in any                        
  status, but a live run of a connector that isn't `operational` sits in                             
  `queued` indefinitely with no error — which is why this is its own command.                        
+ The server refuses to activate without execution variables and fully                               
+ configured load steps.                                                                             
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --status           <str>  setup|operational|need_attention|inactive. Defaults to operational.    │
+│ --status           <str>  operational|inactive — the only two an update can set. Defaults to     │
+│                           operational.                                                           │
 │                           [default: operational]                                                 │
 │ --dry-run                 Show the change without applying.                                      │
 │ --yes      -y             Skip the confirmation prompt.                                          │
@@ -3410,6 +3417,43 @@
 │    --help                            Show this message and exit.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: smart-connectors deactivate [OPTIONS] {connector}                                           
+                                                                                                    
+ Set a connector to `inactive` so no live run starts.                                               
+                                                                                                    
+ Every edit still works while inactive, and so do dry runs. `activate`                              
+ brings it back with nothing re-done. Deactivate first when one change spans                        
+ the flow and the SQL, so no run lands between the two writes.                                      
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector      <str>  Connector UUID or api_name. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the change without applying.                                           │
+│ --yes      -y        Skip the confirmation prompt.                                               │
+│ --json               Emit JSON.                                                                  │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: smart-connectors download-sample [OPTIONS] {connector}                                      
+                                                                                                    
+ Save a script's output-sample zip (one <scope>.csv per output table).                              
+                                                                                                    
+ Writes the local file only. The sample is the one `generate-sample` last                           
+ produced for that script.                                                                          
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector      <str>  Connector UUID or api_name. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --live                   The live script's sample instead of the draft's.                        │
+│ --script          <str>  Script id (overrides the draft/live choice).                            │
+│ --out             <str>  File or directory (default: ./<server filename>).                       │
+│ --force   -f             Overwrite an existing file.                                             │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
  Usage: smart-connectors events [OPTIONS] {smart_connector_id}                                      
                                                                                                     
  List a connector's event history (audit trail). Requires the UUID.                                 
@@ -3426,26 +3470,71 @@
 │ --help                       Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Usage: smart-connectors execution-sql [OPTIONS] {connector} {execution_id}                         
+ Usage: smart-connectors executions [OPTIONS] COMMAND [ARGS]...                                     
                                                                                                     
- Print the SQL script used in a specific execution.                                                 
+ Inspect a connector's executions (runs). `list <connector>` shows its run history; `get            
+ <connector> <id>` shows one run — status, the full error, per-step record counts, and its files;   
+ `download` saves the run's Excel report, SQL-output zip, or input file; `sql` prints the SQL it    
+ ran.                                                                                               
                                                                                                     
-╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
-│ *    connector         <str>  Connector UUID or api_name. [required]                             │
-│ *    execution_id      <str>  Execution UUID (from `executions`). [required]                     │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list      List a connector's execution (run) history, most recent first.                         │
+│ get       Show one execution: status, the full error, step counts, and its files.                │
+│ download  Save a run's Excel report (the default), SQL-output zip, or input file.                │
+│ sql       Print the SQL script used in one execution.                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Usage: smart-connectors executions [OPTIONS] {connector}                                           
+ Usage: smart-connectors executions download [OPTIONS] {connector}                                  
+                                             {execution_id}                                         
+                                                                                                    
+ Save a run's Excel report (the default), SQL-output zip, or input file.                            
+                                                                                                    
+ Writes the local file only, with the bytes exactly as Kizen serves them. A                         
+ failed run has no report or output zip.                                                            
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector         <str>  Connector UUID or api_name. [required]                             │
+│ *    execution_id      <str>  Execution UUID (from `executions list`). [required]                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --file           <report|output|input>  report: the .xlsx results workbook, with per-row errors, │
+│                                         warnings and status. output: the zip of SQL-output CSVs. │
+│                                         input: the file the run consumed.                        │
+│                                         [default: report]                                        │
+│ --out            <str>                  File or directory (default: ./<server filename>).        │
+│ --force  -f                             Overwrite an existing file.                              │
+│ --json                                  Alias for --output json.                                 │
+│ --help                                  Show this message and exit.                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: smart-connectors executions get [OPTIONS] {connector} {execution_id}                        
+                                                                                                    
+ Show one execution: status, the full error, step counts, and its files.                            
+                                                                                                    
+ Kizen has no single-execution endpoint; this reads the executions list                             
+ filtered to the one id. --json emits that row as the API returned it, with                         
+ `started_by` flattened to a name.                                                                  
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector         <str>  Connector UUID or api_name. [required]                             │
+│ *    execution_id      <str>  Execution UUID (from `executions list`). [required]                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: smart-connectors executions list [OPTIONS] {connector}                                      
                                                                                                     
  List a connector's execution (run) history, most recent first.                                     
                                                                                                     
  The `error` column is the executor's own failure message (the real                                 
- ClickHouse or validation error). This list is the only place Kizen exposes                         
- it — there's no per-execution endpoint — so it's shown truncated here and in                       
- full under --json / --output csv.                                                                  
+ ClickHouse or validation error). It's truncated here; `executions get`                             
+ shows one run's in full, as do --json / --output csv.                                              
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
@@ -3459,14 +3548,26 @@
 │ --help                            Show this message and exit.                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: smart-connectors executions sql [OPTIONS] {connector} {execution_id}                        
+                                                                                                    
+ Print the SQL script used in one execution.                                                        
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector         <str>  Connector UUID or api_name. [required]                             │
+│ *    execution_id      <str>  Execution UUID (from `executions list`). [required]                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
  Usage: smart-connectors generate-sample [OPTIONS] {connector}                                      
                                                                                                     
  Run the draft server-side to generate its output sample.                                           
                                                                                                     
- Writes no records. Two things depend on it: `push --publish` 400s with                             
- "Output sample file is not generated yet" until the sample exists, and the                         
- connector's recognized output columns (which every execution variable's                            
- scope is validated against) only appear once it has run.                                           
+ Writes no records. `push --publish` 400s with "Output sample file is not                           
+ generated yet" until the sample exists. The tables it reports are read from                        
+ that sample. They can differ from the connector's recognized scopes, which                         
+ `configure-flow` validates against and which refresh on `push --publish`.                          
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
@@ -3540,11 +3641,15 @@
  Write the local connector.sql back onto the connector's draft SQL script, and optionally publish   
  it live. Previews the diff and confirms first.                                                     
                                                                                                     
+ Publishing forks a new draft, and the pull marker in --dir is moved onto                           
+ it, so the next `push` from the same directory works without a re-pull.                            
+                                                                                                    
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dir        -d      <str>  Connector working directory (from `pull`). [default: .]              │
 │ --connector          <str>  Override connector (else read from the pull marker).                 │
 │ --script             <str>  Override draft script id (else from the marker).                     │
-│ --publish                   Publish the draft live after updating it.                            │
+│ --publish                   After updating the draft, run its output sample and publish it live  │
+│                             if the sample succeeds. Waits up to 300 s for the sample.            │
 │ --dry-run                   Show the SQL diff without writing anything.                          │
 │ --yes        -y             Skip the confirmation prompt.                                        │
 │ --json                      Emit JSON (diff with --dry-run, result otherwise).                   │
@@ -3579,8 +3684,8 @@
  Usage: smart-connectors seeds [OPTIONS] COMMAND [ARGS]...                                          
                                                                                                     
  Seed a connector with rows from other Kizen objects, exposed to its SQL as a `kizen.<object>` view 
- so incoming data can be joined against what's already in Kizen. A seed selects rows via a saved    
- filter group (segment) on the seeded object.                                                       
+ so incoming data can be joined against what's already in Kizen. A seed covers every record of the  
+ seeded object, or only those in a saved filter group (segment) given with --group.                 
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -3603,10 +3708,10 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ *  --object      -o                     <str>  Object api_name (or UUID) to seed from.           │
 │                                                [required]                                        │
-│ *  --group       -g                     <str>  Saved filter group (segment) name or UUID on that │
+│    --group       -g                     <str>  Saved filter group (segment) name or UUID on that │
 │                                                object — see `kizen filter-groups list <object>`. │
-│                                                NOT a field category.                             │
-│                                                [required]                                        │
+│                                                NOT a field category. Omit it to seed all         │
+│                                                records.                                          │
 │    --field       -f                     <str>  Field api_name to bring along (repeatable).       │
 │                                                kizen_id always comes.                            │
 │    --regenerate      --no-regenerate           Refresh the draft's config so the kizen.<object>  │
@@ -3665,7 +3770,7 @@
  Webhook connectors have no dry run — the receiver is the trigger, and                              
  `start-flow` doesn't apply to them. Requests are batched on the connector's                        
  cadence rather than processed per request, so expect up to a full cadence                          
- interval before an execution shows up in `executions`.                                             
+ interval before an execution shows up in `executions list`.                                        
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
@@ -3691,31 +3796,35 @@
  Each connector type wants a differently shaped file; the required shape is                         
  validated server-side and named in the plan.                                                       
                                                                                                     
+ Replacing an attached file keeps the draft's SQL (unless --template-sql),                          
+ regenerates only its config, and runs the output sample. The exit code is 1                        
+ if that sample fails.                                                                              
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    input_file      <str>  Local file to attach as the reference/sample file. [required]        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --connector   -c                     <str>  Connector UUID or api_name. [required]            │
-│    --regenerate      --no-regenerate           Generate the SQL template + config from the       │
-│                                                file's columns and write them onto the draft      │
-│                                                script (default), or just attach the file.        │
-│                                                [default: regenerate]                             │
-│    --force                                     Replace an existing reference file. Refused by    │
-│                                                default — swapping one is a known-broken          │
-│                                                operation in Kizen (see the error text).          │
-│    --dry-run                                   Show the plan without uploading.                  │
-│    --yes         -y                            Skip the confirmation prompt.                     │
-│    --json                                      Emit JSON (plan with --dry-run, result            │
-│                                                otherwise).                                       │
-│    --help                                      Show this message and exit.                       │
+│ *  --connector     -c                     <str>  Connector UUID or api_name. [required]          │
+│    --regenerate        --no-regenerate           Generate the SQL template + config from the     │
+│                                                  file's columns and write them onto the draft    │
+│                                                  script (default), or just attach the file.      │
+│                                                  [default: regenerate]                           │
+│    --template-sql                                When replacing a reference file, overwrite the  │
+│                                                  draft's SQL with the generated template instead │
+│                                                  of keeping it.                                  │
+│    --dry-run                                     Show the plan without uploading.                │
+│    --yes           -y                            Skip the confirmation prompt.                   │
+│    --json                                        Emit JSON (plan with --dry-run, result          │
+│                                                  otherwise).                                     │
+│    --help                                        Show this message and exit.                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors start-flow [OPTIONS] {connector}                                           
                                                                                                     
  Queue an execution of the connector (dry run unless --live).                                       
                                                                                                     
- Runs are asynchronous; watch them with `smart-connectors executions`, which                        
- surfaces the executor's own error for a failed run.                                                
+ Runs are asynchronous; watch one with `smart-connectors executions get`,                           
+ which shows the executor's own error for a failed run.                                             
                                                                                                     
  Webhook connectors aren't started this way — they run on a real inbound POST                       
  to their webhook endpoint, batched on the connector's cadence.                                     
@@ -4675,13 +4784,28 @@
 ===== smart-connectors create =====
 
 
+===== smart-connectors deactivate =====
+
+
+===== smart-connectors download-sample =====
+
+
 ===== smart-connectors events =====
 
 
-===== smart-connectors execution-sql =====
-
-
 ===== smart-connectors executions =====
+
+
+===== smart-connectors executions download =====
+
+
+===== smart-connectors executions get =====
+
+
+===== smart-connectors executions list =====
+
+
+===== smart-connectors executions sql =====
 
 
 ===== smart-connectors generate-sample =====

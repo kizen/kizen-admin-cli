@@ -186,9 +186,9 @@ def _resolve_execution_variables(
             raise PlanError(
                 f"execution variable '{var.name}' reads column '{source}', "
                 f"which isn't in output table '{scope}'. Available: "
-                f"{scopes[scope]}. These are the columns of the last generated "
-                f"output sample — if the SQL selects '{source}' now, the sample "
-                f"is stale: re-run `smart-connectors generate-sample`."
+                f"{scopes[scope]}. These are the columns Kizen last recorded, from "
+                f"the template or the last publish — if the draft selects "
+                f"'{source}' now, publish it first: `smart-connectors push --publish`."
             )
         row: dict[str, Any] = {
             "name": var.name,
@@ -214,10 +214,10 @@ def _resolve_execution_variables(
                 f"no output_format — Kizen defaults it to %m/%d/%Y, which a "
                 f"native ISO-only date/datetime field then rejects per row. "
                 f"That failure is a silent per-row 'Partial Success' — it "
-                f"won't appear in `executions --json`, only in the .xlsx "
-                f"report downloadable from the web UI. Set output_format "
-                f"explicitly (e.g. '%Y-%m-%d') if the target field is a "
-                f"native date/datetime type."
+                f"won't appear in `executions list --json`, only in the run's "
+                f"Excel report (`executions download <connector> <id>`). Set "
+                f"output_format explicitly (e.g. '%Y-%m-%d') if the target "
+                f"field is a native date/datetime type."
             )
         variables_payload.append(row)
     return variables_payload, date_format_warnings
@@ -350,9 +350,9 @@ def plan_configure_flow(
         if not scopes:
             raise PlanError(
                 f"'{detail.get('api_name')}' has no recognized output columns yet, "
-                f"so nothing can be mapped. Run `smart-connectors generate-sample` "
-                f"first — it populates them (and Kizen validates every variable's "
-                f"scope against them)"
+                f"so nothing can be mapped. `set-input` fills them from the "
+                f"template and `push --publish` refreshes them (Kizen validates "
+                f"every variable's scope against them)"
             )
 
         live_vars = {
