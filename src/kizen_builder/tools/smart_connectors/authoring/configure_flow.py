@@ -168,10 +168,10 @@ def _resolve_execution_variables(
                 f"no output_format — Kizen defaults it to %m/%d/%Y, which a "
                 f"native ISO-only date/datetime field then rejects per row. "
                 f"That failure is a silent per-row 'Partial Success' — it "
-                f"won't appear in `executions --json`, only in the .xlsx "
-                f"report downloadable from the web UI. Set output_format "
-                f"explicitly (e.g. '%Y-%m-%d') if the target field is a "
-                f"native date/datetime type."
+                f"won't appear in `executions list --json`, only in the run's "
+                f"Excel report (`executions download <connector> <id>`). Set "
+                f"output_format explicitly (e.g. '%Y-%m-%d') if the target "
+                f"field is a native date/datetime type."
             )
         variables_payload.append(row)
     return variables_payload, date_format_warnings

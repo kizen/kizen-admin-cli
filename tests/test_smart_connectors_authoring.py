@@ -982,6 +982,408 @@ def test_list_executions_surfaces_the_whole_executor_error():
 
 
 # ---------------------------------------------------------------------------
+# executions get / download / the retired flat verbs
+# ---------------------------------------------------------------------------
+
+EID = "1d8d2633-312d-4848-a5fb-95325dcea6df"
+
+
+def _s3(file_id: str, name: str) -> dict:
+    return {
+        "id": file_id,
+        "name": name,
+        "size_bytes": 7234,
+        "size_formatted": "7.1KB",
+        "url": f"{FAKE_BASE_URL}/api/files/{file_id}/download",
+    }
+
+
+# The live shape (cli-testing, 2026-09-25): three S3Objects, a nested
+# started_by, and step_progress grouped by stage.
+EXEC_ROW = {
+    "id": EID,
+    "status": "success",
+    "trigger_type": "fileupload",
+    "is_dry_run": True,
+    "started_by": {"id": "u1", "display_name": "Pat Admin (pat@example.test)"},
+    "created": "2026-07-28T12:43:05-05:00",
+    "ended_at": "2026-07-28T12:43:10-05:00",
+    "error_details": None,
+    "final_report": _s3("f-report", "Order Import_dry_run_output_1.xlsx"),
+    "sql_output_zip": _s3("f-output", "Live_order_import_sample_output_1.zip"),
+    "input_file": _s3("f-input", "orders.csv"),
+    "step_progress": [
+        {
+            "type": "smart_connector_sql_run",
+            "status": "completed",
+            "steps": [
+                {
+                    "status": "completed",
+                    "scope": None,
+                    "custom_object": None,
+                    "valid_records": 1,
+                    "invalid_records": 0,
+                    "total": 1,
+                }
+            ],
+        },
+        {
+            "type": "smart_connector_load_step_run",
+            "status": "completed",
+            "steps": [
+                {
+                    "status": "completed",
+                    "scope": "orders",
+                    "custom_object": {
+                        "id": "obj-orders",
+                        "name": "orders",
+                        "object_name": "Orders",
+                    },
+                    "valid_records": 2,
+                    "invalid_records": 1,
+                    "total": 3,
+                }
+            ],
+        },
+    ],
+}
+
+# A failed run keeps its input file but has no report or output zip, and a
+# cancelled stage can come back with no steps at all.
+FAILED_ERROR = (
+    "Error running connector SQL script: Code: 47. DB::Exception: There's no "
+    "column 's.sku' in table 's': While processing row[field] AS [/.-]. "
+    "(UNKNOWN_IDENTIFIER)"
+)
+FAILED_ROW = {
+    **EXEC_ROW,
+    "status": "failed",
+    "error_details": FAILED_ERROR,
+    "final_report": None,
+    "sql_output_zip": None,
+    "step_progress": [
+        {
+            "type": "smart_connector_execution_variable_eval",
+            "status": "cancelled",
+            "steps": [],
+        }
+    ],
+}
+
+
+def _mock_execution(row: dict) -> respx.Route:
+    return respx.get(f"{BASE}/order_import/executions").mock(
+        return_value=httpx.Response(
+            200, json={"count": 1, "next": None, "results": [row]}
+        )
+    )
+
+
+@respx.mock
+def test_get_execution_flattens_started_by_and_keeps_the_rest_raw():
+    _mock_execution(EXEC_ROW)
+    row = sct.get_execution("order_import", EID)
+    assert row["started_by"] == "Pat Admin (pat@example.test)"
+    assert {k: v for k, v in row.items() if k != "started_by"} == {
+        k: v for k, v in EXEC_ROW.items() if k != "started_by"
+    }
+
+
+@respx.mock
+def test_executions_get_cli_shows_the_full_error_steps_and_files():
+    _mock_execution(FAILED_ROW)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "get", "order_import", EID]
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    # In full, and verbatim despite the brackets.
+    assert FAILED_ERROR in text
+    assert "execution_variable_eval │ cancelled" in text
+    assert "report: — · output: — · input: orders.csv (7.1KB)" in text
+
+
+@respx.mock
+def test_executions_get_cli_step_table_strips_the_type_prefix():
+    _mock_execution(EXEC_ROW)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "get", "order_import", EID]
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert "load_step_run │ completed │ orders │ Orders │ 2 │ 1 │ 3" in text
+    assert "smart_connector_" not in text
+    assert "report: Order Import_dry_run_output_1.xlsx (7.1KB)" in text
+
+
+@respx.mock
+def test_executions_get_cli_json_emits_the_row():
+    _mock_execution(EXEC_ROW)
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "executions", "get", "order_import", EID, "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == {
+        **EXEC_ROW,
+        "started_by": "Pat Admin (pat@example.test)",
+    }
+
+
+@respx.mock
+def test_executions_get_cli_names_a_missing_execution():
+    respx.get(f"{BASE}/order_import/executions").mock(
+        return_value=httpx.Response(200, json={"count": 0, "next": None, "results": []})
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "get", "order_import", EID]
+    )
+    assert result.exit_code == 1
+    assert f"no execution {EID}" in " ".join(result.output.split())
+
+
+SERVED = b"PK\x03\x04 bytes as served"
+
+
+@pytest.mark.parametrize(
+    ("args", "kind", "file_id", "name"),
+    [
+        ([], "report", "f-report", "Order Import_dry_run_output_1.xlsx"),
+        (
+            ["--file", "report"],
+            "report",
+            "f-report",
+            "Order Import_dry_run_output_1.xlsx",
+        ),
+        (
+            ["--file", "output"],
+            "output",
+            "f-output",
+            "Live_order_import_sample_output_1.zip",
+        ),
+        (["--file", "input"], "input", "f-input", "orders.csv"),
+    ],
+    ids=["default-is-report", "report", "output", "input"],
+)
+@respx.mock
+def test_executions_download_saves_the_chosen_file(tmp_path, args, kind, file_id, name):
+    _mock_execution(EXEC_ROW)
+    respx.get(f"{FAKE_BASE_URL}/api/files/{file_id}/download").mock(
+        return_value=httpx.Response(200, content=SERVED)
+    )
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "executions",
+            "download",
+            "order_import",
+            EID,
+            *args,
+            "--out",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    path = tmp_path / name
+    assert json.loads(result.stdout) == {
+        "path": str(path),
+        "name": name,
+        "bytes": len(SERVED),
+        "kind": kind,
+    }
+    assert path.read_bytes() == SERVED
+
+
+@respx.mock
+def test_executions_download_prints_the_path_and_size(tmp_path):
+    _mock_execution(EXEC_ROW)
+    respx.get(f"{FAKE_BASE_URL}/api/files/f-report/download").mock(
+        return_value=httpx.Response(200, content=b"xlsx")
+    )
+    target = tmp_path / "report.xlsx"
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "executions",
+            "download",
+            "order_import",
+            EID,
+            "--out",
+            str(target),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"saved {target} (4 bytes, report)" in " ".join(result.output.split())
+
+
+@pytest.mark.parametrize("kind", ["report", "output"])
+@respx.mock
+def test_executions_download_refuses_a_failed_runs_missing_file(tmp_path, kind):
+    _mock_execution(FAILED_ROW)
+    download = respx.get(url__regex=rf"{FAKE_BASE_URL}/api/files/.*")
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "smart-connectors",
+            "executions",
+            "download",
+            "order_import",
+            EID,
+            "--file",
+            kind,
+            "--out",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 1
+    text = " ".join(result.output.split())
+    assert (
+        f"execution {EID} is `failed`; failed runs have no output zip or report" in text
+    )
+    assert not download.called
+    assert list(tmp_path.iterdir()) == []
+
+
+@respx.mock
+def test_executions_download_refuses_to_overwrite_without_force(tmp_path):
+    target = tmp_path / "orders.csv"
+    target.write_bytes(b"keep me")
+    _mock_execution(EXEC_ROW)
+    respx.get(f"{FAKE_BASE_URL}/api/files/f-input/download").mock(
+        return_value=httpx.Response(200, content=b"new")
+    )
+    args = [
+        "smart-connectors",
+        "executions",
+        "download",
+        "order_import",
+        EID,
+        "--file",
+        "input",
+        "--out",
+        str(target),
+    ]
+    refused = CliRunner().invoke(cli.app, args)
+    assert refused.exit_code == 1
+    assert "--force" in refused.output
+    assert target.read_bytes() == b"keep me"
+
+    forced = CliRunner().invoke(cli.app, [*args, "--force"])
+    assert forced.exit_code == 0, forced.output
+    assert target.read_bytes() == b"new"
+
+
+def test_executions_download_rejects_an_unknown_file_kind():
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "executions", "download", "c", EID, "--file", "zip"],
+    )
+    assert result.exit_code == 2
+    text = " ".join(result.output.split())
+    assert "'report', 'output', 'input'" in text
+
+
+@respx.mock
+def test_start_flow_names_the_queued_execution_in_its_hint():
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json={**DETAIL, "status": "operational"})
+    )
+    respx.post(f"{BASE}/conn-uuid/start-connector-flow").mock(
+        return_value=httpx.Response(200, json={"execution_id": EID})
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "start-flow", "order_import", "--force"]
+    )
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert f"`smart-connectors executions get order_import {EID}`" in text
+    assert "`smart-connectors executions list order_import --include-dry-run`" in text
+
+
+@respx.mock
+def test_executions_list_cli_prints_a_bracketed_error_verbatim():
+    _mock_execution(FAILED_ROW)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "list", "order_import"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "[/.-]" in "".join(result.output.split())
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["order_import"],
+        ["order_import", "--status", "failed", "--json"],
+        ["order_import", "--help"],
+    ],
+    ids=["bare", "with-options", "help"],
+)
+def test_the_old_list_form_points_at_executions_list(args):
+    result = CliRunner().invoke(cli.app, ["smart-connectors", "executions", *args])
+    assert result.exit_code == 2
+    assert "smart-connectors executions list order_import" in " ".join(
+        result.output.split()
+    )
+
+
+@pytest.mark.parametrize(
+    ("args", "hint"),
+    [
+        (["view", "c", EID], "Did you mean 'get'?"),
+        (["show", "c", EID], "Did you mean 'get'?"),
+        (["lst", "c"], "Did you mean 'list'?"),
+        (["nope", "c", EID], "No such command 'nope'."),
+    ],
+    ids=["view", "show", "near-miss", "unknown"],
+)
+def test_other_unknown_executions_verbs_do_not_get_the_old_form_pointer(args, hint):
+    result = CliRunner().invoke(cli.app, ["smart-connectors", "executions", *args])
+    assert result.exit_code == 2
+    text = " ".join(result.output.split())
+    assert hint in text
+    assert "run history" not in text
+
+
+def test_the_retired_execution_sql_verb_is_gone():
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "execution-sql", "c", EID]
+    )
+    assert result.exit_code == 2
+
+
+def test_tab_completion_after_an_old_form_connector_lists_subcommands():
+    words = "kizen smart-connectors executions my_conn "
+    result = CliRunner().invoke(
+        cli.app,
+        [],
+        prog_name="kizen",
+        env={
+            "_KIZEN_COMPLETE": "complete_bash",
+            "COMP_WORDS": words,
+            "COMP_CWORD": "4",
+        },
+    )
+    assert result.exit_code == 0, result.exception
+    assert result.output.split() == ["list", "get", "download", "sql"]
+
+
+@respx.mock
+def test_executions_sql_prints_the_script_verbatim():
+    respx.get(f"{BASE}/order_import/executions/{EID}/sql-script").mock(
+        return_value=httpx.Response(200, json={"user_script": "SELECT row[field]"})
+    )
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "executions", "sql", "order_import", EID]
+    )
+    assert result.exit_code == 0, result.output
+    assert "SELECT row[field]" in result.stdout
+
+
+# ---------------------------------------------------------------------------
 # configure-flow: spec validation
 # ---------------------------------------------------------------------------
 
@@ -1225,7 +1627,7 @@ def test_plan_configure_flow_warns_about_variables_it_would_drop():
 def test_plan_configure_flow_warns_about_a_date_variable_with_no_output_format():
     """Kizen defaults an unset output_format to %m/%d/%Y, which a native
     ISO-only date field then rejects per row — a silent partial-success that
-    doesn't surface in `executions --json`. Flag it at plan time instead."""
+    doesn't surface in `executions list --json`. Flag it at plan time instead."""
     _mock_object_lookups()
     respx.get(f"{BASE}/order_import").mock(
         return_value=httpx.Response(200, json=DETAIL)

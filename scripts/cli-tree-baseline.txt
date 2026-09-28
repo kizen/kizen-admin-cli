@@ -3298,8 +3298,6 @@
 │ list               List smart connectors in the current env.                                     │
 │ get                Show one connector's detail, including its draft/live SQL scripts.            │
 │ metadata           Dump the connector-type / matching-rule metadata catalog (JSON).              │
-│ executions         List a connector's execution (run) history, most recent first.                │
-│ execution-sql      Print the SQL script used in a specific execution.                            │
 │ scripts            List a connector's SQL scripts (draft + live).                                │
 │ download-sample    Save a script's output-sample zip (one <scope>.csv per output table).         │
 │ events             List a connector's event history (audit trail). Requires the UUID.            │
@@ -3316,6 +3314,10 @@
 │                    `kizen.<object>` view so incoming data can be joined against what's already   │
 │                    in Kizen. A seed selects rows via a saved filter group (segment) on the       │
 │                    seeded object.                                                                │
+│ executions         Inspect a connector's executions (runs). `list <connector>` shows its run     │
+│                    history; `get <connector> <id>` shows one run — status, the full error,       │
+│                    per-step record counts, and its files; `download` saves the run's Excel       │
+│                    report, SQL-output zip, or input file; `sql` prints the SQL it ran.           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors activate [OPTIONS] {connector}                                             
@@ -3444,26 +3446,71 @@
 │ --help                       Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Usage: smart-connectors execution-sql [OPTIONS] {connector} {execution_id}                         
+ Usage: smart-connectors executions [OPTIONS] COMMAND [ARGS]...                                     
                                                                                                     
- Print the SQL script used in a specific execution.                                                 
+ Inspect a connector's executions (runs). `list <connector>` shows its run history; `get            
+ <connector> <id>` shows one run — status, the full error, per-step record counts, and its files;   
+ `download` saves the run's Excel report, SQL-output zip, or input file; `sql` prints the SQL it    
+ ran.                                                                                               
                                                                                                     
-╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
-│ *    connector         <str>  Connector UUID or api_name. [required]                             │
-│ *    execution_id      <str>  Execution UUID (from `executions`). [required]                     │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list      List a connector's execution (run) history, most recent first.                         │
+│ get       Show one execution: status, the full error, step counts, and its files.                │
+│ download  Save a run's Excel report (the default), SQL-output zip, or input file.                │
+│ sql       Print the SQL script used in one execution.                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Usage: smart-connectors executions [OPTIONS] {connector}                                           
+ Usage: smart-connectors executions download [OPTIONS] {connector}                                  
+                                             {execution_id}                                         
+                                                                                                    
+ Save a run's Excel report (the default), SQL-output zip, or input file.                            
+                                                                                                    
+ Writes the local file only, with the bytes exactly as Kizen serves them. A                         
+ failed run has no report or output zip.                                                            
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector         <str>  Connector UUID or api_name. [required]                             │
+│ *    execution_id      <str>  Execution UUID (from `executions list`). [required]                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --file           <report|output|input>  report: the .xlsx results workbook, with per-row errors, │
+│                                         warnings and status. output: the zip of SQL-output CSVs. │
+│                                         input: the file the run consumed.                        │
+│                                         [default: report]                                        │
+│ --out            <str>                  File or directory (default: ./<server filename>).        │
+│ --force  -f                             Overwrite an existing file.                              │
+│ --json                                  Alias for --output json.                                 │
+│ --help                                  Show this message and exit.                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: smart-connectors executions get [OPTIONS] {connector} {execution_id}                        
+                                                                                                    
+ Show one execution: status, the full error, step counts, and its files.                            
+                                                                                                    
+ Kizen has no single-execution endpoint; this reads the executions list                             
+ filtered to the one id. --json emits that row as the API returned it, with                         
+ `started_by` flattened to a name.                                                                  
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector         <str>  Connector UUID or api_name. [required]                             │
+│ *    execution_id      <str>  Execution UUID (from `executions list`). [required]                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: smart-connectors executions list [OPTIONS] {connector}                                      
                                                                                                     
  List a connector's execution (run) history, most recent first.                                     
                                                                                                     
  The `error` column is the executor's own failure message (the real                                 
- ClickHouse or validation error). This list is the only place Kizen exposes                         
- it — there's no per-execution endpoint — so it's shown truncated here and in                       
- full under --json / --output csv.                                                                  
+ ClickHouse or validation error). It's truncated here; `executions get`                             
+ shows one run's in full, as do --json / --output csv.                                              
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
@@ -3475,6 +3522,18 @@
 │ --output           -o      <str>  Output format: table (default), json, or csv.                  │
 │ --json                            Alias for --output json.                                       │
 │ --help                            Show this message and exit.                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: smart-connectors executions sql [OPTIONS] {connector} {execution_id}                        
+                                                                                                    
+ Print the SQL script used in one execution.                                                        
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector         <str>  Connector UUID or api_name. [required]                             │
+│ *    execution_id      <str>  Execution UUID (from `executions list`). [required]                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors generate-sample [OPTIONS] {connector}                                      
@@ -3683,7 +3742,7 @@
  Webhook connectors have no dry run — the receiver is the trigger, and                              
  `start-flow` doesn't apply to them. Requests are batched on the connector's                        
  cadence rather than processed per request, so expect up to a full cadence                          
- interval before an execution shows up in `executions`.                                             
+ interval before an execution shows up in `executions list`.                                        
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
@@ -3732,8 +3791,8 @@
                                                                                                     
  Queue an execution of the connector (dry run unless --live).                                       
                                                                                                     
- Runs are asynchronous; watch them with `smart-connectors executions`, which                        
- surfaces the executor's own error for a failed run.                                                
+ Runs are asynchronous; watch one with `smart-connectors executions get`,                           
+ which shows the executor's own error for a failed run.                                             
                                                                                                     
  Webhook connectors aren't started this way — they run on a real inbound POST                       
  to their webhook endpoint, batched on the connector's cadence.                                     
@@ -4699,10 +4758,19 @@
 ===== smart-connectors events =====
 
 
-===== smart-connectors execution-sql =====
-
-
 ===== smart-connectors executions =====
+
+
+===== smart-connectors executions download =====
+
+
+===== smart-connectors executions get =====
+
+
+===== smart-connectors executions list =====
+
+
+===== smart-connectors executions sql =====
 
 
 ===== smart-connectors generate-sample =====

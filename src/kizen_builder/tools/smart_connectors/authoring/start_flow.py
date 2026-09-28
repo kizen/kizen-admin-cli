@@ -64,7 +64,8 @@ def apply_start_flow(plan: dict[str, Any]) -> dict[str, Any]:
         "connector": plan["connector_api_name"],
         "is_dry_run": plan["is_dry_run"],
         # The response echoes the whole queued-run request; the id it hands back
-        # is `execution_id` (not `id`), and is what `executions` lists it under.
+        # is `execution_id` (not `id`), and is what `executions list` and
+        # `executions get` key it by.
         "execution": resp.get("execution_id") or resp.get("id"),
         "queued": resp,
     }

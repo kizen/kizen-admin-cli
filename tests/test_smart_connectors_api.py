@@ -92,6 +92,63 @@ def test_executions_and_script(client):
 
 
 @respx.mock
+def test_get_execution_reads_one_row_through_the_ids_filter(client):
+    route = respx.get(f"{BASE}/c1/executions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"count": 1, "next": None, "results": [{"id": "e1", "status": "ok"}]},
+        )
+    )
+    assert sc.get_execution(client, "c1", "e1") == {"id": "e1", "status": "ok"}
+    q = route.calls.last.request.url.params
+    assert q["ids"] == "e1"
+    assert q["include_dry_run"] == "true"
+
+
+@respx.mock
+def test_get_execution_not_found_names_the_connector_and_the_id(client):
+    respx.get(f"{BASE}/c1/executions").mock(
+        return_value=httpx.Response(200, json={"count": 0, "next": None, "results": []})
+    )
+    with pytest.raises(LookupError, match=r"no execution e404 on smart connector 'c1'"):
+        sc.get_execution(client, "c1", "e404")
+
+
+@respx.mock
+def test_get_execution_returns_the_matching_row_not_the_first(client):
+    respx.get(f"{BASE}/c1/executions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "count": 2,
+                "next": None,
+                "results": [{"id": "e-newer"}, {"id": "E1", "status": "ok"}],
+            },
+        )
+    )
+    assert sc.get_execution(client, "c1", "e1") == {"id": "E1", "status": "ok"}
+
+
+@respx.mock
+def test_get_execution_does_not_return_a_different_run(client):
+    respx.get(f"{BASE}/c1/executions").mock(
+        return_value=httpx.Response(
+            200, json={"count": 1, "next": None, "results": [{"id": "e-other"}]}
+        )
+    )
+    with pytest.raises(LookupError, match=r"no execution e1 on smart connector"):
+        sc.get_execution(client, "c1", "e1")
+
+
+@respx.mock
+def test_get_execution_refuses_a_comma_list(client):
+    route = respx.get(f"{BASE}/c1/executions")
+    with pytest.raises(LookupError, match=r"expected one execution id"):
+        sc.get_execution(client, "c1", "e1,e2")
+    assert not route.called
+
+
+@respx.mock
 def test_update_and_publish_script(client):
     patch_route = respx.patch(f"{BASE}/c1/sql-scripts/s1").mock(
         return_value=httpx.Response(200, json={"id": "s1", "user_script": "SELECT 2"})
