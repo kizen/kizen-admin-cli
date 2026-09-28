@@ -35,6 +35,36 @@ called out explicitly under **Changed** or **Removed**.
   `kizen/kizen-admin-cli`. The command is still `kizen` and the installed
   package is still `kizen_builder`, so nothing about invoking or importing
   the tool changes.
+- **`smart-connectors set-input` can replace a connector's reference file.**
+  It used to refuse, calling the swap a Kizen platform bug. It wasn't: the
+  CLI started sample generation without the connector's file id, so the
+  script stayed pinned to the first file. `generate-sample` now sends it. A
+  replace keeps your draft SQL, regenerates only the config (`--template-sql`
+  takes the generated script instead), names any input table the new file
+  renamed, and runs the output sample, exiting 1 if that fails.
+  **If you passed `--force`, the result is different.** The flag is still
+  accepted but has no effect, and a replace no longer does what `--force`
+  used to: it keeps the draft SQL instead of writing the template SQL, waits
+  for the output sample (up to 300 s), and exits 1 if the sample fails —
+  which it will if the kept SQL still reads the old `input.<file>_csv`
+  table. To get the old result, pass `--template-sql` instead, and expect
+  exit 1 when the sample fails.
+- **`smart-connectors push --publish` runs the output sample itself.** It
+  writes the SQL, runs the sample on the connector's file, waits for it (up
+  to 300 s), and publishes only if it succeeds. It used to check the draft's
+  existing sample instead. That check refused every draft a previous publish
+  had just forked, and let an edited draft through on a sample of its old SQL.
+  If the sample fails or times out, `push --publish` exits 1 with nothing
+  published; the draft keeps your SQL. After a publish, `push` moves the
+  pull marker onto the new draft the server forks, so the next `push` from
+  the same directory works without a re-pull. The success line now says
+  "script published — live runs now use it" and shows the connector's status,
+  instead of "connector is now live". Plain `push` is unchanged.
+- **`smart-connectors activate --status` accepts only `operational` or
+  `inactive`**, the only two an update can set. `setup` and `need_attention`
+  used to reach the server and 400. The preview also warns when the
+  connector has no execution variables, which the server requires.
+
 - **`smart-connectors generate-sample` reports the tables its sample actually
   holds.** The `output tables` line now comes from the sample zip the run just
   produced, with row and column counts (`contacts (4 rows, 12 cols)`), rather
@@ -57,6 +87,11 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **`smart-connectors deactivate <connector>`** sets a connector `inactive`,
+  with the same preview, `--dry-run`, `--yes`, and `--json` as `activate`.
+  Edits and dry runs still work while inactive, and `activate` brings it back
+  with nothing re-done. `kizen docs show smart-connectors` gains a Lifecycle
+  section: which verbs need which status, and how to edit a live connector.
 - **`kizen smart-connectors executions get <connector> <eid>`** shows one run:
   status, trigger, who started it, the **full** executor error, a step table
   with valid/invalid/total record counts per stage and scope, and which of

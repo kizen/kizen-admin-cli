@@ -63,7 +63,9 @@ kizen smart-connectors add-input <file> [--dir]      # swap in local sample data
 ```
 
 `push` previews a unified SQL diff and confirms before writing; only
-`--publish` promotes to live.
+`--publish` promotes to live, after running the output sample. Publishing forks
+a new draft, and `push` moves the marker onto it, so the loop repeats from one
+directory. See [Lifecycle](#lifecycle-states-and-editing-a-live-connector).
 
 ### Why `pull` assembles the directory client-side
 
@@ -156,11 +158,11 @@ Spreadsheet, schedule, activity, and webhook are all live-verified end-to-end.
 smart-connectors create <name> --object <api_name> --type <type>
 smart-connectors set-input <file> --connector <c>     # upload + get-file-template
 smart-connectors pull/run/push                        # iterate on the SQL
-smart-connectors generate-sample <c>                  # sql-scripts/{id}/start
-smart-connectors push --publish                       # promote the draft
+smart-connectors generate-sample <c>                  # sql-scripts/{id}/start (optional: push --publish runs it)
+smart-connectors push --publish                       # sample, then promote the draft; refreshes headers
 smart-connectors suggest-variables <c> --spec         # starting point for the spec
 smart-connectors configure-flow <c> --spec-file <f>   # execution_variables + flow.loads
-smart-connectors activate <c>                         # status: operational
+smart-connectors activate <c>                         # status: operational (deactivate: inactive)
 smart-connectors start-flow <c> [--live]              # start-connector-flow
 ```
 
@@ -193,27 +195,34 @@ legible:
 
 4. **`POST .../sql-scripts/{id}/start`** generates the server-side output
    sample. Required before `publish` will accept the script (`publish` 400s with
-   "Output sample file is not generated yet"). It also populates the connector's
-   `headers` — the recognized output columns, keyed by scope — which every
-   execution variable's `scope` is validated against, so nothing in steps 6–7
-   can be configured until this succeeds. Generation is async: poll the script's
-   `state`.
+   "Output sample file is not generated yet. Please run the script first.").
+   Generation is async: poll the script's `state`. Send
+   `{"source_file_id": "<the connector's file>"}` as the body, or the script
+   stays on whatever file it last ran against; see [Replacing the reference
+   file](#replacing-the-reference-file). **`start` does not touch the
+   connector's `headers`** (confirmed live 2026-09-25); step 5 does.
 
-5. **`POST .../sql-scripts/{id}/publish`** promotes the draft live.
+5. **`POST .../sql-scripts/{id}/publish`** promotes the draft live, and
+   refreshes the connector's **`headers`**: the recognized output columns,
+   keyed by scope, that every execution variable's `scope` and `data_source`
+   are validated against in steps 6–7. Before the first publish, `headers`
+   already hold the template SQL's columns, filled when `get-file-template`
+   ran. What publish does to the script ids is under
+   [Lifecycle](#lifecycle-states-and-editing-a-live-connector).
 
 6. **`POST .../generate-execution-variables`** suggests variables from the
    reference file's columns with inferred `data_type` / `input_format` /
    `output_format` (e.g. `"Yes"`/`"No"` values infer `boolean` +
    `input_format: yes_no`); `PATCH` them onto `execution_variables` to save.
 
-   **`data_source` is validated against the connector's `headers`** — the
-   columns of the *generated output sample*, i.e. what the SQL selects, keyed by
-   scope. So the SQL is free to invent output columns that appear nowhere in the
-   uploaded file; what it can't do is invent them **without regenerating the
-   sample**, because `headers` is only refreshed by `sql-scripts/{id}/start`.
+   **`data_source` is validated against the connector's `headers`** — what
+   the *published* SQL selects, keyed by scope. So the SQL is free to invent
+   output columns that appear nowhere in the uploaded file; what it can't do is
+   invent them **without publishing**, because `headers` is refreshed by
+   `publish`, not by `sql-scripts/{id}/start` (confirmed live 2026-09-25).
    Symptom of skipping that: "Scope X is not found in headers", or a
    `data_source` rejected for a column you can plainly see in your SQL. The fix
-   is `generate-sample`, not a re-upload.
+   is `push --publish`, not `generate-sample` and not a re-upload.
 
 7. **Configure `flow.loads`** — one entry per object the connector writes to.
    Shape, matching rules, field mappings and their quirks:
@@ -227,6 +236,91 @@ legible:
 9. **`POST .../start-connector-flow`** (`{"is_dry_run": true|false}`) actually
    runs it. `is_dry_run: true` validates without writing. The response echoes
    the queued request and carries the id as **`execution_id`**, not `id`.
+
+## Lifecycle: states, and editing a live connector
+
+Everything in this section is confirmed live 2026-09-25, except two things:
+the first point under "Flow edits have no draft", which follows from the
+connector's shape, and the last paragraph, which is a recommendation.
+
+There are three separate states:
+
+- **Connector `status`**: `setup`, `operational`, `need_attention`, or
+  `inactive`. **An update can set only `operational` or `inactive`.** Anything
+  else 400s with "Status can only be set to 'Operational' or 'Inactive' on an
+  update." A connector created through the API starts in `setup`. `activate`
+  sets `operational`, and `deactivate` sets `inactive`.
+- **Script `status`**: `draft` or `live`.
+- **Script `state`**, the output sample: `setup`, `queued`, `in_progress`,
+  `failed`, or `success`. **A PATCH never resets `state`.** Editing a draft that
+  last sampled `success` leaves it at `success`, now against SQL the sample
+  never ran.
+
+### What each verb needs
+
+Status only gates a **live run**. Every verb below was run in each of these
+three statuses, and none of them changes the status. `need_attention` is set
+by the server and wasn't probed:
+
+| verb | `setup` | `operational` | `inactive` |
+|---|---|---|---|
+| `push`, `generate-sample`, `push --publish` | ✓ | ✓ | ✓ |
+| `configure-flow` | ✓ | ✓ | ✓ |
+| `start-flow` (dry run) | ✓ | ✓ | ✓ |
+| `start-flow --live` | ✗ | ✓ | ✗ |
+
+Outside `operational`, `start-flow` refuses a live run and says why. Queued
+anyway, a live run sits in `queued` forever with no error (step 8 above).
+
+**Activating (→ `operational`) has prerequisites**, and each missing one gets
+its own 400:
+
+- execution variables: "Can't activate the SmartConnector flow without
+  execution variables."
+- every load step fully configured: "Can't activate … without fully
+  configuring each load step."
+
+`activate` warns about both in its preview, and about a connector with no
+published script. **Deactivating and reactivating needs nothing re-done.**
+`inactive` → `operational` goes straight through with nothing else changed.
+
+### Flow edits have no draft; SQL edits apply on publish
+
+- **The flow has no draft.** A connector has one `flow` and one set of
+  execution variables, and `configure-flow` writes them onto the connector
+  itself, even an `operational` one. There's no publish step, so the next run
+  should use them. That a dry run succeeds after `configure-flow` is confirmed;
+  that a live run picks the change up at once isn't.
+- **SQL has a draft/publish split.** `push` edits the draft; live runs keep
+  using the live script until `push --publish`.
+- **`publish` keeps the script's id, which is now the live script, and forks a
+  new draft** with the same SQL and config in state `setup`. That draft can't be
+  published until it has sampled again. The previous live script is gone: a GET
+  of its id 404s. `push --publish` handles both: it runs the sample before
+  publishing, and then moves the pull marker onto the new draft.
+- **`headers` refresh on publish.** To change the output columns, run
+  `push --publish` and then `configure-flow`, in that order. Otherwise
+  `configure-flow` validates against the old columns.
+
+### Editing a connector that's already live
+
+```bash
+kizen smart-connectors pull <c> --dir <d>   # once
+# edit <d>/connector.sql
+kizen smart-connectors run --dir <d>        # try it locally
+kizen smart-connectors push --dir <d> --publish
+# repeat edit → run → push --publish from the same directory
+```
+
+`push --publish` writes the SQL, runs the output sample on the connector's
+file, waits for it (up to 300 s), and publishes only if it succeeds. If the
+sample fails or times out, the draft keeps your SQL, nothing is published, and
+live runs are unaffected. A plain `push` still only writes the draft.
+
+When one change spans the flow **and** the SQL, for example a new output column
+plus the variable and mapping that read it, `deactivate` first. Otherwise a
+scheduled or triggered run can land between the two writes. Then
+`push --publish`, `configure-flow`, and `activate`.
 
 ## Reading from other Kizen objects (`kizen_data_seeds`)
 
@@ -290,24 +384,43 @@ sheet has per-row `Errors | Warnings | Status` columns. Confirmed live
 `date`/`datetime` variable has no `output_format`, since that's the one case
 catchable before a run.
 
-## ⚠️ Confirmed bug: swapping a connector's `source_file_id` breaks live execution
+## Replacing the reference file
 
-Re-attaching a *different* file to an existing connector (`PATCH
-source_file_id` after the connector already had one) leaves
-`config_metadata.triggered.fileupload_file_id` permanently stuck on the
-**original** file — even after PATCHing the new id again, regenerating the
-template, and re-publishing.
+`set-input` on a connector that already has a file replaces it. Confirmed live
+2026-09-25, through publish and a dry run on the new file:
 
-Sample generation can still report `state: success` in this broken state, but
-the real executor then reads the **old** file's bytes against the **new** schema
-and fails with a ClickHouse `UNKNOWN_IDENTIFIER` error. Confirmed live
-2026-07-28.
+- **`start` needs `source_file_id` in its body.** The script's
+  `config_metadata.triggered.fileupload_file_id` is the file the executor
+  reads, and `POST .../sql-scripts/{id}/start` only sets it from the body. A
+  start with no body keeps the old value, and a draft forked by `publish`
+  inherits it. `PATCH .../sql-scripts/{id}` takes `source_file_id` too, returns
+  200, and ignores it. That was the whole "can't swap a file" bug: the CLI
+  started samples with no body. `generate-sample` now sends the connector's
+  file.
+- **What `set-input` does on a replace:** uploads and attaches the file, then
+  regenerates the template and writes only its `config_metadata` onto the
+  draft. The draft's `user_script` and `sql_version` are kept, the same way
+  `seeds add` refreshes config (`--template-sql` takes the generated SQL
+  instead). It then runs the output sample itself.
+- **Input tables are renamed from the file name** (`zz_ref_b.csv` →
+  `input.zz_ref_b_csv`), so kept SQL can read a table that no longer exists.
+  `set-input` prints each renamed table. If the SQL still reads the old one,
+  the sample ends in state `failed` and `set-input` exits 1.
+- **Attaching the file rewrites the draft's `input_tables` straight away**
+  (`PATCH` of the connector's `source_file_id`, before any template call), so
+  the old table names are only readable before the attach.
 
-**Workaround: never swap `source_file_id` on an existing connector.** If the
-reference file has to change, build a fresh connector with the final file as its
-first-ever upload. `set-input` refuses to attach a file to a connector that
-already has one for this reason (`--force` overrides, for a connector that will
-only ever be dry-run). This is a Kizen platform bug, not a CLI defect.
+A replace leaves this stale until you act:
+
+- **The draft's sample** stays at `success` against the old file (see script
+  `state` under [Lifecycle](#lifecycle-states-and-editing-a-live-connector)).
+  `set-input` runs the sample for this reason.
+- **The live script** keeps running the old file until the next
+  `push --publish`.
+- **`headers`** stay on the old file's columns until the next publish; see
+  [Lifecycle](#lifecycle-states-and-editing-a-live-connector).
+- **Execution variables** whose `data_source` column is gone survive the
+  publish. Re-check them with `suggest-variables`.
 
 ## Non-spreadsheet types: `get-file-template` works — upload a shaped CSV first
 
@@ -398,9 +511,10 @@ one `<scope>.csv` per output table. Confirmed live 2026-09-25.
 produced, and warns when they differ from the connector's recognized scopes
 (`headers`).
 
-Authoring: `create` → `set-input` → `generate-sample` → `configure-flow` →
-`activate` → `start-flow`. Plus `seeds list|add|remove`, and for webhook
-connectors `webhook-sample` and `send-webhook`.
+Authoring: `create` → `set-input` → `generate-sample` → `push --publish` →
+`configure-flow` → `activate` → `start-flow`, and `deactivate`. Plus
+`seeds list|add|remove`, and for webhook connectors `webhook-sample` and
+`send-webhook`.
 
 Every write previews and confirms first (`--dry-run` to stop after the preview,
 `--yes` to skip the prompt). Two exceptions run without a prompt because they

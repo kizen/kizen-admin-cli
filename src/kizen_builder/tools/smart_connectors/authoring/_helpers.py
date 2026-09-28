@@ -1,7 +1,7 @@
 """Shared helpers for the authoring surface: name/uuid resolution against
-live custom objects and fields, the connector's output-table scopes, and the
-constants (connector types, the webhook SQL-version pin, the per-type sample
-file shapes) every authoring command needs.
+live custom objects and fields, the connector's output-table scopes, the
+config-only template refresh, and the constants (connector types, the webhook
+SQL-version pin, the per-type sample file shapes) every authoring command needs.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from kizen_builder.api import custom_objects as co_api
+from kizen_builder.api import smart_connectors as sc_api
 from kizen_builder.api.client import KizenClient
 from kizen_builder.tools.plans import PlanError
 
@@ -104,3 +105,35 @@ def _sole_scope(scopes: dict[str, list[str]], what: str) -> str:
         f"{what} needs an explicit 'scope' — the connector writes "
         f"{len(scopes)} output tables ({sorted(scopes)})"
     )
+
+
+def _fresh_template(
+    client: KizenClient,
+    connector: str,
+    source_file_id: str,
+    fallback_script_id: str,
+) -> tuple[dict[str, Any], str]:
+    """``get-file-template``, plus the draft to write it to.
+
+    The call can fork a new draft carrying the template's own SQL, so snapshot
+    any script you mean to keep *before* calling this.
+    Returns ``(template, draft_id)``.
+    """
+    template = sc_api.get_file_template(client, connector, source_file_id)
+    detail = sc_api.get_smart_connector(client, connector)
+    draft_id = (detail.get("last_draft_script") or {}).get("id") or fallback_script_id
+    return template, draft_id
+
+
+def _config_keeping_sql(
+    before: dict[str, Any], template: dict[str, Any]
+) -> dict[str, Any]:
+    """The draft write that takes the template's ``config_metadata`` and keeps
+    ``before``'s ``user_script`` and ``sql_version``."""
+    payload: dict[str, Any] = {
+        "config_metadata": template["config_metadata"],
+        "user_script": before.get("user_script") or template.get("user_script") or "",
+    }
+    if before.get("sql_version"):
+        payload["sql_version"] = before["sql_version"]
+    return payload

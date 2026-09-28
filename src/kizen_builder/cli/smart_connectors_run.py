@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 from kizen_builder import output as out
 from kizen_builder.cli._shared import cli_errors, console, err_console
@@ -164,33 +165,15 @@ def smart_connectors_send_webhook(
     )
 
 
-@smart_connectors_app.command("activate")
-def smart_connectors_activate(
-    connector: str = typer.Argument(..., help="Connector UUID or api_name."),
-    status: str = typer.Option(
-        "operational",
-        "--status",
-        help="setup|operational|need_attention|inactive. Defaults to operational.",
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show the change without applying."
-    ),
-    yes: bool = typer.Option(
-        False, "--yes", "-y", help="Skip the confirmation prompt."
-    ),
-    json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
+def _set_status(
+    connector: str, status: str, *, dry_run: bool, yes: bool, json_out: bool
 ) -> None:
-    """Flip a connector to `operational` so live runs actually execute.
-
-    A connector created through the API starts in `setup`. Dry runs work in any
-    status, but a live run of a connector that isn't `operational` sits in
-    `queued` indefinitely with no error — which is why this is its own command.
-    """
+    """Preview, confirm, and apply one status change (`activate` / `deactivate`)."""
     with _connector_errors():
         plan = sc_tools.plan_set_status(connector, status)
+    name = escape(plan["connector_api_name"] or connector)
 
     if not plan["changed"]:
-        msg = f"[dim]{plan['connector_api_name']} is already '{status}'.[/dim]"
         if json_out:
             out.emit_json(
                 {
@@ -200,24 +183,31 @@ def smart_connectors_activate(
                 }
             )
         else:
-            console.print(msg)
+            console.print(f"[dim]{name} is already '{status}'.[/dim]", emoji=False)
         return
 
     def render(target: Console) -> None:
         target.print(
-            f"[bold]{plan['connector_api_name']}[/bold]: status "
-            f"{plan['from_status']} → [bold]{plan['to_status']}[/bold]"
+            f"[bold]{name}[/bold]: status {escape(plan['from_status'] or 'none')} "
+            f"→ [bold]{plan['to_status']}[/bold]",
+            emoji=False,
         )
         if plan["to_status"] == "operational":
+            if not plan["execution_variables"]:
+                target.print(
+                    "[yellow]![/yellow] no execution variables — the server "
+                    "refuses to activate without them (`configure-flow`)"
+                )
+            if not plan["load_steps"]:
+                target.print(
+                    "[yellow]![/yellow] no load steps configured — the server "
+                    "refuses to activate until each load step is fully "
+                    "configured (`configure-flow`)"
+                )
             if not plan["has_live_script"]:
                 target.print(
                     "[yellow]![/yellow] no published script — publish one with "
                     "`push --publish` or runs will have nothing to execute"
-                )
-            if not plan["load_steps"]:
-                target.print(
-                    "[yellow]![/yellow] no load steps configured — runs would "
-                    "write no records (`configure-flow`)"
                 )
 
     if not _preview_and_confirm(
@@ -236,7 +226,59 @@ def smart_connectors_activate(
     if json_out:
         out.emit_json(result)
         return
-    console.print(f"[green]{result['connector']}[/green] is now '{result['status']}'")
+    console.print(
+        f"[green]{escape(result['connector'] or connector)}[/green] is now "
+        f"'{escape(result['status'] or 'unknown')}'",
+        emoji=False,
+    )
+
+
+@smart_connectors_app.command("activate")
+def smart_connectors_activate(
+    connector: str = typer.Argument(..., help="Connector UUID or api_name."),
+    status: str = typer.Option(
+        "operational",
+        "--status",
+        help="operational|inactive — the only two an update can set. Defaults "
+        "to operational.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the change without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the confirmation prompt."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
+) -> None:
+    """Flip a connector to `operational` so live runs actually execute.
+
+    A connector created through the API starts in `setup`. Dry runs work in any
+    status, but a live run of a connector that isn't `operational` sits in
+    `queued` indefinitely with no error — which is why this is its own command.
+    The server refuses to activate without execution variables and fully
+    configured load steps.
+    """
+    _set_status(connector, status, dry_run=dry_run, yes=yes, json_out=json_out)
+
+
+@smart_connectors_app.command("deactivate")
+def smart_connectors_deactivate(
+    connector: str = typer.Argument(..., help="Connector UUID or api_name."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the change without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the confirmation prompt."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
+) -> None:
+    """Set a connector to `inactive` so no live run starts.
+
+    Every edit still works while inactive, and so do dry runs. `activate`
+    brings it back with nothing re-done. Deactivate first when one change spans
+    the flow and the SQL, so no run lands between the two writes.
+    """
+    _set_status(connector, "inactive", dry_run=dry_run, yes=yes, json_out=json_out)
 
 
 @smart_connectors_app.command("start-flow")

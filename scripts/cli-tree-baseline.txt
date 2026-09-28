@@ -3294,6 +3294,7 @@
 │ webhook-sample     Write the reference CSV a webhook connector's template generator needs.       │
 │ send-webhook       Fire a connector's real inbound webhook. This writes records.                 │
 │ activate           Flip a connector to `operational` so live runs actually execute.              │
+│ deactivate         Set a connector to `inactive` so no live run starts.                          │
 │ start-flow         Queue an execution of the connector (dry run unless --live).                  │
 │ list               List smart connectors in the current env.                                     │
 │ get                Show one connector's detail, including its draft/live SQL scripts.            │
@@ -3327,12 +3328,15 @@
  A connector created through the API starts in `setup`. Dry runs work in any                        
  status, but a live run of a connector that isn't `operational` sits in                             
  `queued` indefinitely with no error — which is why this is its own command.                        
+ The server refuses to activate without execution variables and fully                               
+ configured load steps.                                                                             
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --status           <str>  setup|operational|need_attention|inactive. Defaults to operational.    │
+│ --status           <str>  operational|inactive — the only two an update can set. Defaults to     │
+│                           operational.                                                           │
 │                           [default: operational]                                                 │
 │ --dry-run                 Show the change without applying.                                      │
 │ --yes      -y             Skip the confirmation prompt.                                          │
@@ -3409,6 +3413,24 @@
 │    --yes              -y             Skip the confirmation prompt.                               │
 │    --json                            Emit JSON (plan with --dry-run, result otherwise).          │
 │    --help                            Show this message and exit.                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: smart-connectors deactivate [OPTIONS] {connector}                                           
+                                                                                                    
+ Set a connector to `inactive` so no live run starts.                                               
+                                                                                                    
+ Every edit still works while inactive, and so do dry runs. `activate`                              
+ brings it back with nothing re-done. Deactivate first when one change spans                        
+ the flow and the SQL, so no run lands between the two writes.                                      
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector      <str>  Connector UUID or api_name. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the change without applying.                                           │
+│ --yes      -y        Skip the confirmation prompt.                                               │
+│ --json               Emit JSON.                                                                  │
+│ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors download-sample [OPTIONS] {connector}                                      
@@ -3617,11 +3639,15 @@
  Write the local connector.sql back onto the connector's draft SQL script, and optionally publish   
  it live. Previews the diff and confirms first.                                                     
                                                                                                     
+ Publishing forks a new draft, and the pull marker in --dir is moved onto                           
+ it, so the next `push` from the same directory works without a re-pull.                            
+                                                                                                    
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dir        -d      <str>  Connector working directory (from `pull`). [default: .]              │
 │ --connector          <str>  Override connector (else read from the pull marker).                 │
 │ --script             <str>  Override draft script id (else from the marker).                     │
-│ --publish                   Publish the draft live after updating it.                            │
+│ --publish                   After updating the draft, run its output sample and publish it live  │
+│                             if the sample succeeds. Waits up to 300 s for the sample.            │
 │ --dry-run                   Show the SQL diff without writing anything.                          │
 │ --yes        -y             Skip the confirmation prompt.                                        │
 │ --json                      Emit JSON (diff with --dry-run, result otherwise).                   │
@@ -3768,23 +3794,27 @@
  Each connector type wants a differently shaped file; the required shape is                         
  validated server-side and named in the plan.                                                       
                                                                                                     
+ Replacing an attached file keeps the draft's SQL (unless --template-sql),                          
+ regenerates only its config, and runs the output sample. The exit code is 1                        
+ if that sample fails.                                                                              
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    input_file      <str>  Local file to attach as the reference/sample file. [required]        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --connector   -c                     <str>  Connector UUID or api_name. [required]            │
-│    --regenerate      --no-regenerate           Generate the SQL template + config from the       │
-│                                                file's columns and write them onto the draft      │
-│                                                script (default), or just attach the file.        │
-│                                                [default: regenerate]                             │
-│    --force                                     Replace an existing reference file. Refused by    │
-│                                                default — swapping one is a known-broken          │
-│                                                operation in Kizen (see the error text).          │
-│    --dry-run                                   Show the plan without uploading.                  │
-│    --yes         -y                            Skip the confirmation prompt.                     │
-│    --json                                      Emit JSON (plan with --dry-run, result            │
-│                                                otherwise).                                       │
-│    --help                                      Show this message and exit.                       │
+│ *  --connector     -c                     <str>  Connector UUID or api_name. [required]          │
+│    --regenerate        --no-regenerate           Generate the SQL template + config from the     │
+│                                                  file's columns and write them onto the draft    │
+│                                                  script (default), or just attach the file.      │
+│                                                  [default: regenerate]                           │
+│    --template-sql                                When replacing a reference file, overwrite the  │
+│                                                  draft's SQL with the generated template instead │
+│                                                  of keeping it.                                  │
+│    --dry-run                                     Show the plan without uploading.                │
+│    --yes           -y                            Skip the confirmation prompt.                   │
+│    --json                                        Emit JSON (plan with --dry-run, result          │
+│                                                  otherwise).                                     │
+│    --help                                        Show this message and exit.                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors start-flow [OPTIONS] {connector}                                           
@@ -4750,6 +4780,9 @@
 
 
 ===== smart-connectors create =====
+
+
+===== smart-connectors deactivate =====
 
 
 ===== smart-connectors download-sample =====

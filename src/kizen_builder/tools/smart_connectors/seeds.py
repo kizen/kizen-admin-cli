@@ -27,7 +27,9 @@ from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors.authoring._helpers import (
+    _config_keeping_sql,
     _connector_ref,
+    _fresh_template,
     _object_lookup,
     _resolved,
 )
@@ -373,28 +375,17 @@ def apply_seed_change(plan: dict[str, Any]) -> dict[str, Any]:
             )
             return result
 
-        # Snapshot the script we're about to preserve *before* generating, since
-        # generation forks a new draft carrying the template's own SQL.
         before = sc_api.get_sql_script(client, connector, plan["script_id"])
-        template = sc_api.get_file_template(client, connector, source_file_id)
-        refreshed_detail = sc_api.get_smart_connector(client, connector)
-        target_id = (refreshed_detail.get("last_draft_script") or {}).get("id") or plan[
-            "script_id"
-        ]
-
+        template, target_id = _fresh_template(
+            client, connector, source_file_id, plan["script_id"]
+        )
         cfg = template.get("config_metadata")
         if not isinstance(cfg, dict):
             result["warning"] = "the server returned no config to refresh from"
             return result
-        payload: dict[str, Any] = {
-            "config_metadata": cfg,
-            "user_script": before.get("user_script")
-            or template.get("user_script")
-            or "",
-        }
-        if before.get("sql_version"):
-            payload["sql_version"] = before["sql_version"]
-        sc_api.update_sql_script(client, connector, target_id, payload)
+        sc_api.update_sql_script(
+            client, connector, target_id, _config_keeping_sql(before, template)
+        )
 
         result.update(
             {

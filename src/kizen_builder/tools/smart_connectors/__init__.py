@@ -13,10 +13,12 @@ across ``authoring/``:
 * ``create``           — POST the connector (lands in ``status: "setup"``)
 * ``set-input``        — upload a reference file, attach it, and regenerate the
   draft script + config from its columns
-* ``generate-sample``  — run the draft to produce the output sample and the
-  connector's ``headers``; publish is blocked until this succeeds
+* ``generate-sample``  — run the draft to produce the output sample; publish is
+  blocked until this succeeds (``push --publish`` runs it itself). Publish, not
+  this, refreshes the connector's ``headers``
 * ``configure-flow``   — save execution variables and load steps from a spec
 * ``activate``         — the ``status: "operational"`` flip a live run needs
+  (``deactivate`` sets ``inactive``)
 * ``start-flow``       — queue a dry or live execution
 
 The dev-loop functions turn the manual "download the dev package from the UI,
@@ -31,7 +33,8 @@ module each:
   the vendored ``ChDBScriptRunner`` (same engine Kizen runs in production), and
   report the output tables it wrote to ``data/output/``.
 * ``push``  — write the local connector.sql back onto the draft SQL script, and
-  optionally publish the draft live. Always previews a diff first.
+  optionally sample and publish it, then move the marker onto the draft publish
+  forks. Always previews a diff first.
 
 ``run``/``add-input`` need the optional ``connectors`` extra (embedded
 ClickHouse via chdb); the vendored runtime is imported lazily, inside
@@ -87,7 +90,6 @@ from kizen_builder.tools.smart_connectors.authoring.sample import (
 )
 from kizen_builder.tools.smart_connectors.authoring.set_input import (
     _CREATE_OUTPUT_TABLE,
-    _SWAP_WARNING,
     _drop_phantom_output_tables,
     apply_set_input,
     plan_set_input,
@@ -98,6 +100,7 @@ from kizen_builder.tools.smart_connectors.authoring.start_flow import (
 )
 from kizen_builder.tools.smart_connectors.authoring.status import (
     CONNECTOR_STATUSES,
+    SETTABLE_CONNECTOR_STATUSES,
     apply_set_status,
     plan_set_status,
 )
@@ -129,6 +132,7 @@ from kizen_builder.tools.smart_connectors.pull import (
 )
 from kizen_builder.tools.smart_connectors.push import (
     _read_marker,
+    advance_marker,
     apply_push,
     plan_push,
 )
@@ -163,10 +167,12 @@ __all__ = [
     "EXECUTION_FILES",
     "ExecutionFile",
     "MARKER_NAME",
+    "SETTABLE_CONNECTOR_STATUSES",
     "SavedFile",
     "WEBHOOK_SAMPLE_COLUMNS",
     "WEBHOOK_SQL_VERSION",
     "add_input",
+    "advance_marker",
     "apply_configure_flow",
     "apply_create_connector",
     "apply_push",
@@ -210,7 +216,6 @@ __all__ = [
     "_MATCH_ACTION_KEYS",
     "_META_KEYS",
     "_SAMPLE_FILE_SHAPES",
-    "_SWAP_WARNING",
     "_VARIABLE_WIRE_KEYS",
     "_build_config",
     "_connector_ref",

@@ -10,29 +10,28 @@ from typing import Any
 
 from kizen_builder.api import files as files_api
 from kizen_builder.api import smart_connectors as sc_api
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors.authoring._helpers import (
     _SAMPLE_FILE_SHAPES,
+    _config_keeping_sql,
     _connector_ref,
+    _fresh_template,
     _object_lookup,
 )
-
-# Re-attaching a *different* file to a connector that already has one leaves
-# config_metadata.triggered.fileupload_file_id stuck on the original, and the
-# live executor then reads the old file's bytes against the new schema
-# (ClickHouse UNKNOWN_IDENTIFIER). Confirmed live 2026-07-28; a Kizen platform
-# bug, not something this CLI can work around — so the CLI refuses by default.
-_SWAP_WARNING = (
-    "replacing a connector's reference file is a known-broken operation in "
-    "Kizen: config_metadata.triggered.fileupload_file_id stays pinned to the "
-    "ORIGINAL file no matter how many times the new id is patched, and live "
-    "executions then read the old file's bytes against the new schema and fail "
-    "with a ClickHouse UNKNOWN_IDENTIFIER error. Build a fresh connector with "
-    "the final file as its first-ever upload instead. Pass allow_replace "
-    "(--force) only if you know this connector will never run live."
+from kizen_builder.tools.smart_connectors.authoring.sample import (
+    generate_output_sample,
 )
+
+# What a replace leaves stale, in the order to fix it: the draft's sample still
+# describes the old file, the live script runs the old file until a publish
+# (which is also what refreshes `headers`), and execution variables whose
+# column went away survive the publish. See docs/specs/smart-connectors.md.
+_REPLACE_STEPS = [
+    "push --publish",
+    "suggest-variables (re-check execution variables against the new columns)",
+]
 
 
 def plan_set_input(
@@ -40,12 +39,12 @@ def plan_set_input(
     file_path: str | os.PathLike[str],
     *,
     regenerate: bool = True,
-    allow_replace: bool = False,
+    template_sql: bool = False,
 ) -> dict[str, Any]:
     """Preview attaching a local file to a connector as its reference file.
 
-    Refuses to replace an existing reference file unless ``allow_replace`` —
-    see ``_SWAP_WARNING``.
+    A connector that already has one gets it replaced. On a replace the draft's
+    SQL is kept and only its config regenerated, unless ``template_sql``.
     """
     src = Path(file_path)
     if not src.is_file():
@@ -56,12 +55,7 @@ def plan_set_input(
         detail = sc_api.get_smart_connector(client, connector)
 
     existing = detail.get("source_file") or {}
-    if existing.get("id") and not allow_replace:
-        raise PlanError(
-            f"'{detail.get('api_name')}' already has the reference file "
-            f"'{existing.get('name')}' attached — {_SWAP_WARNING}"
-        )
-
+    replacing = existing.get("name") or existing.get("id") or None
     draft = detail.get("last_draft_script") or {}
     if regenerate and not draft.get("id"):
         raise PlanError(
@@ -78,8 +72,15 @@ def plan_set_input(
         "connector_type": ctype,
         "file": str(src),
         "file_size": src.stat().st_size,
-        "replacing": existing.get("name") or None,
+        "replacing": replacing,
         "regenerate": regenerate,
+        "template_sql": template_sql,
+        "next_steps": [
+            "generate-sample (run automatically)" if regenerate else "generate-sample",
+            *_REPLACE_STEPS,
+        ]
+        if replacing
+        else [],
         "script_id": draft.get("id"),
         "sql_version": draft.get("sql_version"),
         "expected_shape": _SAMPLE_FILE_SHAPES.get(ctype or ""),
@@ -138,9 +139,24 @@ def apply_set_input(plan: dict[str, Any]) -> dict[str, Any]:
       what the connector's draft was on. That's a silent downgrade, and for a
       webhook connector it's fatal — sample generation 500s below 4.1.x. So the
       version is restored when it regressed, before anything runs.
+
+    A replace (the connector already had a file) keeps the draft's
+    ``user_script`` and ``sql_version`` and takes only the fresh
+    ``config_metadata``, unless ``template_sql``. Either way it reports the
+    input tables the new file renamed, then runs the output sample, which
+    re-stamps the file the executor reads. A failed sample is reported in
+    ``result["sample"]``, not raised: the file is attached by then.
     """
+    replacing = bool(plan.get("replacing"))
     config = load_env_config()
     with KizenClient(config) as client:
+        # Before the attach: PATCHing the connector's file rewrites the draft's
+        # input_tables, which would hide the rename.
+        before = (
+            sc_api.get_sql_script(client, plan["connector"], plan["script_id"])
+            if replacing and plan.get("regenerate")
+            else {}
+        )
         uploaded = files_api.upload_file(
             client, plan["file"], source=files_api.SMART_CONNECTOR_IMPORT
         )
@@ -157,32 +173,52 @@ def apply_set_input(plan: dict[str, Any]) -> dict[str, Any]:
         if not plan.get("regenerate"):
             return result
 
-        template = sc_api.get_file_template(client, plan["connector"], uploaded["id"])
-        if not template.get("user_script"):
-            raise PlanError(
-                "the server returned an empty template for this file. The file's "
-                "shape is validated per connector type — "
-                f"{plan.get('expected_shape') or 'see `kizen docs show reference`'}"
+        if replacing and not plan.get("template_sql"):
+            template, script_id = _fresh_template(
+                client, plan["connector"], uploaded["id"], plan["script_id"]
+            )
+            if not template.get("user_script") or not isinstance(
+                template.get("config_metadata"), dict
+            ):
+                raise _empty_template(plan, _run_sample(plan["connector"], script_id))
+            sc_api.update_sql_script(
+                client,
+                plan["connector"],
+                script_id,
+                _config_keeping_sql(before, template),
+            )
+            user_script = before.get("user_script") or template["user_script"]
+            dropped: list[str] = []
+            sql_version, restored = before.get("sql_version"), None
+        else:
+            template = sc_api.get_file_template(
+                client, plan["connector"], uploaded["id"]
+            )
+            if not template.get("user_script"):
+                raise _empty_template(
+                    plan, _run_sample(plan["connector"], None) if replacing else None
+                )
+
+            refreshed = sc_api.get_smart_connector(client, plan["connector"])
+            draft = refreshed.get("last_draft_script") or {}
+            script_id = draft.get("id") or plan["script_id"]
+
+            by_api, _ = _object_lookup(client)
+            user_script, dropped = _drop_phantom_output_tables(
+                template["user_script"], set(by_api)
             )
 
-        refreshed = sc_api.get_smart_connector(client, plan["connector"])
-        draft = refreshed.get("last_draft_script") or {}
-        script_id = draft.get("id") or plan["script_id"]
-
-        by_api, _ = _object_lookup(client)
-        user_script, dropped = _drop_phantom_output_tables(
-            template["user_script"], set(by_api)
-        )
-
-        script_payload: dict[str, Any] = {"user_script": user_script}
-        if template.get("config_metadata") is not None:
-            script_payload["config_metadata"] = template["config_metadata"]
-        was, now = plan.get("sql_version"), draft.get("sql_version")
-        if was and now and was != now:
-            script_payload["sql_version"] = was
-        updated = sc_api.update_sql_script(
-            client, plan["connector"], script_id, script_payload
-        )
+            script_payload: dict[str, Any] = {"user_script": user_script}
+            if template.get("config_metadata") is not None:
+                script_payload["config_metadata"] = template["config_metadata"]
+            was, now = plan.get("sql_version"), draft.get("sql_version")
+            if was and now and was != now:
+                script_payload["sql_version"] = was
+            updated = sc_api.update_sql_script(
+                client, plan["connector"], script_id, script_payload
+            )
+            sql_version = updated.get("sql_version") or now
+            restored = was if "sql_version" in script_payload else None
 
         cfg = template.get("config_metadata") or {}
         result.update(
@@ -190,10 +226,8 @@ def apply_set_input(plan: dict[str, Any]) -> dict[str, Any]:
                 "regenerated": True,
                 "script_id": script_id,
                 "new_draft": script_id != plan["script_id"],
-                "sql_version": updated.get("sql_version") or now,
-                "sql_version_restored": was
-                if "sql_version" in script_payload
-                else None,
+                "sql_version": sql_version,
+                "sql_version_restored": restored,
                 "dropped_output_tables": dropped,
                 "sql_lines": len(user_script.splitlines()),
                 "input_tables": [
@@ -206,4 +240,58 @@ def apply_set_input(plan: dict[str, Any]) -> dict[str, Any]:
                 ],
             }
         )
+        if replacing:
+            result["kept_user_script"] = not plan.get("template_sql") and bool(
+                before.get("user_script")
+            )
+            result["renamed_input_tables"] = _renamed_input_tables(
+                before.get("config_metadata") or {}, cfg
+            )
+
+    if replacing:
+        result["sample"] = _run_sample(plan["connector"], script_id)
     return result
+
+
+def _run_sample(connector: str, script_id: str | None) -> dict[str, Any]:
+    # A replace runs this once the new file is attached, including when the
+    # template comes back empty: PATCH never resets a script's state, so the
+    # draft would otherwise sit at `success` against the old file.
+    try:
+        return generate_output_sample(connector, script_id=script_id)
+    except KizenAPIError as exc:
+        return {"state": "failed", "error": str(exc)}
+
+
+def _empty_template(
+    plan: dict[str, Any], sample: dict[str, Any] | None = None
+) -> PlanError:
+    message = (
+        "the server returned an empty template for this file. The file's "
+        "shape is validated per connector type — "
+        f"{plan.get('expected_shape') or 'see `kizen docs show reference`'}"
+    )
+    if sample is not None:
+        message += (
+            ". The new file is attached anyway, so the draft's output sample was "
+            f"re-run on it: {sample.get('state')}"
+        )
+    return PlanError(message)
+
+
+def _renamed_input_tables(
+    before: dict[str, Any], after: dict[str, Any]
+) -> list[dict[str, str]]:
+    """Input tables whose ``table_name`` changed, paired by position.
+
+    The name comes from the file name (``b.csv`` → ``input.b_csv``), so a
+    replace usually renames the table the kept SQL reads. A table with no
+    counterpart on the other side isn't a rename and isn't listed.
+    """
+    old = [t.get("table_name") for t in before.get("input_tables") or []]
+    new = [t.get("table_name") for t in after.get("input_tables") or []]
+    return [
+        {"old": o, "new": n}
+        for o, n in zip(old, new, strict=False)
+        if o and n and o != n
+    ]
