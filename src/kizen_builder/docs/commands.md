@@ -50,9 +50,13 @@ kizen messages templates list                # email templates (source for `mess
 kizen smart-connectors list [--search <t>] [--type <t>] [--status <s>]  # ETL/data-ingestion connectors
 kizen smart-connectors get <connector>                  # one connector: detail + draft/live SQL script ids
 kizen smart-connectors metadata                         # connector-type / matching-rule catalog (raw)
-kizen smart-connectors executions <connector>           # run history (most recent first)
-kizen smart-connectors execution-sql <connector> <eid>  # the SQL used in one execution
+kizen smart-connectors executions list <connector>      # run history (most recent first)
+kizen smart-connectors executions get <connector> <eid> # one run: status, full error, step counts, files
+kizen smart-connectors executions download <connector> <eid> [--file report|output|input] [--out path]
+                                                        # save its .xlsx report (default), output zip, or input file
+kizen smart-connectors executions sql <connector> <eid> # the SQL used in one execution
 kizen smart-connectors scripts <connector>              # the connector's draft + live SQL scripts
+kizen smart-connectors download-sample <connector> [--live] [--out path]  # save a script's output-sample zip
 kizen smart-connectors events <connector-uuid>          # event history / audit trail (UUID only)
 
 kizen filter-groups list <object> [--search <text>]     # per-object saved filters (segments)
@@ -244,7 +248,7 @@ kizen smart-connectors create <name> --object <api_name> [--type spreadsheet|web
                               [--cadence secs] [--activity-object <activity type>] [--sql-version 4.1.x]
 kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--force]  # upload the reference file + generate the SQL template
 # → iterate on the SQL with pull → run → push
-kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; publish is blocked until this succeeds
+kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; reports its tables; publish is blocked until this succeeds
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
 kizen smart-connectors activate <connector> [--status operational] # a LIVE run without this sits queued forever, silently

@@ -195,7 +195,8 @@ src/kizen_builder/
     smart_connectors.py          #   kizen smart-connectors — app, shared helpers, build/configure
     smart_connectors_seeds.py    #   kizen smart-connectors seeds
     smart_connectors_run.py      #   webhook samples, activate, start-flow
-    smart_connectors_reads.py    #   connectors, executions, scripts, events
+    smart_connectors_reads.py    #   connectors, scripts, output samples, events
+    smart_connectors_executions.py #   kizen smart-connectors executions
     smart_connectors_dev.py      #   the local dev loop: pull, run, add-input, push
     upgrade.py                   #   kizen upgrade
     init.py                      #   kizen init

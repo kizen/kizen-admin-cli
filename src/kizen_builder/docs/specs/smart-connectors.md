@@ -18,7 +18,7 @@ Two docs, split by what you're doing:
 GET   /api/smart-connectors                                  # list (SmartConnectorSlimmed)
 GET   /api/smart-connectors/{connector}                      # full detail — UUID or api_name
 GET   /api/smart-connectors/metadata                         # connector-type / matching-rule catalog
-GET   .../{connector}/executions                             # run history
+GET   .../{connector}/executions                             # run history; ?ids=<eid> for one run
 GET   .../{connector}/executions/{eid}/sql-script            # the SQL used in one run
 GET   .../{connector}/sql-scripts  ·  .../sql-scripts/{id}   # draft / live scripts
 PATCH .../sql-scripts/{id}                                   # edit the draft (user_script)
@@ -30,9 +30,17 @@ GET   /api/smart-connectors/{smart_connector_id}/events-history
   `status`, `ordering`.
 - Detail includes `last_draft_script` and `live_script` as **full objects**
   (id + `user_script`), not the bare ids the OpenAPI schema implies.
-- **There is no single-execution GET.** Per-run detail is only the sql-script
-  endpoint above, plus whatever the `executions` *list* carries — including
-  `error_details`.
+- **There is no single-execution GET** (`.../executions/{eid}` is an HTML 404).
+  The list's `ids` filter (comma-separated UUIDs, scoped to the connector; a
+  non-UUID is a 400) returns one row, and `executions get` reads it that way.
+  A row carries `error_details`, `step_progress` (stages, each with per-scope
+  `valid_records` / `invalid_records` / `total`), and three S3Objects that
+  `GET /api/files/{id}/download` fetches: `final_report` (the `.xlsx` results
+  workbook), `sql_output_zip` (one `<scope>.csv` per output table), and
+  `input_file`. A failed run has `final_report` and `sql_output_zip` null; its
+  `input_file` is still there. The OpenAPI schema types all four as `string`.
+  Confirmed live 2026-09-25 on file-upload dry runs; live and webhook runs are
+  unconfirmed.
 - `events-history` **keys off `smart_connector_id` (UUID) only**, not the
   api_name that every other path accepts. The CLI rejects an api_name here with
   a clear message rather than letting it 404.
@@ -265,19 +273,22 @@ becomes `Yes`/`No`. Good enough to exercise the joins locally, which is the
 point. If a seed can't be exported, `pull` warns and carries on; a missing seed
 CSV only breaks `run`.
 
-## ⚠️ Field-level partial-success warnings aren't visible from the CLI
+## ⚠️ Field-level partial-success warnings are only in the Excel report
 
 A row-level write failure that isn't fatal to the whole run — e.g. a `date`
 execution variable with no `output_format`, where Kizen defaults it to
 `%m/%d/%Y` and a native ISO-only date field then rejects it — surfaces the run
 as `status: Partial Success`. The per-row/per-field detail behind that is **not**
-in `error_details` or anywhere else the executions list returns.
+in `error_details`; `step_progress` only counts the invalid rows.
 
-The only place it's visible is an `.xlsx` report downloaded by hand from the web
-UI; there is no API endpoint for it. `configure-flow` warns at plan time when a
+It is in the run's `final_report` workbook:
+`kizen smart-connectors executions download <connector> <eid> --file report`.
+Its sheets are `Summary Stats`, `SQL Output (<scope>)`,
+`Extracted Variables (<scope>)` and `<Object> Upload (<scope>)`, and each upload
+sheet has per-row `Errors | Warnings | Status` columns. Confirmed live
+2026-09-25 on dry runs. `configure-flow` still warns at plan time when a
 `date`/`datetime` variable has no `output_format`, since that's the one case
-catchable before the executor. Treat that as a partial mitigation — catching the
-general case needs Kizen to expose it over the API first.
+catchable before a run.
 
 ## ⚠️ Confirmed bug: swapping a connector's `source_file_id` breaks live execution
 
@@ -374,8 +385,18 @@ payload, so the sample should carry every field you intend to read.
 
 ## Command surface
 
-Read: `list` / `get` / `metadata` / `executions` / `execution-sql` / `scripts` /
-`events`, plus `suggest-variables` (a POST that saves nothing).
+Read: `list` / `get` / `metadata` / `scripts` / `download-sample` / `events`,
+the `executions list|get|download|sql` group, and `suggest-variables` (a POST
+that saves nothing). `executions download` saves a run's `final_report`,
+`sql_output_zip` or `input_file` (`--file report|output|input`, default
+`report`). `download-sample` saves a script's output-sample zip, which the
+`SQLScript` carries as `output_csv_file` (an S3Object, though the OpenAPI schema
+types it `string`) and which `GET /api/files/{id}/download` fetches. The zip holds
+one `<scope>.csv` per output table. Confirmed live 2026-09-25.
+
+`generate-sample` reports the tables and row counts from the sample it just
+produced, and warns when they differ from the connector's recognized scopes
+(`headers`).
 
 Authoring: `create` → `set-input` → `generate-sample` → `configure-flow` →
 `activate` → `start-flow`. Plus `seeds list|add|remove`, and for webhook

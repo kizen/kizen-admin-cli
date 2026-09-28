@@ -200,14 +200,19 @@ def list_executions(
     client: KizenClient,
     connector: str,
     *,
+    ids: str | None = None,
     include_dry_run: bool | None = None,
     status: str | None = None,
     search: str | None = None,
     ordering: str | None = None,
 ) -> list[dict[str, Any]]:
-    """GET /api/smart-connectors/{connector}/executions — paginated run history."""
+    """GET /api/smart-connectors/{connector}/executions — paginated run history.
+
+    ``ids`` takes comma-separated execution UUIDs; a non-UUID is a 400.
+    """
     params = _clean_params(
         {
+            "ids": ids,
             "include_dry_run": include_dry_run,
             "status": status,
             "search": search,
@@ -217,14 +222,29 @@ def list_executions(
     return _paginate(client, f"{_BASE}/{connector}/executions", params or None)
 
 
+def get_execution(
+    client: KizenClient, connector: str, execution_id: str
+) -> dict[str, Any]:
+    """One execution row, read from the list filtered by ``ids``.
+
+    There is no ``GET .../executions/{id}`` (it 404s). The ``ids`` filter is
+    scoped to the connector, so another connector's execution is not found.
+    The row is matched by id rather than trusted, because ``ids`` also takes a
+    comma list and an ignored filter would return the whole history.
+    """
+    if "," in execution_id:
+        raise LookupError(f"expected one execution id, got '{execution_id}'.")
+    rows = list_executions(client, connector, ids=execution_id, include_dry_run=True)
+    for row in rows:
+        if str(row.get("id", "")).lower() == execution_id.lower():
+            return row
+    raise LookupError(f"no execution {execution_id} on smart connector '{connector}'.")
+
+
 def get_execution_sql_script(
     client: KizenClient, connector: str, execution_id: str
 ) -> dict[str, Any]:
-    """GET .../executions/{execution_id}/sql-script — the SQL used in one run.
-
-    (There is no single-execution GET endpoint; this sub-resource is the only
-    per-execution detail the API exposes.)
-    """
+    """GET .../executions/{execution_id}/sql-script — the SQL used in one run."""
     return client.get(f"{_BASE}/{connector}/executions/{execution_id}/sql-script")
 
 
@@ -286,11 +306,12 @@ def start_sql_script(
 ) -> dict[str, Any]:
     """POST .../sql-scripts/{script_id}/start — generate the server-side output sample.
 
-    Runs the draft against the reference file to produce the output sample and
-    populate the connector's ``headers`` (the recognized output columns, keyed by
-    scope). Both matter downstream: ``publish`` 400s with "Output sample file is
-    not generated yet" until the sample exists, and ``execution_variables``
-    validates each variable's ``scope`` against ``headers``.
+    Runs the draft against the reference file to produce the output sample: a
+    zip with one ``<scope>.csv`` per output table, attached to the script as
+    ``output_csv_file`` once it succeeds. ``publish`` 400s with "Output sample
+    file is not generated yet" until it exists. Re-running this does not refresh
+    the connector's ``headers`` (the scopes ``execution_variables`` validates
+    against); ``publish`` does. Confirmed live 2026-09-25.
 
     Generation is asynchronous — poll the script's ``state`` (``in_progress`` →
     ``success`` / ``failed``) via :func:`get_sql_script`.

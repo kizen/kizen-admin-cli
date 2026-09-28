@@ -323,6 +323,16 @@ def smart_connectors_set_input(
         )
 
 
+def _output_tables(outputs: list[dict[str, Any]]) -> str:
+    """`contacts (4 rows, 12 cols), policies (3 rows, 9 cols)`."""
+    return (
+        ", ".join(
+            f"{o['table']} ({o['rows']} rows, {o['columns']} cols)" for o in outputs
+        )
+        or "none"
+    )
+
+
 @smart_connectors_app.command("generate-sample")
 def smart_connectors_generate_sample(
     connector: str = typer.Argument(..., help="Connector UUID or api_name."),
@@ -339,10 +349,10 @@ def smart_connectors_generate_sample(
 ) -> None:
     """Run the draft server-side to generate its output sample.
 
-    Writes no records. Two things depend on it: `push --publish` 400s with
-    "Output sample file is not generated yet" until the sample exists, and the
-    connector's recognized output columns (which every execution variable's
-    scope is validated against) only appear once it has run.
+    Writes no records. `push --publish` 400s with "Output sample file is not
+    generated yet" until the sample exists. The tables it reports are read from
+    that sample. They can differ from the connector's recognized scopes, which
+    `configure-flow` validates against and which refresh on `push --publish`.
     """
     with _connector_errors():
         result = sc_tools.generate_output_sample(
@@ -357,11 +367,21 @@ def smart_connectors_generate_sample(
     console.print(
         f"sample generation: [{colour}]{state}[/{colour}] (script {result['script_id']})"
     )
-    if result["scopes"]:
-        console.print(
-            "  output tables: "
-            + ", ".join(f"{k} ({v} columns)" for k, v in result["scopes"].items())
-        )
+    outputs = result["outputs"]
+    if outputs is not None:
+        console.print(f"  output tables: {_output_tables(outputs)}")
+        tables = {o["table"] for o in outputs}
+        scopes = set(result["scopes"])
+        if tables != scopes:
+            console.print(
+                f"  [yellow]the sample wrote {', '.join(sorted(tables)) or 'nothing'}, "
+                f"but the connector's recognized scopes are "
+                f"{', '.join(sorted(scopes)) or 'none'}.[/yellow] `configure-flow` "
+                "validates against the recognized scopes, which refresh on "
+                "`push --publish`."
+            )
+    for w in result["warnings"]:
+        console.print(f"  [yellow]![/yellow] {w}")
     if result.get("error"):
         err_console.print(f"  [red]{escape(str(result['error']))}[/red]", emoji=False)
     if result["timed_out"]:

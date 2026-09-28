@@ -71,7 +71,7 @@ def test_execution_sql_prints_script_verbatim(monkeypatch):
     monkeypatch.setattr(
         sc_tools, "get_execution_script", lambda *a: {"user_script": script}
     )
-    result = runner.invoke(cli.app, ["smart-connectors", "execution-sql", "c", "e"])
+    result = runner.invoke(cli.app, ["smart-connectors", "executions", "sql", "c", "e"])
     assert result.exit_code == 0, result.output
     assert script in result.stdout
 
@@ -80,7 +80,7 @@ def test_execution_sql_empty_placeholder_stays_styled(monkeypatch):
     monkeypatch.setattr(
         sc_tools, "get_execution_script", lambda *a: {"user_script": ""}
     )
-    result = runner.invoke(cli.app, ["smart-connectors", "execution-sql", "c", "e"])
+    result = runner.invoke(cli.app, ["smart-connectors", "executions", "sql", "c", "e"])
     assert result.exit_code == 0, result.output
     assert "(empty)" in result.stdout
     assert "[dim]" not in result.stdout
