@@ -8,6 +8,8 @@ against `FAKE_BASE_URL`, the same seam `tests/test_objects_tool.py` uses.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import respx
 
@@ -280,31 +282,63 @@ def test_describe_group_orders_and_labels_blocks_without_fields():
 
     labels = [b["label"] for b in d["blocks"]]
     areas = [b["area"] for b in d["blocks"]]
-    # meta["order"] puts dashboards < automations < custom_object_entities <
-    # contacts_section; the object block sorts at the custom-object slot and
-    # is labeled from the resolved object list, not the raw block key.
-    assert labels == ["Dashboards", "Automations", "Policies", "Contacts"]
-    assert areas == ["section", "section", "object", "contacts"]
+    # meta["order"] puts homepages < dashboards < contacts_section <
+    # custom_object_entities; the object block is labeled from the resolved
+    # object list, not the raw block key.
+    assert labels == ["Homepage", "Dashboards", "Contacts", "Policies"]
+    assert areas == ["section", "section", "contacts", "object"]
 
-    dashboards = d["blocks"][0]
-    assert dashboards["enabled"] is True
-    assert dashboards["rows"] == [
+    homepages = d["blocks"][0]
+    assert homepages["enabled"] is True
+    assert homepages["rows"] == [
         {
-            "label": "View All Dashboards",
+            "label": "Customize Homepages",
             "category": None,
-            "level": "view",
-            "allowed": ["none", "view"],
-            "affordance": "switch",
+            "level": "remove",  # bare-bool dialect: on = highest non-none
+            "allowed": ["none", "remove"],
+            "affordance": "range",
         }
     ]
 
-    automations = d["blocks"][1]
-    assert automations["rows"][0]["level"] == "view"  # dict dialect, read back
+    dashboards = d["blocks"][1]
+    assert dashboards["enabled"] is True
+    assert dashboards["rows"][0]["label"] == "Customize Dashboards"
+    assert dashboards["rows"][0]["level"] == "edit"  # dict dialect, read back
 
     # no include_fields -> no per-field rows anywhere
     assert not any(
         r.get("category") in ("default_fields",) for b in d["blocks"] for r in b["rows"]
     )
+
+
+@respx.mock
+def test_describe_group_sorts_object_blocks_at_the_custom_object_entities_slot():
+    # Live order puts the object slot last, where the missing-slot fallback
+    # would also land; move it ahead of contacts so only a real lookup passes.
+    reordered_meta = json.loads(json.dumps(META))
+    reordered_meta["order"] = [
+        "homepages_section",
+        "dashboards_section",
+        "custom_object_entities",
+        "contacts_section",
+    ]
+    _mock_group_detail()
+    respx.get(f"{FAKE_BASE_URL}/api/permissions/meta-data").mock(
+        return_value=httpx.Response(200, json=reordered_meta)
+    )
+    _mock_group_list()
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        return_value=httpx.Response(200, json=OBJECT_LIST)
+    )
+
+    d = describe_group(GROUP_ID, include_fields=False)
+
+    assert [b["label"] for b in d["blocks"]] == [
+        "Homepage",
+        "Dashboards",
+        "Policies",
+        "Contacts",
+    ]
 
 
 def _mock_client_client_object(fields=None):

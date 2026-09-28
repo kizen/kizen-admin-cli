@@ -168,6 +168,17 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **The `permission-group` doc's `section` op example now works.** It showed
+  `{"section_key": "automations", "value": true}`, which matches no section
+  and crashed `group-update`. The example now uses a real wire key
+  (`homepages_section`) with its complete section dict, and the op table
+  says a `section` op replaces the whole section. The doc also notes that a
+  disabled `automations_section` reads back as just `{"enabled": false}`.
+- **A `section` op whose `value` is not a dict is now a `PlanError`**, on
+  both `permissions group-create --settings-file` and `group-update`, naming
+  the op's index and the expected shape. `group-update` used to fail with an
+  `AttributeError` traceback, and `group-create` sent the bad value to the
+  server.
 - **`smart-connectors push` no longer crashes on bracketed SQL, and code,
   logs and errors print in full.** A changed SQL line containing something
   like `[/.-]` made `push` (with or without `--dry-run`/`--json`) exit 1 with
