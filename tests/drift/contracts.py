@@ -28,6 +28,7 @@ this module is safe to import during collection.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -47,10 +48,13 @@ UPDATE_ENV_VAR = "KIZEN_DRIFT_UPDATE_SNAPSHOT"
 class Contract:
     """One (method, path) the CLI mutates, or one component schema it fills in.
 
-    ``path``/``method`` are the *schema's* spelling of the endpoint — the
-    OpenAPI path template uses different parameter names than the CLI's
-    f-strings (``{id}`` vs ``{object_id}``), so these are recorded explicitly
-    rather than scraped out of ``kizen_builder.api``.
+    ``path``/``method`` are the *schema's* spelling of the endpoint as of the
+    last time the contract was edited — the OpenAPI path template uses
+    different parameter names than the CLI's f-strings (``{id}`` vs
+    ``{object_id}``), so these are recorded explicitly rather than scraped out
+    of ``kizen_builder.api``. Matching against the live schema is on path
+    *shape* (see :func:`match_endpoint`), so a placeholder rename upstream
+    still resolves; the snapshot's ``schema_path`` is the live spelling.
     """
 
     surface: str
@@ -93,8 +97,18 @@ ENDPOINT_CONTRACTS: tuple[Contract, ...] = (
     ),
     # --- objects -----------------------------------------------------------
     Contract("objects", "create custom object", "post", "/api/custom-objects"),
-    Contract("objects", "update custom object", "patch", "/api/custom-objects/{id}"),
-    Contract("objects", "delete custom object", "delete", "/api/custom-objects/{id}"),
+    Contract(
+        "objects",
+        "update custom object",
+        "patch",
+        "/api/custom-objects/{object_identifier}",
+    ),
+    Contract(
+        "objects",
+        "delete custom object",
+        "delete",
+        "/api/custom-objects/{object_identifier}",
+    ),
     Contract(
         "objects",
         "create field category",
@@ -109,31 +123,34 @@ ENDPOINT_CONTRACTS: tuple[Contract, ...] = (
     ),
     # --- fields ------------------------------------------------------------
     Contract(
-        "fields", "create field", "post", "/api/custom-objects/{object_pk}/fields"
+        "fields",
+        "create field",
+        "post",
+        "/api/custom-objects/{object_identifier}/fields",
     ),
     Contract(
         "fields",
         "update field",
         "patch",
-        "/api/custom-objects/{object_pk}/fields/{id}",
+        "/api/custom-objects/{object_identifier}/fields/{id}",
     ),
     Contract(
         "fields",
         "delete field",
         "delete",
-        "/api/custom-objects/{object_pk}/fields/{id}",
+        "/api/custom-objects/{object_identifier}/fields/{id}",
     ),
     Contract(
         "fields",
         "add field option",
         "post",
-        "/api/custom-objects/{object_pk}/fields/{field_pk}/options",
+        "/api/custom-objects/{object_identifier}/fields/{field_identifier}/options",
     ),
     Contract(
         "fields",
         "replace field option",
         "post",
-        "/api/custom-objects/{object_pk}/fields/{field_pk}/options/{id}/replace",
+        "/api/custom-objects/{object_identifier}/fields/{field_identifier}/options/{id}/replace",
     ),
     # --- permissions -------------------------------------------------------
     Contract("permissions", "create permission group", "post", "/api/permission-group"),
@@ -463,6 +480,48 @@ def _shape(
     }
 
 
+_PLACEHOLDER = re.compile(r"\{[^/{}]*\}")
+
+
+def _path_shape(template: str) -> str:
+    return _PLACEHOLDER.sub("{}", template)
+
+
+def match_endpoint(
+    paths: dict[str, Any], template: str, method: str
+) -> tuple[str, dict[str, Any]] | None:
+    """Find ``method`` on ``template`` in a live ``paths`` map.
+
+    An exact template hit wins. Otherwise the match is the one live path with
+    the same shape — every ``{...}`` placeholder treated alike, all other
+    text compared exactly — that carries ``method``, so Kizen renaming a
+    path parameter is not mistaken for the endpoint vanishing. Returns
+    ``(live_path, operation)``, or None when nothing matches.
+
+    Raises ValueError when more than one live path fits: picking one would
+    silently track whichever the schema happened to list first.
+    """
+    op = (paths.get(template) or {}).get(method)
+    if op is not None:
+        return template, op
+
+    shape = _path_shape(template)
+    candidates = sorted(
+        p
+        for p, ops in paths.items()
+        if _path_shape(p) == shape and ops.get(method) is not None
+    )
+    if len(candidates) > 1:
+        raise ValueError(
+            f"{method.upper()} {template} matches more than one live path by "
+            f"shape: {', '.join(candidates)}. Spell the contract's path exactly "
+            "as one of them."
+        )
+    if not candidates:
+        return None
+    return candidates[0], paths[candidates[0]][method]
+
+
 def extract(schema: dict[str, Any]) -> dict[str, Any]:
     """Reduce a live OpenAPI document to just the tracked contracts.
 
@@ -476,14 +535,16 @@ def extract(schema: dict[str, Any]) -> dict[str, Any]:
 
     for c in tracked():
         if c.path:
-            op = (paths.get(c.path) or {}).get(c.method)
-            if op is None:
+            match = match_endpoint(paths, c.path, c.method)
+            if match is None:
                 out[c.key] = {"present": False, "surface": c.surface, "label": c.label}
                 continue
+            schema_path, op = match
             entry: dict[str, Any] = {
                 "present": True,
                 "surface": c.surface,
                 "label": c.label,
+                "schema_path": schema_path,
                 "operation_id": op.get("operationId"),
                 "query_params": sorted(
                     p["name"]
