@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from rich.markup import escape
 from rich.prompt import Confirm
 from rich.table import Table
 
@@ -162,7 +163,10 @@ def smart_connectors_push(
         None, "--script", help="Override draft script id (else from the marker)."
     ),
     publish: bool = typer.Option(
-        False, "--publish", help="Publish the draft live after updating it."
+        False,
+        "--publish",
+        help="After updating the draft, run its output sample and publish it "
+        "live if the sample succeeds. Waits up to 300 s for the sample.",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the SQL diff without writing anything."
@@ -175,7 +179,11 @@ def smart_connectors_push(
     ),
 ) -> None:
     """Write the local connector.sql back onto the connector's draft SQL script,
-    and optionally publish it live. Previews the diff and confirms first."""
+    and optionally publish it live. Previews the diff and confirms first.
+
+    Publishing forks a new draft, and the pull marker in --dir is moved onto
+    it, so the next `push` from the same directory works without a re-pull.
+    """
     with cli_errors(LookupError, PlanError, FileNotFoundError):
         plan = sc_tools.plan_push(dir_, connector=connector, script_id=script_id)
 
@@ -200,7 +208,8 @@ def smart_connectors_push(
         diff_console.print(plan["diff"] or "[dim](no textual diff)[/dim]")
     if publish:
         diff_console.print(
-            "[yellow]--publish set:[/yellow] the draft will be promoted LIVE after update."
+            "[yellow]--publish set:[/yellow] after the update the output sample "
+            "runs, and the draft is promoted LIVE only if it succeeds."
         )
 
     if dry_run:
@@ -224,9 +233,20 @@ def smart_connectors_push(
             console.print("[yellow]aborted.[/yellow]")
             raise typer.Exit(code=1)
 
-    with cli_errors(PlanError):
-        result = sc_tools.apply_push(
-            plan["connector"], plan["script_id"], plan["local_sql"], publish=publish
+    with cli_errors():
+        try:
+            result = sc_tools.apply_push(
+                plan["connector"], plan["script_id"], plan["local_sql"], publish=publish
+            )
+        except PlanError as e:
+            # Carries the server's sample error, which is remote text.
+            err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)
+            raise typer.Exit(code=1) from e
+
+    if result.get("published"):
+        new_draft = result["new_draft_id"]
+        result["marker_updated"] = bool(new_draft) and sc_tools.advance_marker(
+            dir_, from_script_id=plan["script_id"], to_script_id=new_draft
         )
 
     if json_out:
@@ -235,5 +255,36 @@ def smart_connectors_push(
     console.print(
         f"[green]pushed[/green] → draft script {result['updated_script_id']} updated"
     )
-    if result.get("published"):
-        console.print("[green]published[/green] → connector is now live")
+    if not result.get("published"):
+        return
+    status = result.get("connector_status") or "unknown"
+    console.print(
+        "[green]script published[/green] — live runs now use it. Connector "
+        f"status: {escape(status)}",
+        emoji=False,
+    )
+    if result.get("warning"):
+        err_console.print(
+            f"[yellow]warning:[/yellow] {escape(result['warning'])}", emoji=False
+        )
+    elif status != "operational":
+        console.print(
+            "[dim]Live runs need `operational`: `smart-connectors activate`.[/dim]"
+        )
+    if result["marker_updated"]:
+        console.print(
+            f"[dim]{sc_tools.MARKER_NAME} now points at the new draft "
+            f"{result['new_draft_id']}.[/dim]"
+        )
+    elif result["new_draft_id"]:
+        console.print(
+            f"[dim]The connector's draft is now {result['new_draft_id']} — push "
+            f"to it with --script {result['new_draft_id']}.[/dim]"
+        )
+    else:
+        console.print(
+            f"[dim]No new draft found, so {sc_tools.MARKER_NAME} was not moved and "
+            "still names the published script. Find the current draft with "
+            f"`smart-connectors scripts {escape(plan['connector'])}`.[/dim]",
+            emoji=False,
+        )

@@ -12,6 +12,33 @@ from kizen_builder.config import load_env_config
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors.authoring._helpers import _scopes
 
+SAMPLE_RUNNING_STATES = ("queued", "in_progress")
+
+
+def run_output_sample(
+    client: KizenClient,
+    connector: str,
+    script_id: str,
+    *,
+    source_file_id: str | None,
+    wait: bool = True,
+    timeout: float = 300.0,
+    poll_interval: float = 3.0,
+) -> dict[str, Any]:
+    """Start ``script_id``'s output sample on ``source_file_id`` and return the
+    script row once its ``state`` is no longer ``queued`` or ``in_progress``, or
+    at ``timeout``."""
+    sc_api.start_sql_script(client, connector, script_id, source_file_id=source_file_id)
+    script = sc_api.get_sql_script(client, connector, script_id)
+
+    deadline = time.monotonic() + timeout
+    while wait and script.get("state") in SAMPLE_RUNNING_STATES:
+        if time.monotonic() > deadline:
+            break
+        time.sleep(poll_interval)
+        script = sc_api.get_sql_script(client, connector, script_id)
+    return script
+
 
 def generate_output_sample(
     connector: str,
@@ -36,20 +63,15 @@ def generate_output_sample(
             if not script_id:
                 raise PlanError(f"'{connector}' has no draft SQL script to run.")
 
-        sc_api.start_sql_script(
+        script = run_output_sample(
             client,
             connector,
             script_id,
             source_file_id=(detail.get("source_file") or {}).get("id"),
+            wait=wait,
+            timeout=timeout,
+            poll_interval=poll_interval,
         )
-        script = sc_api.get_sql_script(client, connector, script_id)
-
-        deadline = time.monotonic() + timeout
-        while wait and script.get("state") == "in_progress":
-            if time.monotonic() > deadline:
-                break
-            time.sleep(poll_interval)
-            script = sc_api.get_sql_script(client, connector, script_id)
 
         detail = sc_api.get_smart_connector(client, connector)
 
@@ -59,5 +81,5 @@ def generate_output_sample(
         "state": script.get("state"),
         "error": script.get("error") or script.get("error_details"),
         "scopes": {k: len(v) for k, v in _scopes(detail).items()},
-        "timed_out": bool(wait and script.get("state") == "in_progress"),
+        "timed_out": bool(wait and script.get("state") in SAMPLE_RUNNING_STATES),
     }

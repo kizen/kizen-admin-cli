@@ -36,9 +36,29 @@ called out explicitly under **Changed** or **Removed**.
   which it will if the kept SQL still reads the old `input.<file>_csv`
   table. To get the old result, pass `--template-sql` instead, and expect
   exit 1 when the sample fails.
+- **`smart-connectors push --publish` runs the output sample itself.** It
+  writes the SQL, runs the sample on the connector's file, waits for it (up
+  to 300 s), and publishes only if it succeeds. It used to check the draft's
+  existing sample instead. That check refused every draft a previous publish
+  had just forked, and let an edited draft through on a sample of its old SQL.
+  If the sample fails or times out, `push --publish` exits 1 with nothing
+  published; the draft keeps your SQL. After a publish, `push` moves the
+  pull marker onto the new draft the server forks, so the next `push` from
+  the same directory works without a re-pull. The success line now says
+  "script published — live runs now use it" and shows the connector's status,
+  instead of "connector is now live". Plain `push` is unchanged.
+- **`smart-connectors activate --status` accepts only `operational` or
+  `inactive`**, the only two an update can set. `setup` and `need_attention`
+  used to reach the server and 400. The preview also warns when the
+  connector has no execution variables, which the server requires.
 
 ### Added
 
+- **`smart-connectors deactivate <connector>`** sets a connector `inactive`,
+  with the same preview, `--dry-run`, `--yes`, and `--json` as `activate`.
+  Edits and dry runs still work while inactive, and `activate` brings it back
+  with nothing re-done. `kizen docs show smart-connectors` gains a Lifecycle
+  section: which verbs need which status, and how to edit a live connector.
 - **Email template `text` blocks are now authored as structured paragraphs,
   not raw HTML — and can carry inline merge fields.** `TextBlockDef.html` is
   removed (a lingering `html` key on a `text` block now fails spec

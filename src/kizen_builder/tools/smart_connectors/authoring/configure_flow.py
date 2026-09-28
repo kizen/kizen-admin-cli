@@ -140,9 +140,9 @@ def _resolve_execution_variables(
             raise PlanError(
                 f"execution variable '{var.name}' reads column '{source}', "
                 f"which isn't in output table '{scope}'. Available: "
-                f"{scopes[scope]}. These are the columns of the last generated "
-                f"output sample — if the SQL selects '{source}' now, the sample "
-                f"is stale: re-run `smart-connectors generate-sample`."
+                f"{scopes[scope]}. These are the columns Kizen last recorded, from "
+                f"the template or the last publish — if the draft selects "
+                f"'{source}' now, publish it first: `smart-connectors push --publish`."
             )
         row: dict[str, Any] = {
             "name": var.name,
@@ -304,9 +304,9 @@ def plan_configure_flow(
         if not scopes:
             raise PlanError(
                 f"'{detail.get('api_name')}' has no recognized output columns yet, "
-                f"so nothing can be mapped. Run `smart-connectors generate-sample` "
-                f"first — it populates them (and Kizen validates every variable's "
-                f"scope against them)"
+                f"so nothing can be mapped. `set-input` fills them from the "
+                f"template and `push --publish` refreshes them (Kizen validates "
+                f"every variable's scope against them)"
             )
 
         live_vars = _variable_ids(detail)

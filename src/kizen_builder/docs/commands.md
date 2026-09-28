@@ -245,12 +245,16 @@ kizen smart-connectors create <name> --object <api_name> [--type spreadsheet|web
 kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--template-sql]  # upload the reference file + generate the SQL template
 # → iterate on the SQL with pull → run → push
 kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; publish is blocked until this succeeds
+kizen smart-connectors push --publish [--dir path]               # sample, then publish; refreshes the output columns configure-flow checks
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
-kizen smart-connectors activate <connector> [--status operational] # a LIVE run without this sits queued forever, silently
+kizen smart-connectors activate <connector> [--status operational|inactive] # a LIVE run without this sits queued forever, silently
+kizen smart-connectors deactivate <connector>                      # status inactive: no live runs; every edit and dry runs still work
 kizen smart-connectors start-flow <connector> [--live] [--force]   # queue a run; dry run unless --live
 # `set-input` on a connector that already has a file replaces it, keeping your SQL. What that leaves stale:
 # kizen docs show smart-connectors (Replacing the reference file).
+# Editing a live connector: pull → edit → run → push --publish, repeatable from one directory. Which
+# verbs need which status: kizen docs show smart-connectors (Lifecycle).
 
 # smart connectors — read from other Kizen objects (exposed to the SQL as a kizen.<object> view)
 kizen smart-connectors seeds list <connector>
