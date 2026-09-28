@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 import typer
+from rich.markup import escape
 from rich.prompt import Confirm
 
 from kizen_builder.cli._mutations import _read_spec
@@ -82,7 +83,12 @@ def _run_step_patch(
             f"[bold]{api_name}[/bold]  [dim](rev {preview['revision_before']}, "
             f"{len(preview['payload']['steps'])} steps after patch)[/dim]"
         )
-        console.print(json.dumps(preview["report"], indent=2, default=list))
+        console.print(
+            json.dumps(preview["report"], indent=2, default=list),
+            markup=False,
+            emoji=False,
+            soft_wrap=True,
+        )
         if preview["validation_problems"]:
             console.print("[red]step graph INVALID — refusing to apply:[/red]")
             for p in preview["validation_problems"]:
@@ -131,7 +137,9 @@ def _run_step_patch(
     console.print(f"[bold]what changed[/bold] ({len(diff)} semantic diff(s)):")
     for d in diff[:15]:
         console.print(
-            f"  [yellow]{d['path']}[/yellow]: {d['before']!r} → {d['after']!r}"
+            f"  [yellow]{escape(str(d['path']))}[/yellow]: "
+            f"{escape(repr(d['before']))} → {escape(repr(d['after']))}",
+            emoji=False,
         )
     if len(diff) > 15:
         console.print(

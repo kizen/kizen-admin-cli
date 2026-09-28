@@ -12,6 +12,7 @@ from typing import Any, NoReturn
 import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.markup import escape
 from rich.prompt import Confirm
 from rich.table import Table
 
@@ -362,7 +363,7 @@ def smart_connectors_generate_sample(
             + ", ".join(f"{k} ({v} columns)" for k, v in result["scopes"].items())
         )
     if result.get("error"):
-        err_console.print(f"  [red]{result['error']}[/red]")
+        err_console.print(f"  [red]{escape(str(result['error']))}[/red]", emoji=False)
     if result["timed_out"]:
         console.print(
             "[yellow]still running[/yellow] — re-check with `smart-connectors scripts`."
