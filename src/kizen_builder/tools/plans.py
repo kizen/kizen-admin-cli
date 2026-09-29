@@ -312,6 +312,10 @@ def apply_plan(plan: Plan) -> ApplyResult:
             )
             if op.action == "upsert" and isinstance(resp, dict) and resp.get("action"):
                 message = resp["action"]  # "created" or "updated"
+            elif op.kind == "record_archive" and isinstance(resp, dict):
+                # Counts ids sent, not records archived (confirmed live
+                # 2026-09-28: an already-archived id still counts).
+                message = f"{resp.get('number_archived', 0)} id(s) accepted"
             elif (
                 op.kind == "permission_setting"
                 and op.payload.get("mode") == "object_update"
@@ -539,24 +543,25 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             raise PlanError(
                 f"{op.action} record op '{op.key}' has no existing_uuid — planning bug"
             )
-        if op.action == "delete":
-            return records_api.delete_record(
-                client, object_identifier, op.existing_uuid
+        if op.action == "update":
+            return records_api.update_record(
+                client,
+                object_identifier,
+                op.existing_uuid,
+                op.payload.get("fields", []),
             )
-        return records_api.update_record(
-            client, object_identifier, op.existing_uuid, op.payload.get("fields", [])
-        )
+        raise PlanError(f"unsupported record action '{op.action}'")
 
     if op.kind == "record_archive":
         # parent_object_uuid carries the object's UUID here, not the
         # api_name — the bulk-archive-entity-record endpoint lives under
         # /api/custom-objects, same convention as record_bulk_field_value.
-        if op.parent_object_uuid is None or op.existing_uuid is None:
+        if op.parent_object_uuid is None or not op.payload.get("record_ids"):
             raise PlanError(
-                f"record_archive op '{op.key}' missing object/record id — planning bug"
+                f"record_archive op '{op.key}' missing object/record ids — planning bug"
             )
-        return records_api.archive_record(
-            client, op.parent_object_uuid, op.existing_uuid
+        return records_api.archive_records(
+            client, op.parent_object_uuid, op.payload["record_ids"]
         )
 
     if op.kind == "record_unarchive":

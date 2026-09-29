@@ -276,9 +276,8 @@ kizen smart-connectors send-webhook <connector> --body '<json>|@file' [--query k
 # `output.webhooks` debug table (no such object; it crashes sample generation). Inbound requests are
 # BATCHED on the connector's cadence, so an execution appears within that window, not immediately.
 
-kizen records delete <object> <uuid> [<uuid> ...]              # archives (does not erase); see docs show records
-kizen records archive <object> <uuid> [<uuid> ...]              # same effect as delete, named for what it does
-kizen records unarchive <object> <uuid> [<uuid> ...]            # reverse of archive/delete
+kizen records archive <object> {<uuid> | --spec-file F}        # the one way to remove records; batched, no emails
+kizen records unarchive <object> <uuid> [<uuid> ...]            # reverse of archive
 kizen fields delete <object_api_name> <field_api_name>         # delete a field (drops its data everywhere)
 kizen fields options add <object> <field> --option "Label" [...]          # add select-field options
 kizen fields options remove <object> <field> <option> [--remap-to <other>] # remove one option

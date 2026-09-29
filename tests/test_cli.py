@@ -1992,25 +1992,112 @@ def test_records_list_filter_invalid_spec_exits_2(kizen):
     assert "filter error" in result.stderr
 
 
-def test_records_archive_dry_run_forwards_ids(monkeypatch):
+@pytest.fixture
+def archive_ids(monkeypatch):
+    seen: list[list[str]] = []
+
     def fake_plan_archive(object_api_name, record_ids):
         assert object_api_name == "patients"
-        assert record_ids == ["rec-1", "rec-2"]
+        seen.append(record_ids)
         return plan_tools.Plan.build(
-            env="testenv", summary="Archive 2 record(s)", operations=[]
+            env="testenv", summary="Archive record(s)", operations=[]
         )
 
     monkeypatch.setattr(record_planners, "plan_archive_records", fake_plan_archive)
+    return seen
+
+
+def test_records_archive_single_id(archive_ids):
     result = runner.invoke(
-        cli.app, ["records", "archive", "patients", "rec-1", "rec-2", "--dry-run"]
+        cli.app, ["records", "archive", "patients", "rec-1", "--dry-run"]
     )
     assert result.exit_code == 0, result.output
+    assert archive_ids == [["rec-1"]]
 
 
-def test_records_archive_requires_at_least_one_id():
-    result = runner.invoke(cli.app, ["records", "archive", "patients"])
+def test_records_archive_spec_file_csv(archive_ids, tmp_path):
+    spec = tmp_path / "ids.csv"
+    spec.write_text("id,name\nrec-1,Ada\nrec-2,Grace\n")
+    result = runner.invoke(
+        cli.app,
+        ["records", "archive", "patients", "--spec-file", str(spec), "--dry-run"],
+    )
+    assert result.exit_code == 0, result.output
+    assert archive_ids == [["rec-1", "rec-2"]]
+
+
+def test_records_archive_spec_file_json(archive_ids, tmp_path):
+    spec = tmp_path / "ids.json"
+    spec.write_text(json.dumps([{"id": "rec-1"}, {"id": "rec-2", "name": "x"}]))
+    result = runner.invoke(
+        cli.app,
+        ["records", "archive", "patients", "--spec-file", str(spec), "--dry-run"],
+    )
+    assert result.exit_code == 0, result.output
+    assert archive_ids == [["rec-1", "rec-2"]]
+
+
+def test_records_archive_reads_stdin(archive_ids):
+    result = runner.invoke(
+        cli.app,
+        ["records", "archive", "patients", "--dry-run"],
+        input='[{"id": "rec-1"}]',
+    )
+    assert result.exit_code == 0, result.output
+    assert archive_ids == [["rec-1"]]
+
+
+def test_records_archive_row_without_id_names_the_row(archive_ids, tmp_path):
+    spec = tmp_path / "ids.csv"
+    spec.write_text("id,name\nrec-1,Ada\n,Grace\n")
+    result = runner.invoke(
+        cli.app, ["records", "archive", "patients", "--spec-file", str(spec)]
+    )
     assert result.exit_code == 2
-    assert "pass at least one record UUID" in result.stderr
+    assert "row 2 has no 'id'" in result.stderr
+    assert archive_ids == []
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["rec-1", "--spec-file", "ids.csv"], "not both"),
+        (["rec-1", "rec-2"], "pass one record UUID"),
+        # Empty stdin; `_read_records_spec` reports it as unparseable JSON.
+        ([], "error"),
+    ],
+)
+def test_records_archive_bad_input_exits_2(archive_ids, args, message):
+    result = runner.invoke(cli.app, ["records", "archive", "patients", *args])
+    assert result.exit_code == 2
+    assert message in result.stderr
+    assert archive_ids == []
+
+
+@pytest.mark.parametrize(("name", "body"), [("ids.csv", "id\n"), ("ids.json", "[]")])
+def test_records_archive_empty_spec_file_exits_2(archive_ids, tmp_path, name, body):
+    spec = tmp_path / name
+    spec.write_text(body)
+    result = runner.invoke(
+        cli.app, ["records", "archive", "patients", "--spec-file", str(spec)]
+    )
+    assert result.exit_code == 2
+    assert "no records found" in result.stderr
+    assert archive_ids == []
+
+
+def test_records_delete_is_a_removed_stub(archive_ids):
+    result = runner.invoke(
+        cli.app, ["records", "delete", "patients", "rec-1", "rec-2", "--yes"]
+    )
+    assert result.exit_code == 2
+    assert (
+        "records delete was removed; records are archived, not erased: use "
+        "kizen records archive <object> <uuid> or --spec-file"
+    ) in result.stderr
+    assert archive_ids == []
+    help_out = runner.invoke(cli.app, ["records", "--help"]).output
+    assert "delete" not in help_out
 
 
 def test_records_unarchive_dry_run_forwards_ids(monkeypatch):

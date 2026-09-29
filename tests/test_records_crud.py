@@ -22,9 +22,9 @@ from kizen_builder.tools.planners.fields import (
     plan_remove_field_option,
 )
 from kizen_builder.tools.planners.records import (
+    ARCHIVE_CHUNK,
     plan_archive_records,
     plan_create_records,
-    plan_delete_records,
     plan_set_field,
     plan_unarchive_records,
     plan_update_records,
@@ -206,32 +206,38 @@ def test_upsert_passes_through_conflict_options(patch_live_lookups):
     assert op.payload["onupdate_archived_conflict"] == "overwrite"
 
 
-def test_delete_records_plan(patch_live_lookups):
-    plan = plan_delete_records(PATIENTS, ["a", "b"])
-    assert [op.action for op in plan.operations] == ["delete", "delete"]
-    assert [op.existing_uuid for op in plan.operations] == ["a", "b"]
-    assert all(op.parent_object_uuid == PATIENTS for op in plan.operations)
-
-
 # ---------------------------------------------------------------------------
 # records — archive / unarchive
 #
-# `records delete` also archives (confirmed live 2026-08-13: a deleted
-# record 404s on GET, drops out of search, and is restorable through the
-# same unarchive endpoint used here) — `archive`/`unarchive` name that
-# operation directly instead of leaving it discoverable only by accident.
+# `DELETE /api/records/{o}/{id}` reaches the same archived, restorable state
+# (confirmed live 2026-09-28), so `records archive` is the one CLI path.
 # ---------------------------------------------------------------------------
 
 
-def test_archive_records_plan(patch_live_lookups):
-    plan = plan_archive_records(PATIENTS, ["a", "b"])
-    assert [op.action for op in plan.operations] == ["update", "update"]
-    assert [op.kind for op in plan.operations] == ["record_archive", "record_archive"]
-    assert [op.existing_uuid for op in plan.operations] == ["a", "b"]
+def test_archive_records_plan_one_op_for_many_ids(patch_live_lookups):
+    plan = plan_archive_records(PATIENTS, ["a", "b", "a"])
+    (op,) = plan.operations
+    assert (op.action, op.kind) == ("update", "record_archive")
+    assert op.payload == {"record_ids": ["a", "b"], "send_email_notification": False}
+    assert op.key == f"{PATIENTS}#a..b"
     # bulk-archive-entity-record lives under /api/custom-objects and takes
-    # the object's UUID, not its api_name — unlike plan_delete_records.
-    assert all(op.parent_object_uuid == PATIENTS_ID for op in plan.operations)
-    assert all("warning" in op.preview for op in plan.operations)
+    # the object's UUID, not its api_name.
+    assert op.parent_object_uuid == PATIENTS_ID
+    assert op.preview["record_count"] == 2
+    assert "records unarchive" in op.preview["warning"]
+    assert plan.summary == f"Archive 2 record(s) from {PATIENTS} in 1 request(s)"
+
+
+def test_archive_records_plan_chunks_at_boundary(patch_live_lookups):
+    ids = [f"r{i}" for i in range(ARCHIVE_CHUNK + 1)]
+    plan = plan_archive_records(PATIENTS, ids)
+    assert [len(op.payload["record_ids"]) for op in plan.operations] == [
+        ARCHIVE_CHUNK,
+        1,
+    ]
+    assert all(op.payload["send_email_notification"] is False for op in plan.operations)
+    assert plan.operations[1].key == f"{PATIENTS}#r{ARCHIVE_CHUNK}"
+    assert plan.summary.endswith("in 2 request(s)")
 
 
 def test_archive_records_rejects_empty_ids(patch_live_lookups):
@@ -347,28 +353,51 @@ def test_apply_upsert_record_posts_upsert(patch_live_lookups):
 
 
 @respx.mock
-def test_apply_delete_record_deletes(patch_live_lookups):
-    route = respx.delete(f"{FAKE_BASE_URL}/api/records/{PATIENTS}/rec-9").mock(
-        return_value=httpx.Response(204)
-    )
-    plan = plan_delete_records(PATIENTS, ["rec-9"])
+def test_apply_archive_records_posts_one_batched_request(patch_live_lookups):
+    route = respx.post(
+        f"{FAKE_BASE_URL}/api/custom-objects/{PATIENTS_ID}/bulk-archive-entity-record"
+    ).mock(return_value=httpx.Response(200, json={"number_archived": 3, "async": True}))
+    plan = plan_archive_records(PATIENTS, ["rec-1", "rec-2", "rec-3"])
     result = plan_tools.apply_plan(plan)
     assert route.call_count == 1
-    r = result.results[0]
-    assert r.status == "ok" and r.action == "delete"
+    assert json.loads(route.calls.last.request.content) == {
+        "record_ids": ["rec-1", "rec-2", "rec-3"],
+        "send_email_notification": False,
+    }
+    (r,) = result.results
+    assert r.status == "ok" and r.action == "update"
+    assert r.message == "3 id(s) accepted"
 
 
 @respx.mock
-def test_apply_archive_record_posts_bulk_archive_entity_record(patch_live_lookups):
+def test_apply_archive_failed_chunk_does_not_stop_later_chunks(patch_live_lookups):
     route = respx.post(
         f"{FAKE_BASE_URL}/api/custom-objects/{PATIENTS_ID}/bulk-archive-entity-record"
-    ).mock(return_value=httpx.Response(200, json={"number_archived": 1, "async": True}))
-    plan = plan_archive_records(PATIENTS, ["rec-9"])
-    result = plan_tools.apply_plan(plan)
-    assert route.call_count == 1
-    assert json.loads(route.calls.last.request.content) == {"record_ids": ["rec-9"]}
-    r = result.results[0]
-    assert r.status == "ok" and r.action == "update"
+    ).mock(
+        side_effect=[
+            httpx.Response(400, json={"detail": "bad"}),
+            httpx.Response(200, json={"number_archived": 1, "async": True}),
+        ]
+    )
+    ids = [f"r{i}" for i in range(ARCHIVE_CHUNK + 1)]
+    result = plan_tools.apply_plan(plan_archive_records(PATIENTS, ids))
+    assert route.call_count == 2
+    assert [r.status for r in result.results] == ["failed", "ok"]
+    assert result.results[0].key == f"{PATIENTS}#r0..r{ARCHIVE_CHUNK - 1}"
+
+
+@respx.mock
+def test_apply_rejects_record_delete_from_an_old_saved_plan(patch_live_lookups):
+    op = plan_tools.PlanOperation(
+        action="delete",
+        kind="record",
+        key=f"{PATIENTS}#rec-9",
+        existing_uuid="rec-9",
+        parent_object_uuid=PATIENTS,
+    )
+    result = plan_tools.apply_plan(plan_tools.Plan.build("testenv", "x", [op]))
+    (r,) = result.results
+    assert r.status == "failed" and "unsupported record action" in (r.message or "")
 
 
 @respx.mock

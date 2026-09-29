@@ -88,17 +88,13 @@ Omit both to keep the server's default (conflict-raising) behavior.
   governs what happens when an update collides with an already-archived
   record's name — it does not archive anything. Use `records archive` /
   `records unarchive` instead.
-- **`records delete` archives, it does not erase.** A record removed by
-  `DELETE /api/records/{object_identifier}/{entity_id}` 404s on a direct `GET`
-  and drops out of search, but its data survives. Confirmed live 2026-08-13:
-  deleting a record and then calling `records unarchive` directly on it (no
-  `upsert` involved) brings it back. Restoring the same record via `records
-  upsert --oncreate-unarchive unarchive` is expected to work too — it's the
-  same underlying state — but that path itself was not exercised live this
-  session; treat it as untested until it is. `records archive` reaches the
-  same state through the dedicated archive endpoint below; the two commands
-  exist because the API names them differently, not because they do
-  different things.
+- **Deleting a record is archiving it.** The live schema describes
+  `DELETE /api/records/{object_identifier}/{entity_id}` as "Archive entity
+  record"; there is no hard-delete or purge path. A record removed either way
+  404s on a direct `GET`, drops out of search, and comes back with the same id
+  through `records unarchive` or `records upsert --oncreate-unarchive
+  unarchive` (confirmed live 2026-09-28). `records delete` was removed for
+  that reason; `records archive` is the one command.
 
 ---
 
@@ -117,7 +113,7 @@ object are plain custom objects whose identifier is their api_name.
 | Search / list | `POST` | `/api/records/{object_identifier}/search` |
 | Create | `POST` | `/api/records/{object_identifier}/add` |
 | Update (partial) | `PATCH` | `/api/records/{object_identifier}/{entity_id}` |
-| Delete (archives) | `DELETE` | `/api/records/{object_identifier}/{entity_id}` |
+| Delete (archives; unused by the CLI) | `DELETE` | `/api/records/{object_identifier}/{entity_id}` |
 | Upsert | `POST` | `/api/records/{object_identifier}/upsert` |
 | Move between stages | `PATCH` | `/api/records/{object_identifier}/{entity_id}/move` |
 | Archive | `POST` | `/api/custom-objects/{object_uuid}/bulk-archive-entity-record` |
@@ -207,28 +203,42 @@ operation the UI's Archive button performs. Same request family as
 `bytes_end_index` for the filter-targeted bulk framework, unused here):
 
 ```json
-{"record_ids": ["<record-uuid>", ...]}
+{"record_ids": ["<record-uuid>", ...], "send_email_notification": false}
 ```
 
 ```bash
-kizen records archive <object> <uuid> [<uuid> …]
+kizen records archive <object> <uuid>
+kizen records archive <object> --spec-file ids.csv   # rows with an id; `records list --limit N --output csv` works (default limit 100)
 kizen records unarchive <object> <uuid> [<uuid> …]
 ```
 
-- The response is `{"number_archived": N, "async": true}` — archiving is
-  asynchronous server-side. Confirmed live 2026-08-13: the change was already
-  visible in `search_records` well under 2s later, the same order of lag
-  `records set-field` shows.
+- **One request per 500 ids.** Every call writes exactly one
+  `bulk-action-progress` row (`action: custom_object_archive`) however many
+  ids it carries, so the CLI batches rather than posting per id. 500 is a
+  chosen ceiling; batches larger than 3 ids have not been probed. Confirmed
+  live 2026-09-28.
+- **Email is off.** `send_email_notification` defaults to `true`, and each
+  progress row carries the flag, so an unset flag emails once per request.
+  The CLI always sends `false`. Confirmed live 2026-09-28.
+- The response is `{"number_archived": N, "async": true}`. `N` counts the ids
+  sent, not the records archived: archiving an already-archived id returns 1
+  while its progress row records `success_count: 0`. The response carries no
+  progress-row id; find the row through the `bulk-action-progress` list
+  filters (`custom_object_id`, `action`, `started_after`). Confirmed live
+  2026-09-28.
+- Archiving is asynchronous server-side. The change was visible in
+  `search_records` well under 2s later (confirmed live 2026-08-13), the same
+  order of lag `records set-field` shows.
 - The path segment is the object's **UUID**, not its api_name — unlike every
   other records endpoint on this page.
 - `records unarchive` wraps `PATCH /api/records/{object_identifier}/{entity_id}/unarchive`
   — the ordinary object identifier convention, and takes no request body.
-- **Confirmed live 2026-08-13: `DELETE /api/records/{object_identifier}/{entity_id}`
-  reaches the identical externally-observable state as this archive
-  endpoint** — 404 on a direct `GET`, absent from search, and restorable
-  through the same unarchive endpoint either way. `records delete` and
-  `records archive` are not different operations under the hood; `archive`
-  just names what actually happens.
+  There is no bulk unarchive endpoint, so it stays one request per id.
+- `DELETE` reaches the same state as this endpoint, and each treats the
+  other's result as already done: `DELETE` on an archived record 404s, and
+  archiving a deleted one records `success_count: 0`. The one observed
+  difference is that `DELETE` writes no progress row. Confirmed live
+  2026-09-28.
 
 ## See also
 

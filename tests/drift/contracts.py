@@ -211,10 +211,10 @@ ENDPOINT_CONTRACTS: tuple[Contract, ...] = (
         "/api/custom-objects/{object_pk}/bulk-archive-entity-record",
         note=(
             "lives under /api/custom-objects, same detail-action shape as "
-            "bulk-change-field-value. The UI's Archive button; confirmed "
-            "live 2026-08-13 that DELETE /api/records/{o}/{id} reaches the "
-            "identical externally-observable state, but the CLI calls this "
-            "endpoint for `records archive` rather than aliasing to delete"
+            "bulk-change-field-value. The UI's Archive button and the only "
+            "path `records archive` uses, with send_email_notification false "
+            "(schema default true). DELETE /api/records/{o}/{id} reaches the "
+            "same archived state, confirmed live 2026-09-28"
         ),
     ),
     Contract(

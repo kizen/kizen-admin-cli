@@ -369,48 +369,22 @@ def plan_set_field(
     )
 
 
-def plan_delete_records(object_api_name: str, record_ids: list[str]) -> Plan:
-    """Plan deletion of one or more records by UUID."""
-    if not record_ids:
-        raise PlanError("no record ids provided to delete")
-
-    env = load_env_config().name
-    # A live lookup validates the object exists (and normalizes identifier
-    # errors) before we build delete ops against it.
-    try:
-        get_object(object_api_name)
-    except LookupError as e:
-        raise PlanError(f"object '{object_api_name}' not found: {e}") from e
-
-    operations = [
-        PlanOperation(
-            action="delete",
-            kind="record",
-            key=f"{object_api_name}#{rid}",
-            preview={"env": env, "object": object_api_name, "id": rid},
-            existing_uuid=rid,
-            parent_object_uuid=object_api_name,
-        )
-        for rid in record_ids
-    ]
-
-    return Plan.build(
-        env=env,
-        summary=f"Delete {len(operations)} record(s) from {object_api_name}",
-        operations=operations,
-    )
+# Ids per bulk-archive request. Unprobed beyond 3 ids in one call
+# (confirmed live 2026-09-28); 500 is a chosen ceiling, not a server limit.
+ARCHIVE_CHUNK = 500
 
 
 def plan_archive_records(object_api_name: str, record_ids: list[str]) -> Plan:
-    """Plan archiving one or more records by UUID.
+    """Plan archiving records by UUID, ``ARCHIVE_CHUNK`` ids per request.
 
     Wraps `POST /api/custom-objects/{id}/bulk-archive-entity-record` — the
-    operation the UI's Archive button performs (confirmed live 2026-08-13
-    against `GET /api/docs/schema`, then exercised on a throwaway record).
-    `object_uuid` — not the api_name — is what that endpoint's path takes, so
-    this resolves the object the same way `plan_set_field` does.
+    operation the UI's Archive button performs. `object_uuid` — not the
+    api_name — is what that endpoint's path takes, so this resolves the
+    object the same way `plan_set_field` does. Each request writes one
+    bulk-action-progress row, so one op per chunk rather than per id.
     """
-    if not record_ids:
+    ids = list(dict.fromkeys(record_ids))
+    if not ids:
         raise PlanError("no record ids provided to archive")
 
     env = load_env_config().name
@@ -419,34 +393,38 @@ def plan_archive_records(object_api_name: str, record_ids: list[str]) -> Plan:
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
 
+    chunks = [ids[i : i + ARCHIVE_CHUNK] for i in range(0, len(ids), ARCHIVE_CHUNK)]
     operations = [
         PlanOperation(
             action="update",
             kind="record_archive",
-            key=f"{object_api_name}#{rid}",
+            key=(
+                f"{object_api_name}#{chunk[0]}"
+                if len(chunk) == 1
+                else f"{object_api_name}#{chunk[0]}..{chunk[-1]}"
+            ),
             preview={
                 "env": env,
                 "object": object_api_name,
-                "id": rid,
+                "record_count": len(chunk),
                 "warning": (
-                    "archives the record: it drops out of search/list results "
-                    "and 404s on a direct read, but its data is retained and "
-                    "it can be restored with 'records unarchive'. Confirmed "
-                    "live 2026-08-13: 'records delete' reaches this exact "
-                    "same state under a different name — the two are not "
-                    "otherwise different operations."
+                    "archives the records: they drop out of search/list "
+                    "results and 404 on a direct read, but their data is "
+                    "retained and they can be restored with 'records unarchive'."
                 ),
             },
-            payload={"record_ids": [rid]},
-            existing_uuid=rid,
+            payload={"record_ids": chunk, "send_email_notification": False},
             parent_object_uuid=obj["id"],
         )
-        for rid in record_ids
+        for chunk in chunks
     ]
 
     return Plan.build(
         env=env,
-        summary=f"Archive {len(operations)} record(s) from {object_api_name}",
+        summary=(
+            f"Archive {len(ids)} record(s) from {object_api_name} "
+            f"in {len(chunks)} request(s)"
+        ),
         operations=operations,
     )
 
@@ -456,8 +434,8 @@ def plan_unarchive_records(object_api_name: str, record_ids: list[str]) -> Plan:
 
     Wraps `PATCH /api/records/{object_identifier}/{entity_id}/unarchive`, the
     round-trip counterpart to `plan_archive_records` — confirmed live to also
-    restore a record removed by `records delete`, not only one archived by
-    `records archive`. No request body.
+    restore a record removed by `DELETE /api/records/{o}/{id}`. No request
+    body.
     """
     if not record_ids:
         raise PlanError("no record ids provided to unarchive")

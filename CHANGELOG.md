@@ -16,6 +16,29 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Breaking: `records delete` is removed; `records archive` is the one way
+  to remove records.** Kizen's delete was always an archive (same restorable
+  state, same id), so the two commands did the same thing. `records archive`
+  now takes one record UUID, or `--spec-file` / piped stdin with CSV or JSON
+  rows that each have an `id`, the same shape as `records update`. Scripts
+  that pass several positional ids need updating:
+
+  | Before | After |
+  |---|---|
+  | `records delete <object> <uuid>` | `records archive <object> <uuid>` |
+  | `records delete <object> <uuid> <uuid> …` | `records archive <object> --spec-file F` (or stdin) |
+  | `records archive <object> <uuid> <uuid> …` | `records archive <object> --spec-file F` (or stdin) |
+
+  `records delete` now exits 2 with a message naming `records archive`, and
+  `records archive` with more than one positional id exits 2 pointing at
+  `--spec-file`. `records list --output csv` output is a valid spec file; pass
+  a `--limit` above the record count, since it defaults to 100.
+- **`records archive` batches its requests and triggers no Kizen emails.** It
+  used to send one request per id, and each one emailed you: archiving 3,000
+  records meant 3,000 requests and 3,000 emails. It now sends up to 500 ids
+  per request with Kizen's email notification turned off, so the same job is
+  6 requests and no email. The result reports how many ids Kizen accepted,
+  which counts ids sent, not records newly archived.
 - **Breaking: `smart-connectors executions` is now a command group, like
   `automations runs`.** Scripts that call the old flat forms need updating:
 
