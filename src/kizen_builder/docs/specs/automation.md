@@ -81,9 +81,48 @@ kizen automations create --spec-file auto.json --dry-run
   orders must be sequential from 0 to 1` if omitted. Sequential `0..N` on
   both `triggers` and `steps`, no gaps or duplicates.
 - Cycles are rejected; `go_to_automation_step.step_key` must reference a real key.
-- **Merge branches with `go_to_automation_step`** rather than duplicating the tail
-  of both branches. Flip the condition so YES is the short/skip path where it
-  keeps the graph simpler.
+- To rejoin branches, use a branch group (below) rather than duplicating the
+  tail of each branch.
+
+### Branch groups
+
+A step whose branches rejoin is a **branch group initiator**: a `condition`,
+`goal` or `branch` step with `is_branch_group_initiator: true`. It has exactly
+one `merge_branches` child, which carries no `parent_branch`, and the steps
+after the merge hang off the merge step. `branch` and `merge_branches` take no
+config block. `--dry-run` checks the group against the server's rules (see
+"Graph rules the server enforces"). Confirmed live 2026-09-28 (conditions and
+branches) and 2026-09-29 (goals).
+
+```json
+{ "key": "check", "parent_key": null, "step_type": "condition", "order": 0,
+  "is_branch_group_initiator": true,
+  "step_condition": { "type": "custom_filter", "filter_config": { "all": [
+    { "field": "account_seats", "op": ">=", "value": 10 } ] } } },
+{ "key": "big", "parent_key": "check", "parent_branch": "yes",
+  "step_type": "delay", "order": 1, "step_delay": { "minutes": 5 } },
+{ "key": "small", "parent_key": "check", "parent_branch": "no",
+  "step_type": "delay", "order": 2, "step_delay": { "minutes": 5 } },
+{ "key": "rejoin", "parent_key": "check", "step_type": "merge_branches", "order": 3 },
+{ "key": "after", "parent_key": "rejoin", "step_type": "stop_execution", "order": 4 }
+```
+
+**Parallel branches** are the children of a `branch` step, none with a
+`parent_branch`. Set `is_branch_group_initiator: true` and add a
+`merge_branches` child to rejoin them. Lanes can be `branch` steps themselves,
+merged or not, and a `branch` can follow a merge. Put a `branch` step in front
+of any fan-out: a plain step with two or more children still saves, but the
+plan preview warns about it. Kizen's 2026-09-28 migration inserted a `branch`
+step ahead of every existing fan-out, and an `update` from a spec without one
+removes it again. Confirmed live 2026-09-28.
+
+**Skipping a condition or goal** (`should_skip_execution: true`) needs
+`continue_with_branch: "yes"` or `"no"`, the branch the run takes past it. The
+spec is rejected without it. Confirmed live 2026-09-28.
+
+`error_notification_severity_level` (`error`, `warning`, `info`, `inherit`)
+sets a step's own severity. Omitted, the step inherits. Confirmed live
+2026-09-28.
 
 **Field references — two forms, don't mix them up:**
 - **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations)
@@ -112,7 +151,7 @@ Kizen (e.g. `email_interaction`, `email_link_clicked`,
 `contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
 you try to spec them.
 
-## Wired step types (24)
+## Wired step types (26)
 
 | step_type | config block | purpose |
 |-----------|--------------|---------|
@@ -139,6 +178,8 @@ you try to spec them.
 | `send_related_contact_email` | `action_send_related_contact_email` | email a related contact |
 | `send_related_contact_text` | `action_send_related_contact_text` | text a related contact |
 | `search_records` | `action_search_records` | search an object, write results into an array variable |
+| `branch` | none | run its children in parallel — see Branch groups |
+| `merge_branches` | none | rejoin a branch group — see Branch groups |
 
 `search_records` (the automation-builder equivalent of `records list
 --filter`) needs its own `custom_object` — independent of the automation's
@@ -478,6 +519,15 @@ as a real custom object's own api_name, and its span gets
   Moving the same `initialize_variable` step to be the first step *inside*
   the `no` branch (declaring it only where it's used) 400s with no other
   change.
+- **A variable the UI creates inline** (from a step's variable picker) is an
+  ordinary root-chain `initialize_variable` with `sources: []`. Spec it that
+  way. Confirmed live 2026-09-28.
+- **String and UUID arrays** are a variable with `is_array: true` (plus
+  `array_aggregation_mode` on the variable step). A static array value is a
+  `static` source with `source_subtype` (`string`/`uuid`), a list `value`
+  and `array_separator`. Give `value` as a list: with a single string such as
+  `"a\nb"`, GET drops `array_separator`, so the separator is lost on any
+  read-back and `diff` shows it as a change. Confirmed live 2026-09-29.
 - **`stop_execution`'s "Action Options" dropdown is a required choice in
   the builder UI, and two of its five options don't stop anything.**
   Confirmed live (one automation with all 5 steps built through the UI,
@@ -753,14 +803,6 @@ And **`folder_id: null` — the obvious way to say "move to root" — 400s** wit
 (`<business_root>`, always present in `kizen automations folders list`), not an
 absent value. `kizen automations move <api>` with no `--folder` resolves to that
 folder's id.
-
-## Converging branches
-
-To bring several branches back to one downstream step: set that step's
-`parent_key` to the **YES** branch's last step, then add a
-`go_to_automation_step` whose parent is the **NO** branch's last step and whose
-`step_key` points at the downstream step. That's the standard convergence
-pattern — there is no join node.
 
 ## Debugging
 

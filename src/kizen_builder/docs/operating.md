@@ -187,8 +187,8 @@ wire dialect, and the quirks that bite — lives in
 `spec.py`. A few load-bearing reminders:
 
 - One root (`parent_key: null`); branch entries under a `condition`/`goal` set
-  `parent_branch: "yes"|"no"`; merge branches with `go_to_automation_step`
-  rather than duplicating tails.
+  `parent_branch: "yes"|"no"`; rejoin branches with a branch group rather
+  than duplicating tails.
 - `field_ref: "<object>.<field>"` resolves to a UUID at apply time (portable
   across envs); bare `field_id` UUIDs work but are env-bound.
 - `stop_execution` needs no config block — the planner emits the empty one.
