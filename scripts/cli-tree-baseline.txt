@@ -2910,30 +2910,36 @@
 │ create        Create one record (via --field) or many (via CSV/JSON spec).                       │
 │ update        Update one record (UUID + --field) or many (CSV/JSON spec with 'id').              │
 │ upsert        Create-or-update one record (lookup_value + --field) or many (CSV/JSON spec).      │
-│ delete        Delete one or more records by UUID.                                                │
-│ archive       Archive one or more records by UUID.                                               │
+│ import        Load many records as one server-side job through Kizen's CSV uploader.             │
+│ archive       Archive one record (UUID) or many (CSV/JSON spec with 'id').                       │
 │ unarchive     Unarchive one or more records by UUID.                                             │
 │ set-field     Set one field to one value across many records in a single API call.               │
 │ move          Move a pipeline record to a different stage.                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Usage: records archive [OPTIONS] {object_api_name} [record_id]...                                  
+ Usage: records archive [OPTIONS] {object_api_name} [record_id]                                     
                                                                                                     
- Archive one or more records by UUID.                                                               
+ Archive one record (UUID) or many (CSV/JSON spec with 'id').                                       
                                                                                                     
- This is the operation the UI's Archive button performs. Data is                                    
- retained; restore with `records unarchive`.                                                        
+ This is the operation the UI's Archive button performs, batched and                                
+ without Kizen's email notification. Data is retained; restore with                                 
+ `records unarchive`. `records list --output csv` is a valid spec.                                  
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    object_api_name      <str>  Object api_name. [required]                                     │
-│      record_id            <str>  One or more record UUIDs to archive.                            │
+│      record_id            <str>  Record UUID (single archive). Omit for a bulk spec.             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --dry-run            Show the plan without applying.                                             │
-│ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
-│ --help               Show this message and exit.                                                 │
+│ --spec-file          <str>  Path to a CSV or JSON file of records (each with an 'id') to archive │
+│                             (or stdin).                                                          │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Bulk spec shape (CSV/JSON rows; each needs an id): see `kizen docs show records`                   
+                                                                                                    
                                                                                                     
  Usage: records create [OPTIONS] {object_api_name}                                                  
                                                                                                     
@@ -2960,26 +2966,10 @@
  Bulk spec shape (CSV or JSON rows): see `kizen docs show records`                                  
                                                                                                     
                                                                                                     
- Usage: records delete [OPTIONS] {object_api_name} [record_id]...                                   
+ Usage: records delete [OPTIONS]                                                                    
                                                                                                     
- Delete one or more records by UUID.                                                                
+ Removed: use `records archive`.                                                                    
                                                                                                     
- Despite the name, this archives the record rather than erasing its data —                          
- confirmed live 2026-08-13: a deleted record 404s on a direct read and                              
- drops out of search, but comes back via `records unarchive` or                                     
- `records upsert --oncreate-unarchive unarchive`. `records archive` is the                          
- same operation under the name that says what it does.                                              
-                                                                                                    
-╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
-│ *    object_api_name      <str>  Object api_name. [required]                                     │
-│      record_id            <str>  One or more record UUIDs to delete.                             │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --dry-run            Show the plan without applying.                                             │
-│ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
-│ --help               Show this message and exit.                                                 │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: records field-values [OPTIONS] {record_id} {field}                                          
                                                                                                     
@@ -3017,6 +3007,38 @@
 │ --json                   Alias for --output json.                                                │
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: records import [OPTIONS] {object_api_name}                                                  
+                                                                                                    
+ Load many records as one server-side job through Kizen's CSV uploader.                             
+                                                                                                    
+ Takes the same rows as `records create|upsert|update` (`lookup_value` is                           
+ read as `name`) and waits for the job. Rows the server could only                                  
+ partly apply are listed, and they make the command exit 1. In upsert                               
+ and update modes, a row whose name (or id) matches an archived record                              
+ unarchives and updates it.                                                                         
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    object_api_name      <str>  Object api_name. [required]                                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file           <str>    Path to a CSV or JSON file of records (or pipe to stdin).         │
+│ --mode                <str>    create | upsert (match on name) | update (match on id, else       │
+│                                name).                                                            │
+│                                [default: upsert]                                                 │
+│ --resolution          <str>    overwrite | only_update_blank | only_add_options |                │
+│                                overwrite_except_null (overwrite clears a field whose cell is     │
+│                                blank, so every row must carry every column).                     │
+│                                [default: overwrite_except_null]                                  │
+│ --timeout             <float>  Seconds to wait for the import job to finish. [default: 900.0]    │
+│ --dry-run                      Show the plan without applying.                                   │
+│ --yes         -y               Skip the y/N confirmation prompt.                                 │
+│ --json                         Emit JSON (plan with --dry-run, results otherwise).               │
+│ --help                         Show this message and exit.                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Modes, matching and partial success: see `kizen docs show records`                                 
+                                                                                                    
                                                                                                     
  Usage: records list [OPTIONS] {object_api_name}                                                    
                                                                                                     
@@ -4728,6 +4750,9 @@
 
 
 ===== records get =====
+
+
+===== records import =====
 
 
 ===== records list =====

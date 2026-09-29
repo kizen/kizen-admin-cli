@@ -75,6 +75,11 @@ def _read_records_spec(spec_file: str) -> tuple[list[dict[str, Any]], bool]:
             err_console.print(f"[red]error parsing JSON records:[/red] {e}")
             raise typer.Exit(code=2) from e
         records = data if isinstance(data, list) else [data]
+        if not records:
+            err_console.print(
+                "[red]error:[/red] no records found in the CSV/JSON input."
+            )
+            raise typer.Exit(code=2)
         return [dict(r) for r in records], from_stdin
 
     import csv
@@ -301,11 +306,31 @@ def records_upsert(
     )
 
 
-@records_app.command("delete")
-def records_delete(
+@records_app.command(
+    "import",
+    epilog="Modes, matching and partial success: see `kizen docs show records`",
+)
+def records_import(
     object_api_name: str = typer.Argument(..., help="Object api_name."),
-    record_id: list[str] = typer.Argument(
-        None, help="One or more record UUIDs to delete."
+    spec_file: str = typer.Option(
+        "",
+        "--spec-file",
+        help="Path to a CSV or JSON file of records (or pipe to stdin).",
+    ),
+    mode: str = typer.Option(
+        "upsert",
+        "--mode",
+        help="create | upsert (match on name) | update (match on id, else name).",
+    ),
+    resolution: str = typer.Option(
+        "overwrite_except_null",
+        "--resolution",
+        help="overwrite | only_update_blank | only_add_options | overwrite_except_null "
+        "(overwrite clears a field whose cell is blank, so every row must "
+        "carry every column).",
+    ),
+    timeout: float = typer.Option(
+        900.0, "--timeout", help="Seconds to wait for the import job to finish."
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the plan without applying."
@@ -317,32 +342,41 @@ def records_delete(
         False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
     ),
 ) -> None:
-    """Delete one or more records by UUID.
+    """Load many records as one server-side job through Kizen's CSV uploader.
 
-    Despite the name, this archives the record rather than erasing its data —
-    confirmed live 2026-08-13: a deleted record 404s on a direct read and
-    drops out of search, but comes back via `records unarchive` or
-    `records upsert --oncreate-unarchive unarchive`. `records archive` is the
-    same operation under the name that says what it does.
+    Takes the same rows as `records create|upsert|update` (`lookup_value` is
+    read as `name`) and waits for the job. Rows the server could only
+    partly apply are listed, and they make the command exit 1. In upsert
+    and update modes, a row whose name (or id) matches an archived record
+    unarchives and updates it.
     """
-    ids = list(record_id or [])
-    if not ids:
-        err_console.print("[red]error:[/red] pass at least one record UUID to delete.")
-        raise typer.Exit(code=2)
-
+    records, from_stdin = _read_records_spec(spec_file)
     _run_mutation(
-        lambda: record_planners.plan_delete_records(object_api_name, ids),
+        lambda: record_planners.plan_import_records(
+            object_api_name, records, mode, resolution, timeout=timeout
+        ),
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        stdin_consumed=from_stdin,
     )
 
 
-@records_app.command("archive")
+@records_app.command(
+    "archive",
+    context_settings={"allow_extra_args": True},
+    epilog="Bulk spec shape (CSV/JSON rows; each needs an id): see `kizen docs show records`",
+)
 def records_archive(
+    ctx: typer.Context,
     object_api_name: str = typer.Argument(..., help="Object api_name."),
-    record_id: list[str] = typer.Argument(
-        None, help="One or more record UUIDs to archive."
+    record_id: str = typer.Argument(
+        None, help="Record UUID (single archive). Omit for a bulk spec."
+    ),
+    spec_file: str = typer.Option(
+        "",
+        "--spec-file",
+        help="Path to a CSV or JSON file of records (each with an 'id') to archive (or stdin).",
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the plan without applying."
@@ -354,22 +388,64 @@ def records_archive(
         False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
     ),
 ) -> None:
-    """Archive one or more records by UUID.
+    """Archive one record (UUID) or many (CSV/JSON spec with 'id').
 
-    This is the operation the UI's Archive button performs. Data is
-    retained; restore with `records unarchive`.
+    This is the operation the UI's Archive button performs, batched and
+    without Kizen's email notification. Data is retained; restore with
+    `records unarchive`. `records list --output csv` is a valid spec.
     """
-    ids = list(record_id or [])
-    if not ids:
-        err_console.print("[red]error:[/red] pass at least one record UUID to archive.")
+    if ctx.args:
+        err_console.print(
+            "[red]error:[/red] pass one record UUID. For several, use "
+            "--spec-file or pipe CSV/JSON rows with an 'id' to stdin."
+        )
         raise typer.Exit(code=2)
+    from_stdin = False
+    if record_id:
+        if spec_file:
+            err_console.print(
+                "[red]error:[/red] pass a record UUID or --spec-file, not both."
+            )
+            raise typer.Exit(code=2)
+        ids = [record_id]
+    else:
+        if not spec_file and sys.stdin.isatty():
+            err_console.print(
+                "[red]error:[/red] no records provided. Pass a record UUID, "
+                "--spec-file, or pipe CSV/JSON to stdin."
+            )
+            raise typer.Exit(code=2)
+        records, from_stdin = _read_records_spec(spec_file)
+        ids = []
+        for n, row in enumerate(records, 1):
+            rid = str(row.get("id") or "").strip()
+            if not rid:
+                err_console.print(f"[red]error:[/red] row {n} has no 'id'.")
+                raise typer.Exit(code=2)
+            ids.append(rid)
 
     _run_mutation(
         lambda: record_planners.plan_archive_records(object_api_name, ids),
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        stdin_consumed=from_stdin,
     )
+
+
+@records_app.command(
+    "delete",
+    hidden=True,
+    add_help_option=False,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def records_delete() -> None:
+    """Removed: use `records archive`."""
+    err_console.print(
+        "[red]error:[/red] records delete was removed; records are archived, "
+        "not erased: use kizen records archive <object> <uuid> or --spec-file"
+    )
+    raise typer.Exit(code=2)
 
 
 @records_app.command("unarchive")

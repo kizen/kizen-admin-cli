@@ -14,8 +14,12 @@ A plan binds to one ``env``.
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
+import tempfile
 import time
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,6 +28,7 @@ from kizen_builder.api import activities as act_api
 from kizen_builder.api import automations as auto_api
 from kizen_builder.api import custom_objects as co_api
 from kizen_builder.api import dashboards as dash_api
+from kizen_builder.api import files as files_api
 from kizen_builder.api import forms as forms_api
 from kizen_builder.api import layouts as layout_api
 from kizen_builder.api import permissions as perm_api
@@ -32,6 +37,7 @@ from kizen_builder.api import records as records_api
 from kizen_builder.api import saved_views as sv_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
+from kizen_builder.tools.bulk_actions import wait_for_bulk_action
 from kizen_builder.tools.permissions import LEVELS
 
 
@@ -73,6 +79,7 @@ Kind = Literal[
     "quick_filter",
     "column_template",
     "record_bulk_field_value",
+    "record_import",
 ]
 
 # Forms and surveys are structurally identical — one op-kind pair
@@ -310,8 +317,18 @@ def apply_plan(plan: Plan) -> ApplyResult:
             status: Literal["ok", "failed", "skipped", "adjusted"] = (
                 "ok" if op.action != "skip" else "skipped"
             )
-            if op.action == "upsert" and isinstance(resp, dict) and resp.get("action"):
+            if op.kind == "record_import":
+                status, message = _record_import_outcome(resp)
+                if status == "failed":
+                    failed_keys.add(op.key)
+            elif (
+                op.action == "upsert" and isinstance(resp, dict) and resp.get("action")
+            ):
                 message = resp["action"]  # "created" or "updated"
+            elif op.kind == "record_archive" and isinstance(resp, dict):
+                # Counts ids sent, not records archived (confirmed live
+                # 2026-09-28: an already-archived id still counts).
+                message = f"{resp.get('number_archived', 0)} id(s) accepted"
             elif (
                 op.kind == "permission_setting"
                 and op.payload.get("mode") == "object_update"
@@ -539,24 +556,25 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             raise PlanError(
                 f"{op.action} record op '{op.key}' has no existing_uuid — planning bug"
             )
-        if op.action == "delete":
-            return records_api.delete_record(
-                client, object_identifier, op.existing_uuid
+        if op.action == "update":
+            return records_api.update_record(
+                client,
+                object_identifier,
+                op.existing_uuid,
+                op.payload.get("fields", []),
             )
-        return records_api.update_record(
-            client, object_identifier, op.existing_uuid, op.payload.get("fields", [])
-        )
+        raise PlanError(f"unsupported record action '{op.action}'")
 
     if op.kind == "record_archive":
         # parent_object_uuid carries the object's UUID here, not the
         # api_name — the bulk-archive-entity-record endpoint lives under
         # /api/custom-objects, same convention as record_bulk_field_value.
-        if op.parent_object_uuid is None or op.existing_uuid is None:
+        if op.parent_object_uuid is None or not op.payload.get("record_ids"):
             raise PlanError(
-                f"record_archive op '{op.key}' missing object/record id — planning bug"
+                f"record_archive op '{op.key}' missing object/record ids — planning bug"
             )
-        return records_api.archive_record(
-            client, op.parent_object_uuid, op.existing_uuid
+        return records_api.archive_records(
+            client, op.parent_object_uuid, op.payload["record_ids"]
         )
 
     if op.kind == "record_unarchive":
@@ -908,6 +926,13 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             )
         return co_api.bulk_change_field_value(client, op.parent_object_uuid, op.payload)
 
+    if op.kind == "record_import":
+        if op.parent_object_uuid is None:
+            raise PlanError(
+                f"record_import op '{op.key}' has no object id — planning bug"
+            )
+        return _execute_record_import(client, op.parent_object_uuid, op.payload)
+
     if op.kind in ("filter_group", "quick_filter", "column_template"):
         base = {
             "filter_group": sv_api.FILTER_GROUPS_BASE,
@@ -917,6 +942,125 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
         return _execute_saved_view(client, op, base)
 
     raise ValueError(f"unknown operation kind: {op.kind}")
+
+
+def _execute_record_import(
+    client: KizenClient, object_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Count, upload the CSV, submit it to the uploader, wait on its progress
+    row, read the failure report, and count again.
+
+    The uploader POST is not retried: a second submit would import the rows
+    twice. Polling is by the ``status_id`` the uploader returns, never by a
+    time window, which picked the previous job when probed live 2026-09-28.
+    """
+    count_before = records_api.count_records(client, object_id)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / payload["file_name"]
+        with path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(payload["header"])
+            writer.writerows(payload["rows"])
+        uploaded = files_api.upload_file(
+            client, path, source=files_api.RECORD_IMPORT, content_type="text/csv"
+        )
+
+    file_id = uploaded["id"]
+    try:
+        submitted = co_api.upload_records(
+            client, object_id, {**payload["body"], "s3_object_id": file_id}
+        )
+    except KizenAPIError as e:
+        raise KizenAPIError(
+            e.status_code,
+            f"{e.message} — while submitting file {file_id}; the import may "
+            "have started, so check the object before retrying",
+            body=e.body,
+        ) from e
+    status_id = submitted.get("status_id") if isinstance(submitted, dict) else None
+    if not status_id:
+        raise KizenAPIError(
+            0,
+            f"uploader response carried no status_id (file {file_id}); "
+            "the import may still be running — check the object before retrying",
+            body=submitted,
+        )
+
+    try:
+        progress = wait_for_bulk_action(client, status_id, timeout=payload["timeout"])
+        report_id = (progress.get("failure_report") or {}).get("id")
+        row_errors: list[dict[str, Any]] = []
+        if report_id:
+            content, _ = files_api.download_file(load_env_config(), report_id)
+            reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+            for line in reader:
+                row_number = (line.get("Row Number") or "").strip()
+                row_errors.append(
+                    {
+                        # The report counts the CSV header as row 1; this is
+                        # the 1-based record number in the spec instead.
+                        "row": int(row_number) - 1 if row_number.isdigit() else None,
+                        "name": line.get("Entity Name") or None,
+                        "record_id": line.get("Record ID") or None,
+                        "error": line.get("Error Messages")
+                        or line.get("Failure Status"),
+                    }
+                )
+        count_after = records_api.count_records(client, object_id)
+    except KizenAPIError as e:
+        raise KizenAPIError(
+            e.status_code,
+            f"{e.message} — after submitting import job {status_id} (file "
+            f"{file_id}), which may still be running; check the object before "
+            "retrying",
+            body=e.body,
+        ) from e
+
+    return {
+        "status_id": status_id,
+        "status": progress.get("status"),
+        "timed_out": progress["timed_out"],
+        "success_count": progress.get("success_count"),
+        "failed_count": progress.get("failed_count"),
+        "pending_count": progress.get("pending_count"),
+        "row_errors": row_errors,
+        "file_id": file_id,
+        "failure_report_id": report_id,
+        "count_before": count_before,
+        "count_after": count_after,
+    }
+
+
+def _record_import_outcome(
+    raw: dict[str, Any],
+) -> tuple[Literal["ok", "failed"], str]:
+    """A record import is ok only if its job completed with nothing failed,
+    nothing pending, and no rows in the failure report.
+
+    The report is checked on its own because ``failed_count`` stays 0 when a
+    cell fails (the record is created with that field blank).
+    """
+    errors = raw["row_errors"]
+    message = (
+        f"{raw['status']}: {raw['success_count']} succeeded, "
+        f"{raw['failed_count']} failed, {raw['pending_count']} pending; "
+        f"records {raw['count_before']} → {raw['count_after']}"
+    )
+    if raw["timed_out"]:
+        message = f"timed out waiting on {raw['status_id']} ({message})"
+    if errors:
+        shown = "; ".join(f"#{e['row']} {e['name']}: {e['error']}" for e in errors[:5])
+        more = f" (+{len(errors) - 5} more in --json)" if len(errors) > 5 else ""
+        message += f". {len(errors)} row error(s): {shown}{more}"
+    ok = (
+        raw["status"] == "completed"
+        and not raw["timed_out"]
+        and raw["failed_count"] == 0
+        and raw["pending_count"] == 0
+        and not errors
+    )
+    return ("ok" if ok else "failed"), message
 
 
 def _execute_saved_view(client: KizenClient, op: PlanOperation, base: str) -> Any:

@@ -192,6 +192,8 @@ kizen records update <object> <uuid> --field api_name=value [...]    # one recor
 kizen records update <object> [--spec-file f.csv|f.json | < stdin]   # bulk update (each row needs an 'id')
 kizen records upsert <object> <lookup_value> --field api_name=value [...]  # create-or-update by lookup_value
 kizen records upsert <object> [--spec-file f.csv|f.json | < stdin]   # bulk upsert (each row needs 'lookup_value')
+kizen records import <object> [--spec-file f.csv|f.json | < stdin] [--mode create|upsert|update]
+    # one server-side job through the CSV uploader; row errors exit 1 (kizen docs show records)
 kizen records set-field <object> <uuid> [<uuid> ...] --field X --value Y [--resolution ...]
     # set one field to one value across many records in ONE call (bulk-change-field-value).
     # Id-targeted only — build the id list with `records list --filter` first;
@@ -276,9 +278,8 @@ kizen smart-connectors send-webhook <connector> --body '<json>|@file' [--query k
 # `output.webhooks` debug table (no such object; it crashes sample generation). Inbound requests are
 # BATCHED on the connector's cadence, so an execution appears within that window, not immediately.
 
-kizen records delete <object> <uuid> [<uuid> ...]              # archives (does not erase); see docs show records
-kizen records archive <object> <uuid> [<uuid> ...]              # same effect as delete, named for what it does
-kizen records unarchive <object> <uuid> [<uuid> ...]            # reverse of archive/delete
+kizen records archive <object> {<uuid> | --spec-file F}        # the one way to remove records; batched, no emails
+kizen records unarchive <object> <uuid> [<uuid> ...]            # reverse of archive
 kizen fields delete <object_api_name> <field_api_name>         # delete a field (drops its data everywhere)
 kizen fields options add <object> <field> --option "Label" [...]          # add select-field options
 kizen fields options remove <object> <field> <option> [--remap-to <other>] # remove one option

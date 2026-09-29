@@ -175,37 +175,32 @@ def delete_record(
     return resp if isinstance(resp, dict) else {}
 
 
-def archive_record(
+def archive_records(
     client: KizenClient,
     object_uuid: str,
-    record_id: str,
+    record_ids: list[str],
 ) -> dict[str, Any]:
     """POST /api/custom-objects/{object_uuid}/bulk-archive-entity-record.
 
-    Archives one record — the operation the UI's Archive button performs.
-    Lives under /api/custom-objects, not /api/records (same detail-action
-    shape as `bulk_change_field_value`): the path segment is the object's
-    **UUID**, not its api_name. The request body is a real bulk op
-    (`record_ids` is a list); this wraps it one record at a time to match
-    `delete_record`'s per-record shape.
+    Archives a batch of records in one request — the operation the UI's
+    Archive button performs. Lives under /api/custom-objects, not
+    /api/records (same detail-action shape as `bulk_change_field_value`): the
+    path segment is the object's **UUID**, not its api_name.
 
-    The response is `{"number_archived": N, "async": true}` — archiving
-    happens server-side asynchronously, so a 200 here does not by itself
-    prove the record is out of search yet (confirmed live 2026-08-13:
-    observed as already reflected in `search_records` well under 2s later,
-    same order of lag `_poll_field_value` documents for field writes).
+    Sends `send_email_notification: false`. The schema default is `true`,
+    and every call writes one bulk-action-progress row carrying that flag, so
+    leaving it unset emails the user once per request (confirmed live
+    2026-09-28).
 
-    `DELETE /api/records/{object_identifier}/{record_id}` (`delete_record`)
-    reaches the identical externally-observable state — confirmed live by
-    archiving a record here, then a separately deleted record, and
-    unarchiving both back by id through the same `unarchive_record` call.
-    This function uses the dedicated endpoint anyway rather than aliasing to
-    `delete_record`, so `archive_record` keeps working even if `DELETE`'s
-    behavior is ever tightened to match its name.
+    The response is `{"number_archived": N, "async": true}`. `N` counts the
+    ids sent, not the records archived: an id that was already archived
+    still counts (confirmed live 2026-09-28, where the progress row recorded
+    `success_count: 0`). Archiving happens server-side asynchronously, so a
+    200 does not by itself prove the records are out of search yet.
     """
     resp = client.post(
         f"/api/custom-objects/{object_uuid}/bulk-archive-entity-record",
-        json={"record_ids": [record_id]},
+        json={"record_ids": record_ids, "send_email_notification": False},
     )
     return resp if isinstance(resp, dict) else {}
 
@@ -217,7 +212,7 @@ def unarchive_record(
 ) -> dict[str, Any]:
     """PATCH /api/records/{object_identifier}/{record_id}/unarchive.
 
-    Reverses `archive_record` — and, confirmed live 2026-08-13, `delete_record`
+    Reverses `archive_records` — and, confirmed live 2026-08-13, `delete_record`
     too; the wire treats both the same way. Takes no request body.
     """
     return client.patch(f"/api/records/{object_identifier}/{record_id}/unarchive")

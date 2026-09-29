@@ -60,8 +60,14 @@ POST /api/s3/success?source=<source>
    - `key` = out of the presign response's `fields`
    - `etag` = S3's response header, **quotes stripped**
 
-`source` scopes the upload (e.g. `smart_connector_import` for a connector's
-reference file). Downloading is `GET /api/files/{file_id}/download` — raw
+`source` scopes the upload. The confirmed values are `smart_connector_import`
+(a connector's reference file), `public_image` (an email image) and
+`record_import` (a CSV for `records import`, stored under
+`<business_id>/record_import/<id>.csv`; confirmed live 2026-09-28). The presign
+`s3object_id` is the registered file's `id`. A record import's failure report
+is a file the server creates. `DELETE /api/files/{id}` answers 403 on it, both
+before and after its object is deleted (confirmed live 2026-09-29), so it
+can't be cleaned up. Downloading is `GET /api/files/{file_id}/download` — raw
 bytes plus a `Content-Disposition` filename, and it does need the normal
 Kizen auth headers.
 

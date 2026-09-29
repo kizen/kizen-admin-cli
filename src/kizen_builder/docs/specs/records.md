@@ -1,6 +1,6 @@
 # Spec shape: bulk records (CSV / JSON)
 
-**Consumed by:** `kizen records create|update|upsert <object> --spec-file <f>`
+**Consumed by:** `kizen records create|update|upsert|import|archive <object> --spec-file <f>`
 (also reads stdin). Records are *data*, not schema, but a bulk load runs
 through the same plan → preview → confirm → apply loop.
 
@@ -43,6 +43,7 @@ kizen records create accounts --spec-file accounts.csv --yes
 | `create` | field values | Always inserts. Re-running **duplicates** — use `upsert` for idempotent loads. |
 | `update` | an `id` column | Targets an existing record by UUID. Blank cells are skipped (not cleared). |
 | `upsert` | a `lookup_value` column | Matches the object's name field (email for contacts); updates in place or creates. |
+| `import` | `name` (or `lookup_value`); `id` or `name` with `--mode update` | One server-side job through the CSV uploader. See [Bulk import](#bulk-import-records-import). |
 
 `lookup_value` is a single string matched against the object's identifying
 field — there's no "match on field X" option.
@@ -88,17 +89,69 @@ Omit both to keep the server's default (conflict-raising) behavior.
   governs what happens when an update collides with an already-archived
   record's name — it does not archive anything. Use `records archive` /
   `records unarchive` instead.
-- **`records delete` archives, it does not erase.** A record removed by
-  `DELETE /api/records/{object_identifier}/{entity_id}` 404s on a direct `GET`
-  and drops out of search, but its data survives. Confirmed live 2026-08-13:
-  deleting a record and then calling `records unarchive` directly on it (no
-  `upsert` involved) brings it back. Restoring the same record via `records
-  upsert --oncreate-unarchive unarchive` is expected to work too — it's the
-  same underlying state — but that path itself was not exercised live this
-  session; treat it as untested until it is. `records archive` reaches the
-  same state through the dedicated archive endpoint below; the two commands
-  exist because the API names them differently, not because they do
-  different things.
+- **Deleting a record is archiving it.** The live schema describes
+  `DELETE /api/records/{object_identifier}/{entity_id}` as "Archive entity
+  record"; there is no hard-delete or purge path. A record removed either way
+  404s on a direct `GET`, drops out of search, and comes back with the same id
+  through `records unarchive` or `records upsert --oncreate-unarchive
+  unarchive` (confirmed live 2026-09-28). `records delete` was removed for
+  that reason; `records archive` is the one command.
+
+---
+
+## Bulk import (`records import`)
+
+`records import` sends the whole spec as **one** job through
+`POST /api/custom-objects/{object_uuid}/uploader`, the endpoint behind the UI's
+CSV import. It then waits on the job's `bulk-action-progress` row. The
+per-row verbs above make one request per row (about 2.6 rows/s). An import creates about
+25 rows/s and updates about 100 rows/s, so 1,000 rows take about 40 s to create
+or 10 s to update. Standard custom objects only: contacts and pipelines have
+their own uploaders, which are not wired. Confirmed live 2026-09-28 and 2026-09-29.
+
+- **Modes.** `--mode create|upsert|update` becomes `create_update_mode`
+  `create_only|create_or_update|update_only`. The default is `upsert`.
+- **Matching.** `create` and `upsert` match on `name`, and `lookup_value` is read
+  as `name`, so a `records upsert` spec imports unchanged. `update` matches on an
+  `id` column (Kizen record UUID) when there is one, and on `name` otherwise.
+  An `id` column is rejected in the other modes.
+- **Archived records.** In `upsert` and `update`, a row that matches an
+  archived record by name (or by id) **unarchives it** and applies the row, and
+  the plan preview warns about it. `create` makes a new record beside the
+  archived one. The command sends `fields_for_matching:
+  [{key, unarchive_mode: "unarchive"}]` explicitly; it is also the server
+  default. Confirmed live 2026-09-29.
+- **Blank cells.** `--resolution` sets every column's `conflict_resolution`.
+  `overwrite_except_null` is the default and leaves a field alone when its cell is
+  blank, like `records update`. `overwrite` clears the field. The other values
+  are `only_update_blank` and `only_add_options`. A CSV has one header, so a
+  JSON row that leaves out a key would still send a blank cell for it. Under
+  `overwrite` the plan rejects such a row: give every row the same keys, with
+  `null` to clear a field.
+- **Values are resolved by the server, not by the CLI.** The plan still rejects
+  unknown columns, dropdown/radio/status labels that are not options (the
+  match is case-insensitive), list or object cells, and raw `fields` rows. The server then applies these:
+  - Money accepts both `1250.50` and `$1,250.50`.
+  - A checkbox accepts `true` and `false`.
+  - A relationship cell is the related record's **name**, matched
+    case-insensitively. A UUID does not match. No related record is ever created.
+- **Partial success.** When a cell fails (an unmatched relationship, an invalid
+  value), the record is **still written**, with that field left blank. The job
+  counts the row in `success_count`, and `failed_count` stays 0. Only the job's
+  `failure_report` names the row. That report is a CSV of `Row Number,Entity Name,Record ID,Kizen URL,
+  Failure Status,Error Messages`, where row 1 is the header. `records import` reads
+  it and lists each row by its spec record number. **Any row error fails the op**, so
+  the command exits 1. `--json` carries `row_errors`, `status_id`, the job counts,
+  and the record count before and after.
+- **Waiting.** The uploader answers 200 with an echo of the request plus
+  `status_id`, the progress row's id. The command polls
+  `GET /api/bulk-action-progress/{status_id}` until the status is `completed`,
+  `failed`, `cancelled` or `skipped`, or until `--timeout` runs out. Don't find the job by
+  a time window. `started_at` is rewritten when processing begins, and a
+  window lookup matched the previous job. The uploader POST is never retried.
+- The uploader ignores `send_email_notification`, because the key is not in its schema.
+- The uploaded CSV (source `record_import`) and the failure report stay in
+  the file store afterwards. See `kizen docs show files`.
 
 ---
 
@@ -117,8 +170,10 @@ object are plain custom objects whose identifier is their api_name.
 | Search / list | `POST` | `/api/records/{object_identifier}/search` |
 | Create | `POST` | `/api/records/{object_identifier}/add` |
 | Update (partial) | `PATCH` | `/api/records/{object_identifier}/{entity_id}` |
-| Delete (archives) | `DELETE` | `/api/records/{object_identifier}/{entity_id}` |
+| Delete (archives; unused by the CLI) | `DELETE` | `/api/records/{object_identifier}/{entity_id}` |
 | Upsert | `POST` | `/api/records/{object_identifier}/upsert` |
+| Bulk import (CSV) | `POST` | `/api/custom-objects/{object_uuid}/uploader` |
+| Bulk job progress | `GET` | `/api/bulk-action-progress/{id}` |
 | Move between stages | `PATCH` | `/api/records/{object_identifier}/{entity_id}/move` |
 | Archive | `POST` | `/api/custom-objects/{object_uuid}/bulk-archive-entity-record` |
 | Unarchive | `PATCH` | `/api/records/{object_identifier}/{entity_id}/unarchive` |
@@ -196,8 +251,9 @@ kizen records set-field <object> <uuid> [<uuid> …] --field X --value Y [--reso
   `relationship` fields. By the same pattern they should want a bare list of
   ids rather than a list of `{"id": …}` dicts — confirm before relying on it.
 - Id-targeted only. The request also accepts `entity_records_set_key` for
-  filter-targeted bulk ops, but that needs the separate
-  `bulk-action-summary`/`bulk-action-progress` framework, which isn't wired up.
+  filter-targeted bulk ops, but that needs the separate `bulk-action-summary`
+  framework, which isn't wired up. `bulk-action-progress` polling is wired, but
+  only `records import` uses it.
 
 ## Archive / unarchive (`records archive` / `records unarchive`)
 
@@ -207,28 +263,42 @@ operation the UI's Archive button performs. Same request family as
 `bytes_end_index` for the filter-targeted bulk framework, unused here):
 
 ```json
-{"record_ids": ["<record-uuid>", ...]}
+{"record_ids": ["<record-uuid>", ...], "send_email_notification": false}
 ```
 
 ```bash
-kizen records archive <object> <uuid> [<uuid> …]
+kizen records archive <object> <uuid>
+kizen records archive <object> --spec-file ids.csv   # rows with an id; `records list --limit N --output csv` works (default limit 100)
 kizen records unarchive <object> <uuid> [<uuid> …]
 ```
 
-- The response is `{"number_archived": N, "async": true}` — archiving is
-  asynchronous server-side. Confirmed live 2026-08-13: the change was already
-  visible in `search_records` well under 2s later, the same order of lag
-  `records set-field` shows.
+- **One request per 500 ids.** Every call writes exactly one
+  `bulk-action-progress` row (`action: custom_object_archive`) however many
+  ids it carries, so the CLI batches rather than posting per id. 500 is a
+  chosen ceiling, not a server limit; the largest batch probed is 22 ids in
+  one call. Confirmed live 2026-09-28 and 2026-09-29.
+- **Email is off.** `send_email_notification` defaults to `true`, and each
+  progress row carries the flag, so an unset flag emails once per request.
+  The CLI always sends `false`. Confirmed live 2026-09-28.
+- The response is `{"number_archived": N, "async": true}`. `N` counts the ids
+  sent, not the records archived: archiving an already-archived id returns 1
+  while its progress row records `success_count: 0`. The response carries no
+  progress-row id; find the row through the `bulk-action-progress` list
+  filters (`custom_object_id`, `action`, `started_after`). Confirmed live
+  2026-09-28.
+- Archiving is asynchronous server-side. The change was visible in
+  `search_records` well under 2s later (confirmed live 2026-08-13), the same
+  order of lag `records set-field` shows.
 - The path segment is the object's **UUID**, not its api_name — unlike every
   other records endpoint on this page.
 - `records unarchive` wraps `PATCH /api/records/{object_identifier}/{entity_id}/unarchive`
   — the ordinary object identifier convention, and takes no request body.
-- **Confirmed live 2026-08-13: `DELETE /api/records/{object_identifier}/{entity_id}`
-  reaches the identical externally-observable state as this archive
-  endpoint** — 404 on a direct `GET`, absent from search, and restorable
-  through the same unarchive endpoint either way. `records delete` and
-  `records archive` are not different operations under the hood; `archive`
-  just names what actually happens.
+  There is no bulk unarchive endpoint, so it stays one request per id.
+- `DELETE` reaches the same state as this endpoint, and each treats the
+  other's result as already done: `DELETE` on an archived record 404s, and
+  archiving a deleted one records `success_count: 0`. The one observed
+  difference is that `DELETE` writes no progress row. Confirmed live
+  2026-09-28.
 
 ## See also
 
@@ -236,4 +306,4 @@ kizen records unarchive <object> <uuid> [<uuid> …]
 - `kizen docs show filters` — the filter DSL and wire format used by `--filter`
   and the search body.
 - `kizen docs show objects` — pipeline stages, and why `records move` exists.
-- `kizen records create|update|upsert --help` — current flags.
+- `kizen records create|update|upsert|import --help` — current flags.

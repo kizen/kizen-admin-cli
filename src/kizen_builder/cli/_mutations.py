@@ -60,6 +60,15 @@ def _render_result(result: plan_tools.ApplyResult) -> None:
             r.message or "",
         )
     console.print(table)
+    archived = [
+        r for r in result.results if r.kind == "record_archive" and r.status == "ok"
+    ]
+    if archived:
+        total = sum((r.raw or {}).get("number_archived", 0) for r in archived)
+        console.print(
+            f"{total} id(s) accepted for archiving in {len(archived)} request(s). "
+            "This counts ids sent, not records archived."
+        )
 
 
 def _run_mutation(

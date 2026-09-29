@@ -500,7 +500,8 @@ exist):
 ```bash
 kizen automations delete escalate_high_priority_tickets --yes
 kizen activities delete <site_visit_api_name> --yes
-kizen records delete service_tickets <ticket_id> <ticket_id> ... --yes
+kizen records list service_tickets --limit 100000 --output csv > tickets.csv
+kizen records archive service_tickets --spec-file tickets.csv --yes
 kizen objects delete service_tickets --yes
 ```
 
