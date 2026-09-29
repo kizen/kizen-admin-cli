@@ -218,6 +218,20 @@ def bulk_change_field_value(
     )
 
 
+def upload_records(
+    client: KizenClient, object_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    """POST /api/custom-objects/{object_id}/uploader — the UI's CSV import.
+
+    ``body`` is a ``CustomObjectEntityRecordUploadRequest`` naming an uploaded
+    CSV by ``s3_object_id``. Confirmed live 2026-09-28: the response is 200
+    with an echo of the request plus ``status_id``, the
+    ``bulk-action-progress`` row to poll. Keys outside the schema (such as
+    ``send_email_notification``) are dropped.
+    """
+    return client.post(f"/api/custom-objects/{object_id}/uploader", json=body)
+
+
 def list_fields(client: KizenClient, object_id: str) -> list[dict[str, Any]]:
     """GET /api/custom-objects/{object_id}/fields.
 
