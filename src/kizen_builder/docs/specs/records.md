@@ -1,6 +1,6 @@
 # Spec shape: bulk records (CSV / JSON)
 
-**Consumed by:** `kizen records create|update|upsert <object> --spec-file <f>`
+**Consumed by:** `kizen records create|update|upsert|import <object> --spec-file <f>`
 (also reads stdin). Records are *data*, not schema, but a bulk load runs
 through the same plan → preview → confirm → apply loop.
 
@@ -43,6 +43,7 @@ kizen records create accounts --spec-file accounts.csv --yes
 | `create` | field values | Always inserts. Re-running **duplicates** — use `upsert` for idempotent loads. |
 | `update` | an `id` column | Targets an existing record by UUID. Blank cells are skipped (not cleared). |
 | `upsert` | a `lookup_value` column | Matches the object's name field (email for contacts); updates in place or creates. |
+| `import` | `name` (or `lookup_value`); `id` or `name` with `--mode update` | One server-side job through the CSV uploader. See [Bulk import](#bulk-import-records-import). |
 
 `lookup_value` is a single string matched against the object's identifying
 field — there's no "match on field X" option.
@@ -98,6 +99,62 @@ Omit both to keep the server's default (conflict-raising) behavior.
 
 ---
 
+## Bulk import (`records import`)
+
+`records import` sends the whole spec as **one** job through
+`POST /api/custom-objects/{object_uuid}/uploader`, the endpoint behind the UI's
+CSV import. It then waits on the job's `bulk-action-progress` row. The
+per-row verbs above make one request per row (about 2.6 rows/s). An import creates about
+25 rows/s and updates about 100 rows/s, so 1,000 rows take about 40 s to create
+or 10 s to update. Standard custom objects only: contacts and pipelines have
+their own uploaders, which are not wired. Confirmed live 2026-09-28 and 2026-09-29.
+
+- **Modes.** `--mode create|upsert|update` becomes `create_update_mode`
+  `create_only|create_or_update|update_only`. The default is `upsert`.
+- **Matching.** `create` and `upsert` match on `name`, and `lookup_value` is read
+  as `name`, so a `records upsert` spec imports unchanged. `update` matches on an
+  `id` column (Kizen record UUID) when there is one, and on `name` otherwise.
+  An `id` column is rejected in the other modes.
+- **Archived records.** In `upsert` and `update`, a row that matches an
+  archived record by name (or by id) **unarchives it** and applies the row, and
+  the plan preview warns about it. `create` makes a new record beside the
+  archived one. The command sends `fields_for_matching:
+  [{key, unarchive_mode: "unarchive"}]` explicitly; it is also the server
+  default. Confirmed live 2026-09-29.
+- **Blank cells.** `--resolution` sets every column's `conflict_resolution`.
+  `overwrite_except_null` is the default and leaves a field alone when its cell is
+  blank, like `records update`. `overwrite` clears the field. The other values
+  are `only_update_blank` and `only_add_options`. A CSV has one header, so a
+  JSON row that leaves out a key would still send a blank cell for it. Under
+  `overwrite` the plan rejects such a row: give every row the same keys, with
+  `null` to clear a field.
+- **Values are resolved by the server, not by the CLI.** The plan still rejects
+  unknown columns, dropdown/radio/status labels that are not options (the
+  match is case-insensitive), list or object cells, and raw `fields` rows. The server then applies these:
+  - Money accepts both `1250.50` and `$1,250.50`.
+  - A checkbox accepts `true` and `false`.
+  - A relationship cell is the related record's **name**, matched
+    case-insensitively. A UUID does not match. No related record is ever created.
+- **Partial success.** When a cell fails (an unmatched relationship, an invalid
+  value), the record is **still written**, with that field left blank. The job
+  counts the row in `success_count`, and `failed_count` stays 0. Only the job's
+  `failure_report` names the row. That report is a CSV of `Row Number,Entity Name,Record ID,Kizen URL,
+  Failure Status,Error Messages`, where row 1 is the header. `records import` reads
+  it and lists each row by its spec record number. **Any row error fails the op**, so
+  the command exits 1. `--json` carries `row_errors`, `status_id`, the job counts,
+  and the record count before and after.
+- **Waiting.** The uploader answers 200 with an echo of the request plus
+  `status_id`, the progress row's id. The command polls
+  `GET /api/bulk-action-progress/{status_id}` until the status is `completed`,
+  `failed`, `cancelled` or `skipped`, or until `--timeout` runs out. Don't find the job by
+  a time window. `started_at` is rewritten when processing begins, and a
+  window lookup matched the previous job. The uploader POST is never retried.
+- The uploader ignores `send_email_notification`, because the key is not in its schema.
+- The uploaded CSV (source `record_import`) and the failure report stay in
+  the file store afterwards. See `kizen docs show files`.
+
+---
+
 # Wire format & API behavior
 
 All record types — custom objects **and** contacts — use one unified records
@@ -115,6 +172,8 @@ object are plain custom objects whose identifier is their api_name.
 | Update (partial) | `PATCH` | `/api/records/{object_identifier}/{entity_id}` |
 | Delete (archives; unused by the CLI) | `DELETE` | `/api/records/{object_identifier}/{entity_id}` |
 | Upsert | `POST` | `/api/records/{object_identifier}/upsert` |
+| Bulk import (CSV) | `POST` | `/api/custom-objects/{object_uuid}/uploader` |
+| Bulk job progress | `GET` | `/api/bulk-action-progress/{id}` |
 | Move between stages | `PATCH` | `/api/records/{object_identifier}/{entity_id}/move` |
 | Archive | `POST` | `/api/custom-objects/{object_uuid}/bulk-archive-entity-record` |
 | Unarchive | `PATCH` | `/api/records/{object_identifier}/{entity_id}/unarchive` |
@@ -192,8 +251,9 @@ kizen records set-field <object> <uuid> [<uuid> …] --field X --value Y [--reso
   `relationship` fields. By the same pattern they should want a bare list of
   ids rather than a list of `{"id": …}` dicts — confirm before relying on it.
 - Id-targeted only. The request also accepts `entity_records_set_key` for
-  filter-targeted bulk ops, but that needs the separate
-  `bulk-action-summary`/`bulk-action-progress` framework, which isn't wired up.
+  filter-targeted bulk ops, but that needs the separate `bulk-action-summary`
+  framework, which isn't wired up. `bulk-action-progress` polling is wired, but
+  only `records import` uses it.
 
 ## Archive / unarchive (`records archive` / `records unarchive`)
 
@@ -246,4 +306,4 @@ kizen records unarchive <object> <uuid> [<uuid> …]
 - `kizen docs show filters` — the filter DSL and wire format used by `--filter`
   and the search body.
 - `kizen docs show objects` — pipeline stages, and why `records move` exists.
-- `kizen records create|update|upsert --help` — current flags.
+- `kizen records create|update|upsert|import --help` — current flags.

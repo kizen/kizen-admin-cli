@@ -192,6 +192,8 @@ kizen records update <object> <uuid> --field api_name=value [...]    # one recor
 kizen records update <object> [--spec-file f.csv|f.json | < stdin]   # bulk update (each row needs an 'id')
 kizen records upsert <object> <lookup_value> --field api_name=value [...]  # create-or-update by lookup_value
 kizen records upsert <object> [--spec-file f.csv|f.json | < stdin]   # bulk upsert (each row needs 'lookup_value')
+kizen records import <object> [--spec-file f.csv|f.json | < stdin] [--mode create|upsert|update]
+    # one server-side job through the CSV uploader; row errors exit 1 (kizen docs show records)
 kizen records set-field <object> <uuid> [<uuid> ...] --field X --value Y [--resolution ...]
     # set one field to one value across many records in ONE call (bulk-change-field-value).
     # Id-targeted only — build the id list with `records list --filter` first;

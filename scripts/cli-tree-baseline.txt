@@ -2910,6 +2910,7 @@
 │ create        Create one record (via --field) or many (via CSV/JSON spec).                       │
 │ update        Update one record (UUID + --field) or many (CSV/JSON spec with 'id').              │
 │ upsert        Create-or-update one record (lookup_value + --field) or many (CSV/JSON spec).      │
+│ import        Load many records as one server-side job through Kizen's CSV uploader.             │
 │ archive       Archive one record (UUID) or many (CSV/JSON spec with 'id').                       │
 │ unarchive     Unarchive one or more records by UUID.                                             │
 │ set-field     Set one field to one value across many records in a single API call.               │
@@ -3006,6 +3007,38 @@
 │ --json                   Alias for --output json.                                                │
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: records import [OPTIONS] {object_api_name}                                                  
+                                                                                                    
+ Load many records as one server-side job through Kizen's CSV uploader.                             
+                                                                                                    
+ Takes the same rows as `records create|upsert|update` (`lookup_value` is                           
+ read as `name`) and waits for the job. Rows the server could only                                  
+ partly apply are listed, and they make the command exit 1. In upsert                               
+ and update modes, a row whose name (or id) matches an archived record                              
+ unarchives and updates it.                                                                         
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    object_api_name      <str>  Object api_name. [required]                                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file           <str>    Path to a CSV or JSON file of records (or pipe to stdin).         │
+│ --mode                <str>    create | upsert (match on name) | update (match on id, else       │
+│                                name).                                                            │
+│                                [default: upsert]                                                 │
+│ --resolution          <str>    overwrite | only_update_blank | only_add_options |                │
+│                                overwrite_except_null (overwrite clears a field whose cell is     │
+│                                blank, so every row must carry every column).                     │
+│                                [default: overwrite_except_null]                                  │
+│ --timeout             <float>  Seconds to wait for the import job to finish. [default: 900.0]    │
+│ --dry-run                      Show the plan without applying.                                   │
+│ --yes         -y               Skip the y/N confirmation prompt.                                 │
+│ --json                         Emit JSON (plan with --dry-run, results otherwise).               │
+│ --help                         Show this message and exit.                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Modes, matching and partial success: see `kizen docs show records`                                 
+                                                                                                    
                                                                                                     
  Usage: records list [OPTIONS] {object_api_name}                                                    
                                                                                                     
@@ -4717,6 +4750,9 @@
 
 
 ===== records get =====
+
+
+===== records import =====
 
 
 ===== records list =====

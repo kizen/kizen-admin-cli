@@ -110,6 +110,17 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **`kizen records import <object>`** loads a CSV or JSON spec as one
+  server-side job through Kizen's CSV uploader. A per-row `records upsert`
+  handles about 2.6 rows/s. An import handles about 25 rows/s when it creates
+  records and about 100 rows/s when it updates them. `--mode
+  create|upsert|update` picks the behavior. Update matches on an `id` column
+  when there is one. An existing `records upsert` spec imports unchanged. The
+  server keeps a record even when a cell fails, and it reports the row as a
+  success. The command reads the job's failure report, lists those rows, and
+  exits 1. In upsert and update modes, a row that matches an archived record
+  unarchives it, and the plan preview says so. `kizen docs show records`
+  covers matching, blank-cell handling, and value formats.
 - **`smart-connectors deactivate <connector>`** sets a connector `inactive`,
   with the same preview, `--dry-run`, `--yes`, and `--json` as `activate`.
   Edits and dry runs still work while inactive, and `activate` brings it back

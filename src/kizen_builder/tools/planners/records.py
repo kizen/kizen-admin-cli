@@ -14,11 +14,11 @@ the records API) as an escape hatch for values the resolver doesn't cover.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.objects import get_object
-from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.tools.plans import Action, Plan, PlanError, PlanOperation
 
 # Field types whose value is one option chosen from a fixed set.
 _SINGLE_SELECT = {"dropdown", "radio", "status", "choices", "selector", "yesnomaybe"}
@@ -462,4 +462,225 @@ def plan_unarchive_records(object_api_name: str, record_ids: list[str]) -> Plan:
         env=env,
         summary=f"Unarchive {len(operations)} record(s) on {object_api_name}",
         operations=operations,
+    )
+
+
+# `records import` modes → the uploader's `create_update_mode`.
+IMPORT_MODES = {
+    "create": "create_only",
+    "upsert": "create_or_update",
+    "update": "update_only",
+}
+# The uploader's per-field `conflict_resolution` (`ConflictResolutionEe6Enum`,
+# confirmed live 2026-09-28). `overwrite` clears a field when its cell is
+# blank; `overwrite_except_null` leaves it alone, like `records update`.
+IMPORT_RESOLUTIONS = (
+    "overwrite",
+    "only_update_blank",
+    "only_add_options",
+    "overwrite_except_null",
+)
+
+
+def _import_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def plan_import_records(
+    object_api_name: str,
+    records: list[dict[str, Any]],
+    mode: str = "upsert",
+    resolution: str = "overwrite_except_null",
+    timeout: float = 900.0,
+) -> Plan:
+    """Plan one bulk load through ``POST /api/custom-objects/{id}/uploader``.
+
+    Validates columns and option labels against the live schema, then builds
+    a single ``record_import`` op carrying the CSV (header plus string rows)
+    and the uploader body. The server resolves the values; the upload and the
+    submit happen at apply time. ``lookup_value`` is accepted as ``name``, so
+    a ``records upsert`` spec imports unchanged.
+    """
+    if not records:
+        raise PlanError("no records provided to import")
+    if mode not in IMPORT_MODES:
+        raise PlanError(f"invalid mode {mode!r}. Valid: {sorted(IMPORT_MODES)}")
+    if resolution not in IMPORT_RESOLUTIONS:
+        raise PlanError(
+            f"invalid resolution {resolution!r}. Valid: {list(IMPORT_RESOLUTIONS)}"
+        )
+    if timeout <= 0:
+        raise PlanError(f"timeout must be > 0 seconds, got {timeout!r}")
+
+    env = load_env_config().name
+    try:
+        obj = get_object(object_api_name)
+    except LookupError as e:
+        raise PlanError(f"object '{object_api_name}' not found: {e}") from e
+    if obj["api_name"] == "client_client" or obj.get("object_type") == "pipeline":
+        raise PlanError(
+            f"'{object_api_name}' is contacts or a pipeline, which Kizen imports "
+            "through a separate uploader. `records import` supports standard "
+            "custom objects only; use `records upsert` instead."
+        )
+
+    index = _field_index(obj)
+    rows: list[dict[str, Any]] = []
+    for i, rec in enumerate(records):
+        if isinstance(rec.get("fields"), list):
+            raise PlanError(
+                f"record #{i + 1} carries a raw 'fields' list. `records import` "
+                "takes {api_name: value} rows only."
+            )
+        row = dict(rec)
+        if "lookup_value" in row:
+            if "name" in row and row["name"] != row["lookup_value"]:
+                raise PlanError(
+                    f"record #{i + 1} has both 'name' and 'lookup_value'; pass one."
+                )
+            row["name"] = row.pop("lookup_value")
+        for key, value in row.items():
+            if isinstance(value, (list, dict)):
+                raise PlanError(
+                    f"record #{i + 1} column '{key}' is a list or object; "
+                    "`records import` takes one scalar per cell."
+                )
+        rows.append(row)
+
+    header: list[str] = []
+    for row in rows:
+        header.extend(k for k in row if k not in header)
+
+    if resolution == "overwrite":
+        # A CSV has one header, so a JSON row that lacks a column still sends
+        # a blank cell for it, and `overwrite` clears the field on a blank.
+        for i, row in enumerate(rows):
+            missing = [k for k in header if k not in row]
+            if missing:
+                raise PlanError(
+                    f"record #{i + 1} lacks {missing}; under --resolution "
+                    "overwrite that sends a blank cell and clears the field. "
+                    "Give every row the same keys (null clears a field), or "
+                    "use overwrite_except_null."
+                )
+
+    has_id = "id" in header
+    has_name = "name" in header
+    if has_id and mode != "update":
+        raise PlanError(
+            f"an 'id' column only works with --mode update (got --mode {mode}); "
+            "create and upsert match on name."
+        )
+    for i, row in enumerate(rows):
+        name = _import_cell(row.get("name")).strip()
+        if mode != "update" and not name:
+            raise PlanError(
+                f"record #{i + 1} has no 'name' — {mode} matches and names "
+                "records by it (add a 'name' or 'lookup_value' column)."
+            )
+        if mode == "update" and has_id and not _import_cell(row.get("id")).strip():
+            raise PlanError(
+                f"record #{i + 1} has no 'id' — this file matches on id, so "
+                "every row needs one."
+            )
+        if mode == "update" and not has_id and not name:
+            raise PlanError(
+                f"record #{i + 1} has neither 'id' nor 'name' — update matches "
+                "an existing record by one of them."
+            )
+        if mode == "update" and has_id and has_name and not name:
+            raise PlanError(
+                f"record #{i + 1} has a blank 'name' in a file that sets names; "
+                "the uploader would clear it. Give every row a name, or drop "
+                "the column."
+            )
+
+    field_mapper: dict[str, dict[str, Any]] = {}
+    for col, key in enumerate(header):
+        if key in ("id", "name"):
+            continue
+        field = index.get(key)
+        if field is None:
+            raise PlanError(
+                f"field '{key}' not found on '{obj['api_name']}'. "
+                f"Available: {sorted(index)}"
+            )
+        entry: dict[str, Any] = {"csv_column": col, "conflict_resolution": resolution}
+        if field.get("field_type") == "relationship":
+            entry["field_for_matching"] = "name"
+            entry["create_if_not_found"] = False
+        field_mapper[field["id"]] = entry
+
+        options = field.get("options") or []
+        if field.get("field_type") in _SINGLE_SELECT and options:
+            for i, row in enumerate(rows):
+                label = _import_cell(row.get(key)).strip()
+                if not label:
+                    continue
+                match = next(
+                    (
+                        o
+                        for o in options
+                        if (o.get("name") or "").lower() == label.lower()
+                        or (o.get("code") or "").lower() == label.lower()
+                    ),
+                    None,
+                )
+                if match is None:
+                    raise PlanError(
+                        f"record #{i + 1}: {label!r} is not an option of "
+                        f"'{key}'. Valid: {[o.get('name') for o in options]}"
+                    )
+                row[key] = match.get("name") or label
+
+    match_on = "id" if has_id else "name"
+    preview: dict[str, Any] = {
+        "env": env,
+        "object": object_api_name,
+        "mode": mode,
+        "rows": len(rows),
+        "columns": header,
+        "match_on": match_on,
+        "resolution": resolution,
+    }
+    if mode != "create":
+        # Live 2026-09-29: create_only makes a new record instead.
+        preview["warning"] = (
+            f"a row whose {match_on} matches an archived record unarchives "
+            "and updates it"
+        )
+    body: dict[str, Any] = {
+        "field_mapper": field_mapper,
+        "create_update_mode": IMPORT_MODES[mode],
+        # The server default, sent so it is visible in the plan. The other
+        # `UnarchiveModeEnum` values are `create_new` and `error`.
+        "fields_for_matching": [{"key": match_on, "unarchive_mode": "unarchive"}],
+    }
+    if has_name:
+        body["name_column"] = header.index("name")
+    if has_id:
+        body["kizen_id_column"] = header.index("id")
+
+    op = PlanOperation(
+        action=cast(Action, mode),
+        kind="record_import",
+        key=f"{object_api_name}#import-{len(rows)}-rows",
+        preview=preview,
+        payload={
+            "file_name": f"{obj['api_name']}-import.csv",
+            "header": header,
+            "rows": [[_import_cell(row.get(k)) for k in header] for row in rows],
+            "body": body,
+            "timeout": timeout,
+        },
+        parent_object_uuid=obj["id"],
+    )
+    return Plan.build(
+        env=env,
+        summary=f"Import {len(rows)} record(s) into {object_api_name} ({mode})",
+        operations=[op],
     )

@@ -307,6 +307,62 @@ def records_upsert(
 
 
 @records_app.command(
+    "import",
+    epilog="Modes, matching and partial success: see `kizen docs show records`",
+)
+def records_import(
+    object_api_name: str = typer.Argument(..., help="Object api_name."),
+    spec_file: str = typer.Option(
+        "",
+        "--spec-file",
+        help="Path to a CSV or JSON file of records (or pipe to stdin).",
+    ),
+    mode: str = typer.Option(
+        "upsert",
+        "--mode",
+        help="create | upsert (match on name) | update (match on id, else name).",
+    ),
+    resolution: str = typer.Option(
+        "overwrite_except_null",
+        "--resolution",
+        help="overwrite | only_update_blank | only_add_options | overwrite_except_null "
+        "(overwrite clears a field whose cell is blank, so every row must "
+        "carry every column).",
+    ),
+    timeout: float = typer.Option(
+        900.0, "--timeout", help="Seconds to wait for the import job to finish."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Load many records as one server-side job through Kizen's CSV uploader.
+
+    Takes the same rows as `records create|upsert|update` (`lookup_value` is
+    read as `name`) and waits for the job. Rows the server could only
+    partly apply are listed, and they make the command exit 1. In upsert
+    and update modes, a row whose name (or id) matches an archived record
+    unarchives and updates it.
+    """
+    records, from_stdin = _read_records_spec(spec_file)
+    _run_mutation(
+        lambda: record_planners.plan_import_records(
+            object_api_name, records, mode, resolution, timeout=timeout
+        ),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+        stdin_consumed=from_stdin,
+    )
+
+
+@records_app.command(
     "archive",
     context_settings={"allow_extra_args": True},
     epilog="Bulk spec shape (CSV/JSON rows; each needs an id): see `kizen docs show records`",

@@ -41,6 +41,12 @@ SMART_CONNECTOR_IMPORT = "smart_connector_import"
 # See `kizen docs show email-templates`.
 PUBLIC_IMAGE = "public_image"
 
+# The ``source`` a CSV for ``POST /api/custom-objects/{id}/uploader`` is
+# uploaded under — confirmed live 2026-09-28. The registered key is
+# ``<business_id>/record_import/<id>.csv``, and the presign ``s3object_id``
+# equals the registered file ``id``.
+RECORD_IMPORT = "record_import"
+
 
 def download_file(
     config: EnvConfig, file_id: str, timeout: float = 120.0

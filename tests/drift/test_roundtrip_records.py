@@ -531,3 +531,109 @@ def test_archive_records_one_request_then_unarchive_restores_them(
     for rid, name in zip(record_ids, names, strict=True):
         assert records_api.get_record(drift_client, object_api_name, rid)["id"] == rid
         _poll_search_membership(drift_client, object_api_name, rid, name, present=True)
+
+
+# ---------------------------------------------------------------------------
+# Bulk import through the CSV uploader (`records import`)
+# ---------------------------------------------------------------------------
+
+
+def test_import_creates_records_with_dropdown_money_and_relationship(
+    drift_client, scratch, records_object, records_dropdown_field, drift_object
+):
+    """``plan_import_records`` + the apply walk: the CSV uploads, the
+    uploader job completes, and a dropdown label, a money string and a
+    relationship-by-name all land. Clean rows only, so the server makes no
+    failure report (which can't be deleted afterwards)."""
+    from kizen_builder.api import files as files_api
+    from kizen_builder.api import records as records_api
+    from kizen_builder.tools.planners.records import (
+        plan_create_records,
+        plan_import_records,
+    )
+    from kizen_builder.tools.plans import _execute_record_import
+    from tests.drift.conftest import create_field_on
+
+    object_api_name = records_object["api_name"]
+    money = create_field_on(
+        drift_client,
+        scratch,
+        records_object,
+        {
+            "name": "Drift Amount",
+            "api_name": debris_api_name("amount"),
+            "field_type": "money",
+        },
+    )
+    relation = create_field_on(
+        drift_client,
+        scratch,
+        records_object,
+        {
+            "name": "Drift Import Parent",
+            "api_name": debris_api_name("import_parent"),
+            "field_type": "relationship",
+            "relation": {
+                "target_object": drift_object["api_name"],
+                "relation_type": "many_to_one",
+                "related_name": "Drift Import Children",
+            },
+        },
+    )
+    parent_name = debris_name("import parent")
+    parent_plan = plan_create_records(drift_object["api_name"], [{"name": parent_name}])
+    parent = records_api.create_record(
+        drift_client,
+        drift_object["api_name"],
+        parent_plan.operations[0].payload["fields"],
+    )
+    scratch.track(
+        "record",
+        parent["id"],
+        lambda: records_api.delete_record(
+            drift_client, drift_object["api_name"], parent["id"]
+        ),
+    )
+
+    stamp = debris_name("record import")
+    dropdown = records_dropdown_field["api_name"]
+    plan = plan_import_records(
+        object_api_name,
+        [
+            {
+                "name": f"{stamp} a",
+                dropdown: "high",
+                money["name"]: "$1,250.50",
+                relation["name"]: parent_name.lower(),
+            },
+            {"name": f"{stamp} b", dropdown: "Low", money["name"]: "10"},
+        ],
+        mode="create",
+    )
+    (op,) = plan.operations
+    raw = _execute_record_import(drift_client, records_object["uuid"], op.payload)
+    scratch.track(
+        "file",
+        raw["file_id"],
+        lambda: files_api.delete_file(drift_client, raw["file_id"]),
+    )
+    imported = records_api.search_records(drift_client, object_api_name, search=stamp)
+    for rec in imported:
+        scratch.track(
+            "record",
+            rec["id"],
+            lambda rid=rec["id"]: records_api.delete_record(
+                drift_client, object_api_name, rid
+            ),
+        )
+
+    assert raw["status"] == "completed" and not raw["timed_out"], raw
+    assert raw["row_errors"] == [] and raw["failure_report_id"] is None, raw
+    assert raw["count_after"] - raw["count_before"] == 2
+    by_name = {records_api.field_value(r, "name"): r for r in imported}
+    a = by_name[f"{stamp} a"]
+    assert records_api.field_value(a, dropdown)["id"] == _option_id(
+        records_dropdown_field, "High"
+    )
+    assert records_api.field_value(a, money["name"])["amount"] == 1250.5
+    assert records_api.field_value(a, relation["name"])["id"] == parent["id"]
