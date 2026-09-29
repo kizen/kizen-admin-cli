@@ -246,6 +246,16 @@ class AutomationStepDef(BaseModel):
             raise ValueError(
                 f"step_type '{self.step_type}' requires an '{config_field}' block"
             )
+        if self.step_type in ("branch", "merge_branches"):
+            given = sorted(
+                f
+                for f in set(_STEP_TYPE_TO_CONFIG_FIELD.values())
+                if f and getattr(self, f) is not None
+            )
+            if given:
+                raise ValueError(
+                    f"step_type '{self.step_type}' takes no config block (got {given})"
+                )
         return self
 
 

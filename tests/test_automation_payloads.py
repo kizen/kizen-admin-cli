@@ -2061,6 +2061,17 @@ def test_skipped_condition_without_branch_rejected():
         AutomationDef.model_validate(spec)
 
 
+@pytest.mark.parametrize("step_type", ["branch", "merge_branches"])
+def test_configless_step_with_config_block_rejected(step_type):
+    spec = _merged_condition_spec()
+    merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")
+    merge.update(
+        step_type=step_type, step_delay={"minutes": 5, "value_origin": "static"}
+    )
+    with pytest.raises(ValueError, match=f"'{step_type}' takes no config block"):
+        AutomationDef.model_validate(spec)
+
+
 def test_merged_condition_without_merge_step_fails_plan(patch_live_lookups):
     spec = _merged_condition_spec()
     spec["steps"] = spec["steps"][:3]

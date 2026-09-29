@@ -92,9 +92,9 @@ called out explicitly under **Changed** or **Removed**.
   step fields: `is_branch_group_initiator`, `continue_with_branch` and
   `error_notification_severity_level`. `create`, `update` and `diff
   --spec-file` now check the branch-group rules at `--dry-run`, so a merged
-  condition with no merge step fails before anything is sent. A step that
-  fans out to parallel children without a `branch` step gets a warning in the
-  plan preview. Existing valid specs build exactly as before. One the server
+  condition with no merge step fails before anything is sent. A step that fans
+  out to parallel children without a `branch` step gets a warning in the plan
+  preview. Existing valid specs build exactly as before. One that the server
   would reject (a misplaced `initialize_variable`, a go_to to one, duplicate
   step ids) now fails at plan rather than with a 400.
 
