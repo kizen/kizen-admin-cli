@@ -1,0 +1,212 @@
+{
+  "id": "14f3cc5c-4e54-4aff-8da2-d79a9122db4b",
+  "name": "Merged Condition",
+  "api_name": "merged_condition",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "0aeabc8b-d024-41b3-98e1-0f4a56081466",
+    "name": "object_d",
+    "description": null,
+    "entity_name": "Object D Record",
+    "object_name": "Object D",
+    "object_class": "custom_objects",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "c37e4175-8223-456f-9618-5bca2a334494",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "db0553fb-2a5c-48e9-91e9-2eabb2c3dc65",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "0341e106-2e69-4efb-9ad7-88087d0dd591",
+      "step_type": "condition",
+      "order": 0,
+      "description": "Condition",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": true,
+          "query": [
+            {
+              "id": "query-0",
+              "and": true,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::180a4457-111d-44df-be02-569db4103377",
+                  "value": 50,
+                  "subtype": "custom",
+                  "condition": ">="
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [
+          {
+            "id": "2b441b18-e95c-406d-a306-6c652e9a6d89"
+          }
+        ],
+        "no_steps": [
+          {
+            "id": "c0911029-d8ad-49bc-930f-203ea1831e02"
+          }
+        ],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "2b441b18-e95c-406d-a306-6c652e9a6d89",
+      "step_type": "delay",
+      "order": 1,
+      "description": "Delay",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "0341e106-2e69-4efb-9ad7-88087d0dd591",
+      "parent_condition": "yes",
+      "step_delay": {
+        "minutes": 5,
+        "hours": 0,
+        "days": 0,
+        "weeks": 0,
+        "months": 0,
+        "years": 0,
+        "time": null,
+        "skip_non_working_days": false,
+        "value_origin": "static",
+        "duration_unit": null,
+        "variable": null
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "c0911029-d8ad-49bc-930f-203ea1831e02",
+      "step_type": "delay",
+      "order": 2,
+      "description": "Delay",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "0341e106-2e69-4efb-9ad7-88087d0dd591",
+      "parent_condition": "no",
+      "step_delay": {
+        "minutes": 5,
+        "hours": 0,
+        "days": 0,
+        "weeks": 0,
+        "months": 0,
+        "years": 0,
+        "time": null,
+        "skip_non_working_days": false,
+        "value_origin": "static",
+        "duration_unit": null,
+        "variable": null
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "d90c178e-c40a-4ba8-9922-b7c2e6b5d2f6",
+      "step_type": "merge_branches",
+      "order": 3,
+      "description": "Merge Branches",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "0341e106-2e69-4efb-9ad7-88087d0dd591",
+      "parent_condition": "",
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "9df5bfea-75ed-47ea-9674-e1d981125463",
+      "step_type": "delay",
+      "order": 4,
+      "description": "Delay",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "d90c178e-c40a-4ba8-9922-b7c2e6b5d2f6",
+      "parent_condition": "",
+      "step_delay": {
+        "minutes": 5,
+        "hours": 0,
+        "days": 0,
+        "weeks": 0,
+        "months": 0,
+        "years": 0,
+        "time": null,
+        "skip_non_working_days": null,
+        "value_origin": "static",
+        "duration_unit": null,
+        "variable": null
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [],
+  "revision": 1,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-09-28T16:48:20.169619-05:00",
+  "updated": "2026-09-28T16:48:20.169631-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}
