@@ -1958,3 +1958,274 @@ def test_move_to_folder_sends_folder_id_not_folder(monkeypatch):
         "id": "22222222-2222-4222-8222-222222222222",
         "name": "Target Folder",
     }
+
+
+# ---------------------------------------------------------------------------
+# Branch groups, parallel branches, skipped conditions
+# ---------------------------------------------------------------------------
+
+
+def _s(key: str, parent: str | None, step_type: str, order: int, **kw: object) -> dict:
+    return {
+        "key": key,
+        "parent_key": parent,
+        "step_type": step_type,
+        "order": order,
+        "action_on_failure": "notify_pause",
+        **kw,
+    }
+
+
+def _merged_condition_spec(**condition: object) -> dict:
+    """The shape of fixture `merged_condition`: yes/no lanes rejoin at a
+    merge step, and the tail hangs off the merge."""
+    return {
+        "api_name": "merged_condition",
+        "name": "Merged Condition",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            _s(
+                "check",
+                None,
+                "condition",
+                0,
+                is_branch_group_initiator=True,
+                step_condition={
+                    "type": "custom_filter",
+                    "filter_config": {"and": False, "query": [], "invalid": False},
+                },
+                **condition,
+            ),
+            _s("wait_yes", "check", "delay", 1, parent_branch="yes"),
+            _s("wait_no", "check", "delay", 2, parent_branch="no"),
+            _s("merge", "check", "merge_branches", 3),
+            _s("tail", "merge", "delay", 4),
+        ],
+    }
+
+
+def test_merged_condition_payload(patch_live_lookups):
+    by_key = {s["key"]: s for s in _build(_merged_condition_spec())["steps"]}
+    assert by_key["check"]["is_branch_group_initiator"] is True
+    assert by_key["merge"] == {
+        "key": "merge",
+        "parent_key": "check",
+        "parent_yes_no": "",
+        "parent_condition": "",
+        "type": "merge_branches",
+        "prefix": "step",
+        "order": 3,
+        "user_description": "",
+        "action_on_failure": "notify_pause",
+        "should_skip_execution": False,
+        "goal_type": False,
+    }
+    assert by_key["tail"]["parent_key"] == "merge"
+    for key in ("wait_yes", "merge", "tail"):
+        assert "is_branch_group_initiator" not in by_key[key]
+
+
+def test_merged_goal_payload(patch_live_lookups):
+    spec = _merged_condition_spec()
+    spec["steps"][0] = _s(
+        "check",
+        None,
+        "goal",
+        0,
+        is_branch_group_initiator=True,
+        step_goal={"wait_type": "delay", "delay_type": "minutes", "delay_amount": 5},
+    )
+    by_key = {s["key"]: s for s in _build(spec)["steps"]}
+    assert by_key["check"]["type"] == "goal"
+    assert by_key["check"]["is_branch_group_initiator"] is True
+    assert by_key["merge"]["parent_key"] == "check"
+
+
+@pytest.mark.parametrize("path", ["yes", "no"])
+def test_skipped_condition_payload(patch_live_lookups, path):
+    spec = _merged_condition_spec(
+        should_skip_execution=True,
+        continue_with_branch=path,
+        error_notification_severity_level="warning",
+    )
+    check = _build(spec)["steps"][0]
+    assert check["should_skip_execution"] is True
+    assert check["continue_with_branch"] == path
+    assert check["error_notification_severity_level"] == "warning"
+
+
+def test_skipped_condition_without_branch_rejected():
+    spec = _merged_condition_spec(should_skip_execution=True)
+    with pytest.raises(ValueError, match="skipped condition 'check' needs"):
+        AutomationDef.model_validate(spec)
+
+
+def test_merged_condition_without_merge_step_fails_plan(patch_live_lookups):
+    spec = _merged_condition_spec()
+    spec["steps"] = spec["steps"][:3]
+    with pytest.raises(PlanError, match="initiator 'check' has 0 merge_branches"):
+        plan_create_automation(spec)
+
+
+def test_merge_under_non_initiator_fails_plan(patch_live_lookups):
+    spec = _merged_condition_spec()
+    spec["steps"][0]["is_branch_group_initiator"] = False
+    spec["steps"].append(_s("merge_2", "check", "merge_branches", 5))
+    with pytest.raises(PlanError) as e:
+        plan_create_automation(spec)
+    for key in ("merge", "merge_2"):
+        assert f"merge_branches step '{key}' has parent 'check'" in str(e.value)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("continue_with_branch", "maybe"),
+        ("error_notification_severity_level", "fatal"),
+        ("is_initiator", True),
+    ],
+)
+def test_new_step_fields_rejected_when_malformed(field, value):
+    spec = _merged_condition_spec(**{field: value})
+    with pytest.raises(ValueError, match=field):
+        AutomationDef.model_validate(spec)
+
+
+def _branching_test_spec() -> dict:
+    """Step for step, the UI-built fixture `branching_test`: an unmerged
+    branch, a merged one with a branch after its merge, and merged and
+    unmerged branches nested inside that. References are the fixture's own
+    UUIDs, so the spec diffs against the fixture itself."""
+    raw = load_fixture("automations/branching_test.raw.json")
+    live = sorted(raw["steps"], key=lambda s: s["order"])
+    automation_id = live[3]["action_start_automation"]["automations"][0]["id"]
+    string_obj = live[12]["action_search_records"]["custom_object"]["id"]
+    uuid_obj = live[17]["action_search_records"]["custom_object"]["id"]
+    create_obj = live[18]["action_create_related_entity"]["target_custom_object"]
+    script = live[11]["action_code_step"]["script"]
+
+    def array_var(name: str, data_type: str, mode: str) -> dict:
+        return {
+            "variable": {"name": name, "data_type": data_type, "is_array": True},
+            "sources": [],
+            "array_aggregation_mode": mode,
+            "deduplicate_array": False,
+        }
+
+    def search(obj: str, var: str) -> dict:
+        return {
+            "custom_object": obj,
+            "filter_type": "all_records",
+            "destination_variable": var,
+        }
+
+    code = {"runtime": "python-3-13", "script": script, "inputs": [], "outputs": []}
+    steps = [
+        _s("init_strings", None, "initialize_variable", 0,
+           action_initialize_variable=array_var("string_arr", "string", "add_all")),
+        _s("init_uuids", "init_strings", "initialize_variable", 1,
+           action_initialize_variable=array_var("uuid_arr", "uuid", "add_first_non_blank")),
+        _s("parallel", "init_uuids", "branch", 2, user_description="Not Merging Branches"),
+        _s("start_other", "parallel", "start_automation", 3,
+           action_start_automation={"record_source": "global", "automation_ids": [automation_id]}),
+        _s("set_strings", "parallel", "update_variable", 4, action_update_variable={
+            "variable": {"name": "string_arr", "data_type": "string"},
+            "sources": [{"source_type": "static", "source_subtype": "string",
+                         "value": ["Stuff", "Things"], "array_separator": "comma"}],
+            "array_aggregation_mode": "add_all",
+            "deduplicate_array": False,
+        }),
+        _s("group", "set_strings", "branch", 5, is_branch_group_initiator=True,
+           user_description="Branches that merge"),
+        _s("group_merge", "group", "merge_branches", 6),
+        _s("after_merge", "group_merge", "branch", 7, is_branch_group_initiator=True),
+        _s("after_merge_merge", "after_merge", "merge_branches", 8),
+        _s("done", "after_merge_merge", "stop_execution", 9,
+           action_stop_execution={"action": "stop_and_complete", "notify": False}),
+        _s("nested_unmerged", "after_merge", "branch", 10),
+        _s("code_a", "nested_unmerged", "code_step", 11, action_code_step=code),
+        _s("search_strings", "nested_unmerged", "search_records", 12,
+           action_search_records=search(string_obj, "string_arr")),
+        _s("nested_merged", "after_merge", "branch", 13, is_branch_group_initiator=True),
+        _s("nested_merged_merge", "nested_merged", "merge_branches", 14),
+        _s("code_b", "nested_merged", "code_step", 15, action_code_step=code),
+        _s("llm", "nested_merged", "call_llm", 16, user_description="things",
+           action_call_llm={
+               "model_name": "kizen/pro",
+               "prompt": "stuff",
+               "merge_field_validation": "default_to_unknown",
+               "is_advanced": False,
+               "destinations": [{"variable": "string_arr",
+                                 "conflict_resolution": "overwrite_except_null"}],
+           }),
+        _s("search_uuids", "group", "search_records", 17,
+           action_search_records=search(uuid_obj, "uuid_arr")),
+        _s("create", "group", "create_related_entity", 18,
+           action_create_related_entity={
+               "new_entity_name": "thing 1",
+               "new_entity_name_html": "<p>thing 1</p>",
+               "new_entity_owner_type": "newly_assigned_owner",
+               "new_entity_owner_sub_type": "round_robin_any_role",
+               "target_object": create_obj["name"],
+               "target_custom_object": create_obj["id"],
+           }),
+    ]  # fmt: skip
+    return {
+        "api_name": "branching_test",
+        "name": "Branching Test",
+        "type": "global",
+        "steps": steps,
+    }
+
+
+def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatch):
+    """The spec reproduces the UI-built graph. What's left is noise any spec
+    shows: server-written descriptions, the plugin app the server fills in
+    for a `kizen/*` model, and a variable definition's null read defaults."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/branching_test.raw.json")
+    monkeypatch.setattr(
+        ma, "list_automations", lambda: [{"api_name": raw["api_name"], "id": raw["id"]}]
+    )
+    structural = [
+        d
+        for d in diff_automation(_branching_test_spec())["diff"]
+        if d["path"].rsplit(".", 1)[-1] not in ("description", "business_plugin_app_id")
+        and not (
+            ".action_initialize_variable.variable." in d["path"]
+            and d["before"] in (None, False)
+            and d["after"] == "<absent>"
+        )
+    ]
+    assert structural == []
+
+
+def test_branching_test_payload_shape(patch_live_lookups):
+    steps = {s["key"]: s for s in _build(_branching_test_spec())["steps"]}
+    initiators = {k for k, s in steps.items() if s.get("is_branch_group_initiator")}
+    assert initiators == {"group", "after_merge", "nested_merged"}
+    for key in ("parallel", "group", "group_merge", "nested_unmerged"):
+        blocks = set(steps[key]) - {"action_on_failure"}
+        assert not any(k.startswith(("action_", "step_")) for k in blocks)
+    assert steps["after_merge"]["parent_key"] == "group_merge"
+
+
+def test_fan_out_without_branch_step_warns(patch_live_lookups):
+    spec = _branching_test_spec()
+    for s in spec["steps"]:
+        if s["key"] == "parallel":
+            s.update(step_type="delay", step_delay={})
+    preview = plan_create_automation(spec).operations[0].preview
+    assert preview["warnings"] == [
+        "step 'parallel' has 2 parallel children but is a 'delay', not a "
+        "'branch'; put a 'branch' step in front of the fan-out"
+    ]
+
+
+@pytest.mark.parametrize(
+    "spec", [_merged_condition_spec(), BRANCHING_SPEC], ids=["merged", "yes_no"]
+)
+def test_no_fan_out_warning_for_branch_or_condition_children(patch_live_lookups, spec):
+    assert "warnings" not in plan_create_automation(spec).operations[0].preview

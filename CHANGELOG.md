@@ -87,6 +87,17 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Automation specs can build branch groups, parallel branches and skipped
+  conditions.** Two new step types, `branch` and `merge_branches`, and three
+  step fields: `is_branch_group_initiator`, `continue_with_branch` and
+  `error_notification_severity_level`. `create`, `update` and `diff
+  --spec-file` now check the branch-group rules at `--dry-run`, so a merged
+  condition with no merge step fails before anything is sent. A step that
+  fans out to parallel children without a `branch` step gets a warning in the
+  plan preview. Existing valid specs build exactly as before. One the server
+  would reject (a misplaced `initialize_variable`, a go_to to one, duplicate
+  step ids) now fails at plan rather than with a 400.
+
 - **`smart-connectors deactivate <connector>`** sets a connector `inactive`,
   with the same preview, `--dry-run`, `--yes`, and `--json` as `activate`.
   Edits and dry runs still work while inactive, and `activate` brings it back

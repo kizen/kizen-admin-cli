@@ -36,6 +36,7 @@ from collections import Counter
 from typing import Any
 
 from kizen_builder.tools.planners.automations import (
+    _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
     _block_field_for,
@@ -67,9 +68,6 @@ class _NoTargetAuto:
 
 _SHIM_CTX = _NoLookupContext()
 _SHIM_AUTO = _NoTargetAuto()
-
-# Read with no config block at all, so none is written back.
-_CONFIGLESS_STEP_TYPES = frozenset({"branch", "merge_branches"})
 
 
 # ---------------------------------------------------------------------------

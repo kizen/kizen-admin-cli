@@ -11,7 +11,8 @@ This file closes that gap for the whole registry rather than a representative
 sample. Two invariants make "the whole registry" a maintained property instead
 of a one-time sweep:
 
-* every type in ``_STEP_BUILDERS`` / ``_TRIGGER_BUILDERS`` is named in
+* every type in ``_STEP_BUILDERS`` (plus the configless ``branch`` /
+  ``merge_branches``) / ``_TRIGGER_BUILDERS`` is named in
   :data:`COVERED_STEP_TYPES` / :data:`COVERED_TRIGGER_TYPES` (asserted at the
   bottom, so wiring a 25th step type fails until someone covers it);
 * each themed automation asserts that the payload it actually sent carries
@@ -36,7 +37,11 @@ from typing import Any
 
 import pytest
 
-from kizen_builder.tools.planners.automations import _STEP_BUILDERS, _TRIGGER_BUILDERS
+from kizen_builder.tools.planners.automations import (
+    _CONFIGLESS_STEP_TYPES,
+    _STEP_BUILDERS,
+    _TRIGGER_BUILDERS,
+)
 from tests.drift.conftest import create_field_on, debris_api_name, debris_name
 
 pytestmark = pytest.mark.drift
@@ -94,8 +99,11 @@ AI_STEPS = frozenset({"call_llm", "file_content_extraction", "audio_transcriptio
 
 ACTIVITY_STEPS = frozenset({"schedule_activity"})
 
+BRANCH_GROUP_STEPS = frozenset({"condition", "merge_branches", "branch", "delay"})
+
 COVERED_STEP_TYPES = (
     BRANCHING_STEPS
+    | BRANCH_GROUP_STEPS
     | CONTROL_FLOW_STEPS
     | DATA_STEPS
     | RELATED_STEPS
@@ -954,8 +962,7 @@ def drift_control_flow(
             "action_stop_execution": {"action": "stop_and_complete"},
         },
         {
-            # Converging the YES branch back onto the NO branch's tail: the
-            # standard merge pattern, since there is no join node.
+            # Converging the YES branch back onto the NO branch's tail.
             "key": "merge",
             "step_type": "go_to_automation_step",
             "order": 9,
@@ -1052,6 +1059,84 @@ def test_goal_step_embeds_triggers_in_the_trigger_dialect(drift_control_flow):
     assert [t["trigger_type"] for t in live["step_goal"]["triggers"]] == [
         "activity_logged"
     ]
+
+
+# ---------------------------------------------------------------------------
+# Branch groups: a merged condition, then parallel lanes under a branch step
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def drift_branch_groups(drift_client, scratch, drift_object) -> dict[str, Any]:
+    def step(key: str, parent: str | None, step_type: str, **kw: Any) -> dict:
+        return {"key": key, "parent_key": parent, "step_type": step_type, **kw}
+
+    def wait(key: str, parent: str, **kw: Any) -> dict:
+        delay = {"days": 1, "value_origin": "static"}
+        return step(key, parent, "delay", step_delay=delay, **kw)
+
+    spec = _base_spec("groups", drift_object)
+    spec["steps"] = [
+        step(
+            "check",
+            None,
+            "condition",
+            is_branch_group_initiator=True,
+            step_condition={
+                "type": "custom_filter",
+                "filter_config": {"and": False, "query": [], "invalid": False},
+            },
+        ),
+        wait("wait_yes", "check", parent_branch="yes"),
+        wait("wait_no", "check", parent_branch="no"),
+        step("merge", "check", "merge_branches"),
+        step("lanes", "merge", "branch"),
+        wait("lane_a", "lanes"),
+        wait("lane_b", "lanes"),
+    ]
+    for order, s in enumerate(spec["steps"]):
+        s["order"] = order
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_branch_group_steps_are_accepted(drift_branch_groups):
+    assert _sent_step_types(drift_branch_groups) == set(BRANCH_GROUP_STEPS)
+    assert set(_live_steps_by_type(drift_branch_groups)) == set(BRANCH_GROUP_STEPS)
+
+
+def test_branch_group_linkage_survives_the_roundtrip(drift_branch_groups):
+    """The merge hangs off its initiator with no lane, and what follows the
+    group hangs off the merge."""
+    live = _live_steps_by_type(drift_branch_groups)
+    (check,) = live["condition"]
+    (merge,) = live["merge_branches"]
+    (lanes,) = live["branch"]
+    assert check["is_branch_group_initiator"] is True
+    assert merge["parent_step_id"] == check["id"]
+    assert not merge["parent_condition"]
+    assert lanes["parent_step_id"] == merge["id"]
+    assert lanes["is_branch_group_initiator"] is False
+    delays = [(s["parent_step_id"], s["parent_condition"] or "") for s in live["delay"]]
+    expected = [(check["id"], "yes"), (check["id"], "no")] + [(lanes["id"], "")] * 2
+    assert sorted(delays) == sorted(expected)
+
+
+def test_branch_groups_put_back_unchanged(drift_client, drift_branch_groups):
+    """What `roundtrip --execute` does: translate the read, PUT it, re-read."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.translate import live_to_payload, semantic_diff, validate_payload
+
+    before = drift_branch_groups["live"]
+    payload = live_to_payload(before)
+    assert validate_payload(payload) == []
+    auto_api.update_automation(
+        drift_client,
+        drift_branch_groups["uuid"],
+        payload,
+        last_revision=payload.get("last_revision"),
+    )
+    after = auto_api.get_automation(drift_client, drift_branch_groups["uuid"])
+    assert list(semantic_diff(before, after)) == []
 
 
 # ---------------------------------------------------------------------------
@@ -1874,10 +1959,10 @@ def test_start_and_wait_streams_a_live_run_without_crashing(
 
 
 def test_every_wired_step_type_has_roundtrip_coverage():
-    """``_STEP_BUILDERS`` is the authoritative gate for what a spec may use.
-    Wiring a new step type without adding it to a themed automation above
-    fails here rather than shipping untested."""
-    wired = set(_STEP_BUILDERS)
+    """``_STEP_BUILDERS`` plus the configless types is the authoritative gate
+    for what a spec may use. Wiring a new step type without adding it to a
+    themed automation above fails here rather than shipping untested."""
+    wired = set(_STEP_BUILDERS) | _CONFIGLESS_STEP_TYPES
     assert wired == set(COVERED_STEP_TYPES), (
         "uncovered wired step types: "
         f"{sorted(wired - COVERED_STEP_TYPES)}; "

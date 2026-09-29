@@ -42,6 +42,7 @@ Adding a new step type means: write a builder function, add it to
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -577,7 +578,25 @@ def _automation_preview(
         "active": active_display,
         "trigger_count": len(auto.triggers),
         "step_count": len(auto.steps),
+        **_fan_out_warnings(auto),
     }
+
+
+def _fan_out_warnings(auto: AutomationDef) -> dict[str, Any]:
+    """Parallel lanes belong under a `branch` step. A plain fan-out still
+    saves, but Kizen's 2026-09-28 migration put a `branch` step in front of
+    every one, and an update from a spec without it removes it again."""
+    lanes = Counter(
+        s.parent_key for s in auto.steps if s.parent_key and s.parent_branch is None
+    )
+    types = {s.key: s.step_type for s in auto.steps}
+    warnings = [
+        f"step '{key}' has {n} parallel children but is a '{types[key]}', not a "
+        "'branch'; put a 'branch' step in front of the fan-out"
+        for key, n in lanes.items()
+        if n > 1 and types[key] != "branch"
+    ]
+    return {"warnings": warnings} if warnings else {}
 
 
 # ---------------------------------------------------------------------------
@@ -614,6 +633,12 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     payload["triggers"] = [_build_trigger_payload(t, ctx) for t in triggers]
     _validate_trigger_orders(payload["triggers"])
     payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
+
+    from kizen_builder.translate import validate_payload
+
+    problems = validate_payload(payload)
+    if problems:
+        raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
     return payload
 
 
@@ -1003,6 +1028,10 @@ _ACTION_STEP_TYPES = {
 }
 
 
+# Read with no config block at all, so none is written either.
+_CONFIGLESS_STEP_TYPES = frozenset({"branch", "merge_branches"})
+
+
 def _prefix_for(step_type: str) -> str:
     return "action" if step_type in _ACTION_STEP_TYPES else "step"
 
@@ -1039,7 +1068,16 @@ def _build_step_payload(
         p["id"] = step.id
     if step.description:
         p["description"] = step.description
+    # Emitted only when set, so a spec that predates them builds unchanged.
+    if step.is_branch_group_initiator:
+        p["is_branch_group_initiator"] = True
+    if step.continue_with_branch is not None:
+        p["continue_with_branch"] = step.continue_with_branch
+    if step.error_notification_severity_level is not None:
+        p["error_notification_severity_level"] = step.error_notification_severity_level
 
+    if step.step_type in _CONFIGLESS_STEP_TYPES:
+        return p
     builder = _STEP_BUILDERS.get(step.step_type)
     if builder is None:
         raise PlanError(
