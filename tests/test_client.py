@@ -100,3 +100,18 @@ def test_network_error_wrapped(client):
         client.get("/api/thing")
     assert exc.value.status_code == 0
     assert "network error" in str(exc.value)
+
+
+@respx.mock
+def test_top_level_list_error_message(client):
+    """Branch-group validation errors come back as a bare list of strings."""
+    body = ["Merge step's parent (s05_branch) must be a branch group initiator step."]
+    respx.put(f"{FAKE_BASE_URL}/api/thing").mock(
+        return_value=httpx.Response(400, json=body)
+    )
+    with pytest.raises(KizenAPIError) as exc:
+        client.put("/api/thing", json={})
+    assert str(exc.value) == (
+        "HTTP 400: Merge step's parent (s05_branch) must be a branch group "
+        "initiator step."
+    )

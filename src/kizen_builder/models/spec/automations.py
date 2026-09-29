@@ -86,6 +86,8 @@ _STEP_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "update_variable": "action_update_variable",
     "archive_record": "action_archive_record",
     "search_records": "action_search_records",
+    "branch": None,
+    "merge_branches": None,
 }
 
 
@@ -170,6 +172,24 @@ class AutomationStepDef(BaseModel):
         "notify_continue"
     )
     should_skip_execution: bool = False
+    is_branch_group_initiator: bool = Field(
+        default=False,
+        description=(
+            "Set on a `branch`, `condition` or `goal` step whose lanes rejoin. "
+            "The step then needs exactly one `merge_branches` child, and steps "
+            "after the merge hang off that merge step."
+        ),
+    )
+    continue_with_branch: Literal["yes", "no"] | None = Field(
+        default=None,
+        description=(
+            "Required on a `condition` or `goal` with "
+            "`should_skip_execution: true`: the branch execution takes past it."
+        ),
+    )
+    error_notification_severity_level: (
+        Literal["error", "warning", "info", "inherit"] | None
+    ) = None
 
     # Type-specific config blocks (only the one matching step_type should be set)
     step_condition: StepConditionConfig | None = None
@@ -226,6 +246,16 @@ class AutomationStepDef(BaseModel):
             raise ValueError(
                 f"step_type '{self.step_type}' requires an '{config_field}' block"
             )
+        if self.step_type in ("branch", "merge_branches"):
+            given = sorted(
+                f
+                for f in set(_STEP_TYPE_TO_CONFIG_FIELD.values())
+                if f and getattr(self, f) is not None
+            )
+            if given:
+                raise ValueError(
+                    f"step_type '{self.step_type}' takes no config block (got {given})"
+                )
         return self
 
 
@@ -287,6 +317,16 @@ class AutomationDef(BaseModel):
                 raise ValueError(
                     f"step '{step.key}' has parent_key '{step.parent_key}' which "
                     f"does not match any step key. Available: {sorted(keys_set)}"
+                )
+
+            if (
+                step.step_type in ("condition", "goal")
+                and step.should_skip_execution
+                and step.continue_with_branch is None
+            ):
+                raise ValueError(
+                    f"skipped {step.step_type} '{step.key}' needs "
+                    "continue_with_branch: 'yes' or 'no' (the branch to run)"
                 )
 
             # parent_branch is only valid when parent is a condition or goal step.

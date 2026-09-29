@@ -108,6 +108,8 @@ def _extract_error_message(body: Any) -> str | None:
         parts = [f"{k}: {_format_value(v)}" for k, v in body.items()]
         if parts:
             return "; ".join(parts)
+    if isinstance(body, list) and body:
+        return _format_value(body)
     if isinstance(body, str) and body:
         return body
     return None

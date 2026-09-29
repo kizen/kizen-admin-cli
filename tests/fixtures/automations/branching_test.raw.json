@@ -1,0 +1,604 @@
+{
+  "id": "082835e1-2cf4-48cb-ac23-f06f3116e85f",
+  "name": "Branching Test",
+  "api_name": "branching_test",
+  "ai_description": null,
+  "active": false,
+  "type": "global",
+  "custom_object": null,
+  "user_description": "",
+  "folder": {
+    "id": "c37e4175-8223-456f-9618-5bca2a334494",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "893672a5-6a8d-46f8-98eb-b7aca4d4625f",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "526b455f-ef13-4152-b07b-034be2fd9e71",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "string_arr = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "dc2be38e-ac1f-4fdd-a463-05eb7d767037",
+          "name": "string_arr",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-09-28T22:07:04.844977Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "dfcd8944-4dd3-4e38-b827-ad81dd0dd88d",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "uuid_arr = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "526b455f-ef13-4152-b07b-034be2fd9e71",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "8962066f-dab0-412d-9db7-204f36f8beb6",
+          "name": "uuid_arr",
+          "data_type": "uuid",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-09-28T22:07:04.855894Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_first_non_blank",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "2b030efc-da17-4ae5-8353-ccc321e5fe9d",
+      "step_type": "branch",
+      "order": 2,
+      "description": "Run Branches in Parallel",
+      "user_description": "Not Merging Branches",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "dfcd8944-4dd3-4e38-b827-ad81dd0dd88d",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "089366a9-564d-4eed-a4b5-5aa7954b025d",
+      "step_type": "start_automation",
+      "order": 3,
+      "description": "Start Automations 'Downstream Automation'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "2b030efc-da17-4ae5-8353-ccc321e5fe9d",
+      "parent_condition": "",
+      "action_start_automation": {
+        "record_source": "global",
+        "relationship_fields": [],
+        "automation_variable": null,
+        "automations": [
+          {
+            "id": "c3624b37-b54f-4761-8d83-d9ec64389417",
+            "name": "Downstream Automation",
+            "deleted": false,
+            "active": true
+          }
+        ],
+        "resume_paused_automations": false,
+        "automation_variable_overrides": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "59a9f2a6-fc49-4cae-b1a2-ecdf53ecc308",
+      "step_type": "update_variable",
+      "order": 4,
+      "description": "string_arr = [2 items]",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "2b030efc-da17-4ae5-8353-ccc321e5fe9d",
+      "parent_condition": "",
+      "action_update_variable": {
+        "sources": [
+          {
+            "source_type": "static",
+            "source_subtype": "string",
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": null,
+            "value": [
+              "Stuff",
+              "Things"
+            ],
+            "array_separator": "comma"
+          }
+        ],
+        "variable": {
+          "id": "dc2be38e-ac1f-4fdd-a463-05eb7d767037",
+          "name": "string_arr",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-09-28T22:07:04.844977Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "a0fdddc5-f019-48ed-a951-d4ccf6395832",
+      "step_type": "branch",
+      "order": 5,
+      "description": "Run Branches in Parallel, then Merge",
+      "user_description": "Branches that merge",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "59a9f2a6-fc49-4cae-b1a2-ecdf53ecc308",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "d1fd2837-b33e-4d7c-a316-546356d46a77",
+      "step_type": "merge_branches",
+      "order": 6,
+      "description": "Merge Branch",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "a0fdddc5-f019-48ed-a951-d4ccf6395832",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "63b7e3d5-7a75-4df2-900d-f49a24e3937f",
+      "step_type": "branch",
+      "order": 7,
+      "description": "Run Branches in Parallel, then Merge",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "d1fd2837-b33e-4d7c-a316-546356d46a77",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "b6081762-e3a7-4f8b-a1a1-c4ada4231b92",
+      "step_type": "merge_branches",
+      "order": 8,
+      "description": "Merge Branch",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "63b7e3d5-7a75-4df2-900d-f49a24e3937f",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "a3cd61b8-a788-4e17-86fe-877553f0378b",
+      "step_type": "stop_execution",
+      "order": 9,
+      "description": "Stop and mark as Successfully Completed and Do Not Notify",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "b6081762-e3a7-4f8b-a1a1-c4ada4231b92",
+      "parent_condition": "",
+      "action_stop_execution": {
+        "action": "stop_and_complete",
+        "notify": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "d312cf85-c7a9-4bad-81c3-65181ae86fa8",
+      "step_type": "branch",
+      "order": 10,
+      "description": "Run Branches in Parallel",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "63b7e3d5-7a75-4df2-900d-f49a24e3937f",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "db8fbe6a-cfda-493d-9265-febb2142fbd3",
+      "step_type": "code_step",
+      "order": 11,
+      "description": "Run Python 3.13 Code on (0 inputs) and set (0 outputs)",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "d312cf85-c7a9-4bad-81c3-65181ae86fa8",
+      "parent_condition": "",
+      "action_code_step": {
+        "runtime": "python-3-13",
+        "secrets": [],
+        "inputs": [],
+        "outputs": [],
+        "script": "outputs.log(f\"Got input value: {inputs.in_var}\")\noutputs.out_var = \"example output value\""
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "292ac055-a553-4ea6-979b-5ee8186a6074",
+      "step_type": "search_records",
+      "order": 12,
+      "description": "Overwrite Array 'string_arr' Where Object B Record is All Records",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "d312cf85-c7a9-4bad-81c3-65181ae86fa8",
+      "parent_condition": "",
+      "action_search_records": {
+        "custom_object": {
+          "id": "2765a717-5b04-4596-b62b-c7099e2a78d1",
+          "name": "object_b",
+          "object_name": "Object B",
+          "entity_name": "Object B Record",
+          "deleted": false
+        },
+        "filter_type": "all_records",
+        "filter_config": null,
+        "filter_groups": [],
+        "destination_variable": {
+          "name": "string_arr",
+          "deleted": false
+        },
+        "destination_variable_resolution": "overwrite"
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "0a9a8b1a-c934-4036-a4e2-d0eff47721ef",
+      "step_type": "branch",
+      "order": 13,
+      "description": "Run Branches in Parallel, then Merge",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "63b7e3d5-7a75-4df2-900d-f49a24e3937f",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "681af375-3e82-4222-9bf7-4665405d4948",
+      "step_type": "merge_branches",
+      "order": 14,
+      "description": "Merge Branch",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "0a9a8b1a-c934-4036-a4e2-d0eff47721ef",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "043de100-70ef-421b-a346-f7b564400619",
+      "step_type": "code_step",
+      "order": 15,
+      "description": "Run Python 3.13 Code on (0 inputs) and set (0 outputs)",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "0a9a8b1a-c934-4036-a4e2-d0eff47721ef",
+      "parent_condition": "",
+      "action_code_step": {
+        "runtime": "python-3-13",
+        "secrets": [],
+        "inputs": [],
+        "outputs": [],
+        "script": "outputs.log(f\"Got input value: {inputs.in_var}\")\noutputs.out_var = \"example output value\""
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "be4eff9a-82bb-4437-8098-ec84c3147422",
+      "step_type": "call_llm",
+      "order": 16,
+      "description": "Call LLM  \u2018stuff\u2019",
+      "user_description": "things",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "0a9a8b1a-c934-4036-a4e2-d0eff47721ef",
+      "parent_condition": "",
+      "action_call_llm": {
+        "model_name": "kizen/pro",
+        "business_plugin_app": {
+          "id": "dd2aed3f-22f3-43fd-bb34-9d8fb08367dd",
+          "plugin_app_api_name": "kizen_ai",
+          "plugin_app_name": "Kizen AI",
+          "disabled": false,
+          "secrets": []
+        },
+        "prompt": "stuff",
+        "html_prompt": "<p>stuff</p>",
+        "merge_field_validation": "default_to_unknown",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": null,
+            "variable": {
+              "id": "dc2be38e-ac1f-4fdd-a463-05eb7d767037",
+              "name": "string_arr",
+              "data_type": "string",
+              "data_subtype": null,
+              "deleted": false,
+              "is_array": true
+            },
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "b3664468-a8e2-437e-8eb9-2efc3fe4dbcd",
+      "step_type": "search_records",
+      "order": 17,
+      "description": "Overwrite Array 'uuid_arr' Where Object A Record is All Records",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "a0fdddc5-f019-48ed-a951-d4ccf6395832",
+      "parent_condition": "",
+      "action_search_records": {
+        "custom_object": {
+          "id": "e21393f2-43b2-4feb-9c07-661d74ef694f",
+          "name": "object_a",
+          "object_name": "Object A",
+          "entity_name": "Object A Record",
+          "deleted": false
+        },
+        "filter_type": "all_records",
+        "filter_config": null,
+        "filter_groups": [],
+        "destination_variable": {
+          "name": "uuid_arr",
+          "deleted": false
+        },
+        "destination_variable_resolution": "overwrite"
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "ba2c4487-7abf-4f0e-9131-9228408d6c09",
+      "step_type": "create_related_entity",
+      "order": 18,
+      "description": "Create New Entity in \u2018Object C\u2019",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "a0fdddc5-f019-48ed-a951-d4ccf6395832",
+      "parent_condition": "",
+      "action_create_related_entity": {
+        "new_entity_name": "thing 1",
+        "new_entity_name_html": "<p>thing 1</p>",
+        "new_entity_owner_type": "newly_assigned_owner",
+        "new_entity_owner_sub_type": "round_robin_any_role",
+        "new_entity_stage": null,
+        "new_entity_owner_role": null,
+        "new_entity_owner_variable": null,
+        "context_entity_field": null,
+        "target_custom_object": {
+          "id": "85fbfcc5-b6d7-48fc-a95e-543d0767337e",
+          "name": "object_c",
+          "entity_name": "Object C Record",
+          "object_name": "Object C",
+          "object_type": "standard",
+          "deleted": false
+        },
+        "target_variable": null,
+        "variable_field_resolution": "overwrite",
+        "context_entity_field_resolution": "overwrite",
+        "new_entity_owner_employees": [],
+        "automations_to_start": [],
+        "existing_record_found_action": "error_do_not_create",
+        "archived_record_found_action": "overwrite"
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "dc2be38e-ac1f-4fdd-a463-05eb7d767037",
+      "name": "string_arr",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-09-28T22:07:04.844977Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "8962066f-dab0-412d-9db7-204f36f8beb6",
+      "name": "uuid_arr",
+      "data_type": "uuid",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-09-28T22:07:04.855894Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    }
+  ],
+  "revision": 2,
+  "error_notification_email": null,
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-09-28T17:01:14.387658-05:00",
+  "updated": "2026-09-28T17:07:04.781958-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

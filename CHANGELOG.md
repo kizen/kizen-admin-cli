@@ -110,6 +110,16 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Automation specs can build branch groups, parallel branches and skipped
+  conditions.** Two new step types, `branch` and `merge_branches`, and three
+  step fields: `is_branch_group_initiator`, `continue_with_branch` and
+  `error_notification_severity_level`. `create`, `update` and `diff
+  --spec-file` now check the branch-group rules at `--dry-run`, so a merged
+  condition with no merge step fails before anything is sent. A step that fans
+  out to parallel children without a `branch` step gets a warning in the plan
+  preview. Existing valid specs build exactly as before. One that the server
+  would reject (a misplaced `initialize_variable`, a go_to to one, duplicate
+  step ids) now fails at plan rather than with a 400.
 - **`kizen records import <object>`** loads a CSV or JSON spec as one
   server-side job through Kizen's CSV uploader. A per-row `records upsert`
   handles about 2.6 rows/s. An import handles about 25 rows/s when it creates
@@ -279,6 +289,16 @@ called out explicitly under **Changed** or **Removed**.
   `docs/specs/permission-group.md`.
 
 ### Fixed
+
+- **CLI writes no longer fail on automations with merged branches or skipped
+  conditions, and no longer reset step severity.** `roundtrip`, `steps
+  add/edit/remove`, `activate`, `deactivate` and `automations move` used to
+  fail with HTTP 400 on any automation with a merged condition, goal or Branch
+  card, or with a skipped condition or goal. They also silently reset each
+  step's error-notification severity to `inherit`. `--dry-run` now flags a
+  broken branch group before anything is written. When the server rejects a
+  write with a bare list of messages, the CLI prints them instead of just
+  `PUT … failed`.
 
 - **Re-running `smart-connectors configure-flow` updates the connector in place.**
   It used to recreate every execution variable, which silently deleted every
