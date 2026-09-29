@@ -9,7 +9,8 @@ schema diff alone cannot catch — the OpenAPI spec types ``field_value`` as
 ``object`` and would happily validate the wrapped form that live 400s on.
 
 Every planner here (`plan_create_records`, `plan_update_records`,
-`plan_upsert_records`, `plan_set_field`, `plan_archive_records`) is exercised
+`plan_upsert_records`, `plan_set_field`, `plan_archive_records`,
+`plan_import_records`) is exercised
 end to end: the plan's payload is applied via the real ``api/records.py``
 functions (the same ones ``apply_plan`` calls), then read back with
 ``get_record`` to confirm the shape the planner assumes still holds.

@@ -369,8 +369,8 @@ def plan_set_field(
     )
 
 
-# Ids per bulk-archive request. Unprobed beyond 3 ids in one call
-# (confirmed live 2026-09-28); 500 is a chosen ceiling, not a server limit.
+# Ids per bulk-archive request. The largest batch probed live is 22 ids in
+# one call (2026-09-28); 500 is a chosen ceiling, not a server limit.
 ARCHIVE_CHUNK = 500
 
 

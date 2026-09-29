@@ -1,6 +1,6 @@
 # Spec shape: bulk records (CSV / JSON)
 
-**Consumed by:** `kizen records create|update|upsert|import <object> --spec-file <f>`
+**Consumed by:** `kizen records create|update|upsert|import|archive <object> --spec-file <f>`
 (also reads stdin). Records are *data*, not schema, but a bulk load runs
 through the same plan → preview → confirm → apply loop.
 
@@ -275,8 +275,8 @@ kizen records unarchive <object> <uuid> [<uuid> …]
 - **One request per 500 ids.** Every call writes exactly one
   `bulk-action-progress` row (`action: custom_object_archive`) however many
   ids it carries, so the CLI batches rather than posting per id. 500 is a
-  chosen ceiling; batches larger than 3 ids have not been probed. Confirmed
-  live 2026-09-28.
+  chosen ceiling, not a server limit; the largest batch probed is 22 ids in
+  one call. Confirmed live 2026-09-28 and 2026-09-29.
 - **Email is off.** `send_email_notification` defaults to `true`, and each
   progress row carries the flag, so an unset flag emails once per request.
   The CLI always sends `false`. Confirmed live 2026-09-28.
