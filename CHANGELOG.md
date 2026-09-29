@@ -246,6 +246,16 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **CLI writes no longer fail on automations with merged branches or skipped
+  conditions, and no longer reset step severity.** `roundtrip`, `steps
+  add/edit/remove`, `activate`, `deactivate` and `automations move` used to
+  fail with HTTP 400 on any automation with a merged condition, goal or Branch
+  card, or with a skipped condition or goal. They also silently reset each
+  step's error-notification severity to `inherit`. `--dry-run` now flags a
+  broken branch group before anything is written. When the server rejects a
+  write with a bare list of messages, the CLI prints them instead of just
+  `PUT … failed`.
+
 - **Re-running `smart-connectors configure-flow` updates the connector in place.**
   It used to recreate every execution variable, which silently deleted every
   matching and mapping rule that referenced one, and then fail with `An

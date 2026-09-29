@@ -31,11 +31,14 @@ from tests.conftest import load_fixture
 ALL_FIXTURES = [
     "automations/activity_logged_schedule_activity.raw.json",
     "automations/archive_record.raw.json",
+    "automations/branching_test.raw.json",
     "automations/condition_code_step.raw.json",
     "automations/create_and_modify_related.raw.json",
     "automations/form_submission.raw.json",
     "automations/kitchen_sink_triggers.raw.json",
     "automations/llm_comparison.raw.json",
+    "automations/merged_condition.raw.json",
+    "automations/merged_condition_skipped.raw.json",
     "automations/on_or_around_date_goto.raw.json",
     "automations/schedule_trigger.raw.json",
     "automations/sets_variable_overrides.raw.json",
@@ -70,6 +73,30 @@ def form() -> dict:
 @pytest.fixture(scope="module")
 def sets_overrides() -> dict:
     raw = load_fixture("automations/sets_variable_overrides.raw.json")
+    return live_to_payload(raw)
+
+
+@pytest.fixture(scope="module")
+def branching() -> dict:
+    """UI-built: unmerged, merged, nested and after-merge Branch cards."""
+    raw = load_fixture("automations/branching_test.raw.json")
+    return live_to_payload(raw)
+
+
+@pytest.fixture(scope="module")
+def merged_condition() -> dict:
+    raw = load_fixture("automations/merged_condition.raw.json")
+    return live_to_payload(raw)
+
+
+@pytest.fixture(scope="module")
+def skipped_condition() -> dict:
+    """Synthetic edit of merged_condition.raw.json: the condition has
+    `should_skip_execution: true` and `continue_with_branch: "no"`, and the
+    yes-path delay has `error_notification_severity_level: "warning"`. The
+    same edit was made live and re-read in this shape, but that GET was not
+    captured in full."""
+    raw = load_fixture("automations/merged_condition_skipped.raw.json")
     return live_to_payload(raw)
 
 
@@ -629,3 +656,174 @@ def test_field_value_mappings_stay_bare_uuids(form: dict) -> None:
     for m in mappings:
         assert all(isinstance(v, str) for v in m["source_values"])
         assert all(isinstance(v, str) for v in m["target_values"])
+
+
+# ---------------------------------------------------------------------------
+# Branch groups, skipped conditions, step severity
+# ---------------------------------------------------------------------------
+
+
+def _step(payload: dict, key: str) -> dict:
+    return next(s for s in payload["steps"] if s["key"] == key)
+
+
+def test_branch_group_initiators_are_echoed(branching: dict) -> None:
+    """Without the flag the server rejects every merge step: "Merge step's
+    parent (s05_branch) must be a branch group initiator step." """
+    initiators = {
+        s["key"] for s in branching["steps"] if s["is_branch_group_initiator"]
+    }
+    assert initiators == {"s05_branch", "s07_branch", "s13_branch"}
+
+
+def test_merged_condition_initiator_is_echoed(merged_condition: dict) -> None:
+    assert _step(merged_condition, "s00_condition")["is_branch_group_initiator"]
+    merge = _step(merged_condition, "s03_merge_branches")
+    assert merge["parent_key"] == "s00_condition"
+    assert merge["parent_yes_no"] == ""
+
+
+def test_branch_and_merge_steps_carry_no_config_block(branching: dict) -> None:
+    """Both types are read with no config block, so none is written back."""
+    group_steps = [
+        s for s in branching["steps"] if s["type"] in ("branch", "merge_branches")
+    ]
+    assert len(group_steps) == 8
+    for s in group_steps:
+        assert not [k for k in s if k.startswith("step_")]
+        assert [k for k in s if k.startswith("action_")] == ["action_on_failure"]
+
+
+def test_skipped_condition_keeps_continue_with_branch(
+    skipped_condition: dict,
+) -> None:
+    """Dropping it is a 400: "This field is required when
+    should_skip_execution is True for condition and goal steps." """
+    cond = _step(skipped_condition, "s00_condition")
+    assert cond["should_skip_execution"] is True
+    assert cond["continue_with_branch"] == "no"
+    others = [s for s in skipped_condition["steps"] if s is not cond]
+    assert all("continue_with_branch" not in s for s in others)
+
+
+def test_step_severity_is_echoed(skipped_condition: dict) -> None:
+    """Omitting it silently resets the step to `inherit`."""
+    levels = {
+        s["key"]: s["error_notification_severity_level"]
+        for s in skipped_condition["steps"]
+    }
+    assert levels.pop("s01_delay") == "warning"
+    assert set(levels.values()) == {"inherit"}
+
+
+def test_validator_flags_initiator_without_merge_step(branching: dict) -> None:
+    payload = copy.deepcopy(branching)
+    payload["steps"] = [s for s in payload["steps"] if s["key"] != "s14_merge_branches"]
+    problems = validate_payload(payload)
+    assert problems == [
+        "branch group initiator 's13_branch' has 0 merge_branches children; "
+        "the server requires exactly one"
+    ]
+
+
+def test_validator_leaves_loop_initiator_to_the_server(branching: dict) -> None:
+    """A live loop is an initiator closed by `next_or_finish`, not a merge
+    step. Loops are unsupported, so the PUT still 400s exactly as before."""
+    payload = copy.deepcopy(branching)
+    payload["steps"] = [s for s in payload["steps"] if s["key"] != "s14_merge_branches"]
+    _step(payload, "s13_branch")["type"] = "loop"
+    assert validate_payload(payload) == []
+
+
+def test_validator_flags_initiator_with_two_merge_steps(
+    merged_condition: dict,
+) -> None:
+    payload = copy.deepcopy(merged_condition)
+    extra = copy.deepcopy(_step(payload, "s03_merge_branches"))
+    extra.update(id=None, key="s05_merge_branches", order=5)
+    payload["steps"].append(extra)
+    problems = validate_payload(payload)
+    assert problems == [
+        "branch group initiator 's00_condition' has 2 merge_branches children; "
+        "the server requires exactly one"
+    ]
+
+
+def test_validator_flags_merge_step_under_non_initiator(branching: dict) -> None:
+    """The exact graph today's CLI sent: merge steps kept, flags dropped."""
+    payload = copy.deepcopy(branching)
+    _step(payload, "s05_branch")["is_branch_group_initiator"] = False
+    problems = validate_payload(payload)
+    assert problems == [
+        "merge_branches step 's06_merge_branches' has parent 's05_branch', "
+        "which is not a branch group initiator (server 400s otherwise)"
+    ]
+
+
+@pytest.mark.parametrize("value", ["yes", "no"])
+def test_validator_accepts_skipped_condition_with_branch(
+    skipped_condition: dict, value: str
+) -> None:
+    payload = copy.deepcopy(skipped_condition)
+    _step(payload, "s00_condition")["continue_with_branch"] = value
+    assert validate_payload(payload) == []
+
+
+@pytest.mark.parametrize("value", [None, "", "maybe"])
+def test_validator_flags_skipped_condition_without_branch(
+    skipped_condition: dict, value: str | None
+) -> None:
+    payload = copy.deepcopy(skipped_condition)
+    _step(payload, "s00_condition")["continue_with_branch"] = value
+    assert validate_payload(payload) == [
+        "skipped condition 's00_condition' needs continue_with_branch 'yes' or "
+        "'no' (server 400s otherwise)"
+    ]
+
+
+def test_validator_flags_skipped_goal_without_branch(kitchen: dict) -> None:
+    payload = copy.deepcopy(kitchen)
+    goal = _steps_by_type(payload, "goal")[0]
+    goal["should_skip_execution"] = True
+    assert validate_payload(payload) == [
+        f"skipped goal '{goal['key']}' needs continue_with_branch 'yes' or "
+        "'no' (server 400s otherwise)"
+    ]
+
+
+def test_validator_accepts_plain_fan_out() -> None:
+    """A step with several plain children and no Branch card between them:
+    the server still accepts it, so the group rules must not reject it."""
+    payload = live_to_payload(load_fixture("automations/llm_comparison.raw.json"))
+    children: dict[str, int] = {}
+    for s in payload["steps"]:
+        if s["parent_key"] and not s["parent_yes_no"]:
+            children[s["parent_key"]] = children.get(s["parent_key"], 0) + 1
+    fan_out = [k for k, n in children.items() if n > 1]
+    assert fan_out
+    assert all(_step(payload, k)["type"] != "branch" for k in fan_out)
+    assert validate_payload(payload) == []
+
+
+def test_diff_wire_payloads_reads_omitted_step_level_keys_as_defaults(
+    skipped_condition: dict,
+) -> None:
+    """A spec-built payload omits the step-level keys the live side always
+    carries. Omitted means the server default, so only real differences show."""
+    spec = copy.deepcopy(skipped_condition)
+    for s in spec["steps"]:
+        for k in (
+            "is_branch_group_initiator",
+            "error_notification_severity_level",
+            "continue_with_branch",
+        ):
+            s.pop(k, None)
+    by_leaf = {
+        e["path"].rsplit(".", 1)[1]: (e["before"], e["after"])
+        for e in diff_wire_payloads(skipped_condition, spec)
+    }
+    assert by_leaf == {
+        "is_branch_group_initiator": (True, False),
+        "error_notification_severity_level": ("warning", "inherit"),
+        "continue_with_branch": ("no", "<absent>"),
+    }

@@ -32,6 +32,7 @@ no-op (see :func:`semantic_diff`), verified by
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from kizen_builder.tools.planners.automations import (
@@ -66,6 +67,9 @@ class _NoTargetAuto:
 
 _SHIM_CTX = _NoLookupContext()
 _SHIM_AUTO = _NoTargetAuto()
+
+# Read with no config block at all, so none is written back.
+_CONFIGLESS_STEP_TYPES = frozenset({"branch", "merge_branches"})
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +170,18 @@ def _live_step_to_wire(
         "action_on_failure": action_on_failure,
         "should_skip_execution": step.get("should_skip_execution", False),
         "goal_type": step_type == "goal",
+        "is_branch_group_initiator": step.get("is_branch_group_initiator", False),
+        "error_notification_severity_level": (
+            step.get("error_notification_severity_level") or "inherit"
+        ),
     }
+    if step.get("continue_with_branch") is not None:
+        p["continue_with_branch"] = step["continue_with_branch"]
     if step.get("description"):
         p["description"] = step["description"]
+
+    if step_type in _CONFIGLESS_STEP_TYPES:
+        return p
 
     cfg_key = _block_field_for(step_type)
     block = dict(step.get(cfg_key) or {})
@@ -326,6 +339,8 @@ def validate_payload(payload: dict[str, Any]) -> list[str]:
                     f"'{goto['step_key']}' — the server rejects this (400)"
                 )
 
+    problems.extend(_branch_group_problems(steps))
+
     # Cycle check via parent chain
     for s in steps:
         seen: set[str] = set()
@@ -356,6 +371,48 @@ def validate_payload(payload: dict[str, Any]) -> list[str]:
     orders = [t.get("order") for t in payload.get("triggers") or []]
     if sorted(orders) != list(range(len(orders))):
         problems.append(f"trigger orders must be sequential from 0: got {orders}")
+    return problems
+
+
+def _branch_group_problems(steps: list[dict[str, Any]]) -> list[str]:
+    """The server's branch-group and skipped-branch rules, each one a live 400
+    (confirmed 2026-09-28). A graph with no initiator, no merge step and no
+    skipped condition or goal passes untouched."""
+    problems: list[str] = []
+    by_key = {s.get("key"): s for s in steps}
+    merges = [s for s in steps if s.get("type") == "merge_branches"]
+    merges_under = Counter(s.get("parent_key") for s in merges)
+    for s in merges:
+        pk = s.get("parent_key")
+        parent = by_key.get(pk)
+        if parent is None or not parent.get("is_branch_group_initiator"):
+            problems.append(
+                f"merge_branches step '{s.get('key')}' has parent '{pk}', which "
+                "is not a branch group initiator (server 400s otherwise)"
+            )
+
+    for s in steps:
+        key = s.get("key")
+        # A live loop is also an initiator, closed by `next_or_finish` rather
+        # than a merge step. Loops are unsupported, and still 400 at PUT.
+        if (
+            s.get("is_branch_group_initiator")
+            and s.get("type") != "loop"
+            and merges_under[key] != 1
+        ):
+            problems.append(
+                f"branch group initiator '{key}' has {merges_under[key]} "
+                "merge_branches children; the server requires exactly one"
+            )
+        if (
+            s.get("type") in ("condition", "goal")
+            and s.get("should_skip_execution")
+            and s.get("continue_with_branch") not in ("yes", "no")
+        ):
+            problems.append(
+                f"skipped {s.get('type')} '{key}' needs continue_with_branch "
+                "'yes' or 'no' (server 400s otherwise)"
+            )
     return problems
 
 
@@ -496,6 +553,13 @@ def _diff(a: Any, b: Any, path: str) -> list[tuple[str, Any, Any]]:
 # dialects").
 _WIRE_DIFF_EXCLUDED = {"key", "parent_key", "prefix"}
 
+# Step-level keys the live side always carries and a spec-built payload may
+# omit. Omitted on a PUT means the server default, so compare it as that.
+_WIRE_STEP_DEFAULTS = {
+    "is_branch_group_initiator": False,
+    "error_notification_severity_level": "inherit",
+}
+
 
 def _wire_pairs(
     live_items: list[dict[str, Any]], spec_items: list[dict[str, Any]]
@@ -620,6 +684,7 @@ def _normalize_wire_steps(
         if item is None:
             continue
         norm = {k: v for k, v in item.items() if k not in _WIRE_DIFF_EXCLUDED | {"id"}}
+        norm = {**_WIRE_STEP_DEFAULTS, **norm}
         norm["id"] = _wire_pair_id(pair)
         # Reparenting must still be visible: resolve `parent_key` to the
         # *matched identity* of the parent (mirroring `canonicalize`'s

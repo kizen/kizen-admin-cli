@@ -1,7 +1,7 @@
 {
   "_meta": {
     "base_url": "https://app.go.kizen.com",
-    "captured": "2026-09-25",
+    "captured": "2026-09-29",
     "contracts_tracked": 66,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
@@ -885,7 +885,8 @@
         "step_condition": "WriteStepConditionRequest?",
         "step_delay": "WriteStepDelayRequest?",
         "step_goal": "WriteStepGoalRequest?",
-        "step_type": "AutomationStepTypeEnum{archive_record,assign_team_member,audio_transcription,call_llm,change_field_value,change_tags,code_step,condition,create_related_entity,delay,delete_scheduled_activity,file_content_extraction,goal,go_to_automation_step,http_request,initialize_variable,math_operator,modify_automation,modify_related_entities,modify_related_entities_automation,notify_member_via_email,notify_member_via_text,plugin_code_step,request_info_via_text,schedule_activity,search_records,send_email,send_related_contact_email,send_related_contact_text,send_text,start_automation,stop_execution,update_pipeline_status,update_variable,noop,branch,merge_branches}",
+        "step_loop": "StepLoopRequest?",
+        "step_type": "AutomationStepTypeEnum{archive_record,assign_team_member,audio_transcription,call_llm,change_field_value,change_tags,code_step,condition,create_related_entity,delay,delete_scheduled_activity,file_content_extraction,goal,go_to_automation_step,http_request,initialize_variable,math_operator,modify_automation,modify_related_entities,modify_related_entities_automation,notify_member_via_email,notify_member_via_text,plugin_code_step,request_info_via_text,schedule_activity,search_records,send_email,send_related_contact_email,send_related_contact_text,send_text,start_automation,stop_execution,update_pipeline_status,update_variable,noop,branch,merge_branches,loop,next_or_finish}",
         "user_description": "string"
       },
       "required": [
