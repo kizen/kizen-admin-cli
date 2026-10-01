@@ -93,7 +93,7 @@ kizen dashboards dashlet-config --type field_breakdown --object clinics --field 
 
 | Key | Type | Notes |
 |-----|------|-------|
-| `api_name` | string | **Required.** Stable identifier (`^[a-z][a-z0-9_]*$`). |
+| `api_name` | string | **Required.** Stable identifier (`^[A-Za-z0-9_]+$`). |
 | `name` | string | **Required.** Display name. |
 | `type` | enum | `generic_dashboard` (default), `homepage` (team landing page), or `chart_group` (then `custom_object` is required). |
 | `custom_object` | UUID | Required only for `chart_group`. |

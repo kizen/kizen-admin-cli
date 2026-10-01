@@ -13,12 +13,13 @@ def slugify(text: str) -> str:
     """Convert a display name to a spec-style api_name.
 
     Used by the importer when Kizen doesn't surface an api_name for an entity
-    (categories, today). Rules match the spec's api_name validator:
-    lowercase, letters/digits/underscore only, must start with a letter.
+    (categories, today). Lowercase, letters/digits/underscore only, starting
+    with a letter.
 
     Example: "Contact Info" -> "contact_info", "FHIR R4 Resource" -> "fhir_r4_resource".
-    If the result would start with a digit, prefix with underscore-then-letter
-    so Pydantic validation still passes if it's later written into a spec.
+    If the result would start with a digit, it is prefixed with ``x_``. The
+    spec validator no longer requires that, but the prefix is kept so a
+    category imported earlier still matches on re-import.
     """
     lowered = text.strip().lower()
     slug = _SLUG_INVALID.sub("_", lowered)

@@ -290,6 +290,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Specs accept every api_name Kizen itself produces.** An api_name that
+  started with a digit or underscore (`1099_forms`), or that carried Kizen's
+  mixed-case collision suffix (`employee_m7SZCzg3`), failed spec validation, so
+  `apply` and any spec naming that object as a `target_object` were refused.
+  The rule is now letters, digits and underscores only.
+
 - **CLI writes no longer fail on automations with merged branches or skipped
   conditions, and no longer reset step severity.** `roundtrip`, `steps
   add/edit/remove`, `activate`, `deactivate` and `automations move` used to

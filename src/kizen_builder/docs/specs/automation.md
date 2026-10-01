@@ -57,7 +57,7 @@ kizen automations create --spec-file auto.json --dry-run
 | Key | Type | Notes |
 |-----|------|-------|
 | `name` | string | **Required.** |
-| `api_name` | string | **Required.** `^[a-z][a-z0-9_]*$`. |
+| `api_name` | string | **Required.** `^[A-Za-z0-9_]+$`. |
 | `type` | enum | `record_based` (default) or `global`. |
 | `target_object` | api_name | **Required for `record_based`.** Resolved to `custom_object_id`. |
 | `active` | bool \| null | On create, an omitted/`null` value resolves to `false` — prefer authoring inactive, then `automations activate`. On update, an omitted/`null` value **preserves whatever the live automation already is**; only an explicit `true`/`false` changes it. |
