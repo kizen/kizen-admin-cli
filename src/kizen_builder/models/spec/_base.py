@@ -11,11 +11,14 @@ from pydantic import StringConstraints
 
 ApiName = Annotated[
     str,
-    StringConstraints(pattern=r"^[a-z][a-z0-9_]*$", min_length=1, max_length=100),
+    StringConstraints(pattern=r"^[A-Za-z0-9_]+$", min_length=1, max_length=100),
 ]
 """Stable identifier for matching spec entities to Kizen UUIDs across re-runs.
 
-Lowercase, starts with a letter, letters/digits/underscores only.
+Letters, digits and underscores only. Kizen itself accepts a leading digit or
+underscore (``1099_forms``) and appends mixed-case suffixes on collision
+(``employee_m7SZCzg3``), so both must validate or those objects can't be
+referenced from a spec.
 """
 
 

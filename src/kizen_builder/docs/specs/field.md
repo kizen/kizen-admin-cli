@@ -58,7 +58,7 @@ api_name — `kizen objects get <object>` lists the category display names.
 | Key | Type | Notes |
 |-----|------|-------|
 | `name` | string (1–200) | **Required.** Human display name shown in the UI. |
-| `api_name` | string | **Required.** `^[a-z][a-z0-9_]*$`, unique within the object. See reserved-names gotcha. |
+| `api_name` | string | **Required.** `^[A-Za-z0-9_]+$`, unique within the object. See reserved-names gotcha. |
 | `field_type` | enum | **Required.** One of the 24 types below. |
 | `category` | string | Optional per-field override (bulk spec only; **the category's display name**; stripped before validation). |
 | `description` | string (≤500) | Optional. |
