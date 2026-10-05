@@ -13,7 +13,6 @@ from typing import Any
 from kizen_builder.api import messages as messages_api
 from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
-from kizen_builder.tools.automations import get_automation
 from kizen_builder.utils import is_uuid
 
 # A compiled-HTML section class, emitted once per Section/Row craft node.
@@ -52,26 +51,10 @@ def resolve_template(client: KizenClient, name_or_id: str) -> dict[str, Any]:
     return messages_api.get_template(client, matches[0]["id"])
 
 
-def create_automation_message(
-    automation_api_name: str, template: str
-) -> dict[str, Any]:
-    """Create an automation-scoped message from an email template, ready to
-    reference from a notify_member_via_email step's `email_template_id`.
-
-    ``template`` is a template name or UUID (see :func:`list_templates`).
-    Kizen's builder UI "select email" picker only recognizes messages
-    created this way (seeded from a real template via ``base_message_id``) —
-    a message authored from raw content alone shows as unselected even
-    though a step technically references it.
-    """
-    config = load_env_config()
-    with KizenClient(config) as client:
-        automation_id = get_automation(automation_api_name)["id"]
-        tmpl = resolve_template(client, template)
-        created = messages_api.create_automation_message_from_template(
-            client, automation_id, tmpl
-        )
-    return {"env": config.name, "automation_api_name": automation_api_name, **created}
+def has_compiled_content(template: dict[str, Any]) -> bool:
+    """Whether a template's ``content`` (the compiled HTML that is sent) is
+    non-blank. A message or clone seeded from one without it can't be sent."""
+    return bool((template.get("content") or "").strip())
 
 
 def get_template_detail(name_or_id: str) -> dict[str, Any]:

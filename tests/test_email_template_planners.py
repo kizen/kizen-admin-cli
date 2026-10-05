@@ -13,6 +13,7 @@ a write, and the planners still succeed.
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 
 from kizen_builder.api.client import KizenClient
@@ -175,3 +176,109 @@ def test_plan_update_with_neither_patch_nor_spec_raises_plan_error():
             raise AssertionError("expected PlanError")
         except PlanError as e:
             assert "nothing to update" in str(e)
+
+
+# ---------------------------------------------------------------------------
+# A template with blank compiled `content` is refused where it is an input
+# ---------------------------------------------------------------------------
+
+AUTOMATION_ID = "aba65b8f-946a-4113-8b69-cbbfb6257a1f"
+CRAFT = {"ROOT": {"type": {"resolvedName": "Root"}}}
+
+
+def _template(**overrides) -> dict:
+    base = {
+        "id": TEMPLATE_ID,
+        "name": "Placeholder Template",
+        "subject": "Hello",
+        "craft_json": CRAFT,
+        "content": "<p>hi</p>",
+    }
+    base.update(overrides)
+    return base
+
+
+def _mock_template(template: dict) -> None:
+    respx.get(f"{FAKE_BASE_URL}/api/messages/templates/{TEMPLATE_ID}").mock(
+        return_value=httpx.Response(200, json=template)
+    )
+
+
+@pytest.fixture
+def automation(monkeypatch):
+    monkeypatch.setattr(
+        message_planners, "get_automation", lambda api_name: {"id": AUTOMATION_ID}
+    )
+
+
+@respx.mock
+def test_create_message_refuses_blank_content_with_a_builder_tree(automation):
+    _mock_template(_template(content=""))
+    with pytest.raises(PlanError) as e:
+        message_planners.plan_create_automation_message("some_automation", TEMPLATE_ID)
+    msg = str(e.value)
+    assert "Placeholder Template" in msg
+    assert TEMPLATE_ID in msg
+    assert "has a builder tree but no compiled `content`" in msg
+    assert "Kizen email builder" in msg
+    assert "--spec-file" in msg
+
+
+@respx.mock
+def test_create_message_refuses_whitespace_only_content(automation):
+    _mock_template(_template(content="  \n\t "))
+    with pytest.raises(PlanError):
+        message_planners.plan_create_automation_message("some_automation", TEMPLATE_ID)
+
+
+@respx.mock
+def test_blank_template_without_craft_json_does_not_claim_a_builder_tree(automation):
+    _mock_template(_template(content=None, craft_json=None))
+    with pytest.raises(PlanError) as e:
+        message_planners.plan_create_automation_message("some_automation", TEMPLATE_ID)
+    assert "builder tree" not in str(e.value)
+
+
+@respx.mock
+def test_create_message_from_a_normal_template_still_plans(automation):
+    template = _template()
+    _mock_template(template)
+    plan = message_planners.plan_create_automation_message(
+        "some_automation", TEMPLATE_ID
+    )
+    assert len(plan.operations) == 1
+    op = plan.operations[0]
+    assert op.action == "create"
+    assert op.payload["template"]["content"] == "<p>hi</p>"
+    assert op.payload == {"automation_id": AUTOMATION_ID, "template": template}
+
+
+@respx.mock
+def test_clone_refuses_a_blank_source():
+    _mock_template(_template(content=""))
+    with pytest.raises(PlanError) as e:
+        message_planners.plan_clone_template(TEMPLATE_ID, "Copy")
+    assert "Placeholder Template" in str(e.value)
+
+
+@respx.mock
+def test_clone_from_a_normal_source_still_plans():
+    _mock_template(_template())
+    plan = message_planners.plan_clone_template(TEMPLATE_ID, "Copy")
+    op = plan.operations[0]
+    assert op.payload["name"] == "Copy"
+    assert op.payload["content"] == "<p>hi</p>"
+    assert op.payload["craft_json"] == CRAFT
+
+
+@respx.mock
+def test_update_and_delete_still_plan_against_a_blank_template():
+    _mock_template(_template(content=""))
+    update = message_planners.plan_update_template(TEMPLATE_ID, {"name": "renamed"})
+    assert update.operations[0].payload == {"name": "renamed"}
+    spec_update = message_planners.plan_update_template(
+        TEMPLATE_ID, spec=_spec(), resolved_sections=_resolved_sections()
+    )
+    assert spec_update.operations[0].payload["content"]
+    delete = message_planners.plan_delete_template(TEMPLATE_ID)
+    assert delete.operations[0].action == "delete"
