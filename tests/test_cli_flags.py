@@ -13,7 +13,7 @@ import typer
 from typer.testing import CliRunner
 
 import kizen_builder.cli as cli
-from kizen_builder.cli._shared import warn_renamed_flag
+from kizen_builder.cli._shared import OUTPUT_OPTION, warn_renamed_flag
 from kizen_builder.tools import coderunner as code_tools
 from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools import smart_connectors as sc_tools
@@ -22,26 +22,26 @@ from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.planners import forms as form_planners
 from kizen_builder.tools.planners import permissions as perm_planners
 from kizen_builder.tools.plans import Plan
+from tests.conftest import iter_commands
 
 # `--live` read as both "write real records" and "use the live script";
 # `--force` as both "overwrite local files" and "ignore plan blockers".
 RETIRED = {"--live", "--force"}
 
 
-def _iter_commands(command, path):
-    """Walk the resolved Click command tree, yielding (path, command)."""
-    yield path, command
-    for name, sub in getattr(command, "commands", {}).items():
-        yield from _iter_commands(sub, path + [name])
+def _visible_options():
+    """Yield (path, param) for every visible option in the command tree."""
+    root = typer.main.get_command(cli.app)
+    for path, command in iter_commands(root, []):
+        for param in command.params:
+            if param.param_type_name == "option" and not param.hidden:
+                yield path, param
 
 
 def test_no_visible_option_uses_a_retired_name():
-    root = typer.main.get_command(cli.app)
     found = [
         f"`kizen {' '.join(path)}` {name}"
-        for path, command in _iter_commands(root, [])
-        for param in command.params
-        if not getattr(param, "hidden", False)
+        for path, param in _visible_options()
         for name in [*param.opts, *param.secondary_opts]
         if name in RETIRED
     ]
@@ -53,6 +53,34 @@ def test_warn_renamed_flag_writes_to_stderr_only(capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "warning: --force is deprecated; use --overwrite." in captured.err
+
+
+def test_each_short_flag_has_one_long_name():
+    meanings: dict[str, dict[str, list[str]]] = {}
+    for path, param in _visible_options():
+        names = [*param.opts, *param.secondary_opts]
+        long_name = next((n for n in names if n.startswith("--")), None)
+        for name in names:
+            if not name.startswith("--"):
+                where = meanings.setdefault(name, {}).setdefault(str(long_name), [])
+                where.append(f"`kizen {' '.join(path)}`")
+    clashes = [
+        f"{short}: "
+        + "; ".join(f"{long} on {', '.join(where)}" for long, where in longs.items())
+        for short, longs in sorted(meanings.items())
+        if len(longs) > 1
+    ]
+    assert not clashes, "short flag with two meanings:\n" + "\n".join(clashes)
+    assert set(meanings["-p"]) == set(meanings["-e"]) == {"--profile"}
+
+
+def test_every_output_option_is_the_format():
+    wrong = [
+        f"`kizen {' '.join(path)}`"
+        for path, param in _visible_options()
+        if "--output" in param.opts and param.help != OUTPUT_OPTION.help
+    ]
+    assert not wrong, "--output that isn't the output format:\n" + "\n".join(wrong)
 
 
 def _stub_renamed_flag_tools(monkeypatch) -> list:

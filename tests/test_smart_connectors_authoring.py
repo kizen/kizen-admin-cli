@@ -1345,10 +1345,13 @@ def test_start_flow_write_records_queues_a_live_run_after_the_confirm():
 
 
 @respx.mock
-def test_start_flow_live_is_an_error_that_names_write_records():
+@pytest.mark.parametrize("extra", [[], ["--write-records"]])
+def test_start_flow_live_is_an_error_that_names_write_records(extra):
+    # Even beside --write-records, --live stops before any API call.
     read, post = _mock_start_flow()
     result = CliRunner().invoke(
-        cli.app, ["smart-connectors", "start-flow", "order_import", "--live", "--yes"]
+        cli.app,
+        ["smart-connectors", "start-flow", "order_import", "--live", "--yes", *extra],
     )
     assert result.exit_code == 2
     assert (

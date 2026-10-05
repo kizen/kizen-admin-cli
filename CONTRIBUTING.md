@@ -263,6 +263,13 @@ the same commit when the change is intentional:
 uv run python scripts/dump_cli_tree.py | diff scripts/cli-tree-baseline.txt -
 ```
 
+**Flag names.** `-o`/`--output` is the output format, `-y`/`--yes` skips the
+confirm, `-f`/`--field` names a field, `-p`/`-e` is the profile, and
+`-g`/`--group` is a permission group. A short flag never gets a second
+meaning; `tests/test_cli_flags.py` walks the command tree and enforces it. To
+rename a flag, keep the old spelling as a hidden option and call
+`warn_renamed_flag` (`cli/_shared.py`) when it's used.
+
 **A new cross-cutting topic** — one that spans surfaces, like `filters` or
 `code-steps` — goes at the root of `src/kizen_builder/docs/` rather than under
 `specs/`, and must be added to `GUIDE_TOPICS` in `docs.py`.
