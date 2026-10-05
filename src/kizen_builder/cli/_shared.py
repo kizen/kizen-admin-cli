@@ -53,6 +53,13 @@ JSON_OPTION = typer.Option(False, "--json", help="Alias for --output json.")
 _ALWAYS_EXPECTED: tuple[type[Exception], ...] = (ConfigError, KizenAPIError)
 
 
+def _print_error(e: object) -> None:
+    """Print `error: <e>` as one stderr line, `<e>` as literal text."""
+    err_console.print(
+        f"[red]error:[/red] {escape(str(e))}", emoji=False, soft_wrap=True
+    )
+
+
 @contextlib.contextmanager
 def cli_errors(*also: type[Exception]) -> Iterator[None]:
     """Render an expected failure as `error: <message>` and exit 1.
@@ -72,7 +79,7 @@ def cli_errors(*also: type[Exception]) -> Iterator[None]:
     try:
         yield
     except _ALWAYS_EXPECTED + also as e:
-        err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)
+        _print_error(e)
         raise typer.Exit(code=1) from e
 
 

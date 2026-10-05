@@ -22,6 +22,7 @@ from kizen_builder.cli._mutations import _read_spec
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
+    _print_error,
     app,
     cli_errors,
     console,
@@ -95,11 +96,13 @@ def _connector_plan_error(exc: Exception) -> NoReturn:
     if isinstance(exc, ValidationError):
         for err in exc.errors():
             loc = ".".join(str(p) for p in err.get("loc", ())) or "spec"
+            msg = err.get("msg", "invalid value")
             err_console.print(
-                f"[red]spec error:[/red] {loc}: {err.get('msg', 'invalid value')}"
+                f"[red]spec error:[/red] {escape(loc)}: {escape(str(msg))}",
+                emoji=False,
             )
     else:
-        err_console.print(f"[red]error:[/red] {exc}")
+        _print_error(exc)
     raise typer.Exit(code=1) from exc
 
 
@@ -349,7 +352,9 @@ def smart_connectors_set_input(
         colour = {"success": "green", "failed": "red"}.get(state or "", "yellow")
         console.print(f"  sample generation: [{colour}]{state}[/{colour}]")
         if sample.get("error"):
-            err_console.print(f"  [red]{sample['error']}[/red]")
+            err_console.print(
+                f"  [red]{escape(str(sample['error']))}[/red]", emoji=False
+            )
         if sample.get("timed_out"):
             console.print(
                 "[yellow]still running[/yellow] — re-check with `smart-connectors "
@@ -532,8 +537,9 @@ def _partial_save_failure(report: dict[str, Any], *, json_out: bool) -> NoReturn
         return f"{c['matching']} / {c['mapping']}" if c else "-"
 
     err_console.print(
-        f"[red]error:[/red] configure-flow stopped at {report['failed_write']}: "
-        f"{report['error']}"
+        "[red]error:[/red] configure-flow stopped at "
+        f"{escape(str(report['failed_write']))}: {escape(str(report['error']))}",
+        emoji=False,
     )
     err_console.print("Already saved: " + ", ".join(report["completed_writes"]) + ".")
     if report["reread_error"]:

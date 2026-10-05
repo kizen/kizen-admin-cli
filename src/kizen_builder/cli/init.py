@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 from rich.prompt import Prompt
 from rich.text import Text
 
@@ -345,9 +346,11 @@ def init(
             _validate_creds(cfg)
         except KizenAPIError as exc:
             err_console.print(
-                f"[red]Credential check failed[/red] ({exc.status_code}): {exc.message}\n"
+                f"[red]Credential check failed[/red] ({exc.status_code}): "
+                f"{escape(exc.message)}\n"
                 "Nothing was written. Re-run and re-enter the values, or pass "
-                "--skip-validation to store them anyway."
+                "--skip-validation to store them anyway.",
+                emoji=False,
             )
             raise typer.Exit(code=1) from exc
         console.print("[green]credentials verified[/green] against the live env")
