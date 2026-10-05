@@ -84,6 +84,7 @@ def _stub_renamed_flag_tools(monkeypatch) -> list:
         },
         (sc_tools, "build_webhook_sample"): {"path": "s.csv"},
         (sc_tools, "run_connector"): {"output_files": []},
+        (sc_tools, "plan_set_status"): {"connector_api_name": "c", "changed": False},
     }
     for (module, name), result in stubs.items():
 
@@ -138,6 +139,11 @@ _GROUP_CREATE = ["permissions", "group-create", "--name", "N", "--base", "clone"
          ["--from", "Admin"], "--from is deprecated; use --source-group."),
         (["permissions", "group", "Sales"], ["--field-permissions"], ["--fields"],
          "--fields is deprecated; use --field-permissions."),
+        (_SC, ["deactivate", "c", "--dry-run"],
+         ["activate", "c", "--dry-run", "--status", "inactive"],
+         "--status inactive is deprecated; use smart-connectors deactivate."),
+        ([*_SC, "activate", "c", "--dry-run"], [], ["--status", "operational"],
+         "--status is deprecated; operational is the default."),
     ],
 )  # fmt: skip
 def test_old_flag_spellings_warn_and_behave_like_the_new_ones(

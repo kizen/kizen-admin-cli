@@ -254,7 +254,7 @@ kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side o
 kizen smart-connectors push --publish [--dir path]               # sample, then publish; refreshes the output columns configure-flow checks
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
-kizen smart-connectors activate <connector> [--status operational|inactive] # a LIVE run without this sits queued forever, silently
+kizen smart-connectors activate <connector>                # a LIVE run without this sits queued forever, silently
 kizen smart-connectors deactivate <connector>                      # status inactive: no live runs; every edit and dry runs still work
 kizen smart-connectors start-flow <connector> [--write-records] [--ignore-blockers]   # queue a run; dry run unless --write-records
 # `set-input` on a connector that already has a file replaces it, keeping your SQL. What that leaves stale:

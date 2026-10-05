@@ -3358,13 +3358,10 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --status           <str>  operational|inactive — the only two an update can set. Defaults to     │
-│                           operational.                                                           │
-│                           [default: operational]                                                 │
-│ --dry-run                 Show the change without applying.                                      │
-│ --yes      -y             Skip the confirmation prompt.                                          │
-│ --json                    Emit JSON.                                                             │
-│ --help                    Show this message and exit.                                            │
+│ --dry-run            Show the change without applying.                                           │
+│ --yes      -y        Skip the confirmation prompt.                                               │
+│ --json               Emit JSON.                                                                  │
+│ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors add-input [OPTIONS] {input_file}                                           

@@ -252,12 +252,7 @@ def _set_status(
 @smart_connectors_app.command("activate")
 def smart_connectors_activate(
     connector: str = typer.Argument(..., help="Connector UUID or api_name."),
-    status: str = typer.Option(
-        "operational",
-        "--status",
-        help="operational|inactive — the only two an update can set. Defaults "
-        "to operational.",
-    ),
+    status: str | None = typer.Option(None, "--status", hidden=True),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the change without applying."
     ),
@@ -274,7 +269,16 @@ def smart_connectors_activate(
     The server refuses to activate without execution variables and fully
     configured load steps.
     """
-    _set_status(connector, status, dry_run=dry_run, yes=yes, json_out=json_out)
+    if status == "inactive":
+        warn_renamed_flag("--status inactive", "smart-connectors deactivate")
+    elif status is not None:
+        err_console.print(
+            "[yellow]warning:[/yellow] --status is deprecated; operational is the "
+            "default."
+        )
+    _set_status(
+        connector, status or "operational", dry_run=dry_run, yes=yes, json_out=json_out
+    )
 
 
 @smart_connectors_app.command("deactivate")

@@ -57,9 +57,11 @@ called out explicitly under **Changed** or **Removed**.
   | `smart-connectors run --dry-run` | `--skip-sql` |
   | `permissions group-create --from` | `--source-group` |
   | `permissions group --fields` | `--field-permissions` |
+  | `smart-connectors activate --status inactive` | `smart-connectors deactivate` |
 
-  The old spellings still work, with a warning on stderr, and will be
-  removed in a later release.
+  `activate --status` no longer appears in `--help`; `activate` sets
+  `operational`. The old spellings still work, with a warning on stderr, and
+  will be removed in a later release.
 - **`records archive` batches its requests and triggers no Kizen emails.** It
   used to send one request per id, and each one emailed you: archiving 3,000
   records meant 3,000 requests and 3,000 emails. It now sends up to 500 ids
@@ -110,10 +112,10 @@ called out explicitly under **Changed** or **Removed**.
   the same directory works without a re-pull. The success line now says
   "script published — live runs now use it" and shows the connector's status,
   instead of "connector is now live". Plain `push` is unchanged.
-- **`smart-connectors activate --status` accepts only `operational` or
-  `inactive`**, the only two an update can set. `setup` and `need_attention`
-  used to reach the server and 400. The preview also warns when the
-  connector has no execution variables, which the server requires.
+- **`smart-connectors activate` and `deactivate` set only `operational` and
+  `inactive`**, the only two statuses an update can set. `setup` and
+  `need_attention` used to reach the server and 400. The preview also warns
+  when the connector has no execution variables, which the server requires.
 
 - **`smart-connectors generate-sample` reports the tables its sample actually
   holds.** The `output tables` line now comes from the sample zip the run just
