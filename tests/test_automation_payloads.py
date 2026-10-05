@@ -27,6 +27,25 @@ def _build(spec: dict) -> dict:
     return _build_automation_payload(auto, LiveContext())
 
 
+# A raw condition rule that needs no field lookup.
+NAME_IS_X = {
+    "and": True,
+    "query": [
+        {
+            "and": True,
+            "filters": [
+                {
+                    "type": "fields",
+                    "field": "name",
+                    "subtype": "non_custom",
+                    "condition": "=",
+                    "value": "x",
+                }
+            ],
+        }
+    ],
+}
+
 BRANCHING_SPEC = {
     "api_name": "branching_test",
     "name": "Branching Test",
@@ -47,7 +66,7 @@ BRANCHING_SPEC = {
             "parent_key": None,
             "step_condition": {
                 "type": "custom_filter",
-                "filter_config": {"and": False, "query": [], "invalid": False},
+                "filter_config": NAME_IS_X,
             },
         },
         {
@@ -1991,10 +2010,7 @@ def _merged_condition_spec(**condition: object) -> dict:
                 "condition",
                 0,
                 is_branch_group_initiator=True,
-                step_condition={
-                    "type": "custom_filter",
-                    "filter_config": {"and": False, "query": [], "invalid": False},
-                },
+                step_condition={"type": "custom_filter", "filter_config": NAME_IS_X},
                 **condition,
             ),
             _s("wait_yes", "check", "delay", 1, parent_branch="yes"),
