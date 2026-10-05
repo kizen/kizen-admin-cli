@@ -579,7 +579,11 @@ as a real custom object's own api_name, and its span gets
   `is_any_of`/`not_any_of`, numbers use `>=`/`between` — *not* `in`/`gte`). Run
   `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
   dict for clause types the DSL doesn't cover (variable comparisons — see
-  "Variable-comparison condition step" above).
+  "Variable-comparison condition step" above). **A condition needs at least one
+  rule.** An empty `query`, a group with no `filters`, or an `in_group`/
+  `not_in_group` with no `group_ids` is rejected at plan time. The API accepts
+  an empty filter, but the UI then shows an error on the step (reported
+  2026-09-29). A group condition with no groups has nothing to test.
 
 ---
 

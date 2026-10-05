@@ -1089,6 +1089,10 @@ def _build_step_payload(
     spec_block = getattr(step, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     wire_block = builder(block_dict, auto, ctx)
+    if step.step_type == "condition":
+        problem = _condition_rules_problem(step.key, wire_block)
+        if problem:
+            raise PlanError(problem)
     p[cfg_field] = wire_block
     return p
 
@@ -1150,6 +1154,27 @@ def _step_condition(
         out["group_ids"] = [_unwrap_id(g) for g in block["groups"] if _unwrap_id(g)]
     # NEVER set yes_step_ids / no_step_ids — server crashes.
     return out
+
+
+def _condition_rules_problem(key: str, block: dict[str, Any]) -> str | None:
+    """Why a built ``step_condition`` has nothing to evaluate, or None.
+
+    The API accepts a condition with no rules, but the Kizen UI shows an
+    error on the step. Checked on spec and patch paths only: live reads of
+    automations that already carry one must keep working.
+    """
+    kind = block.get("type")
+    if kind in ("in_group", "not_in_group"):
+        if not block.get("group_ids"):
+            return f"condition step '{key}' ({kind}) has no group_ids"
+    elif kind == "custom_filter":
+        query = (block.get("filter_config") or {}).get("query")
+        if not query:
+            return f"condition step '{key}' has no filter rules"
+        for i, group in enumerate(query):
+            if not group.get("filters"):
+                return f"condition step '{key}' has an empty rule group (query[{i}])"
+    return None
 
 
 def _render_filter_config(
