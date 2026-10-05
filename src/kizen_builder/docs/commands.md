@@ -324,7 +324,9 @@ kizen fields create ... --yes         # re-plans against live state and applies
 When the spec comes from stdin, the command can't prompt — preview with
 `--dry-run`, then re-run with `--yes` (or use `--spec-file`). A saved plan
 (`--dry-run --json > plan.json`) can also be executed later with
-`kizen apply [--plan-file path | < stdin] [--yes] [--json]`.
+`kizen apply [--plan-file path | < stdin] [--yes] [--json]`. A plan read
+from stdin needs `--yes`, since the command can't prompt. `apply` refuses a
+plan built for a different business than the current folder's.
 
 **Bulk field creation.** To build a multi-field object in one shot, pass
 `fields create` a JSON spec (via `--spec-file` or stdin) instead of the
