@@ -1,8 +1,10 @@
 """Static scan of the automation step/trigger builders: which spec-block keys
-each one reads.
+each one reads, and which keys it writes into its wire block.
 
 Keeps the `@honours(...)` declarations in `tools/planners/automations.py`
-honest (`tests/test_automation_payloads.py`).
+honest (`tests/test_automation_payloads.py`), and finds the keys a builder
+forwards under their own name, for the drift tier to compare against the
+published schema (`tests/drift/test_schema_drift.py`).
 """
 
 from __future__ import annotations
@@ -85,9 +87,44 @@ def keys_read(func_name: str, param_index: int = 0) -> set[str]:
     return found
 
 
+def keys_written(func_name: str) -> set[str]:
+    """String keys `func_name` puts into any dict — literal keys and
+    `x["key"] = ...` — following helpers its first parameter is passed to.
+    Deliberately loose (nested dicts count too); callers intersect it with
+    the keys read, which is what makes it precise enough."""
+    fn = _FUNCS[func_name]
+    param = fn.args.args[0].arg
+    loops = _loop_literals(fn)
+    found: set[str] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Dict):
+            for k in node.keys:
+                if k is not None:
+                    found |= _literals(k, loops)
+        elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store):
+            found |= _literals(node.slice, loops)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in _FUNCS
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id == param
+        ):
+            found |= keys_written(node.func.id)
+    return found
+
+
 def declarable(func_name: str) -> set[str]:
     """What a builder's `@honours(...)` declaration should list."""
     read = keys_read(func_name)
     for helper in DERIVED_BLOCK_HELPERS.get(func_name, ()):
         read |= keys_read(helper)
     return read | DECLARED_NOT_READ.get(func_name, set())
+
+
+def forwarded_as_is(func_name: str) -> set[str]:
+    """Declared keys the builder writes back under the same name — what
+    reaches Kizen as the author spelled it, as opposed to an alias the
+    builder translates (`relationship_fields` -> `relationship_field_ids`)."""
+    return declarable(func_name) & keys_written(func_name)
