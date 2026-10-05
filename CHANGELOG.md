@@ -42,10 +42,10 @@ called out explicitly under **Changed** or **Removed**.
   `send-webhook` and `start-flow`. The old spellings except
   `start-flow --live` still work, with a warning, and will be removed in a
   later release.
-- **Each short flag now means one thing across the CLI.** `-o` is always
-  `--output`, `-e` is always the profile, and `-g`/`--group` is always a
-  permission group. The commands that used them for something else take a
-  new spelling:
+- **Each short flag and flag name now means one thing across the CLI.** `-o`
+  is always `--output`, `-e` is always the profile, and `-g`/`--group` is
+  always a permission group. The commands that used them for something else
+  take a new spelling:
 
   | Before | After |
   |---|---|
@@ -53,6 +53,10 @@ called out explicitly under **Changed** or **Removed**.
   | `smart-connectors create -o`, `seeds add -o`, `seeds remove -o` | `--object` |
   | `smart-connectors webhook-sample -e` | `--employee` |
   | `smart-connectors seeds add --group` / `-g` | `--filter-group` |
+  | `code test --output name:type` | `--declare-output name:type` |
+  | `smart-connectors run --dry-run` | `--skip-sql` |
+  | `permissions group-create --from` | `--source-group` |
+  | `permissions group --fields` | `--field-permissions` |
 
   The old spellings still work, with a warning on stderr, and will be
   removed in a later release.
@@ -809,9 +813,9 @@ called out explicitly under **Changed** or **Removed**.
   the endpoint. `kizen docs show automation` gains a table of the six values
   and which id each one needs — `team_member` wants the singular
   `employee_id`, not `employee_ids`.
-- **`permissions group --fields` now names contacts custom fields instead of
-  showing raw UUIDs.** Field labels were resolved only for the custom objects
-  present on the group, but a contacts custom field lives under
+- **`permissions group --field-permissions` now names contacts custom fields
+  instead of showing raw UUIDs.** Field labels were resolved only for the
+  custom objects present on the group, but a contacts custom field lives under
   `contacts_section`, not `custom_objects` — so every one of those rows printed
   a bare field id, leaving the one part of the grid you'd want names for as the
   only part without them. They now resolve the same way object fields do. The

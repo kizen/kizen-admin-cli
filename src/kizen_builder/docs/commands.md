@@ -69,7 +69,7 @@ kizen columns get <object> <uuid|name>                  # one column template's 
 kizen roles list                             # list roles (name, user count, # perm groups, default flag)
 kizen roles get <name|uuid>                  # one role: default flag, app permissions, attached groups + level counts
 kizen permissions groups                     # list permission groups (raw)
-kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --fields adds per-field rows; --raw for wire JSON
+kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --field-permissions adds per-field rows; --raw for wire JSON
 kizen permissions meta                        # the permissions catalog (sections, capabilities, defaults)
 
 kizen activities list [--object <api_name>] [--search <text>]  # activity types
@@ -101,7 +101,7 @@ kizen automations start <api_name> --record <uuid> --wait --show-logs  # fire, b
 
 kizen code test --script s.py \
     --input n=21:number --input who=world:string \
-    --output doubled:number --output greeting:string \
+    --declare-output doubled:number --declare-output greeting:string \
     [--secret MY_API_KEY] [--runtime python-3-13]              # unit-test a code_step script in the sandbox
 kizen code test --script s.py --inputs-file in.json --outputs-file out.json  # bulk inputs/outputs (JSON)
 ```
@@ -239,7 +239,7 @@ kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)
 kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # build a local workdir (connector.sql + __config.json + data/)
-kizen smart-connectors run [--dir path] [--dry-run]        # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
+kizen smart-connectors run [--dir path] [--skip-sql]       # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
 kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
 # `run`/`add-input` need `uv sync --extra connectors` (chdb). `push` previews a SQL diff and confirms
@@ -293,7 +293,7 @@ kizen records move <pipeline> <uuid> --stage <name>                # move a reco
 kizen roles create --name X [--group <name|uuid> ...] [--permission <flag> ...] [--default]
 kizen roles update <name|uuid> [--name Y] [--group <name|uuid> ...] [--default/--no-default]  # --group REPLACES the set
 kizen roles delete <name|uuid>
-kizen permissions group-create --name X [--base default|clone] [--from <name|uuid>] [--settings-file f]
+kizen permissions group-create --name X [--base default|clone] [--source-group <name|uuid>] [--settings-file f]
 kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
 kizen permissions group-delete <name|uuid>
 

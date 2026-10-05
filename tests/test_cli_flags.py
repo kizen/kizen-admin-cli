@@ -14,10 +14,13 @@ from typer.testing import CliRunner
 
 import kizen_builder.cli as cli
 from kizen_builder.cli._shared import warn_renamed_flag
+from kizen_builder.tools import coderunner as code_tools
+from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools import smart_connectors as sc_tools
 from kizen_builder.tools.planners import activities as act_planners
 from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.planners import forms as form_planners
+from kizen_builder.tools.planners import permissions as perm_planners
 from kizen_builder.tools.plans import Plan
 
 # `--live` read as both "write real records" and "use the live script";
@@ -60,6 +63,9 @@ def _stub_renamed_flag_tools(monkeypatch) -> list:
         (field_planners, "plan_add_field_options"): plan,
         (act_planners, "plan_add_activity_field_options"): plan,
         (form_planners, "plan_add_form_field_options"): plan,
+        (perm_planners, "plan_create_permission_group"): plan,
+        (perm_tools, "describe_group"): {"id": "g1", "name": "Sales", "blocks": []},
+        (code_tools, "run_code_step"): {"raw": {"values": {}}, "error": None},
         (sc_tools, "plan_create_connector"): {"preview": {"name": "Orders"}},
         (sc_tools, "plan_add_seed"): {
             "connector_api_name": "c",
@@ -77,6 +83,7 @@ def _stub_renamed_flag_tools(monkeypatch) -> list:
             "payload": [],
         },
         (sc_tools, "build_webhook_sample"): {"path": "s.csv"},
+        (sc_tools, "run_connector"): {"output_files": []},
     }
     for (module, name), result in stubs.items():
 
@@ -85,12 +92,14 @@ def _stub_renamed_flag_tools(monkeypatch) -> list:
             return _result
 
         monkeypatch.setattr(module, name, fake)
+    monkeypatch.setattr(perm_tools, "resolve_group", lambda ref: {"id": f"id-{ref}"})
     return calls
 
 
 _SC = ["smart-connectors"]
 _SEEDS_ADD = [*_SC, "seeds", "add", "c", "--dry-run", "--object", "orders"]
 _WEBHOOK = [*_SC, "webhook-sample", "s.csv", "--body", "{}"]
+_GROUP_CREATE = ["permissions", "group-create", "--name", "N", "--base", "clone"]
 
 
 @pytest.mark.parametrize(
@@ -121,6 +130,14 @@ _WEBHOOK = [*_SC, "webhook-sample", "s.csv", "--body", "{}"]
          "--group is deprecated; use --filter-group."),
         (_WEBHOOK, ["--employee", "a@x.test"], ["-e", "a@x.test"],
          "-e is deprecated; use --employee."),
+        (["code", "test"], ["--declare-output", "x:n"], ["--output", "x:n"],
+         "--output is deprecated; use --declare-output."),
+        ([*_SC, "run"], ["--skip-sql"], ["--dry-run"],
+         "--dry-run is deprecated; use --skip-sql."),
+        ([*_GROUP_CREATE, "--dry-run"], ["--source-group", "Admin"],
+         ["--from", "Admin"], "--from is deprecated; use --source-group."),
+        (["permissions", "group", "Sales"], ["--field-permissions"], ["--fields"],
+         "--fields is deprecated; use --field-permissions."),
     ],
 )  # fmt: skip
 def test_old_flag_spellings_warn_and_behave_like_the_new_ones(

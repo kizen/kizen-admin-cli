@@ -1213,7 +1213,7 @@
  anything unrecognized defaults to `string` (it is NOT a raw                                        
  `field_type`: `integer` maps to number for you). See `--input` for                                 
  the full code table. For many inputs, use `--inputs-file` /                                        
- `--outputs-file` (JSON); `--input`/`--output` flags override                                       
+ `--outputs-file` (JSON); `--input`/`--declare-output` flags override                               
  same-named file entries. Add `--http-detail` / `-v` to see each                                    
  `kizen.api` call's request and response bodies when debugging.                                     
                                                                                                     
@@ -1222,30 +1222,31 @@
  start`).                                                                                           
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --script                <str>  Path to the script file. Omit to read from stdin.                 │
-│ --input                 <str>  An input: name=value:type (repeatable). type is a data_type name  │
-│                                or its short code — string/s, number/n, boolean/b, phone/p,       │
-│                                uuid/u (bare id), list/l ([{t,v},…] JSON), date/d (YYYY-MM-DD),   │
-│                                datetime/dt (ISO 8601), file/f (uuid); defaults to string. e.g.   │
-│                                --input n=21:number --input who=world:string. Overrides           │
-│                                same-named entries in --inputs-file.                              │
-│ --output                <str>  An output: name:type (repeatable). Declares the expected output   │
-│                                type (same names/codes as --input). e.g. --output doubled:number  │
-│                                --output greeting:string. Overrides --outputs-file.               │
-│ --inputs-file           <str>  JSON file of inputs for bulk runs: {"n": {"type": "number",       │
-│                                "value": 21}, …} (or a bare {"n": 21}). '-' reads stdin (only     │
-│                                when --script is a file). Individual --input flags override by    │
-│                                name.                                                             │
-│ --outputs-file          <str>  JSON file of output types: {"doubled": "number", "greeting":      │
-│                                "string"}. Individual --output flags override by name.            │
-│ --secret                <str>  Secret api-name to inject into the sandbox (repeatable). The      │
-│                                value lives in the env; only the name is passed.                  │
-│ --runtime               <str>  python-3-13 (default) or python-3-12.                             │
-│ --json                         Emit the raw response as JSON.                                    │
-│ --http-detail   -v             Expand each captured kizen.api call with its request and response │
-│                                bodies (failed calls expand automatically). Secrets stay          │
-│                                redacted; --json still has the full payload.                      │
-│ --help                         Show this message and exit.                                       │
+│ --script                  <str>  Path to the script file. Omit to read from stdin.               │
+│ --input                   <str>  An input: name=value:type (repeatable). type is a data_type     │
+│                                  name or its short code — string/s, number/n, boolean/b,         │
+│                                  phone/p, uuid/u (bare id), list/l ([{t,v},…] JSON), date/d      │
+│                                  (YYYY-MM-DD), datetime/dt (ISO 8601), file/f (uuid); defaults   │
+│                                  to string. e.g. --input n=21:number --input who=world:string.   │
+│                                  Overrides same-named entries in --inputs-file.                  │
+│ --declare-output          <str>  An output: name:type (repeatable). Declares the expected output │
+│                                  type (same names/codes as --input). e.g. --declare-output       │
+│                                  doubled:number --declare-output greeting:string. Overrides      │
+│                                  --outputs-file.                                                 │
+│ --inputs-file             <str>  JSON file of inputs for bulk runs: {"n": {"type": "number",     │
+│                                  "value": 21}, …} (or a bare {"n": 21}). '-' reads stdin (only   │
+│                                  when --script is a file). Individual --input flags override by  │
+│                                  name.                                                           │
+│ --outputs-file            <str>  JSON file of output types: {"doubled": "number", "greeting":    │
+│                                  "string"}. Individual --declare-output flags override by name.  │
+│ --secret                  <str>  Secret api-name to inject into the sandbox (repeatable). The    │
+│                                  value lives in the env; only the name is passed.                │
+│ --runtime                 <str>  python-3-13 (default) or python-3-12.                           │
+│ --json                           Emit the raw response as JSON.                                  │
+│ --http-detail     -v             Expand each captured kizen.api call with its request and        │
+│                                  response bodies (failed calls expand automatically). Secrets    │
+│                                  stay redacted; --json still has the full payload.               │
+│ --help                           Show this message and exit.                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: columns [OPTIONS] COMMAND [ARGS]...                                                         
@@ -2664,17 +2665,17 @@
  Show one permission group as a sectioned permission map (mirrors the UI).                          
                                                                                                     
  Each row shows a None / View / Create·Edit / Delete·All slider; positions the                      
- permission can't take are dimmed. `--fields` adds per-field rows.                                  
+ permission can't take are dimmed. `--field-permissions` adds per-field rows.                       
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    group      <str>  Permission group name or UUID. [required]                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --fields                 Include per-field permission rows (extra API calls).                    │
-│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
-│ --json                   Alias for --output json.                                                │
-│ --raw                    Emit the full Kizen API response as JSON.                               │
-│ --help                   Show this message and exit.                                             │
+│ --field-permissions                 Include per-field permission rows (extra API calls).         │
+│ --output             -o      <str>  Output format: table (default), json, or csv.                │
+│ --json                              Alias for --output json.                                     │
+│ --raw                               Emit the full Kizen API response as JSON.                    │
+│ --help                              Show this message and exit.                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: permissions group-create [OPTIONS]                                                          
@@ -2684,9 +2685,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ *  --name                   <str>  Permission group name. [required]                             │
 │    --base                   <str>  'default' = fresh group at Kizen default levels; 'clone' =    │
-│                                    copy --from.                                                  │
+│                                    copy --source-group.                                          │
 │                                    [default: default]                                            │
-│    --from                   <str>  Template group (name or UUID) for --base clone / shape        │
+│    --source-group           <str>  Template group (name or UUID) for --base clone / shape        │
 │                                    source.                                                       │
 │    --settings-file          <str>  JSON list of shaping ops applied after create                 │
 │                                    (object/field/section).                                       │
@@ -3684,10 +3685,10 @@
  data/output/. Needs the 'connectors' extra.                                                        
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --dir      -d      <str>  Connector working directory (from `pull`). [default: .]                │
-│ --dry-run                 Build the databases but skip running the user SQL.                     │
-│ --json                    Alias for --output json.                                               │
-│ --help                    Show this message and exit.                                            │
+│ --dir       -d      <str>  Connector working directory (from `pull`). [default: .]               │
+│ --skip-sql                 Build the databases but skip running the user SQL.                    │
+│ --json                     Alias for --output json.                                              │
+│ --help                     Show this message and exit.                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors scripts [OPTIONS] {connector}                                              

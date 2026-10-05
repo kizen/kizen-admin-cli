@@ -57,7 +57,7 @@ package's `__config.json` is built from.
 
 ```bash
 kizen smart-connectors pull <connector> [--dir] [--script draft|live] [--overwrite]
-kizen smart-connectors run  [--dir] [--dry-run]
+kizen smart-connectors run  [--dir] [--skip-sql]
 kizen smart-connectors push [--dir] [--publish] [--dry-run] [--yes]
 kizen smart-connectors add-input <file> [--dir]      # swap in local sample data
 ```

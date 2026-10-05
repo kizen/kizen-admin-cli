@@ -13,7 +13,14 @@ from rich.markup import escape
 from rich.table import Table
 
 from kizen_builder.api.client import KizenAPIError
-from kizen_builder.cli._shared import _short, app, cli_errors, console, err_console
+from kizen_builder.cli._shared import (
+    _short,
+    app,
+    cli_errors,
+    console,
+    err_console,
+    warn_renamed_flag,
+)
 from kizen_builder.tools import coderunner as code_tools
 
 code_app = typer.Typer(
@@ -48,7 +55,7 @@ def _parse_input_spec(spec: str) -> dict[str, Any]:
 
 
 def _parse_output_spec(spec: str) -> dict[str, Any]:
-    """Parse a `--output name:type` spec into {name, code}. Default string.
+    """Parse a `--declare-output name:type` spec into {name, code}. Default string.
 
     `type` is a friendly data_type name or a short code (resolved downstream).
     """
@@ -56,7 +63,9 @@ def _parse_output_spec(spec: str) -> dict[str, Any]:
     if not colon:
         name, code = spec, "s"
     if not name.strip():
-        raise typer.BadParameter(f"--output must be name[:type] (got {spec!r}).")
+        raise typer.BadParameter(
+            f"--declare-output must be name[:type] (got {spec!r})."
+        )
     return {"name": name.strip(), "code": code.strip() or "s"}
 
 
@@ -332,11 +341,13 @@ def code_test(
     ),
     outputs: list[str] = typer.Option(
         [],
-        "--output",
+        "--declare-output",
         help="An output: name:type (repeatable). Declares the expected output "
-        "type (same names/codes as --input). e.g. --output doubled:number "
-        "--output greeting:string. Overrides --outputs-file.",
+        "type (same names/codes as --input). e.g. --declare-output "
+        "doubled:number --declare-output greeting:string. Overrides "
+        "--outputs-file.",
     ),
+    outputs_old: list[str] = typer.Option([], "--output", hidden=True),
     inputs_file: str = typer.Option(
         None,
         "--inputs-file",
@@ -348,7 +359,7 @@ def code_test(
         None,
         "--outputs-file",
         help='JSON file of output types: {"doubled": "number", "greeting": '
-        '"string"}. Individual --output flags override by name.',
+        '"string"}. Individual --declare-output flags override by name.',
     ),
     secrets: list[str] = typer.Option(
         [],
@@ -385,7 +396,7 @@ def code_test(
     anything unrecognized defaults to `string` (it is NOT a raw
     `field_type`: `integer` maps to number for you). See `--input` for
     the full code table. For many inputs, use `--inputs-file` /
-    `--outputs-file` (JSON); `--input`/`--output` flags override
+    `--outputs-file` (JSON); `--input`/`--declare-output` flags override
     same-named file entries. Add `--http-detail` / `-v` to see each
     `kizen.api` call's request and response bodies when debugging.
 
@@ -393,6 +404,9 @@ def code_test(
     so it sits outside the plan/preview/confirm gate (like `automations
     start`).
     """
+    if outputs_old:
+        warn_renamed_flag("--output", "--declare-output")
+        outputs = [*outputs, *outputs_old]
     if script_file:
         try:
             script = Path(script_file).read_text()
@@ -414,7 +428,8 @@ def code_test(
             raise typer.Exit(code=2)
         script = sys.stdin.read()
 
-    # Merge: file entries first, then --input/--output flags override by name.
+    # Merge: file entries first, then --input/--declare-output flags override by
+    # name.
     input_map: dict[str, dict[str, Any]] = {}
     if inputs_file:
         if inputs_file == "-":

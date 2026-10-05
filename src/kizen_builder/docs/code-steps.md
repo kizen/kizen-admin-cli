@@ -70,7 +70,7 @@ confirmation.
 ```
 kizen code test --script my_step.py \
   --input n=21:number --input who=world:string \
-  --output doubled:number --output greeting:string \
+  --declare-output doubled:number --declare-output greeting:string \
   [--secret MY_API_KEY] [--runtime python-3-13]
 
 # many inputs → JSON files (mirrors what the code-step UI sends):
