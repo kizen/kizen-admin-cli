@@ -117,6 +117,31 @@ def _kept_seed_fields_ids(
     return ids or None
 
 
+def _lost_columns(columns: list[tuple[str, str | None]] | None) -> list[str] | None:
+    """The columns re-saving a seed as-is drops: those no longer mapping to a
+    live field, or None when it has no table to rebuild them from."""
+    return None if columns is None else [c for c, fid in columns if not fid]
+
+
+def _kept_seeds(
+    client: KizenClient,
+    seeds: list[dict[str, Any]],
+    seed_tables: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, list[str] | None]]:
+    """Wire bodies for the seeds a change re-saves untouched, plus, per seeded
+    object, what re-saving it drops (see `_lost_columns`)."""
+    wire: list[dict[str, Any]] = []
+    dropped: dict[str, list[str] | None] = {}
+    for seed in seeds:
+        columns = _seed_columns(client, seed, seed_tables)
+        wire.append(_seed_wire(seed, fields_ids=_kept_seed_fields_ids(columns)))
+        lost = _lost_columns(columns)
+        if lost is None or lost:
+            name = (seed.get("custom_object") or {}).get("name")
+            dropped[str(name or seed.get("custom_object_id"))] = lost
+    return wire, dropped
+
+
 def _seed_wire(
     seed: dict[str, Any], *, fields_ids: list[str] | None = None
 ) -> dict[str, Any]:
@@ -264,15 +289,22 @@ def plan_add_seed(
         )
         keeping = [s for s in existing if s is not replacing]
         seed_tables = (
-            _seed_tables_by_object_name(client, connector, detail) if keeping else {}
+            _seed_tables_by_object_name(client, connector, detail) if existing else {}
         )
-        keep = [
-            _seed_wire(
-                s,
-                fields_ids=_kept_seed_fields_ids(_seed_columns(client, s, seed_tables)),
-            )
-            for s in keeping
-        ]
+        keep, dropped = _kept_seeds(client, keeping, seed_tables)
+        fields_kept = False
+        if replacing:
+            current = _seed_columns(client, replacing, seed_tables)
+            lost: list[str] | None
+            if field_ids:
+                lost = [c for c, _ in current or [] if c not in field_names]
+            else:
+                field_ids = _kept_seed_fields_ids(current) or []
+                field_names = [c for c, fid in current or [] if fid]
+                fields_kept = bool(field_ids)
+                lost = _lost_columns(current)
+            if lost is None or lost:
+                dropped[object_name] = lost
         new_seed: dict[str, Any] = {
             "custom_object_id": object_id,
             "group_id": filter_group["id"] if filter_group else None,
@@ -299,9 +331,11 @@ def plan_add_seed(
             else ALL_RECORDS
         ),
         "fields": field_names or None,
+        "fields_kept": fields_kept,
         "view": f"kizen.{object_name}",
         "replacing": bool(replacing),
         "payload": keep + [new_seed],
+        "dropped_columns": dropped,
         "regenerate": regenerate,
         "script_id": draft.get("id"),
         "source_file_id": (detail.get("source_file") or {}).get("id"),
@@ -335,13 +369,7 @@ def plan_remove_seed(
         seed_tables = (
             _seed_tables_by_object_name(client, connector, detail) if keeping else {}
         )
-        keep = [
-            _seed_wire(
-                s,
-                fields_ids=_kept_seed_fields_ids(_seed_columns(client, s, seed_tables)),
-            )
-            for s in keeping
-        ]
+        keep, dropped = _kept_seeds(client, keeping, seed_tables)
 
     draft = detail.get("last_draft_script") or {}
     return {
@@ -351,6 +379,7 @@ def plan_remove_seed(
         "custom_object": object_name,
         "view": f"kizen.{object_name}",
         "payload": keep,
+        "dropped_columns": dropped,
         "regenerate": regenerate,
         "script_id": draft.get("id"),
         "source_file_id": (detail.get("source_file") or {}).get("id"),

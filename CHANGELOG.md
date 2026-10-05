@@ -105,8 +105,9 @@ called out explicitly under **Changed** or **Removed**.
   fewer records than the object has, e.g. "covers 5 of 7 records". `seeds list`
   shows such a seed's filter group as `all records` instead of `—`, and `pull`
   now exports its rows instead of warning you to hand-author the file. The
-  preview's `fields` line now says `kizen_id only` when no `--field` is given,
-  which is what the server actually exposes; it used to claim "all seedable".
+  preview's `fields` line now says `kizen_id only` when a new seed has no
+  `--field`, which is what the server actually exposes; it used to claim "all
+  seedable".
 
 ### Added
 
@@ -289,6 +290,15 @@ called out explicitly under **Changed** or **Removed**.
   `docs/specs/permission-group.md`.
 
 ### Fixed
+
+- **`smart-connectors seeds add` and `seeds remove` keep a seed's fields when
+  they re-save it.** Adding a seed for an object the connector already seeds,
+  without `--field`, used to narrow it to `kizen_id`; it now keeps the columns
+  the seed exposes (the preview says `kept from the current seed`). And
+  changing one seed no longer narrows another seed that exposes every field of
+  its object to `kizen_id`. When a re-save does drop columns, because
+  `--field` leaves some out, a field was deleted, or the seed isn't in the
+  script yet, the preview names them in a yellow `!` line.
 
 - **Specs accept every api_name Kizen itself produces.** An api_name that
   started with a digit or underscore (`1099_forms`), or that carried Kizen's
