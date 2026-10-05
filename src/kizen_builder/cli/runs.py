@@ -12,6 +12,7 @@ import typer
 from rich.table import Table
 
 from kizen_builder import output as out
+from kizen_builder.cli._mutations import _confirm_or_abort
 from kizen_builder.cli._run_render import (
     history_duration,
     print_wait_outcome,
@@ -290,54 +291,103 @@ def runs_logs(
 
 
 # ---------------------------------------------------------------------------
-# runs execution control — pause/resume/cancel/skip-and-resume/debug-*.
-# Confirm-free like `automations start`: these act on an execution's own
-# runtime state, not schema (standing decision — see CLAUDE.md). Confirmed
-# live (2026-07-22) for pause/resume/cancel; debug-* wired from
-# the public /api/docs/schema shapes but not live-exercised (see
-# tools/automations.py).
+# runs execution control — pause/resume/cancel/skip-and-resume/debug-*. Every
+# verb but `pause` asks first (`kizen docs show operating`, rule 3); pause
+# acts at once so a run can be stopped fast. Which verbs are confirmed live:
+# `kizen docs show automation-runtime`, § Controlling a run.
 # ---------------------------------------------------------------------------
+
+_YES_OPTION = typer.Option(
+    False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+)
+_RUN_JSON_OPTION = typer.Option(False, "--json", help="Emit the result as JSON.")
 
 
 def _run_execution_action(
-    execution_id: str, call: Callable[[], dict[str, Any]]
+    execution_id: str,
+    call: Callable[[], dict[str, Any]],
+    *,
+    json_out: bool,
+    prompt: str | None = None,
+    yes: bool = False,
+    details: dict[str, str] | None = None,
 ) -> None:
+    """Act on one run. With a `prompt`, read the run first, show it with
+    `details`, and confirm; without one (`pause`), act immediately."""
     _require_run_uuid(execution_id)
+    if prompt is not None and not yes:
+        with cli_errors():
+            run = auto_tools.get_execution(execution_id)
+        target = err_console if json_out else console
+        target.print(
+            f"[bold]{run.get('automation_api_name')}[/bold] run {execution_id}  "
+            f"[dim](status {run.get('status')})[/dim]"
+        )
+        for label, value in (details or {}).items():
+            target.print(f"  {label}: {value}")
+        _confirm_or_abort(
+            prompt,
+            yes=False,
+            hint=f"Check it with `kizen automations runs view {execution_id}`, "
+            "then re-run with --yes.",
+        )
     with cli_errors(LookupError):
         result = call()
-    console.print(
-        f"[green]ok[/green] — {execution_id}: "
-        f"{result['status_before']!r} → {result['status_after']!r}"
-    )
+    if json_out:
+        typer.echo(json.dumps(result, indent=2, default=str))
+    elif "result" in result:
+        console.print(
+            f"[green]ok[/green] — {json.dumps(result['result'], indent=2, default=str)}"
+        )
+    else:
+        console.print(
+            f"[green]ok[/green] — {execution_id}: "
+            f"{result['status_before']!r} → {result['status_after']!r}"
+        )
 
 
 @runs_app.command("pause")
 def runs_pause(
     execution_id: str = typer.Argument(..., help="Run (execution) UUID."),
+    json_out: bool = _RUN_JSON_OPTION,
 ) -> None:
-    """Pause a running execution."""
+    """Pause a running execution. Acts immediately; no confirmation."""
     _run_execution_action(
-        execution_id, lambda: auto_tools.pause_execution(execution_id)
+        execution_id,
+        lambda: auto_tools.pause_execution(execution_id),
+        json_out=json_out,
     )
 
 
 @runs_app.command("resume")
 def runs_resume(
     execution_id: str = typer.Argument(..., help="Run (execution) UUID."),
+    yes: bool = _YES_OPTION,
+    json_out: bool = _RUN_JSON_OPTION,
 ) -> None:
     """Resume a paused execution."""
     _run_execution_action(
-        execution_id, lambda: auto_tools.resume_execution(execution_id)
+        execution_id,
+        lambda: auto_tools.resume_execution(execution_id),
+        json_out=json_out,
+        prompt="Resume this run?",
+        yes=yes,
     )
 
 
 @runs_app.command("cancel")
 def runs_cancel(
     execution_id: str = typer.Argument(..., help="Run (execution) UUID."),
+    yes: bool = _YES_OPTION,
+    json_out: bool = _RUN_JSON_OPTION,
 ) -> None:
     """Cancel an execution. Irreversible."""
     _run_execution_action(
-        execution_id, lambda: auto_tools.cancel_execution(execution_id)
+        execution_id,
+        lambda: auto_tools.cancel_execution(execution_id),
+        json_out=json_out,
+        prompt="Cancel this run? It can't be undone.",
+        yes=yes,
     )
 
 
@@ -352,25 +402,36 @@ def runs_skip_and_resume(
         "--branch",
         help="Branch to continue on after skipping ('yes'/'no'), if applicable.",
     ),
+    yes: bool = _YES_OPTION,
+    json_out: bool = _RUN_JSON_OPTION,
 ) -> None:
     """Resume an execution paused on a step failure by skipping that step."""
-    _require_run_uuid(execution_id)
-    with cli_errors(LookupError):
-        result = auto_tools.skip_and_resume_execution(
+    _run_execution_action(
+        execution_id,
+        lambda: auto_tools.skip_and_resume_execution(
             execution_id, skip_step, branch or None
-        )
-    console.print(
-        f"[green]ok[/green] — {execution_id}: "
-        f"{result['status_before']!r} → {result['status_after']!r}"
+        ),
+        json_out=json_out,
+        prompt="Skip this step and resume the run? It can't be undone.",
+        yes=yes,
+        details={"skip step": skip_step, **({"branch": branch} if branch else {})},
     )
 
 
 @runs_app.command("debug-sendit")
 def runs_debug_sendit(
     execution_id: str = typer.Argument(..., help="Run (execution) UUID."),
+    yes: bool = _YES_OPTION,
+    json_out: bool = _RUN_JSON_OPTION,
 ) -> None:
     """Run a debug-mode execution to completion."""
-    _run_execution_action(execution_id, lambda: auto_tools.debug_sendit(execution_id))
+    _run_execution_action(
+        execution_id,
+        lambda: auto_tools.debug_sendit(execution_id),
+        json_out=json_out,
+        prompt="Run this debug execution to completion? It can't be undone.",
+        yes=yes,
+    )
 
 
 @runs_app.command("debug-rerun")
@@ -379,13 +440,17 @@ def runs_debug_rerun(
     step: str = typer.Option(
         ..., "--step", help="Step UUID to re-execute (from `runs view`)."
     ),
+    yes: bool = _YES_OPTION,
+    json_out: bool = _RUN_JSON_OPTION,
 ) -> None:
     """Re-execute one step; no subsequent steps are scheduled (history-only replay)."""
-    _require_run_uuid(execution_id)
-    with cli_errors(LookupError):
-        result = auto_tools.debug_rerun(execution_id, step)
-    console.print(
-        f"[green]ok[/green] — {json.dumps(result['result'], indent=2, default=str)}"
+    _run_execution_action(
+        execution_id,
+        lambda: auto_tools.debug_rerun(execution_id, step),
+        json_out=json_out,
+        prompt="Re-execute this step? It can't be undone.",
+        yes=yes,
+        details={"step": step},
     )
 
 
@@ -395,13 +460,17 @@ def runs_debug_restart(
     step: str = typer.Option(
         ..., "--step", help="Step UUID to restart from (from `runs view`)."
     ),
+    yes: bool = _YES_OPTION,
+    json_out: bool = _RUN_JSON_OPTION,
 ) -> None:
     """Restart an execution from a step; subsequent steps ARE scheduled (unlike debug-rerun)."""
-    _require_run_uuid(execution_id)
-    with cli_errors(LookupError):
-        result = auto_tools.debug_restart(execution_id, step)
-    console.print(
-        f"[green]ok[/green] — {json.dumps(result['result'], indent=2, default=str)}"
+    _run_execution_action(
+        execution_id,
+        lambda: auto_tools.debug_restart(execution_id, step),
+        json_out=json_out,
+        prompt="Restart this run from this step? Every later step runs too.",
+        yes=yes,
+        details={"step": step},
     )
 
 
@@ -415,11 +484,19 @@ def runs_debug_step(
     branch: str = typer.Option(
         "", "--branch", help="Branch to continue on ('yes'/'no'), if applicable."
     ),
+    yes: bool = _YES_OPTION,
+    json_out: bool = _RUN_JSON_OPTION,
 ) -> None:
     """Skip or execute one step of a debug-mode execution."""
-    _require_run_uuid(execution_id)
-    with cli_errors(LookupError):
-        result = auto_tools.debug_step(execution_id, action, history_id, branch or None)
-    console.print(
-        f"[green]ok[/green] — {json.dumps(result['result'], indent=2, default=str)}"
+    _run_execution_action(
+        execution_id,
+        lambda: auto_tools.debug_step(execution_id, action, history_id, branch or None),
+        json_out=json_out,
+        prompt=f"Apply --action {action} to this step? It can't be undone.",
+        yes=yes,
+        details={
+            "history": history_id,
+            "action": action,
+            **({"branch": branch} if branch else {}),
+        },
     )

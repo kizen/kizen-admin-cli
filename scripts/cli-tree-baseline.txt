@@ -4,7 +4,8 @@
  Kizen Admin CLI — drive a Kizen environment from the conversation. The working directory's         
  .kizen/profile pin selects the environment. Read commands are safe. Mutation verbs (create/update) 
  build a plan from live state, show it, and confirm before applying; --dry-run previews without     
- applying.                                                                                          
+ applying. Commands that execute live (`start`, `runs`, `roundtrip --execute`, `code test`) ask     
+ first, except `runs pause`.                                                                        
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --profile,--env       -p,-e      <str>  Profile to target. Normally the working directory's      │
@@ -57,8 +58,9 @@
 │                   from scratch runs create → set-input → (SQL loop) → generate-sample → push     │
 │                   --publish → configure-flow → activate → start-flow.                            │
 │ code              Unit-test code_step scripts in the live sandbox via `POST                      │
-│                   /api/coderunner/run`. Runs standalone — no automation, no record, nothing      │
-│                   created in the env — so it's confirm-free like `automations start`.            │
+│                   /api/coderunner/run`. Runs your script in the same Lambda as a real            │
+│                   `code_step`; `kizen.api` calls in it use real credentials and can write live   │
+│                   data. Asks y/N first (`--yes` skips).                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  New here? Run `kizen docs show operating` before making changes — it covers the approval gate and  
@@ -732,13 +734,16 @@
  Translates the live automation into a PUT payload and validates the                                
  step graph. With --execute, PUTs the payload unchanged, re-fetches, and                            
  reports semantic drift — an empty diff means the translator is faithful                            
- for every step/trigger type in this automation.                                                    
+ for every step/trigger type in this automation. Writes live: asks to                               
+ confirm unless --yes, after a preview that PUTs nothing.                                           
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name. [required]                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --execute  -x        PUT the translated payload back (intended no-op) and diff the result.       │
+│                      Writes live: asks to confirm unless --yes.                                  │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit full result as JSON.                                                   │
 │ --payload            Print the translated PUT payload.                                           │
 │ --help               Show this message and exit.                                                 │
@@ -767,7 +772,7 @@
 │                  other per-step diagnostic detail `runs view`'s Steps table has no column        │
 │                  for). No new API call: reads the same step history `runs view` already          │
 │                  fetches.                                                                        │
-│ pause            Pause a running execution.                                                      │
+│ pause            Pause a running execution. Acts immediately; no confirmation.                   │
 │ resume           Resume a paused execution.                                                      │
 │ cancel           Cancel an execution. Irreversible.                                              │
 │ skip-and-resume  Resume an execution paused on a step failure by skipping that step.             │
@@ -786,7 +791,9 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                      │
+│ --yes   -y        Skip the y/N confirmation prompt.                                              │
+│ --json            Emit the result as JSON.                                                       │
+│ --help            Show this message and exit.                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs debug-rerun [OPTIONS] {execution_id}                                       
@@ -797,8 +804,10 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --step        <str>  Step UUID to re-execute (from `runs view`). [required]                   │
-│    --help               Show this message and exit.                                              │
+│ *  --step          <str>  Step UUID to re-execute (from `runs view`). [required]                 │
+│    --yes   -y             Skip the y/N confirmation prompt.                                      │
+│    --json                 Emit the result as JSON.                                               │
+│    --help                 Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs debug-restart [OPTIONS] {execution_id}                                     
@@ -809,8 +818,10 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --step        <str>  Step UUID to restart from (from `runs view`). [required]                 │
-│    --help               Show this message and exit.                                              │
+│ *  --step          <str>  Step UUID to restart from (from `runs view`). [required]               │
+│    --yes   -y             Skip the y/N confirmation prompt.                                      │
+│    --json                 Emit the result as JSON.                                               │
+│    --help                 Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs debug-sendit [OPTIONS] {execution_id}                                      
@@ -821,7 +832,9 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                      │
+│ --yes   -y        Skip the y/N confirmation prompt.                                              │
+│ --json            Emit the result as JSON.                                                       │
+│ --help            Show this message and exit.                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs debug-step [OPTIONS] {execution_id}                                        
@@ -832,10 +845,12 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --history        <str>  History-row id (from `runs view`). [required]                         │
-│ *  --action         <str>  One of: execute, skip, debug. [required]                              │
-│    --branch         <str>  Branch to continue on ('yes'/'no'), if applicable.                    │
-│    --help                  Show this message and exit.                                           │
+│ *  --history          <str>  History-row id (from `runs view`). [required]                       │
+│ *  --action           <str>  One of: execute, skip, debug. [required]                            │
+│    --branch           <str>  Branch to continue on ('yes'/'no'), if applicable.                  │
+│    --yes      -y             Skip the y/N confirmation prompt.                                   │
+│    --json                    Emit the result as JSON.                                            │
+│    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs list [OPTIONS] {api_name}                                                  
@@ -876,12 +891,13 @@
                                                                                                     
  Usage: automations runs pause [OPTIONS] {execution_id}                                             
                                                                                                     
- Pause a running execution.                                                                         
+ Pause a running execution. Acts immediately; no confirmation.                                      
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --json          Emit the result as JSON.                                                         │
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -893,7 +909,9 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                      │
+│ --yes   -y        Skip the y/N confirmation prompt.                                              │
+│ --json            Emit the result as JSON.                                                       │
+│ --help            Show this message and exit.                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs skip-and-resume [OPTIONS] {execution_id}                                   
@@ -904,9 +922,11 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --skip-step        <str>  Step UUID to skip (from `runs view`). [required]                    │
-│    --branch           <str>  Branch to continue on after skipping ('yes'/'no'), if applicable.   │
-│    --help                    Show this message and exit.                                         │
+│ *  --skip-step          <str>  Step UUID to skip (from `runs view`). [required]                  │
+│    --branch             <str>  Branch to continue on after skipping ('yes'/'no'), if applicable. │
+│    --yes        -y             Skip the y/N confirmation prompt.                                 │
+│    --json                      Emit the result as JSON.                                          │
+│    --help                      Show this message and exit.                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs view [OPTIONS] {execution_id}                                              
@@ -965,10 +985,8 @@
  contact automations and record_id otherwise; it is optional for global                             
  (record-less) automations and required for record-based ones.                                      
                                                                                                     
- Deliberately confirm-free: this is a runtime action (fire an existing                              
- automation on a record), not a schema mutation, so it sits outside the                             
- plan/preview/confirm gate that guards create/update. That is a standing                            
- decision, not an oversight.                                                                        
+ Runs live outside the plan gate and can't be undone, so it asks y/N                                
+ first (`--yes` skips). The rule: `kizen docs show operating`, rule 3.                              
                                                                                                     
  `--wait` blocks until the run finishes, printing each new step's status                            
  the moment it appears (a dim heartbeat during a real gap between steps —                           
@@ -1004,6 +1022,7 @@
 │ --show-logs                                Print each new step's detailed_log once that step     │
 │                                            finishes — a code_step's log is only available then,  │
 │                                            not while it's still running. Implies --wait.         │
+│ --yes            -y                        Skip the y/N confirmation prompt.                     │
 │ --json                                     Emit JSON.                                            │
 │ --help                                     Show this message and exit.                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -1186,9 +1205,9 @@
                                                                                                     
  Usage: code [OPTIONS] COMMAND [ARGS]...                                                            
                                                                                                     
- Unit-test code_step scripts in the live sandbox via `POST /api/coderunner/run`. Runs standalone —  
- no automation, no record, nothing created in the env — so it's confirm-free like `automations      
- start`.                                                                                            
+ Unit-test code_step scripts in the live sandbox via `POST /api/coderunner/run`. Runs your script   
+ in the same Lambda as a real `code_step`; `kizen.api` calls in it use real credentials and can     
+ write live data. Asks y/N first (`--yes` skips).                                                   
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -1217,9 +1236,10 @@
  same-named file entries. Add `--http-detail` / `-v` to see each                                    
  `kizen.api` call's request and response bodies when debugging.                                     
                                                                                                     
- Confirm-free: this executes sandboxed code and creates nothing in the env,                         
- so it sits outside the plan/preview/confirm gate (like `automations                                
- start`).                                                                                           
+ Runs your script in the same Lambda as a real `code_step`; `kizen.api`                             
+ calls in it use real credentials and can write live data. Asks y/N first                           
+ (`--yes` skips). A script or `--inputs-file -` read from stdin leaves                              
+ nothing to answer the prompt with, so it needs `--yes`.                                            
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --script                <str>  Path to the script file. Omit to read from stdin.                 │
@@ -1241,6 +1261,7 @@
 │ --secret                <str>  Secret api-name to inject into the sandbox (repeatable). The      │
 │                                value lives in the env; only the name is passed.                  │
 │ --runtime               <str>  python-3-13 (default) or python-3-12.                             │
+│ --yes           -y             Skip the y/N confirmation prompt.                                 │
 │ --json                         Emit the raw response as JSON.                                    │
 │ --http-detail   -v             Expand each captured kizen.api call with its request and response │
 │                                bodies (failed calls expand automatically). Secrets stay          │
