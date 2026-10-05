@@ -194,7 +194,8 @@ wire dialect, and the quirks that bite — lives in
 - `stop_execution` needs no config block — the planner emits the empty one.
 - A type not in the wired list raises `PlanError` — add a builder following
   `_STEP_BUILDERS` / `_TRIGGER_BUILDERS`. Config models are `extra="allow"`, so
-  they round-trip the richer shapes returned by `kizen automations get`.
+  they round-trip the richer shapes returned by `kizen automations get`; a key
+  the type's builder doesn't read is still a plan error.
 - Condition `filter_config` uses the shared filter DSL — the same one
   `records list --filter` and saved views take. `kizen docs show filters` has
   both layers (the friendly DSL and the wire form it resolves to), the per-type

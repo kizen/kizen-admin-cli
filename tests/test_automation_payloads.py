@@ -7,19 +7,25 @@ field_ref resolution, and the unsupported-type error contract.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from kizen_builder.models.spec import AutomationDef
 from kizen_builder.tools.planners.automations import (
+    _STEP_BUILDERS,
+    _TRIGGER_BUILDERS,
     LiveContext,
     _block_field_for,
     _build_automation_payload,
+    _reject_unhonoured_keys,
     diff_automation,
     plan_create_automation,
     plan_update_automation,
 )
 from kizen_builder.tools.plans import PlanError
-from tests.conftest import load_fixture
+from tests import builder_keys
+from tests.conftest import FIXTURES, load_fixture
 
 
 def _build(spec: dict) -> dict:
@@ -2243,6 +2249,11 @@ def test_no_fan_out_warning_for_branch_or_condition_children(patch_live_lookups,
     assert "warnings" not in plan_create_automation(spec).operations[0].preview
 
 
+# ---------------------------------------------------------------------------
+# Honoured keys: a spec key the builder doesn't read is a plan-time error
+# ---------------------------------------------------------------------------
+
+
 def _one_step_spec(step_type: str, block: dict) -> dict:
     return {
         "api_name": "honoured_test",
@@ -2261,6 +2272,63 @@ def _one_step_spec(step_type: str, block: dict) -> dict:
     }
 
 
+_CRE_WITH_FIELDS_TO_SET = {
+    "target_object": "patients",
+    "new_entity_name": "Follow-up",
+    "fields_to_set": {"status": "open"},
+}
+
+
+def test_unread_step_key_is_a_plan_error(patch_live_lookups):
+    """`fields_to_set` exists nowhere in the planner and on no Kizen
+    environment: it used to plan, apply and report success without reaching
+    the wire."""
+    spec = _one_step_spec("create_related_entity", _CRE_WITH_FIELDS_TO_SET)
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    msg = str(e.value)
+    assert "step 'only' action_create_related_entity" in msg
+    assert "fields_to_set" in msg
+    assert "target_custom_object" in msg  # the honoured set is listed
+
+
+def test_unread_trigger_key_is_a_plan_error(patch_live_lookups):
+    spec = {
+        **_one_step_spec("delay", {"days": 1}),
+        "triggers": [
+            {
+                "trigger_type": "activity_logged",
+                "order": 1,
+                "trigger_activity_logged": {"activity_type_name": "Call"},
+            }
+        ],
+    }
+    with pytest.raises(PlanError, match="trigger_activity_logged: activity_type_name"):
+        _build(spec)
+
+
+def test_pass_through_builders_accept_any_key(patch_live_lookups):
+    """`delay` forwards its whole block, so the CLI drops nothing."""
+    payload = _build(_one_step_spec("delay", {"days": 1, "not_a_delay_key": 2}))
+    assert payload["steps"][0]["step_delay"]["not_a_delay_key"] == 2
+
+
+@pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
+def test_unread_key_fails_before_the_plan_renders(patch_live_lookups, flags):
+    from typer.testing import CliRunner
+
+    import kizen_builder.cli as cli
+
+    spec = _one_step_spec("create_related_entity", _CRE_WITH_FIELDS_TO_SET)
+    result = CliRunner().invoke(
+        cli.app, ["automations", "create", *flags], input=json.dumps(spec)
+    )
+    assert result.exit_code == 1
+    assert "plan error:" in result.stderr
+    assert "fields_to_set" in result.stderr
+    assert result.stdout == ""
+
+
 def test_create_related_entity_reads_target_object_as_target_custom_object(
     patch_live_lookups,
 ):
@@ -2271,3 +2339,90 @@ def test_create_related_entity_reads_target_object_as_target_custom_object(
     )
     action = _build(spec)["steps"][0]["action_create_related_entity"]
     assert action["target_custom_object"] == patients["id"]
+
+
+def test_every_wired_builder_declares_its_keys():
+    undeclared = [
+        f"{kind} {name}"
+        for kind, registry in (("step", _STEP_BUILDERS), ("trigger", _TRIGGER_BUILDERS))
+        for name, builder in registry.items()
+        if not hasattr(builder, "honoured_keys")
+    ]
+    assert undeclared == [], (
+        f"declare each builder's keys with @honours(...) or @honours_all: {undeclared}"
+    )
+
+
+@pytest.mark.parametrize(
+    "builder",
+    sorted(
+        {
+            b
+            for b in [*_STEP_BUILDERS.values(), *_TRIGGER_BUILDERS.values()]
+            if b.honoured_keys is not None
+        },
+        key=lambda b: b.__name__,
+    ),
+    ids=lambda b: b.__name__,
+)
+def test_declared_keys_match_what_the_builder_reads(builder):
+    """A key read but not declared is rejected although it works; a key
+    declared but no longer read slips through and is dropped."""
+    assert set(builder.honoured_keys) == builder_keys.declarable(builder.__name__)
+
+
+# No captured fixture has these; the test below re-plans their output instead.
+_UNCAPTURED = {"notify_member_via_email", "notify_member_via_text"}
+
+
+def test_builder_output_passes_the_check():
+    """Idempotence: every wire block the translator emits from a captured
+    automation — what `steps get` and `automations show` print — re-plans
+    without a rejected key, so a copied block can be re-applied."""
+    from kizen_builder.translate import live_to_payload
+
+    checked: set[str] = set()
+    for path in sorted((FIXTURES / "automations").glob("*.raw.json")):
+        payload = live_to_payload(json.loads(path.read_text()))
+        for s in payload["steps"]:
+            builder = _STEP_BUILDERS.get(s["type"])
+            if builder is not None:
+                block = s.get(_block_field_for(s["type"])) or {}
+                _reject_unhonoured_keys(builder, block, f"{path.name} {s['key']}")
+                checked.add(s["type"])
+        for t in payload["triggers"]:
+            builder = _TRIGGER_BUILDERS.get(t["type"])
+            if builder is not None:
+                block = t.get(f"trigger_{t['type']}") or {}
+                _reject_unhonoured_keys(builder, block, f"{path.name} {t['key']}")
+    declared = {t for t, b in _STEP_BUILDERS.items() if b.honoured_keys is not None}
+    assert declared - checked == _UNCAPTURED
+
+
+@pytest.mark.parametrize(
+    "step_type, block",
+    [
+        (
+            "notify_member_via_email",
+            {
+                "team_member": {"type": "owner"},
+                "cc_team_member": {"type": "employee", "employee": {"id": "e-1"}},
+                "email_template_id": "11111111-1111-1111-1111-111111111111",
+            },
+        ),
+        (
+            "notify_member_via_text",
+            {
+                "team_member": {"type": "employee", "employee_id": "e-1"},
+                "content": "Reminder",
+                "message_template_id": "22222222-2222-2222-2222-222222222222",
+            },
+        ),
+    ],
+)
+def test_uncaptured_builder_output_replans_unchanged(
+    patch_live_lookups, step_type, block
+):
+    cfg = _block_field_for(step_type)
+    wire = _build(_one_step_spec(step_type, block))["steps"][0][cfg]
+    assert _build(_one_step_spec(step_type, wire))["steps"][0][cfg] == wire

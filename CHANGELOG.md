@@ -16,6 +16,25 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Breaking: an automation spec key the planner doesn't read is now a plan
+  error.** A step or trigger config block key that the CLI used to drop
+  silently fails `automations create`/`update` and `steps add` before the
+  plan renders, including under `--dry-run --json`, with a `plan error:`
+  line naming the key and the keys that block does read. Before, the
+  automation applied without it and reported success. For example,
+  `create_related_entity`'s `fields_to_set` never reached Kizen. A spec that
+  applied cleanly before can fail after upgrading: remove the key, or rename
+  it to the one the error lists. Dead keys removed from the config models,
+  so they now fail the same way: `owner`, `relationship_field_ref` and
+  `relationship_field_id` on `create_related_entity`; `operands`, `operator`
+  and `output` on `math_operator`; `update_mode` and `field_updates` on
+  `modify_related_entities`; `field_ref` on `assign_team_member`;
+  `entity_id_source` on `start_automation`; `email_template_name`,
+  `email_template_id`, `relationship_field_ref` and `relationship_field_id`
+  on `send_related_contact_email`; `activity_type_name` on the
+  `activity_logged` trigger. `create_related_entity` now reads
+  `target_object` as the target object, so `target_custom_object` no longer
+  needs to repeat it.
 - **Breaking: `records delete` is removed; `records archive` is the one way
   to remove records.** Kizen's delete was always an archive (same restorable
   state, same id), so the two commands did the same thing. `records archive`
