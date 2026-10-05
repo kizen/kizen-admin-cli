@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
 from typing import Any
 
 import typer
 
-from kizen_builder.cli._mutations import _run_mutation
+from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import app, err_console
 from kizen_builder.tools.planners import fields as field_planners
 
@@ -138,21 +135,10 @@ def fields_create(
         )
         raise typer.Exit(code=2)
 
-    from_stdin = False
-    if spec_file:
-        spec_text = Path(spec_file).read_text()
-    elif not api_name and not sys.stdin.isatty():
-        spec_text = sys.stdin.read()
-        from_stdin = True
-    else:
-        spec_text = ""
-
-    if spec_text:
-        try:
-            spec = json.loads(spec_text)
-        except json.JSONDecodeError as e:
-            err_console.print(f"[red]error parsing JSON:[/red] {e}")
-            raise typer.Exit(code=2) from e
+    spec, from_stdin = (
+        (None, False) if api_name else _read_spec(spec_file, optional=True)
+    )
+    if spec is not None:
         pairs = _normalize_fields_spec(spec, category)
         _run_mutation(
             lambda: field_planners.plan_create_fields(object_api_name, pairs),

@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.markup import escape
 
 from kizen_builder import output as out
-from kizen_builder.cli._shared import cli_errors, console, err_console
+from kizen_builder.cli._shared import (
+    cli_errors,
+    console,
+    err_console,
+    parse_json,
+    read_json_file,
+    read_text_file,
+)
 from kizen_builder.cli.smart_connectors import (
     _connector_errors,
     _preview_and_confirm,
@@ -52,9 +58,7 @@ def smart_connectors_webhook_sample(
     """
     payload = body
     if body.startswith("@"):
-        payload = Path(body[1:]).read_text()
-    # `_connector_errors` renders a FileNotFoundError as the same `error: <e>`
-    # line the separate handler here used to, so both collapse into one.
+        payload = read_text_file(body[1:], "--body")
     with _connector_errors(FileNotFoundError):
         result = sc_tools.build_webhook_sample(
             dest,
@@ -108,12 +112,10 @@ def smart_connectors_send_webhook(
     cadence rather than processed per request, so expect up to a full cadence
     interval before an execution shows up in `executions list`.
     """
-    text = Path(body[1:]).read_text() if body.startswith("@") else body
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError as e:
-        err_console.print(f"[red]error parsing JSON body:[/red] {e}")
-        raise typer.Exit(code=2) from e
+    if body.startswith("@"):
+        parsed = read_json_file(body[1:], "--body")
+    else:
+        parsed = parse_json(body, "--body")
 
     params: dict[str, str] = {}
     for item in query:

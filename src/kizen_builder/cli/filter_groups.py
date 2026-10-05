@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -18,6 +16,8 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    parse_json,
+    read_text_file,
 )
 from kizen_builder.tools import saved_views as sv_tools
 from kizen_builder.tools.planners import saved_views as sv_planners
@@ -32,14 +32,12 @@ def _load_filter_spec(filter_json: str, filter_file: str) -> dict[str, Any] | No
     if filter_json and filter_file:
         err_console.print("[red]error:[/red] pass --filter or --filter-file, not both.")
         raise typer.Exit(code=2)
-    text = Path(filter_file).read_text() if filter_file else filter_json
+    text = read_text_file(filter_file, "--filter-file") if filter_file else filter_json
     if not text:
         return None
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        err_console.print(f"[red]error parsing filter JSON:[/red] {e}")
-        raise typer.Exit(code=2) from e
+    return parse_json(
+        text, f"--filter-file {filter_file}" if filter_file else "--filter"
+    )
 
 
 @filter_groups_app.command("list")

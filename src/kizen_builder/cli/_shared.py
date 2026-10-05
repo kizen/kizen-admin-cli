@@ -9,7 +9,9 @@ package can import this one.
 from __future__ import annotations
 
 import contextlib
+import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -81,6 +83,32 @@ def cli_errors(*also: type[Exception]) -> Iterator[None]:
     except _ALWAYS_EXPECTED + also as e:
         _print_error(e)
         raise typer.Exit(code=1) from e
+
+
+def read_text_file(path: str, flag: str) -> str:
+    """Read a user-named file. A missing or unreadable one prints
+    `error: <flag> <path>: <reason>` and exits 2."""
+    try:
+        return Path(path).read_text()
+    except (OSError, UnicodeDecodeError) as e:
+        reason = getattr(e, "strerror", None) or str(e)
+        _print_error(f"{flag} {path}: {reason}")
+        raise typer.Exit(code=2) from e
+
+
+def parse_json(text: str, source: str) -> Any:
+    """Parse user-supplied JSON. Malformed input prints
+    `error: <source>: invalid JSON: <msg>` and exits 2."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        _print_error(f"{source}: invalid JSON: {e}")
+        raise typer.Exit(code=2) from e
+
+
+def read_json_file(path: str, flag: str) -> Any:
+    """`read_text_file`, then `parse_json`."""
+    return parse_json(read_text_file(path, flag), f"{flag} {path}")
 
 
 def _version_callback(value: bool) -> None:

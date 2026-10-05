@@ -4,16 +4,13 @@ builds both apps.
 
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
 from typing import Any, Literal
 
 import typer
 from rich.table import Table
 
 from kizen_builder import output as out
-from kizen_builder.cli._mutations import _run_mutation
+from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
@@ -22,6 +19,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    read_json_file,
 )
 from kizen_builder.cli.forms_fields import add_field_commands
 from kizen_builder.tools import forms as form_tools
@@ -228,21 +226,10 @@ def _add_write_commands(
             )
             raise typer.Exit(code=2)
 
-        from_stdin = False
-        if spec_file:
-            spec_text = Path(spec_file).read_text()
-        elif not name and not sys.stdin.isatty():
-            spec_text = sys.stdin.read()
-            from_stdin = True
-        else:
-            spec_text = ""
-
-        if spec_text:
-            try:
-                spec = json.loads(spec_text)
-            except json.JSONDecodeError as e:
-                err_console.print(f"[red]error parsing JSON:[/red] {e}")
-                raise typer.Exit(code=2) from e
+        spec, from_stdin = (
+            (None, False) if name else _read_spec(spec_file, optional=True)
+        )
+        if spec is not None:
             _run_mutation(
                 lambda: form_planners.plan_create_form(
                     spec, base_path=base_path, kind=kind
@@ -325,11 +312,7 @@ def _add_write_commands(
         """Update one form/survey. Only the flags you set are changed."""
         changes: dict[str, Any] = {}
         if spec_file:
-            try:
-                changes = json.loads(Path(spec_file).read_text())
-            except json.JSONDecodeError as e:
-                err_console.print(f"[red]error parsing JSON:[/red] {e}")
-                raise typer.Exit(code=2) from e
+            changes = read_json_file(spec_file, "--spec-file")
         if name:
             changes["name"] = name
         if description:
@@ -384,23 +367,7 @@ def _add_write_commands(
         spec shape. A trailing "Thank You" page is added automatically unless
         the spec already includes a non-form page.
         """
-        from_stdin = False
-        if spec_file:
-            spec_text = Path(spec_file).read_text()
-        elif not sys.stdin.isatty():
-            spec_text = sys.stdin.read()
-            from_stdin = True
-        else:
-            err_console.print(
-                "[red]error:[/red] pass --spec-file or pipe a JSON spec via stdin."
-            )
-            raise typer.Exit(code=2)
-
-        try:
-            spec = json.loads(spec_text)
-        except json.JSONDecodeError as e:
-            err_console.print(f"[red]error parsing JSON:[/red] {e}")
-            raise typer.Exit(code=2) from e
+        spec, from_stdin = _read_spec(spec_file, what=f"{kind} UI")
 
         with cli_errors(LookupError, ValueError):
             built = form_tools.build_form_ui_from_spec(

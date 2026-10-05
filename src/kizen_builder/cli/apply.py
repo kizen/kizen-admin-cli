@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import typer
 from rich.markup import escape
@@ -14,7 +13,13 @@ from kizen_builder.cli._mutations import (
     _render_plan,
     _render_result,
 )
-from kizen_builder.cli._shared import app, cli_errors, console, err_console
+from kizen_builder.cli._shared import (
+    app,
+    cli_errors,
+    console,
+    err_console,
+    read_text_file,
+)
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.plans import PlanError
 
@@ -40,7 +45,7 @@ def apply_cmd(
     re-checking live state; re-run the original verb to re-plan.
     """
     if plan_file:
-        text = Path(plan_file).read_text()
+        text = read_text_file(plan_file, "--plan-file")
     else:
         if sys.stdin.isatty():
             err_console.print(

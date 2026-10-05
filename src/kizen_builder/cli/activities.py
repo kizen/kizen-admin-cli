@@ -5,8 +5,6 @@ object-resolution helpers the rest of the activity surface shares.
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -14,7 +12,7 @@ from rich.table import Table
 
 from kizen_builder import output as out
 from kizen_builder.api.client import KizenAPIError
-from kizen_builder.cli._mutations import _run_mutation
+from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
@@ -23,6 +21,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    read_json_file,
 )
 from kizen_builder.tools import activities as act_tools
 from kizen_builder.tools import objects as obj_tools
@@ -279,21 +278,8 @@ def activities_create(
         )
         raise typer.Exit(code=2)
 
-    from_stdin = False
-    if spec_file:
-        spec_text = Path(spec_file).read_text()
-    elif not name and not sys.stdin.isatty():
-        spec_text = sys.stdin.read()
-        from_stdin = True
-    else:
-        spec_text = ""
-
-    if spec_text:
-        try:
-            spec = json.loads(spec_text)
-        except json.JSONDecodeError as e:
-            err_console.print(f"[red]error parsing JSON:[/red] {e}")
-            raise typer.Exit(code=2) from e
+    spec, from_stdin = (None, False) if name else _read_spec(spec_file, optional=True)
+    if spec is not None:
         _run_mutation(
             lambda: act_planners.plan_create_activity(spec),
             dry_run=dry_run,
@@ -370,11 +356,7 @@ def activities_update(
     """Update one activity type. Only the flags you set are changed."""
     changes: dict[str, Any] = {}
     if spec_file:
-        try:
-            changes = json.loads(Path(spec_file).read_text())
-        except json.JSONDecodeError as e:
-            err_console.print(f"[red]error parsing JSON:[/red] {e}")
-            raise typer.Exit(code=2) from e
+        changes = read_json_file(spec_file, "--spec-file")
     if name:
         changes["name"] = name
     if description:
@@ -387,13 +369,9 @@ def activities_update(
     if editable is not None:
         changes["is_editable"] = editable
     if visibility_rules_file:
-        try:
-            changes["visibility_rules"] = json.loads(
-                Path(visibility_rules_file).read_text()
-            )
-        except json.JSONDecodeError as e:
-            err_console.print(f"[red]error parsing visibility rules JSON:[/red] {e}")
-            raise typer.Exit(code=2) from e
+        changes["visibility_rules"] = read_json_file(
+            visibility_rules_file, "--visibility-rules-file"
+        )
 
     if not changes:
         err_console.print("[red]error:[/red] no changes given.")
