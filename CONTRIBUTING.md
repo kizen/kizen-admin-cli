@@ -163,7 +163,7 @@ src/kizen_builder/
   cli/                           # Typer wrappers around tools/. The `kizen` command.
     __init__.py                  #   exports `app`; imports every module below, IN ORDER
     _shared.py                   #   the root app + callback, consoles, shared output options
-    _mutations.py                #   plan → preview → confirm → apply (`_run_mutation`)
+    _mutations.py                #   plan → preview → confirm → apply (`_run_mutation`); `_confirm_or_abort`
     docs.py                      #   kizen docs
     envs.py                      #   kizen envs
     objects.py                   #   kizen objects — reads + create/update/delete

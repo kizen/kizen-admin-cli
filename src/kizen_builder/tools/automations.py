@@ -856,11 +856,10 @@ def get_execution_history(execution_id: str) -> list[dict[str, Any]]:
 
 # ---------------------------------------------------------------------------
 # Execution control — pause/resume/cancel/skip-and-resume/debug-*. Runtime
-# actions on an execution's own state (not a schema mutation), same category
-# as `start_automation` above: confirm-free by standing decision, no
-# plan/preview gate. Confirmed live (2026-07-22) for pause/
-# resume/cancel against a real delayed execution; debug-* wired from the
-# public schema but not live-exercised (see api/automations.py).
+# actions on an execution's own state (not a schema mutation), so no
+# plan/preview gate; the CLI confirms every verb but pause (`kizen docs show
+# operating`, rule 3). Which verbs are confirmed live: `kizen docs show
+# automation-runtime`, § Controlling a run.
 # ---------------------------------------------------------------------------
 
 
