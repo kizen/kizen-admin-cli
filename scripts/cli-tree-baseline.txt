@@ -3317,7 +3317,7 @@
 │ send-webhook       Fire a connector's real inbound webhook. This writes records.                 │
 │ activate           Flip a connector to `operational` so live runs actually execute.              │
 │ deactivate         Set a connector to `inactive` so no live run starts.                          │
-│ start-flow         Queue an execution of the connector (dry run unless --live).                  │
+│ start-flow         Queue an execution of the connector (dry run unless --write-records).         │
 │ list               List smart connectors in the current env.                                     │
 │ get                Show one connector's detail, including its draft/live SQL scripts.            │
 │ metadata           Dump the connector-type / matching-rule metadata catalog (JSON).              │
@@ -3798,12 +3798,13 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --body   -b      <str>  JSON payload to POST, or @path to read one from a file. [required]    │
-│    --query  -q      <str>  key=value query-string param (repeatable).                            │
-│    --force                 Send even when the plan reports blockers.                             │
-│    --yes    -y             Skip the confirmation prompt.                                         │
-│    --json                  Emit JSON.                                                            │
-│    --help                  Show this message and exit.                                           │
+│ *  --body             -b      <str>  JSON payload to POST, or @path to read one from a file.     │
+│                                      [required]                                                  │
+│    --query            -q      <str>  key=value query-string param (repeatable).                  │
+│    --ignore-blockers                 Send even when the plan reports blockers.                   │
+│    --yes              -y             Skip the confirmation prompt.                               │
+│    --json                            Emit JSON.                                                  │
+│    --help                            Show this message and exit.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors set-input [OPTIONS] {input_file}                                           
@@ -3843,7 +3844,7 @@
                                                                                                     
  Usage: smart-connectors start-flow [OPTIONS] {connector}                                           
                                                                                                     
- Queue an execution of the connector (dry run unless --live).                                       
+ Queue an execution of the connector (dry run unless --write-records).                              
                                                                                                     
  Runs are asynchronous; watch one with `smart-connectors executions get`,                           
  which shows the executor's own error for a failed run.                                             
@@ -3855,12 +3856,12 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --live             Write real records. Without this the run is a dry run: the whole flow is      │
-│                    validated, nothing is written.                                                │
-│ --force            Queue the run even when the plan reports blockers.                            │
-│ --yes    -y        Skip the confirmation prompt.                                                 │
-│ --json             Emit JSON.                                                                    │
-│ --help             Show this message and exit.                                                   │
+│ --write-records              Write real records. Without this the run is a server-side dry run:  │
+│                              the flow is validated and nothing is written.                       │
+│ --ignore-blockers            Queue the run even when the plan reports blockers.                  │
+│ --yes              -y        Skip the confirmation prompt.                                       │
+│ --json                       Emit JSON.                                                          │
+│ --help                       Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors suggest-variables [OPTIONS] {connector}                                    

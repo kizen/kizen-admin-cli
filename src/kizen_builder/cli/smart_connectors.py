@@ -719,5 +719,5 @@ def smart_connectors_configure_flow(
         console.print(f"  exposes [bold]{name}[/bold] → {uuid_}")
     console.print(
         "[dim]Next: `smart-connectors activate` (a live run silently queues "
-        "forever without it), then `start-flow --dry-run`.[/dim]"
+        "forever without it), then `start-flow` (dry run).[/dim]"
     )

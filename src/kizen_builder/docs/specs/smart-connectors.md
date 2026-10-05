@@ -163,7 +163,7 @@ smart-connectors push --publish                       # sample, then promote the
 smart-connectors suggest-variables <c> --spec         # starting point for the spec
 smart-connectors configure-flow <c> --spec-file <f>   # execution_variables + flow.loads
 smart-connectors activate <c>                         # status: operational (deactivate: inactive)
-smart-connectors start-flow <c> [--live]              # start-connector-flow
+smart-connectors start-flow <c> [--write-records]     # start-connector-flow
 ```
 
 The raw calls behind each step, because knowing them is what makes a failure
@@ -267,7 +267,7 @@ by the server and wasn't probed:
 | `push`, `generate-sample`, `push --publish` | ✓ | ✓ | ✓ |
 | `configure-flow` | ✓ | ✓ | ✓ |
 | `start-flow` (dry run) | ✓ | ✓ | ✓ |
-| `start-flow --live` | ✗ | ✓ | ✗ |
+| `start-flow --write-records` | ✗ | ✓ | ✗ |
 
 Outside `operational`, `start-flow` refuses a live run and says why. Queued
 anyway, a live run sits in `queued` forever with no error (step 8 above).
@@ -518,7 +518,8 @@ Authoring: `create` → `set-input` → `generate-sample` → `push --publish` �
 
 Every write previews and confirms first (`--dry-run` to stop after the preview,
 `--yes` to skip the prompt). Two exceptions run without a prompt because they
-write no records: `generate-sample`, and a `start-flow` without `--live`.
+write no records: `generate-sample`, and a `start-flow` without
+`--write-records`.
 
 ## See also
 

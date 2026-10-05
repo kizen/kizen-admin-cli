@@ -33,6 +33,12 @@ called out explicitly under **Changed** or **Removed**.
   `records archive` with more than one positional id exits 2 pointing at
   `--spec-file`. `records list --output csv` output is a valid spec file; pass
   a `--limit` above the record count, since it defaults to 100.
+- **Breaking: `smart-connectors start-flow --live` is now `--write-records`.**
+  `--live` meant "write real records" here and "use the live script" on
+  `pull` and `download-sample`. `start-flow --live` now stops with exit 2 and
+  names the new flag. `--force` on `send-webhook` and `start-flow` is now
+  `--ignore-blockers`; `--force` still works there, with a warning, and will
+  be removed in a later release.
 - **`records archive` batches its requests and triggers no Kizen emails.** It
   used to send one request per id, and each one emailed you: archiving 3,000
   records meant 3,000 requests and 3,000 emails. It now sends up to 500 ids
@@ -713,9 +719,9 @@ called out explicitly under **Changed** or **Removed**.
   - `activate <c>` — the `status: operational` flip. Its own command because a
     live run of a connector that isn't operational sits queued forever with no
     error.
-  - `start-flow <c> [--live]` — queue a run, dry by default, refusing to start
-    one that can't work (no published script, no load steps, not operational)
-    without `--force`.
+  - `start-flow <c> [--write-records]` — queue a run, dry by default, refusing
+    to start one that can't work (no published script, no load steps, not
+    operational) without `--ignore-blockers`.
 - **Smart connectors can read from other Kizen objects.** `smart-connectors
   seeds list|add|remove` configures data seeds, which expose another object's
   records to the SQL as a `kizen.<object>` view — so a connector can join
