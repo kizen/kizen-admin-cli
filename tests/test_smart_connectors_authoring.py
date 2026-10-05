@@ -12,6 +12,7 @@ import copy
 import csv
 import io
 import json
+import re
 import time
 import zipfile
 
@@ -1494,7 +1495,9 @@ def test_live_with_another_script_choice_is_a_usage_error(monkeypatch, command, 
         cli.app, ["smart-connectors", command, "c", "--live", "--script", script]
     )
     assert result.exit_code == 2
-    assert "--live means --script live" in " ".join(result.output.split())
+    # Typer renders usage errors in a box, in colour when CI forces a terminal.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output).replace("│", " ")
+    assert "--live means --script live" in " ".join(plain.split())
     assert calls == []
 
 
