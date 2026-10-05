@@ -1057,7 +1057,7 @@ def test_download_sample_cli_names_the_state_when_there_is_no_sample(tmp_path):
 
 
 @respx.mock
-def test_download_sample_refuses_to_overwrite_without_force(tmp_path):
+def test_download_sample_refuses_to_overwrite_without_overwrite(tmp_path):
     target = tmp_path / "s.zip"
     target.write_bytes(b"keep me")
     _mock_script("draft-1", status="draft").mock(
@@ -1066,10 +1066,10 @@ def test_download_sample_refuses_to_overwrite_without_force(tmp_path):
     args = ["smart-connectors", "download-sample", "order_import", "--out", str(target)]
     refused = CliRunner().invoke(cli.app, args)
     assert refused.exit_code == 1
-    assert "--force" in refused.output
+    assert "--overwrite" in refused.output
     assert target.read_bytes() == b"keep me"
 
-    forced = CliRunner().invoke(cli.app, [*args, "--force", "--json"])
+    forced = CliRunner().invoke(cli.app, [*args, "--overwrite", "--json"])
     assert forced.exit_code == 0, forced.output
     assert json.loads(forced.stdout)["path"] == str(target)
     assert target.read_bytes() == TWO_TABLE_ZIP
@@ -1116,7 +1116,7 @@ def test_save_file_refuses_an_existing_path_before_downloading(tmp_path, env_con
     target = tmp_path / "s.zip"
     target.write_bytes(b"keep me")
     download = respx.get(f"{FAKE_BASE_URL}/api/files/f1/download")
-    with pytest.raises(FileExistsError, match="--force"):
+    with pytest.raises(FileExistsError, match="--overwrite"):
         sct.save_file(env_config, "f1", target, fallback_name="s.zip")
     assert not download.called
 
@@ -1373,6 +1373,9 @@ def _stub_flag_rename_tools(monkeypatch) -> list:
         "blockers": ["blocked for the test"],
     }
     results = {
+        "pull_connector": {"connector": "order_import"},
+        "download_sample": {"path": "s.zip"},
+        "download_execution_file": {"path": "report.xlsx"},
         "plan_start_flow": blocked,
         "apply_start_flow": {"connector": "order_import", "execution": "e1"},
         "plan_send_webhook": blocked,
@@ -1394,6 +1397,34 @@ _WEBHOOK = ["send-webhook", "order_import", "--body", '{"a": 1}', "--yes"]
 @pytest.mark.parametrize(
     ("command", "new", "old", "warning"),
     [
+        (["pull", "c"], ["--overwrite"], ["--force"], "--force; use --overwrite"),
+        (["pull", "c"], ["--overwrite"], ["-f"], "--force; use --overwrite"),
+        (["pull", "c"], ["--script", "live"], ["--live"], "--live; use --script live"),
+        (
+            ["download-sample", "c"],
+            ["--overwrite"],
+            ["--force"],
+            "--force; use --overwrite",
+        ),
+        (["download-sample", "c"], ["--overwrite"], ["-f"], "--force; use --overwrite"),
+        (
+            ["download-sample", "c"],
+            ["--script", "live"],
+            ["--live"],
+            "--live; use --script live",
+        ),
+        (
+            ["executions", "download", "c", "e1"],
+            ["--overwrite"],
+            ["--force"],
+            "--force; use --overwrite",
+        ),
+        (
+            ["executions", "download", "c", "e1"],
+            ["--overwrite"],
+            ["-f"],
+            "--force; use --overwrite",
+        ),
         (
             ["start-flow", "c"],
             ["--ignore-blockers"],
@@ -1429,6 +1460,51 @@ def test_old_flag_spellings_warn_and_behave_like_the_new_ones(
     )
     assert calls == expected
     assert json.loads(aliased.stdout) == json.loads(current.stdout)
+
+
+@pytest.mark.parametrize(
+    ("script", "use_live", "script_id"),
+    [
+        (None, False, None),
+        ("draft", False, None),
+        ("live", True, None),
+        ("s-9", False, "s-9"),
+    ],
+)
+def test_download_sample_script_takes_draft_live_or_an_id(
+    monkeypatch, script, use_live, script_id
+):
+    calls = _stub_flag_rename_tools(monkeypatch)
+    args = ["smart-connectors", "download-sample", "c", "--json"]
+    result = CliRunner().invoke(
+        cli.app, args + (["--script", script] if script else [])
+    )
+    assert result.exit_code == 0, result.output
+    [(_, _, kwargs)] = calls
+    assert (kwargs["use_live"], kwargs["script_id"]) == (use_live, script_id)
+
+
+@pytest.mark.parametrize(
+    ("command", "script"),
+    [("pull", "draft"), ("download-sample", "draft"), ("download-sample", "s-9")],
+)
+def test_live_with_another_script_choice_is_a_usage_error(monkeypatch, command, script):
+    calls = _stub_flag_rename_tools(monkeypatch)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", command, "c", "--live", "--script", script]
+    )
+    assert result.exit_code == 2
+    assert "--live means --script live" in " ".join(result.output.split())
+    assert calls == []
+
+
+def test_pull_script_rejects_anything_but_draft_or_live(monkeypatch):
+    calls = _stub_flag_rename_tools(monkeypatch)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "pull", "c", "--script", "s-9"]
+    )
+    assert result.exit_code == 2
+    assert calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -1698,7 +1774,7 @@ def test_executions_download_refuses_a_failed_runs_missing_file(tmp_path, kind):
 
 
 @respx.mock
-def test_executions_download_refuses_to_overwrite_without_force(tmp_path):
+def test_executions_download_refuses_to_overwrite_without_overwrite(tmp_path):
     target = tmp_path / "orders.csv"
     target.write_bytes(b"keep me")
     _mock_execution(EXEC_ROW)
@@ -1718,10 +1794,10 @@ def test_executions_download_refuses_to_overwrite_without_force(tmp_path):
     ]
     refused = CliRunner().invoke(cli.app, args)
     assert refused.exit_code == 1
-    assert "--force" in refused.output
+    assert "--overwrite" in refused.output
     assert target.read_bytes() == b"keep me"
 
-    forced = CliRunner().invoke(cli.app, [*args, "--force"])
+    forced = CliRunner().invoke(cli.app, [*args, "--overwrite"])
     assert forced.exit_code == 0, forced.output
     assert target.read_bytes() == b"new"
 

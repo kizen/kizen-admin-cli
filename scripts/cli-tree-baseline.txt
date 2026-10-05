@@ -3468,12 +3468,12 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --live                   The live script's sample instead of the draft's.                        │
-│ --script          <str>  Script id (overrides the draft/live choice).                            │
-│ --out             <str>  File or directory (default: ./<server filename>).                       │
-│ --force   -f             Overwrite an existing file.                                             │
-│ --json                   Alias for --output json.                                                │
-│ --help                   Show this message and exit.                                             │
+│ --script           <str>  Whose sample: draft (the latest draft; the default), live, or a script │
+│                           id.                                                                    │
+│ --out              <str>  File or directory (default: ./<server filename>).                      │
+│ --overwrite               Overwrite an existing file.                                            │
+│ --json                    Alias for --output json.                                               │
+│ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors events [OPTIONS] {smart_connector_id}                                      
@@ -3522,14 +3522,14 @@
 │ *    execution_id      <str>  Execution UUID (from `executions list`). [required]                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --file           <report|output|input>  report: the .xlsx results workbook, with per-row errors, │
-│                                         warnings and status. output: the zip of SQL-output CSVs. │
-│                                         input: the file the run consumed.                        │
-│                                         [default: report]                                        │
-│ --out            <str>                  File or directory (default: ./<server filename>).        │
-│ --force  -f                             Overwrite an existing file.                              │
-│ --json                                  Alias for --output json.                                 │
-│ --help                                  Show this message and exit.                              │
+│ --file             <report|output|input>  report: the .xlsx results workbook, with per-row       │
+│                                           errors, warnings and status. output: the zip of        │
+│                                           SQL-output CSVs. input: the file the run consumed.     │
+│                                           [default: report]                                      │
+│ --out              <str>                  File or directory (default: ./<server filename>).      │
+│ --overwrite                               Overwrite an existing file.                            │
+│ --json                                    Alias for --output json.                               │
+│ --help                                    Show this message and exit.                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors executions get [OPTIONS] {connector} {execution_id}                        
@@ -3648,14 +3648,16 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --dir         -d      <str>  Target directory (default: ./<api_name>).                           │
-│ --live                       Pull the live script instead of the latest draft.                   │
-│ --force       -f             Overwrite an existing non-empty directory.                          │
-│ --seed-limit          <int>  Max rows to export per seeded object (0 for all). Seeded objects    │
-│                              can be whole tables; the local copy exists to exercise the joins.   │
-│                              [default: 1000]                                                     │
-│ --json                       Alias for --output json.                                            │
-│ --help                       Show this message and exit.                                         │
+│ --dir         -d      <str>         Target directory (default: ./<api_name>).                    │
+│ --script              <draft|live>  Which script to pull: draft (the latest draft; the default)  │
+│                                     or live.                                                     │
+│ --overwrite                         Overwrite an existing non-empty directory.                   │
+│ --seed-limit          <int>         Max rows to export per seeded object (0 for all). Seeded     │
+│                                     objects can be whole tables; the local copy exists to        │
+│                                     exercise the joins.                                          │
+│                                     [default: 1000]                                              │
+│ --json                              Alias for --output json.                                     │
+│ --help                              Show this message and exit.                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors push [OPTIONS]                                                             

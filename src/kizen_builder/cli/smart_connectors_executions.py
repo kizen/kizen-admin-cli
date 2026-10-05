@@ -19,6 +19,7 @@ from kizen_builder.cli._shared import (
     OUTPUT_OPTION,
     cli_errors,
     console,
+    warn_renamed_flag,
 )
 from kizen_builder.cli.smart_connectors import smart_connectors_app
 from kizen_builder.tools import smart_connectors as sc_tools
@@ -271,9 +272,10 @@ def executions_download(
     dest: str = typer.Option(
         None, "--out", help="File or directory (default: ./<server filename>)."
     ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Overwrite an existing file."
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Overwrite an existing file."
     ),
+    force: bool = typer.Option(False, "--force", "-f", hidden=True),
     json_out: bool = JSON_OPTION,
 ) -> None:
     """Save a run's Excel report (the default), SQL-output zip, or input file.
@@ -281,9 +283,13 @@ def executions_download(
     Writes the local file only, with the bytes exactly as Kizen serves them. A
     failed run has no report or output zip.
     """
+    if force:
+        warn_renamed_flag("--force", "--overwrite")
+        overwrite = True
+
     with cli_errors(LookupError, OSError):
         res = sc_tools.download_execution_file(
-            connector, execution_id, file, dest=dest, force=force
+            connector, execution_id, file, dest=dest, force=overwrite
         )
 
     if json_out:

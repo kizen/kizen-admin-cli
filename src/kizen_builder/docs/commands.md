@@ -56,7 +56,7 @@ kizen smart-connectors executions download <connector> <eid> [--file report|outp
                                                         # save its .xlsx report (default), output zip, or input file
 kizen smart-connectors executions sql <connector> <eid> # the SQL used in one execution
 kizen smart-connectors scripts <connector>              # the connector's draft + live SQL scripts
-kizen smart-connectors download-sample <connector> [--live] [--out path]  # save a script's output-sample zip
+kizen smart-connectors download-sample <connector> [--script draft|live|<id>] [--out path]  # save a script's output-sample zip
 kizen smart-connectors events <connector-uuid>          # event history / audit trail (UUID only)
 
 kizen filter-groups list <object> [--search <text>]     # per-object saved filters (segments)
@@ -238,7 +238,7 @@ kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
 # submissions, subscribers, page-view, and upload endpoints are NOT covered yet — later slice
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)
-kizen smart-connectors pull <connector> [--dir path] [--live] [--force]   # build a local workdir (connector.sql + __config.json + data/)
+kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # build a local workdir (connector.sql + __config.json + data/)
 kizen smart-connectors run [--dir path] [--dry-run]        # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
 kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
