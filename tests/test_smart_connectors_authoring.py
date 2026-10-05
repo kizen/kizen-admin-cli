@@ -2990,6 +2990,20 @@ def _mock_filter_groups(object_id: str = "obj-lines") -> None:
     _mock_record_counts(object_id, segment=7, total=7)
 
 
+def _mock_seed_tables(*tables):
+    """Serve the draft script whose `config_metadata` carries these seed tables."""
+    respx.get(f"{BASE}/order_import/sql-scripts/draft-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": "draft-1", "config_metadata": {"seed_tables": list(tables)}},
+        )
+    )
+
+
+def _lines_table(*cols):
+    return {**SEED_TABLE, "columns_mapping": [{"col": c, "type": "str"} for c in cols]}
+
+
 @respx.mock
 def test_plan_add_seed_resolves_the_group_by_name_and_validates_fields():
     _mock_object_lookups()
@@ -3167,6 +3181,59 @@ def test_plan_remove_seed_preserves_another_seeds_field_restriction():
             "group_id": "grp-1",
             "id": "seed-1",
             "fields_ids": ["f-lines-sku"],
+        }
+    ]
+
+
+SEED_ROW_ORDERS = {
+    "id": "seed-2",
+    "custom_object_id": "obj-orders",
+    "group_id": None,
+    "group": None,
+    "custom_object": {"id": "obj-orders", "name": "orders"},
+}
+# Every live order_lines field, in an order unlike LINE_FIELDS', so the
+# payload has to follow the table's column order.
+FULL_LINES_TABLE = _lines_table("kizen_id", "sku", "order_rel", "name")
+FULL_LINES_IDS = ["f-lines-sku", "f-lines-rel", "f-lines-name"]
+
+
+@respx.mock
+def test_plan_add_seed_keeps_every_field_of_a_fully_exposed_seed():
+    """Regression: a kept seed exposing every field used to be re-sent without
+    `fields_ids`, which the server reads as kizen_id only."""
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW]}
+        )
+    )
+    _mock_seed_tables(FULL_LINES_TABLE)
+
+    plan = sct.plan_add_seed("order_import", custom_object="orders")
+
+    kept = next(p for p in plan["payload"] if p["custom_object_id"] == "obj-lines")
+    assert kept["fields_ids"] == FULL_LINES_IDS
+
+
+@respx.mock
+def test_plan_remove_seed_keeps_every_field_of_a_fully_exposed_seed():
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW, SEED_ROW_ORDERS]}
+        )
+    )
+    _mock_seed_tables(FULL_LINES_TABLE)
+
+    plan = sct.plan_remove_seed("order_import", "orders")
+
+    assert plan["payload"] == [
+        {
+            "custom_object_id": "obj-lines",
+            "group_id": "grp-1",
+            "id": "seed-1",
+            "fields_ids": FULL_LINES_IDS,
         }
     ]
 

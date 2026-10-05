@@ -70,32 +70,33 @@ def _seed_tables_by_object_name(
     return {t.get("table_name"): t for t in tables}
 
 
-def _kept_seed_fields_ids(
+def _seed_columns(
     client: KizenClient,
     seed: dict[str, Any],
     seed_tables: dict[str, dict[str, Any]],
-) -> list[str] | None:
-    """Recover a seed's field restriction for a seed we're *not* touching.
+) -> list[tuple[str, str | None]] | None:
+    """A seed's current columns, in table order, each with its live field id.
 
-    `fields_ids` is write-only on the API and never comes back on a GET, so a
-    naive "preserve the seeds I'm not changing" pass silently drops it. The
-    generated seed table's `columns_mapping` is the one place the restriction
-    survives (same source `list_seeds` uses to show it) — reconstruct
-    `fields_ids` from it by mapping column names back to field ids. Returns
-    None when the table shows no restriction (or the seed was never
-    regenerated into a table, so there's nothing to reconstruct from — that
-    seed's restriction, if any, is unrecoverable and is dropped as before).
+    `fields_ids` is write-only on the API and never comes back on a GET, so
+    re-saving a seed from read data alone silently narrows it to `kizen_id`.
+    The generated seed table's `columns_mapping` is the one place the field
+    list survives (same source `list_seeds` uses to show it). `kizen_id` is
+    left out, since it's always included and never part of `fields_ids`; a
+    column that no longer maps to a live field gets None. Returns None when
+    the seed was never regenerated into a table, so there's nothing to
+    rebuild from.
     """
     object_name = (seed.get("custom_object") or {}).get("name")
-    if not isinstance(object_name, str):
-        return None
-    table = seed_tables.get(object_name)
+    table = seed_tables.get(object_name) if isinstance(object_name, str) else None
     if not table:
         return None
-    cols = {c.get("col") for c in (table.get("columns_mapping") or []) if c.get("col")}
-    cols.discard("kizen_id")  # always included, never part of fields_ids
+    cols = [
+        c["col"]
+        for c in (table.get("columns_mapping") or [])
+        if c.get("col") and c["col"] != "kizen_id"
+    ]
     if not cols:
-        return None
+        return []
     object_id = seed.get("custom_object_id")
     if not isinstance(object_id, str):
         return None
@@ -104,9 +105,15 @@ def _kept_seed_fields_ids(
         for f in co_api.list_fields(client, object_id)
         if f.get("name") and f.get("id") and not f.get("deleted")
     }
-    if cols >= set(live):
-        return None  # every seedable field is exposed: not actually restricted
-    ids = [live[c] for c in cols if c in live]
+    return [(c, live.get(c)) for c in cols]
+
+
+def _kept_seed_fields_ids(
+    columns: list[tuple[str, str | None]] | None,
+) -> list[str] | None:
+    """The `fields_ids` that re-save a seed's current columns (from
+    `_seed_columns`), or None when it exposes only `kizen_id`, or no table."""
+    ids = [fid for _, fid in columns or [] if fid]
     return ids or None
 
 
@@ -117,7 +124,7 @@ def _seed_wire(
 
     Pass `fields_ids` (from `_kept_seed_fields_ids`) for a seed being kept
     rather than actively set, since the seed's own (read) `fields_ids` is
-    always empty — see `_kept_seed_fields_ids`.
+    always empty — see `_seed_columns`.
     """
     body = {
         "custom_object_id": seed.get("custom_object_id"),
@@ -260,7 +267,10 @@ def plan_add_seed(
             _seed_tables_by_object_name(client, connector, detail) if keeping else {}
         )
         keep = [
-            _seed_wire(s, fields_ids=_kept_seed_fields_ids(client, s, seed_tables))
+            _seed_wire(
+                s,
+                fields_ids=_kept_seed_fields_ids(_seed_columns(client, s, seed_tables)),
+            )
             for s in keeping
         ]
         new_seed: dict[str, Any] = {
@@ -326,7 +336,10 @@ def plan_remove_seed(
             _seed_tables_by_object_name(client, connector, detail) if keeping else {}
         )
         keep = [
-            _seed_wire(s, fields_ids=_kept_seed_fields_ids(client, s, seed_tables))
+            _seed_wire(
+                s,
+                fields_ids=_kept_seed_fields_ids(_seed_columns(client, s, seed_tables)),
+            )
             for s in keeping
         ]
 
