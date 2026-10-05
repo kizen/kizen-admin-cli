@@ -786,7 +786,7 @@ and not the `team_member` selector's set on notify/send steps. Confirmed live
 | `round_robin_role` | `role_id` |
 | `round_robin_team_members` | `employee_ids` |
 | `round_robin_all` | — |
-| `team_selector_field` | `field_id` (or `field_ref`) |
+| `team_selector_field` | `field_id` |
 | `related_team_selector_field` | `related_field_id` |
 
 `owner`, `last_active`, `last_active_role` and `employees` are all valid on

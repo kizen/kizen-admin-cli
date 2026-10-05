@@ -54,15 +54,13 @@ class ActionCreateRelatedEntityConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     target_object: ApiName = Field(
-        description="api_name of the target custom object. Resolved to UUID from state at apply time."
+        description=(
+            "api_name of the target custom object. Resolved to UUID from state "
+            "at apply time and sent as `target_custom_object`, which a block "
+            "may also set directly (it wins when both are given)."
+        )
     )
-    owner: dict[str, Any] | None = None
     field_values: list[dict[str, Any]] = Field(default_factory=list)
-    relationship_field_ref: str | None = Field(
-        default=None,
-        description="'object.field' for the relationship field linking to the new entity.",
-    )
-    relationship_field_id: str | None = None
 
 
 class ActionModifyRelatedEntitiesConfig(BaseModel):
@@ -75,8 +73,6 @@ class ActionModifyRelatedEntitiesConfig(BaseModel):
         description="'object.field' for the relationship field. Resolved to UUID at apply time.",
     )
     relationship_field_id: str | None = None
-    update_mode: str | None = None
-    field_updates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ActionModifyRelatedEntitiesAutomationConfig(BaseModel):
@@ -176,6 +172,3 @@ class ActionMathOperatorConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     type: Literal["simple_builder"] = "simple_builder"
-    operands: list[dict[str, Any]] = Field(default_factory=list)
-    operator: str | None = None
-    output: dict[str, Any] | None = None

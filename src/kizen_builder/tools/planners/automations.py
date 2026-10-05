@@ -1579,7 +1579,9 @@ def _step_create_related_entity(
             _unwrap_id(e) for e in (block.get("new_entity_owner_employees") or []) if e
         ],
         "context_entity_field": _unwrap_id(block.get("context_entity_field")),
-        "target_custom_object": _resolve_object(block.get("target_custom_object"), ctx),
+        "target_custom_object": _resolve_object(
+            block.get("target_custom_object") or block.get("target_object"), ctx
+        ),
         "target_variable": _unwrap_variable_name(block.get("target_variable")),
         "variable_field_resolution": block.get(
             "variable_field_resolution", "overwrite"

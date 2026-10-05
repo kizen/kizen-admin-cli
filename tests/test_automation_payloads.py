@@ -12,6 +12,7 @@ import pytest
 from kizen_builder.models.spec import AutomationDef
 from kizen_builder.tools.planners.automations import (
     LiveContext,
+    _block_field_for,
     _build_automation_payload,
     diff_automation,
     plan_create_automation,
@@ -2240,3 +2241,33 @@ def test_fan_out_without_branch_step_warns(patch_live_lookups):
 )
 def test_no_fan_out_warning_for_branch_or_condition_children(patch_live_lookups, spec):
     assert "warnings" not in plan_create_automation(spec).operations[0].preview
+
+
+def _one_step_spec(step_type: str, block: dict) -> dict:
+    return {
+        "api_name": "honoured_test",
+        "name": "Honoured Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "only",
+                "step_type": step_type,
+                "order": 0,
+                "parent_key": None,
+                _block_field_for(step_type): block,
+            }
+        ],
+    }
+
+
+def test_create_related_entity_reads_target_object_as_target_custom_object(
+    patch_live_lookups,
+):
+    patients = load_fixture("objects/patients.json")
+    spec = _one_step_spec(
+        "create_related_entity",
+        {"target_object": "patients", "new_entity_name": "Follow-up"},
+    )
+    action = _build(spec)["steps"][0]["action_create_related_entity"]
+    assert action["target_custom_object"] == patients["id"]
