@@ -24,6 +24,8 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures"
 
 FAKE_BUSINESS_ID = "00000000-0000-4000-8000-00000000b1d0"
+# A second business, for plans built somewhere other than the fake profile.
+OTHER_BUSINESS_ID = "00000000-0000-4000-8000-00000000b2d0"
 FAKE_USER_ID = "00000000-0000-4000-8000-0000000005e7"
 FAKE_BASE_URL = "https://kizen.test"
 

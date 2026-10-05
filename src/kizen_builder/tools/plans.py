@@ -9,7 +9,9 @@ Mutations always go through a two-step round-trip:
 3. :func:`apply_plan` walks the operations and executes each against the
    target env's API, returning a structured result list.
 
-A plan binds to one ``env``.
+A plan records the env label and ``business_id`` it was built against.
+:func:`apply_plan` refuses a plan whose ``business_id`` differs from the
+profile the current folder resolves to (:func:`resolve_apply_target`).
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ from kizen_builder.api import pipelines as pipelines_api
 from kizen_builder.api import records as records_api
 from kizen_builder.api import saved_views as sv_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
-from kizen_builder.config import load_env_config
+from kizen_builder.config import EnvConfig, load_env_config
 from kizen_builder.tools.bulk_actions import wait_for_bulk_action
 from kizen_builder.tools.permissions import LEVELS
 
@@ -159,16 +161,36 @@ class Plan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(description="Short hash that uniquely identifies this plan.")
-    env: str = Field(description="Target env label.")
+    env: str = Field(
+        description=(
+            "Profile label the plan was built under. Display only; "
+            "``business_id`` is what apply checks."
+        )
+    )
+    business_id: str | None = Field(
+        default=None,
+        description=(
+            "Business the plan was built against. ``None`` on plans saved by "
+            "a CLI that predates the field."
+        ),
+    )
     summary: str = Field(description="One-line description of what this plan does.")
     operations: list[PlanOperation] = Field(default_factory=list)
 
     @classmethod
-    def build(cls, env: str, summary: str, operations: list[PlanOperation]) -> Plan:
+    def build(
+        cls,
+        env: str,
+        summary: str,
+        operations: list[PlanOperation],
+        business_id: str | None = None,
+    ) -> Plan:
         """Construct a plan with a deterministic id derived from contents.
 
         The id is short (8 hex chars) and only used for display and decision-log
         cross-referencing; it doesn't have to be globally unique.
+        ``business_id`` defaults to the active profile's, which is the one the
+        planner just read live state from.
         """
         h = hashlib.sha1()
         h.update(env.encode())
@@ -179,7 +201,11 @@ class Plan(BaseModel):
             str(time.time_ns()).encode()
         )  # nudge so identical plans differ across runs
         return cls(
-            id=h.hexdigest()[:8], env=env, summary=summary, operations=operations
+            id=h.hexdigest()[:8],
+            env=env,
+            business_id=business_id or load_env_config().business_id,
+            summary=summary,
+            operations=operations,
         )
 
 
@@ -219,8 +245,36 @@ class ApplyResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def resolve_apply_target(plan: Plan) -> EnvConfig:
+    """Return the profile ``plan`` may be applied to, or raise :class:`PlanError`.
+
+    The resolved profile's ``business_id`` must equal the plan's. A plan saved
+    before ``business_id`` was recorded falls back to matching the profile name.
+    """
+    config = load_env_config()
+    remedy = f"Re-plan here, or run from the folder pinned to '{plan.env}'."
+    if plan.business_id is not None:
+        if plan.business_id != config.business_id:
+            raise PlanError(
+                f"plan {plan.id} was built for '{plan.env}' "
+                f"(business_id {plan.business_id}), but this folder resolves to "
+                f"profile '{config.name}' (business_id {config.business_id}). "
+                f"{remedy}"
+            )
+    elif plan.env.lower() != config.name.lower():
+        raise PlanError(
+            f"plan {plan.id} records no business_id and was built for "
+            f"'{plan.env}', but this folder resolves to profile '{config.name}'. "
+            f"{remedy}"
+        )
+    return config
+
+
 def apply_plan(plan: Plan) -> ApplyResult:
-    """Execute every operation in ``plan`` against ``plan.env``.
+    """Execute every operation in ``plan`` against the business it was built for.
+
+    Raises :class:`PlanError` before any request if the resolved profile is a
+    different business (see :func:`resolve_apply_target`).
 
     Operations run sequentially in the order they appear. Any single op's
     failure — an API error or an internal error like a malformed op — is
@@ -238,7 +292,7 @@ def apply_plan(plan: Plan) -> ApplyResult:
       dispatching. Useful when an object is being created in the same
       plan that creates its categories or fields.
     """
-    config = load_env_config()
+    config = resolve_apply_target(plan)
     failed_keys: set[str] = set()
     results: list[OperationResult] = []
     results_by_key: dict[str, str] = {}  # op key → server UUID
@@ -385,7 +439,7 @@ def apply_plan(plan: Plan) -> ApplyResult:
                 )
             )
 
-    return ApplyResult(plan_id=plan.id, env=plan.env, results=results)
+    return ApplyResult(plan_id=plan.id, env=config.name, results=results)
 
 
 def _blocked_by(op: PlanOperation, failed_keys: set[str]) -> str | None:
