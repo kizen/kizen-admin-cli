@@ -18,6 +18,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    warn_renamed_flag,
 )
 from kizen_builder.cli.activities import _resolve_linked_field, activities_app
 from kizen_builder.tools import activities as act_tools
@@ -291,8 +292,9 @@ def act_field_options_add(
     identifier: str = typer.Argument(..., help="Activity api_name or UUID."),
     field_api_name: str = typer.Argument(..., help="Field api_name."),
     option: list[str] = typer.Option(
-        [], "--option", "-o", help="Option label to add (repeatable)."
+        [], "--option", help="Option label to add (repeatable)."
     ),
+    option_short: list[str] = typer.Option([], "-o", hidden=True),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the plan without applying."
     ),
@@ -304,6 +306,9 @@ def act_field_options_add(
     ),
 ) -> None:
     """Add options to a select-type activity field. Existing names are skipped."""
+    if option_short:
+        warn_renamed_flag("-o", "--option")
+        option = [*option, *option_short]
     if not option:
         err_console.print("[red]error:[/red] pass at least one --option.")
         raise typer.Exit(code=2)

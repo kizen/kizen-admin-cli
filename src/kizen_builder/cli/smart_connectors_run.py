@@ -33,13 +33,13 @@ def smart_connectors_webhook_sample(
         "-b",
         help="A representative JSON payload, or @path to read one from a file.",
     ),
-    employee: str = typer.Option(
-        ...,
+    employee: str | None = typer.Option(
+        None,
         "--employee",
-        "-e",
         help="Team member (email, name, or UUID) to attribute the sample to. "
-        "Must be real — a blank employee_id fails validation.",
+        "Must be real — a blank employee_id fails validation. Required.",
     ),
+    employee_short: str | None = typer.Option(None, "-e", hidden=True),
     querystring: str = typer.Option("", "--querystring", help="Sample query string."),
     timestamp: str = typer.Option(
         "2026-01-01 00:00:00", "--timestamp", help="Sample timestamp."
@@ -55,6 +55,12 @@ def smart_connectors_webhook_sample(
 
     Then: `set-input <that file> --connector <c>`.
     """
+    if employee_short is not None:
+        warn_renamed_flag("-e", "--employee")
+        employee = employee_short
+    if employee is None:
+        err_console.print("[red]error:[/red] pass --employee.")
+        raise typer.Exit(code=2)
     payload = body
     if body.startswith("@"):
         payload = Path(body[1:]).read_text()

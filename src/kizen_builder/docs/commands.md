@@ -264,10 +264,9 @@ kizen smart-connectors start-flow <connector> [--write-records] [--ignore-blocke
 
 # smart connectors — read from other Kizen objects (exposed to the SQL as a kizen.<object> view)
 kizen smart-connectors seeds list <connector>
-kizen smart-connectors seeds add <connector> --object <o> [--group <saved filter group>] [--field f ...]
+kizen smart-connectors seeds add <connector> --object <o> [--filter-group <saved filter group>] [--field f ...]
 kizen smart-connectors seeds remove <connector> --object <o>
-# --group is a saved filter group / segment (`kizen filter-groups list <o>`), NOT a field category.
-# Omit it to seed all records; why a segment seed can duplicate records: kizen docs show smart-connectors.
+# Omit --filter-group to seed all records; why a segment seed can duplicate records: kizen docs show smart-connectors.
 # `add` refreshes the script config so the view exists (your SQL is kept) — without that a seed does nothing.
 # `pull` exports each seeded object's rows to data/ from the same filter group (or all records), so `run` hits the same joins.
 

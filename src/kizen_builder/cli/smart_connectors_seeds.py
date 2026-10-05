@@ -16,9 +16,11 @@ from kizen_builder.cli._shared import (
     OUTPUT_OPTION,
     cli_errors,
     console,
+    warn_renamed_flag,
 )
 from kizen_builder.cli.smart_connectors import (
     _connector_errors,
+    _object_option,
     _preview_and_confirm,
     smart_connectors_app,
 )
@@ -30,7 +32,7 @@ seeds_app = typer.Typer(
         "Seed a connector with rows from other Kizen objects, exposed to its SQL "
         "as a `kizen.<object>` view so incoming data can be joined against what's "
         "already in Kizen. A seed covers every record of the seeded object, or "
-        "only those in a saved filter group (segment) given with --group."
+        "only those in a saved filter group (segment) given with --filter-group."
     ),
     no_args_is_help=True,
 )
@@ -90,17 +92,18 @@ def smart_connectors_seeds_list(
 @seeds_app.command("add")
 def smart_connectors_seeds_add(
     connector: str = typer.Argument(..., help="Connector UUID or api_name."),
-    obj: str = typer.Option(
-        ..., "--object", "-o", help="Object api_name (or UUID) to seed from."
+    obj: str | None = typer.Option(
+        None, "--object", help="Object api_name (or UUID) to seed from. Required."
     ),
+    obj_short: str | None = typer.Option(None, "-o", hidden=True),
     group: str | None = typer.Option(
         None,
-        "--group",
-        "-g",
+        "--filter-group",
         help="Saved filter group (segment) name or UUID on that object — see "
         "`kizen filter-groups list <object>`. NOT a field category. Omit it to "
         "seed all records.",
     ),
+    group_old: str | None = typer.Option(None, "--group", "-g", hidden=True),
     field: list[str] = typer.Option(
         [],
         "--field",
@@ -125,6 +128,10 @@ def smart_connectors_seeds_add(
 
     Adding a seed the connector already has for that object replaces it.
     """
+    obj = _object_option(obj, obj_short)
+    if group_old is not None:
+        warn_renamed_flag("--group", "--filter-group")
+        group = group_old
     with _connector_errors():
         plan = sc_tools.plan_add_seed(
             connector,
@@ -185,9 +192,10 @@ def smart_connectors_seeds_add(
 @seeds_app.command("remove")
 def smart_connectors_seeds_remove(
     connector: str = typer.Argument(..., help="Connector UUID or api_name."),
-    obj: str = typer.Option(
-        ..., "--object", "-o", help="Seeded object api_name (or UUID) to drop."
+    obj: str | None = typer.Option(
+        None, "--object", help="Seeded object api_name (or UUID) to drop. Required."
     ),
+    obj_short: str | None = typer.Option(None, "-o", hidden=True),
     regenerate: bool = typer.Option(
         True,
         "--regenerate/--no-regenerate",
@@ -206,6 +214,7 @@ def smart_connectors_seeds_remove(
     SQL that still selects from the removed `kizen.<object>` view will fail on
     the next run — check the script before removing.
     """
+    obj = _object_option(obj, obj_short)
     with _connector_errors():
         plan = sc_tools.plan_remove_seed(connector, obj, regenerate=regenerate)
 

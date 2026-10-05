@@ -226,7 +226,7 @@
 │ *    field_api_name      <str>  Field api_name. [required]                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --option   -o      <str>  Option label to add (repeatable).                                      │
+│ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -1687,7 +1687,7 @@
 │ *    field_api_name       <str>  Field api_name. [required]                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --option   -o      <str>  Option label to add (repeatable).                                      │
+│ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -2039,7 +2039,7 @@
 │ *    field_api_name      <str>  Field api_name. [required]                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --option   -o      <str>  Option label to add (repeatable).                                      │
+│ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -3336,7 +3336,7 @@
 │ seeds              Seed a connector with rows from other Kizen objects, exposed to its SQL as a  │
 │                    `kizen.<object>` view so incoming data can be joined against what's already   │
 │                    in Kizen. A seed covers every record of the seeded object, or only those in a │
-│                    saved filter group (segment) given with --group.                              │
+│                    saved filter group (segment) given with --filter-group.                       │
 │ executions         Inspect a connector's executions (runs). `list <connector>` shows its run     │
 │                    history; `get <connector> <id>` shows one run — status, the full error,       │
 │                    per-step record counts, and its files; `download` saves the run's Excel       │
@@ -3420,23 +3420,21 @@
 │ *    name      <str>  Display name for the new connector. [required]                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --object           -o      <str>  Custom object api_name (or UUID) the connector writes to.   │
-│                                      [required]                                                  │
-│    --type                     <str>  spreadsheet|webhook|schedule|activity|bulkaction|polling_t… │
-│                                      [default: spreadsheet]                                      │
-│    --description              <str>  Connector description.                                      │
-│    --cadence                  <int>  Seconds between runs. Required for --type schedule; also    │
-│                                      the batching window for webhook. See `smart-connectors      │
-│                                      metadata`.                                                  │
-│    --activity-object          <str>  For --type activity: the activity TYPE (name or UUID) to    │
-│                                      listen to — see `kizen activities list`, not a custom       │
-│                                      object.                                                     │
-│    --sql-version              <str>  SQL engine version. Webhook connectors need 4.1.x; lower    │
-│                                      versions fail sample generation.                            │
-│    --dry-run                         Show the plan without creating.                             │
-│    --yes              -y             Skip the confirmation prompt.                               │
-│    --json                            Emit JSON (plan with --dry-run, result otherwise).          │
-│    --help                            Show this message and exit.                                 │
+│ --object                   <str>  Custom object api_name (or UUID) the connector writes to.      │
+│                                   Required.                                                      │
+│ --type                     <str>  spreadsheet|webhook|schedule|activity|bulkaction|polling_thir… │
+│                                   [default: spreadsheet]                                         │
+│ --description              <str>  Connector description.                                         │
+│ --cadence                  <int>  Seconds between runs. Required for --type schedule; also the   │
+│                                   batching window for webhook. See `smart-connectors metadata`.  │
+│ --activity-object          <str>  For --type activity: the activity TYPE (name or UUID) to       │
+│                                   listen to — see `kizen activities list`, not a custom object.  │
+│ --sql-version              <str>  SQL engine version. Webhook connectors need 4.1.x; lower       │
+│                                   versions fail sample generation.                               │
+│ --dry-run                         Show the plan without creating.                                │
+│ --yes              -y             Skip the confirmation prompt.                                  │
+│ --json                            Emit JSON (plan with --dry-run, result otherwise).             │
+│ --help                            Show this message and exit.                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors deactivate [OPTIONS] {connector}                                           
@@ -3709,7 +3707,7 @@
                                                                                                     
  Seed a connector with rows from other Kizen objects, exposed to its SQL as a `kizen.<object>` view 
  so incoming data can be joined against what's already in Kizen. A seed covers every record of the  
- seeded object, or only those in a saved filter group (segment) given with --group.                 
+ seeded object, or only those in a saved filter group (segment) given with --filter-group.          
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -3730,22 +3728,20 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --object      -o                     <str>  Object api_name (or UUID) to seed from.           │
-│                                                [required]                                        │
-│    --group       -g                     <str>  Saved filter group (segment) name or UUID on that │
-│                                                object — see `kizen filter-groups list <object>`. │
-│                                                NOT a field category. Omit it to seed all         │
-│                                                records.                                          │
-│    --field       -f                     <str>  Field api_name to bring along (repeatable).       │
-│                                                kizen_id always comes.                            │
-│    --regenerate      --no-regenerate           Refresh the draft's config so the kizen.<object>  │
-│                                                view exists (default). Your SQL is preserved.     │
-│                                                Without this the seed is inert.                   │
-│                                                [default: regenerate]                             │
-│    --dry-run                                   Show the plan without writing.                    │
-│    --yes         -y                            Skip the confirmation prompt.                     │
-│    --json                                      Emit JSON.                                        │
-│    --help                                      Show this message and exit.                       │
+│ --object                               <str>  Object api_name (or UUID) to seed from. Required.  │
+│ --filter-group                         <str>  Saved filter group (segment) name or UUID on that  │
+│                                               object — see `kizen filter-groups list <object>`.  │
+│                                               NOT a field category. Omit it to seed all records. │
+│ --field         -f                     <str>  Field api_name to bring along (repeatable).        │
+│                                               kizen_id always comes.                             │
+│ --regenerate        --no-regenerate           Refresh the draft's config so the kizen.<object>   │
+│                                               view exists (default). Your SQL is preserved.      │
+│                                               Without this the seed is inert.                    │
+│                                               [default: regenerate]                              │
+│ --dry-run                                     Show the plan without writing.                     │
+│ --yes           -y                            Skip the confirmation prompt.                      │
+│ --json                                        Emit JSON.                                         │
+│ --help                                        Show this message and exit.                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors seeds list [OPTIONS] {connector}                                           
@@ -3776,15 +3772,14 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --object      -o                     <str>  Seeded object api_name (or UUID) to drop.         │
-│                                                [required]                                        │
-│    --regenerate      --no-regenerate           Refresh the draft's config so the view stops      │
-│                                                being advertised.                                 │
-│                                                [default: regenerate]                             │
-│    --dry-run                                   Show the plan without writing.                    │
-│    --yes         -y                            Skip the confirmation prompt.                     │
-│    --json                                      Emit JSON.                                        │
-│    --help                                      Show this message and exit.                       │
+│ --object                             <str>  Seeded object api_name (or UUID) to drop. Required.  │
+│ --regenerate      --no-regenerate           Refresh the draft's config so the view stops being   │
+│                                             advertised.                                          │
+│                                             [default: regenerate]                                │
+│ --dry-run                                   Show the plan without writing.                       │
+│ --yes         -y                            Skip the confirmation prompt.                        │
+│ --json                                      Emit JSON.                                           │
+│ --help                                      Show this message and exit.                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors send-webhook [OPTIONS] {connector}                                         
@@ -3902,9 +3897,8 @@
 │ *  --body         -b      <str>  A representative JSON payload, or @path to read one from a      │
 │                                  file.                                                           │
 │                                  [required]                                                      │
-│ *  --employee     -e      <str>  Team member (email, name, or UUID) to attribute the sample to.  │
-│                                  Must be real — a blank employee_id fails validation.            │
-│                                  [required]                                                      │
+│    --employee             <str>  Team member (email, name, or UUID) to attribute the sample to.  │
+│                                  Must be real — a blank employee_id fails validation. Required.  │
 │    --querystring          <str>  Sample query string.                                            │
 │    --timestamp            <str>  Sample timestamp. [default: 2026-01-01 00:00:00]                │
 │    --json                        Emit JSON.                                                      │
@@ -4073,7 +4067,7 @@
 │ *    field_api_name      <str>  Field api_name. [required]                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --option   -o      <str>  Option label to add (repeatable).                                      │
+│ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
