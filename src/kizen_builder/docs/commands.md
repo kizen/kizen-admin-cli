@@ -69,7 +69,7 @@ kizen columns get <object> <uuid|name>                  # one column template's 
 kizen roles list                             # list roles (name, user count, # perm groups, default flag)
 kizen roles get <name|uuid>                  # one role: default flag, app permissions, attached groups + level counts
 kizen permissions groups                     # list permission groups (raw)
-kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --fields adds per-field rows; --raw for wire JSON
+kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --field-permissions adds per-field rows; --raw for wire JSON
 kizen permissions meta                        # the permissions catalog (sections, capabilities, defaults)
 
 kizen activities list [--object <api_name>] [--search <text>]  # activity types
@@ -101,7 +101,7 @@ kizen automations start <api_name> --record <uuid> --wait --show-logs  # fire, b
 
 kizen code test --script s.py \
     --input n=21:number --input who=world:string \
-    --output doubled:number --output greeting:string \
+    --declare-output doubled:number --declare-output greeting:string \
     [--secret MY_API_KEY] [--runtime python-3-13]              # unit-test a code_step script in the sandbox
 kizen code test --script s.py --inputs-file in.json --outputs-file out.json  # bulk inputs/outputs (JSON)
 ```
@@ -233,7 +233,7 @@ kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)
 kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # build a local workdir (connector.sql + __config.json + data/)
-kizen smart-connectors run [--dir path] [--dry-run]        # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
+kizen smart-connectors run [--dir path] [--skip-sql]       # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
 kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
 # `run`/`add-input` need `uv sync --extra connectors` (chdb). `push` previews a SQL diff and confirms
@@ -248,7 +248,7 @@ kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side o
 kizen smart-connectors push --publish [--dir path]               # sample, then publish; refreshes the output columns configure-flow checks
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
-kizen smart-connectors activate <connector> [--status operational|inactive] # a LIVE run without this sits queued forever, silently
+kizen smart-connectors activate <connector>                # a LIVE run without this sits queued forever, silently
 kizen smart-connectors deactivate <connector>                      # status inactive: no live runs; every edit and dry runs still work
 kizen smart-connectors start-flow <connector> [--write-records] [--ignore-blockers]   # queue a run; dry run unless --write-records
 # `set-input` on a connector that already has a file replaces it, keeping your SQL. What that leaves stale:
@@ -258,10 +258,9 @@ kizen smart-connectors start-flow <connector> [--write-records] [--ignore-blocke
 
 # smart connectors — read from other Kizen objects (exposed to the SQL as a kizen.<object> view)
 kizen smart-connectors seeds list <connector>
-kizen smart-connectors seeds add <connector> --object <o> [--group <saved filter group>] [--field f ...]
+kizen smart-connectors seeds add <connector> --object <o> [--filter-group <saved filter group>] [--field f ...]
 kizen smart-connectors seeds remove <connector> --object <o>
-# --group is a saved filter group / segment (`kizen filter-groups list <o>`), NOT a field category.
-# Omit it to seed all records; why a segment seed can duplicate records: kizen docs show smart-connectors.
+# Omit --filter-group to seed all records; why a segment seed can duplicate records: kizen docs show smart-connectors.
 # `add` refreshes the script config so the view exists (your SQL is kept) — without that a seed does nothing.
 # `pull` exports each seeded object's rows to data/ from the same filter group (or all records), so `run` hits the same joins.
 
@@ -288,7 +287,7 @@ kizen records move <pipeline> <uuid> --stage <name>                # move a reco
 kizen roles create --name X [--group <name|uuid> ...] [--permission <flag> ...] [--default]
 kizen roles update <name|uuid> [--name Y] [--group <name|uuid> ...] [--default/--no-default]  # --group REPLACES the set
 kizen roles delete <name|uuid>
-kizen permissions group-create --name X [--base default|clone] [--from <name|uuid>] [--settings-file f]
+kizen permissions group-create --name X [--base default|clone] [--source-group <name|uuid>] [--settings-file f]
 kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
 kizen permissions group-delete <name|uuid>
 

@@ -1345,10 +1345,13 @@ def test_start_flow_write_records_queues_a_live_run_after_the_confirm():
 
 
 @respx.mock
-def test_start_flow_live_is_an_error_that_names_write_records():
+@pytest.mark.parametrize("extra", [[], ["--write-records"]])
+def test_start_flow_live_is_an_error_that_names_write_records(extra):
+    # Even beside --write-records, --live stops before any API call.
     read, post = _mock_start_flow()
     result = CliRunner().invoke(
-        cli.app, ["smart-connectors", "start-flow", "order_import", "--live", "--yes"]
+        cli.app,
+        ["smart-connectors", "start-flow", "order_import", "--live", "--yes", *extra],
     )
     assert result.exit_code == 2
     assert (
@@ -3753,7 +3756,7 @@ def _seeds_add(monkeypatch, plan, *args):
     monkeypatch.setattr(sct, "plan_add_seed", fake_plan)
     result = CliRunner().invoke(
         cli.app,
-        ["smart-connectors", "seeds", "add", "order_import", "-o", "order_lines"]
+        ["smart-connectors", "seeds", "add", "order_import", "--object", "order_lines"]
         + list(args),
     )
     return result, planned
@@ -3762,7 +3765,9 @@ def _seeds_add(monkeypatch, plan, *args):
 def test_seeds_add_preview_warns_when_the_segment_leaves_records_out(monkeypatch):
     plan = _seed_add_plan(coverage={"segment": 5, "total": 7})
 
-    result, _ = _seeds_add(monkeypatch, plan, "-g", "Active Only", "--dry-run")
+    result, _ = _seeds_add(
+        monkeypatch, plan, "--filter-group", "Active Only", "--dry-run"
+    )
     assert result.exit_code == 0
     assert "covers 5 of 7 records" in result.stdout
     assert "match-or-create connector re-creates them" in result.stdout
@@ -3770,7 +3775,7 @@ def test_seeds_add_preview_warns_when_the_segment_leaves_records_out(monkeypatch
 
     # --json keeps the warning on stderr with the rest of the preview.
     result, _ = _seeds_add(
-        monkeypatch, plan, "-g", "Active Only", "--dry-run", "--json"
+        monkeypatch, plan, "--filter-group", "Active Only", "--dry-run", "--json"
     )
     assert result.exit_code == 0
     assert "covers 5 of 7 records" in result.stderr
@@ -3779,7 +3784,9 @@ def test_seeds_add_preview_warns_when_the_segment_leaves_records_out(monkeypatch
 
 def test_seeds_add_preview_is_quiet_when_the_segment_covers_everything(monkeypatch):
     plan = _seed_add_plan(coverage={"segment": 7, "total": 7})
-    result, _ = _seeds_add(monkeypatch, plan, "-g", "Active Only", "--dry-run")
+    result, _ = _seeds_add(
+        monkeypatch, plan, "--filter-group", "Active Only", "--dry-run"
+    )
     assert result.exit_code == 0
     assert "records outside it" not in result.stdout
     assert "couldn't count" not in result.stdout
@@ -3788,7 +3795,7 @@ def test_seeds_add_preview_is_quiet_when_the_segment_covers_everything(monkeypat
 def test_seeds_add_preview_says_when_it_couldnt_check_coverage(monkeypatch):
     # A failed count leaves no `coverage`; that must not read as full coverage.
     result, _ = _seeds_add(
-        monkeypatch, _seed_add_plan(), "-g", "Active Only", "--dry-run"
+        monkeypatch, _seed_add_plan(), "--filter-group", "Active Only", "--dry-run"
     )
     assert result.exit_code == 0
     assert "couldn't count the segment's records" in result.stdout

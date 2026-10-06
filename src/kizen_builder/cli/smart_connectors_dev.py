@@ -93,15 +93,19 @@ def smart_connectors_run(
     dir_: str = typer.Option(
         ".", "--dir", "-d", help="Connector working directory (from `pull`)."
     ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Build the databases but skip running the user SQL."
+    skip_sql: bool = typer.Option(
+        False, "--skip-sql", help="Build the databases but skip running the user SQL."
     ),
+    dry_run: bool = typer.Option(False, "--dry-run", hidden=True),
     json_out: bool = JSON_OPTION,
 ) -> None:
     """Run connector.sql locally against embedded ClickHouse and report the
     output tables written to data/output/. Needs the 'connectors' extra."""
+    if dry_run:
+        warn_renamed_flag("--dry-run", "--skip-sql")
+        skip_sql = True
     try:
-        meta = sc_tools.run_connector(dir_, dry_run=dry_run)
+        meta = sc_tools.run_connector(dir_, dry_run=skip_sql)
     except sc_tools.ConnectorRuntimeMissing as e:
         err_console.print(f"[red]error:[/red] {e}")
         raise typer.Exit(code=1) from e

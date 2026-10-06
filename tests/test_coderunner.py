@@ -212,7 +212,7 @@ def test_cli_test_command_renders_outputs(tmp_path):
             str(script),
             "--input",
             "who=world:s",
-            "--output",
+            "--declare-output",
             "greeting:s",
         ],
     )
@@ -243,7 +243,7 @@ def test_cli_test_command_json_output(tmp_path):
             str(script),
             "--input",
             "n=2:n",
-            "--output",
+            "--declare-output",
             "n2:n",
             "--json",
         ],
@@ -272,7 +272,7 @@ def test_cli_surfaces_validation_400_error(tmp_path):
             str(script),
             "--input",
             "n=1:string",
-            "--output",
+            "--declare-output",
             "x:n",
         ],
     )
@@ -305,7 +305,8 @@ def test_cli_surfaces_script_error_traceback(tmp_path):
     script = tmp_path / "s.py"
     script.write_text("outputs.x=1/0")
     result = runner.invoke(
-        cli.app, ["code", "test", "--yes", "--script", str(script), "--output", "x:n"]
+        cli.app,
+        ["code", "test", "--yes", "--script", str(script), "--declare-output", "x:n"],
     )
     assert result.exit_code == 1  # completed-but-failed run
     assert "ZeroDivisionError" in result.stdout
@@ -366,7 +367,8 @@ def test_cli_renders_http_requests_dict_shape(tmp_path):
     script = tmp_path / "s.py"
     script.write_text("outputs.ok=True")
     result = runner.invoke(
-        cli.app, ["code", "test", "--yes", "--script", str(script), "--output", "ok:b"]
+        cli.app,
+        ["code", "test", "--yes", "--script", str(script), "--declare-output", "ok:b"],
     )
     assert result.exit_code == 0, result.stdout
     assert "custom-objects" in result.stdout
@@ -392,7 +394,8 @@ def test_cli_shows_no_logs_hint_when_empty(tmp_path):
     script = tmp_path / "s.py"
     script.write_text("outputs.x=1")
     result = runner.invoke(
-        cli.app, ["code", "test", "--yes", "--script", str(script), "--output", "x:n"]
+        cli.app,
+        ["code", "test", "--yes", "--script", str(script), "--declare-output", "x:n"],
     )
     assert result.exit_code == 0, result.stdout
     assert "outputs.log" in result.stdout  # empty-logs hint mentions the channel

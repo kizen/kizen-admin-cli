@@ -77,6 +77,13 @@ def env_config():
     return load_env_config()
 
 
+def iter_commands(command, path):
+    """Walk the resolved Click command tree, yielding (path, command)."""
+    yield path, command
+    for name, sub in getattr(command, "commands", {}).items():
+        yield from iter_commands(sub, path + [name])
+
+
 def fake_get_object(api_name: str) -> dict[str, Any]:
     """get_object() stand-in serving tests/fixtures/objects/<api_name>.json."""
     path = FIXTURES / "objects" / f"{api_name}.json"

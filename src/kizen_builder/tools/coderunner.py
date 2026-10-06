@@ -75,7 +75,8 @@ def to_kizen_type(data_type: str | None) -> str:
     Mirrors ``remoteRunner.ts`` ``toKizenType``: a friendly name maps via
     :data:`DATA_TYPE_TO_KIZEN`; a token that is already a short code (``n``,
     ``dt``, …) is kept as-is; anything unrecognized defaults to ``s``. So
-    ``number`` and ``n`` are equivalent, and ``--output greeting:string`` works.
+    ``number`` and ``n`` are equivalent, and ``--declare-output greeting:string``
+    works.
     """
     t = (data_type or "").strip().lower()
     if t in _SHORT_CODES:

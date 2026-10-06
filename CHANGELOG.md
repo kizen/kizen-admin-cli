@@ -69,6 +69,26 @@ called out explicitly under **Changed** or **Removed**.
   `send-webhook` and `start-flow`. The old spellings except
   `start-flow --live` still work, with a warning, and will be removed in a
   later release.
+- **Each short flag and flag name now means one thing across the CLI.** `-o`
+  is always `--output`, `-e` is always the profile, and `-g`/`--group` is
+  always a permission group. The commands that used them for something else
+  take a new spelling:
+
+  | Before | After |
+  |---|---|
+  | `fields`/`activities fields`/`forms fields`/`surveys fields` `options add -o` | `--option` |
+  | `smart-connectors create -o`, `seeds add -o`, `seeds remove -o` | `--object` |
+  | `smart-connectors webhook-sample -e` | `--employee` |
+  | `smart-connectors seeds add --group` / `-g` | `--filter-group` |
+  | `code test --output name:type` | `--declare-output name:type` |
+  | `smart-connectors run --dry-run` | `--skip-sql` |
+  | `permissions group-create --from` | `--source-group` |
+  | `permissions group --fields` | `--field-permissions` |
+  | `smart-connectors activate --status inactive` | `smart-connectors deactivate` |
+
+  `activate --status` no longer appears in `--help`; `activate` sets
+  `operational`. The old spellings still work, with a warning on stderr, and
+  will be removed in a later release.
 - **`records archive` batches its requests and triggers no Kizen emails.** It
   used to send one request per id, and each one emailed you: archiving 3,000
   records meant 3,000 requests and 3,000 emails. It now sends up to 500 ids
@@ -119,10 +139,10 @@ called out explicitly under **Changed** or **Removed**.
   the same directory works without a re-pull. The success line now says
   "script published — live runs now use it" and shows the connector's status,
   instead of "connector is now live". Plain `push` is unchanged.
-- **`smart-connectors activate --status` accepts only `operational` or
-  `inactive`**, the only two an update can set. `setup` and `need_attention`
-  used to reach the server and 400. The preview also warns when the
-  connector has no execution variables, which the server requires.
+- **`smart-connectors activate` and `deactivate` set only `operational` and
+  `inactive`**, the only two statuses an update can set. `setup` and
+  `need_attention` used to reach the server and 400. The preview also warns
+  when the connector has no execution variables, which the server requires.
 
 - **`smart-connectors generate-sample` reports the tables its sample actually
   holds.** The `output tables` line now comes from the sample zip the run just
@@ -133,17 +153,17 @@ called out explicitly under **Changed** or **Removed**.
   which refresh on `push --publish`. `--json` gains `outputs`, `sample_file` and
   `warnings`; `scopes` is unchanged. A sample that can't be downloaded or read
   is a warning, not a failure.
-- **`smart-connectors seeds add` no longer requires `--group`, and leaving it
-  out seeds every record of the object.** That's the safe default: a segment
-  seed makes records outside the segment read as "not found" to the SQL, so a
-  match-or-create connector re-creates them on every run. When you do pass
-  `--group`, the preview now warns (without blocking) if the segment covers
-  fewer records than the object has, e.g. "covers 5 of 7 records". `seeds list`
-  shows such a seed's filter group as `all records` instead of `—`, and `pull`
-  now exports its rows instead of warning you to hand-author the file. The
-  preview's `fields` line now says `kizen_id only` when a new seed has no
-  `--field`, which is what the server actually exposes; it used to claim "all
-  seedable".
+- **`smart-connectors seeds add` no longer requires `--filter-group`, and
+  leaving it out seeds every record of the object.** That's the safe default:
+  a segment seed makes records outside the segment read as "not found" to the
+  SQL, so a match-or-create connector re-creates them on every run. When you
+  do pass `--filter-group`, the preview now warns (without blocking) if the
+  segment covers fewer records than the object has, e.g. "covers 5 of 7
+  records". `seeds list` shows such a seed's filter group as `all records`
+  instead of `—`, and `pull` now exports its rows instead of warning you to
+  hand-author the file. The preview's `fields` line now says `kizen_id only`
+  when a new seed has no `--field`, which is what the server actually exposes;
+  it used to claim "all seedable".
 - **A condition step with no rules now fails at `--dry-run`, naming the
   step.** That covers an empty `filter_config` query, a rule group with no
   `filters`, `step_condition: {}`, and an `in_group`/`not_in_group` with no
@@ -788,13 +808,13 @@ called out explicitly under **Changed** or **Removed**.
 - **Smart connectors can read from other Kizen objects.** `smart-connectors
   seeds list|add|remove` configures data seeds, which expose another object's
   records to the SQL as a `kizen.<object>` view — so a connector can join
-  incoming data against what's already in Kizen. `--group` takes a saved filter
-  group (segment) by name, which is what the API actually wants; passing a field
-  category id, the intuitive mistake, gets you a misleading "object does not
-  exist" from Kizen and a straight answer from the CLI. Adding a seed refreshes
-  the script's config so the view actually exists — a saved seed is otherwise
-  inert — while keeping the SQL you've been iterating on, and `seeds list` shows
-  which state each seed is in.
+  incoming data against what's already in Kizen. `--filter-group` takes a
+  saved filter group (segment) by name, which is what the API actually wants;
+  passing a field category id, the intuitive mistake, gets you a misleading
+  "object does not exist" from Kizen and a straight answer from the CLI.
+  Adding a seed refreshes the script's config so the view actually exists — a
+  saved seed is otherwise inert — while keeping the SQL you've been iterating
+  on, and `seeds list` shows which state each seed is in.
 - **`pull` exports seeded data, so `run` exercises the same joins locally.**
   Each seeded object's rows are written to `data/` from the same saved filter
   group the live run reads, following the seed table's own column list.
@@ -854,9 +874,9 @@ called out explicitly under **Changed** or **Removed**.
   the endpoint. `kizen docs show automation` gains a table of the six values
   and which id each one needs — `team_member` wants the singular
   `employee_id`, not `employee_ids`.
-- **`permissions group --fields` now names contacts custom fields instead of
-  showing raw UUIDs.** Field labels were resolved only for the custom objects
-  present on the group, but a contacts custom field lives under
+- **`permissions group --field-permissions` now names contacts custom fields
+  instead of showing raw UUIDs.** Field labels were resolved only for the
+  custom objects present on the group, but a contacts custom field lives under
   `contacts_section`, not `custom_objects` — so every one of those rows printed
   a bare field id, leaving the one part of the grid you'd want names for as the
   only part without them. They now resolve the same way object fields do. The
@@ -873,7 +893,7 @@ called out explicitly under **Changed** or **Removed**.
   Object resolution only ever queried custom objects, so `client_client` —
   one of the two seed tables a contact-matching connector actually needs —
   could never be found, raising a plain "not found" `PlanError` regardless of
-  `--group`/`--fields`. The same lookup backs load-step `custom_object`
+  `--filter-group`/`--field`. The same lookup backs load-step `custom_object`
   resolution in `configure-flow` and `create`'s `--object`, so contacts now
   resolve there too.
 - **`smart-connectors pull` no longer crashes with a raw `NameError` when
