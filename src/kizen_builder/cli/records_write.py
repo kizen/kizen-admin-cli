@@ -6,13 +6,12 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 from typing import Any
 
 import typer
 
 from kizen_builder.cli._mutations import _run_mutation
-from kizen_builder.cli._shared import err_console
+from kizen_builder.cli._shared import err_console, parse_json, read_text_file
 from kizen_builder.cli.records import records_app
 from kizen_builder.tools.planners import pipeline_stages as stage_planners
 from kizen_builder.tools.planners import records as record_planners
@@ -53,7 +52,7 @@ def _read_records_spec(spec_file: str) -> tuple[list[dict[str, Any]], bool]:
     sets the columns it fills). Returns `(records, from_stdin)`.
     """
     if spec_file:
-        text = Path(spec_file).read_text()
+        text = read_text_file(spec_file, "--spec-file")
         is_csv = spec_file.lower().endswith(".csv")
         from_stdin = False
     else:
@@ -69,11 +68,7 @@ def _read_records_spec(spec_file: str) -> tuple[list[dict[str, Any]], bool]:
 
     stripped = text.lstrip()
     if not is_csv and stripped[:1] in "[{":
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as e:
-            err_console.print(f"[red]error parsing JSON records:[/red] {e}")
-            raise typer.Exit(code=2) from e
+        data = parse_json(text, f"--spec-file {spec_file}" if spec_file else "stdin")
         records = data if isinstance(data, list) else [data]
         if not records:
             err_console.print(

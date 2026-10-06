@@ -11,6 +11,7 @@ from typing import Any
 import typer
 from rich.markup import escape
 from rich.table import Table
+from rich.text import Text
 
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.cli._mutations import _confirm_or_abort
@@ -152,27 +153,33 @@ def _fmt_ms(ms: Any) -> str:
         return str(ms)
 
 
-def _fmt_http_body(body: Any, limit: int = 4000) -> str:
+def _fmt_http_body(body: Any, limit: int = 4000) -> Text:
     """Render an http_requests body/header value for the detail view.
 
     Bodies come over the wire as strings; pretty-print JSON when it parses,
     otherwise show the raw text. Truncate very large bodies (full payload is
-    always available via `--json`).
+    always available via `--json`). The body stays literal text; only the
+    `(empty)` placeholder and the truncation note are dimmed.
     """
     if body is None or body == "":
-        return "[dim](empty)[/dim]"
+        return Text("(empty)", style="dim")
     if isinstance(body, (dict, list)):
         text = json.dumps(body, indent=2)
     else:
         text = str(body)
         with contextlib.suppress(ValueError, TypeError):
             text = json.dumps(json.loads(text), indent=2)
+    out = Text(text[:limit])
     if len(text) > limit:
-        text = (
-            text[:limit]
-            + f"\n[dim]… (truncated at {limit} chars — --json for full)[/dim]"
-        )
-    return text
+        out.append(f"\n… (truncated at {limit} chars — --json for full)", style="dim")
+    return out
+
+
+def _print_http_body(body: Any) -> None:
+    lines = _fmt_http_body(body).split("\n", allow_blank=True)
+    console.print(
+        Text("\n").join(Text("    ") + line for line in lines), soft_wrap=True
+    )
 
 
 def _render_http_request_detail(r: dict[str, Any]) -> None:
@@ -182,26 +189,16 @@ def _render_http_request_detail(r: dict[str, Any]) -> None:
     status = r.get("responseStatusCode", "")
     dur = _fmt_ms(r.get("duration")) if r.get("duration") is not None else ""
     err = r.get("requestErrorType")
-    heading = f"[bold]{method}[/bold] {url}  →  {status}"
+    heading = f"[bold]{method}[/bold] {escape(str(url))}  →  {status}"
     if dur:
         heading += f"  ({dur})"
     if err:
-        heading += f"  [red]{err}[/red]"
-    console.print(heading)
+        heading += f"  [red]{escape(str(err))}[/red]"
+    console.print(heading, emoji=False)
     console.print("  [dim]request headers:[/dim]")
-    console.print(
-        f"    {_fmt_http_body(r.get('headers')).replace(chr(10), chr(10) + '    ')}",
-        markup=False,
-        emoji=False,
-        soft_wrap=True,
-    )
+    _print_http_body(r.get("headers"))
     console.print("  [dim]request body:[/dim]")
-    console.print(
-        f"    {_fmt_http_body(r.get('body')).replace(chr(10), chr(10) + '    ')}",
-        markup=False,
-        emoji=False,
-        soft_wrap=True,
-    )
+    _print_http_body(r.get("body"))
     rb = r.get("responseBody")
     note = ""
     if isinstance(rb, str) and rb:
@@ -212,12 +209,7 @@ def _render_http_request_detail(r: dict[str, Any]) -> None:
             # is often truncated mid-JSON — flag it rather than look malformed.
             note = "  [dim](may be truncated by the sandbox's ~1KB capture)[/dim]"
     console.print(f"  [dim]response body:[/dim]{note}")
-    console.print(
-        f"    {_fmt_http_body(rb).replace(chr(10), chr(10) + '    ')}",
-        markup=False,
-        emoji=False,
-        soft_wrap=True,
-    )
+    _print_http_body(rb)
 
 
 def _render_coderunner_result(
@@ -296,12 +288,12 @@ def _render_coderunner_result(
         rt.add_column("ms")
         for r in reqs:
             if not isinstance(r, dict):
-                rt.add_row("", _short(r, 120), "", "")
+                rt.add_row("", Text(_short(r, 120)), "", "")
                 continue
             rt.add_row(
-                str(r.get("method", "")),
-                _short(r.get("url", ""), 120),
-                str(r.get("responseStatusCode", "")),
+                Text(str(r.get("method", ""))),
+                Text(_short(r.get("url", ""), 120)),
+                Text(str(r.get("responseStatusCode", ""))),
                 _fmt_ms(r.get("duration")) if r.get("duration") is not None else "",
             )
         console.print(rt)
@@ -498,10 +490,10 @@ def code_test(
             )
             if isinstance(e.body, (dict, list)):
                 for path, msg in _flatten_errors(e.body):
-                    loc = f"[red]{path}:[/red] " if path else "[red]- [/red]"
-                    err_console.print(f"  {loc}{_short(msg, 300)}")
+                    loc = f"[red]{escape(path)}:[/red] " if path else "[red]- [/red]"
+                    err_console.print(f"  {loc}{escape(_short(msg, 300))}", emoji=False)
             else:
-                err_console.print(f"  [red]{e.message}[/red]")
+                err_console.print(f"  [red]{escape(e.message)}[/red]", emoji=False)
             raise typer.Exit(code=1) from e
 
     if json_out:

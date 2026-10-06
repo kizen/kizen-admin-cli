@@ -162,7 +162,8 @@ src/kizen_builder/
   output.py                      # Shared table/json/csv output layer for read commands.
   cli/                           # Typer wrappers around tools/. The `kizen` command.
     __init__.py                  #   exports `app`; imports every module below, IN ORDER
-    _shared.py                   #   the root app + callback, consoles, shared output options
+    _shared.py                   #   the root app + callback + error group, consoles, shared
+                                 #   output options, cli_errors, the user-file readers
     _mutations.py                #   plan → preview → confirm → apply (`_run_mutation`); `_confirm_or_abort`
     docs.py                      #   kizen docs
     envs.py                      #   kizen envs
@@ -283,6 +284,16 @@ console from hard-wrapping long lines). When a remote value sits inside our
 own styling, escape only the value and pass `emoji=False`:
 `err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)`, with
 `escape` from `rich.markup`. A table cell takes `rich.text.Text(value)`.
+
+**Reading a file the user named.** Read it through `read_text_file(path,
+"--flag")`, or `read_json_file` when it holds JSON, and parse JSON from a flag
+or stdin with `parse_json(text, source)`, all from `cli/_shared.py`. A missing,
+unreadable or malformed file then ends on one `error: --flag <path>: …` line
+with exit 2. A spec that comes from `--spec-file` or stdin goes through
+`_read_spec` in `_mutations.py`. `ConfigError` and `KizenAPIError` need no
+wrapping: the root group (`_RootGroup`) turns them into an `error:` line and
+exit 1 from any command, and anything else into `error: internal: …`.
+`KIZEN_DEBUG=1` shows that traceback instead.
 
 **A new automation trigger or step type**, in order:
 

@@ -5,7 +5,6 @@ under `automations`, since templates aren't automation-specific.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import typer
@@ -21,6 +20,8 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    read_json_file,
+    read_text_file,
 )
 from kizen_builder.models.spec.email_templates import EmailTemplateDef
 from kizen_builder.tools import email_craft
@@ -309,9 +310,9 @@ def messages_templates_update(
     if subject is not None:
         patch["subject"] = subject
     if craft_json_file:
-        patch["craft_json"] = json.loads(Path(craft_json_file).read_text())
+        patch["craft_json"] = read_json_file(craft_json_file, "--craft-json-file")
     if content_file:
-        patch["content"] = Path(content_file).read_text()
+        patch["content"] = read_text_file(content_file, "--content-file")
 
     _run_mutation(
         lambda: message_planners.plan_update_template(template, patch),

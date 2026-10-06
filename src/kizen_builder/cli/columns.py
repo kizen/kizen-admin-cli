@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -17,7 +15,7 @@ from kizen_builder.cli._shared import (
     app,
     cli_errors,
     console,
-    err_console,
+    read_json_file,
 )
 from kizen_builder.cli.permissions import _resolve_group_id, _resolve_role_id
 from kizen_builder.tools import saved_views as sv_tools
@@ -109,11 +107,7 @@ def columns_create(
     """Create one column template (saved list-view column layout) on an object."""
     spec: dict[str, Any] = {"name": name}
     if config_file:
-        try:
-            spec["configuration_json"] = json.loads(Path(config_file).read_text())
-        except json.JSONDecodeError as e:
-            err_console.print(f"[red]error parsing --config-file JSON:[/red] {e}")
-            raise typer.Exit(code=2) from e
+        spec["configuration_json"] = read_json_file(config_file, "--config-file")
     if owner:
         spec["owner"] = owner
 
@@ -154,11 +148,7 @@ def columns_update(
     if name:
         changes["name"] = name
     if config_file:
-        try:
-            changes["configuration_json"] = json.loads(Path(config_file).read_text())
-        except json.JSONDecodeError as e:
-            err_console.print(f"[red]error parsing --config-file JSON:[/red] {e}")
-            raise typer.Exit(code=2) from e
+        changes["configuration_json"] = read_json_file(config_file, "--config-file")
     if owner:
         changes["owner"] = owner
 

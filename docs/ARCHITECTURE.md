@@ -77,10 +77,16 @@ tables, exit codes, and the shared `_run_mutation()` flow. Building a request
 body here means it belongs in a planner instead.
 
 One module per Kizen surface, plus two underscore-prefixed modules holding what
-the rest share: `_shared.py` (the root `app` and its callback, the two Rich
-consoles, and the `--output`/`--json` options) and `_mutations.py`
-(`_run_mutation` and the plan/result renderers). `_shared.py` imports no command
-module, so everything else in the package can import it.
+the rest share: `_shared.py` (the root `app`, its callback and `_RootGroup`,
+the two Rich consoles, the `--output`/`--json` options, `cli_errors`, and the
+user-file readers `read_text_file` / `read_json_file` / `parse_json`) and
+`_mutations.py` (`_run_mutation` and the plan/result renderers). `_shared.py`
+imports no command module, so everything else in the package can import it.
+
+`_RootGroup` is the root app's `cls=`. It ends any command that raises
+`ConfigError` or `KizenAPIError` on one `error:` line with exit 1, so a command
+needs `cli_errors` only for the other failures it expects. Anything else
+becomes `error: internal: …`, exit 1, unless `KIZEN_DEBUG=1` is set.
 
 `cli/__init__.py` imports every module so its commands register, and **the order
 of those imports sets the order `--help` lists things** — Typer renders in

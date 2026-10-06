@@ -6,10 +6,8 @@ Every create/update/delete command in this package funnels through
 
 from __future__ import annotations
 
-import json
 import sys
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -19,7 +17,13 @@ from rich.markup import escape
 from rich.prompt import Confirm
 from rich.table import Table
 
-from kizen_builder.cli._shared import cli_errors, console, err_console
+from kizen_builder.cli._shared import (
+    cli_errors,
+    console,
+    err_console,
+    parse_json,
+    read_text_file,
+)
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.planners.automations import known_choices_addendum
 from kizen_builder.tools.plans import PlanError
@@ -164,30 +168,33 @@ def _enrich_known_choice_failures(result: plan_tools.ApplyResult) -> None:
             r.message = f"{r.message} {addendum}" if r.message else addendum
 
 
-def _read_spec(spec_file: str, what: str = "automation") -> tuple[dict[str, Any], bool]:
-    """Read a JSON spec dict from --spec-file or stdin.
+def _read_spec(
+    spec_file: str, what: str = "automation", *, optional: bool = False
+) -> tuple[Any, bool]:
+    """Read a JSON spec from --spec-file or stdin.
 
     `what` names the spec in error messages (e.g. "dashboard", "layout").
     Returns (spec, from_stdin) — from_stdin tells the runner it can no
-    longer prompt interactively.
+    longer prompt interactively. With `optional`, a terminal or an empty pipe
+    on stdin returns `(None, False)` instead of erroring, for commands that
+    fall back to single-item flags.
     """
     if spec_file:
-        text = Path(spec_file).read_text()
-        from_stdin = False
-    else:
-        if sys.stdin.isatty():
-            err_console.print(
-                f"[red]error:[/red] no {what} spec provided. "
-                f"Pipe a JSON spec to stdin or pass --spec-file."
-            )
-            raise typer.Exit(code=2)
-        text = sys.stdin.read()
-        from_stdin = True
-    try:
-        return json.loads(text), from_stdin
-    except json.JSONDecodeError as e:
-        err_console.print(f"[red]error parsing JSON:[/red] {e}")
-        raise typer.Exit(code=2) from e
+        return parse_json(
+            read_text_file(spec_file, "--spec-file"), f"--spec-file {spec_file}"
+        ), False
+    if sys.stdin.isatty():
+        if optional:
+            return None, False
+        err_console.print(
+            f"[red]error:[/red] no {what} spec provided. "
+            f"Pipe a JSON spec to stdin or pass --spec-file."
+        )
+        raise typer.Exit(code=2)
+    text = sys.stdin.read()
+    if optional and not text:
+        return None, False
+    return parse_json(text, "stdin"), True
 
 
 def _stdin_is_terminal() -> bool:

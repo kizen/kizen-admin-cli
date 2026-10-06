@@ -2326,7 +2326,7 @@ def test_records_list_filter_bad_json_exits_2(kizen):
         cli.app, ["records", "list", "tax_lot", "--filter", "{not json"]
     )
     assert result.exit_code == 2
-    assert "error parsing --filter JSON" in result.stderr
+    assert "error: --filter: invalid JSON" in result.stderr
 
 
 def test_records_list_filter_invalid_spec_exits_2(kizen):

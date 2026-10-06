@@ -379,6 +379,18 @@ called out explicitly under **Changed** or **Removed**.
   template whose `content` is blank is now refused with its name, id and the
   two ways to fix it.
 
+- **User mistakes and API refusals end with one `error:` line, not a
+  traceback.** This covers a missing or unreadable input file, malformed JSON,
+  a missing profile and an API error. An unreadable input file exits 2, like
+  malformed JSON. The line names the flag
+  and the file (`error: --spec-file x.json: No such file or directory`), and
+  malformed JSON reads `error: <flag> <path>: invalid JSON: …` in place of the
+  old `error parsing … JSON:` wordings. A server message containing `[/…]` no
+  longer crashes the smart-connector error output.
+
+- **An unexpected failure prints one `error: internal: …` line and exits 1.**
+  Set `KIZEN_DEBUG=1` to see its traceback instead.
+
 - **`kizen apply` writes only to the business a plan was built for.** It used
   to refuse nothing: a plan saved in one folder and replayed from another was
   written to whatever environment the second folder resolved to, while the

@@ -5,7 +5,6 @@ access-level grid.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import typer
@@ -20,6 +19,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    read_json_file,
     warn_renamed_flag,
 )
 from kizen_builder.tools import permissions as perm_tools
@@ -434,7 +434,7 @@ def perms_group_create(
         source_group = from_group
     settings = None
     if settings_file:
-        settings = json.loads(Path(settings_file).read_text())
+        settings = read_json_file(settings_file, "--settings-file")
     template_id = _resolve_group_id(source_group) if source_group else None
     _run_mutation(
         lambda: perm_planners.plan_create_permission_group(
@@ -477,7 +477,7 @@ def perms_group_update(
     a full-group PUT — so the server normalizes cross-field rules for you.
     """
     group_id = _resolve_group_id(group)
-    settings = json.loads(Path(settings_file).read_text())
+    settings = read_json_file(settings_file, "--settings-file")
     _run_mutation(
         lambda: perm_planners.plan_update_permission_group(group_id, settings),
         dry_run=dry_run,

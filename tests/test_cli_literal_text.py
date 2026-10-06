@@ -13,7 +13,9 @@ import io
 import json
 import re
 
+import httpx
 import pytest
+import respx
 from rich.console import Console
 from typer.testing import CliRunner
 
@@ -24,6 +26,7 @@ from kizen_builder.cli import code as cli_code
 from kizen_builder.cli._run_render import print_step_log
 from kizen_builder.tools import smart_connectors as sc_tools
 from kizen_builder.tools.planners import automations as auto_planners
+from tests.conftest import FAKE_BASE_URL
 
 runner = CliRunner()
 
@@ -181,3 +184,64 @@ def test_coderunner_result_prints_logs_and_error_detail_verbatim(capsys):
     assert "closing [/x]" in out
     assert "v = row[field]" in out
     assert "KeyError [/x]" in out
+
+
+def test_connector_planner_error_prints_server_message_verbatim(monkeypatch):
+    message = "field [/data] invalid"
+
+    def boom(*_a, **_kw):
+        raise KizenAPIError(400, message)
+
+    monkeypatch.setattr(sc_tools, "plan_send_webhook", boom)
+    result = runner.invoke(
+        cli.app, ["smart-connectors", "send-webhook", "c", "--body", "{}"]
+    )
+    assert result.exit_code == 1, result.output
+    assert isinstance(result.exception, SystemExit)
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.stderr)
+    assert f"error: HTTP 400: {message}" in plain
+
+
+@respx.mock
+def test_code_test_http_audit_prints_remote_text_literally(tmp_path):
+    run = {
+        "request_id": "r",
+        "duration_ms": 1.0,
+        "values": {},
+        "logs": [],
+        "http_requests": {
+            "count": 2,
+            "not_logged": 0,
+            "requests": [
+                {
+                    "method": "GET",
+                    "url": "https://example.test/a?filter[status]=open&page[size]=10",
+                    "body": "",
+                    "requestErrorType": "ECONN [/x]",
+                    "responseStatusCode": 200,
+                    "responseBody": "",
+                    "duration": 1.0,
+                },
+                {
+                    "method": "GET",
+                    "url": "https://example.test/x[/y]",
+                    "responseStatusCode": 200,
+                },
+            ],
+        },
+        "error": None,
+    }
+    respx.post(f"{FAKE_BASE_URL}/api/coderunner/run").mock(
+        return_value=httpx.Response(200, json=run)
+    )
+    script = tmp_path / "s.py"
+    script.write_text("outputs.x=1")
+    result = runner.invoke(
+        cli.app, ["code", "test", "--yes", "--script", str(script), "-v"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "(empty)" in result.stdout
+    assert "[dim]" not in result.stdout
+    assert "ECONN [/x]" in result.stdout
+    assert "https://example.test/a?filter[status]=open&page[size]=10" in result.stdout
+    assert "https://example.test/x[/y]" in result.stdout

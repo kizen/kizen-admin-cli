@@ -536,7 +536,7 @@ def test_fmt_http_body_pretty_prints_json():
 
 
 def test_fmt_http_body_raw_when_not_json_and_empty():
-    assert cli_code._fmt_http_body("not json at all").strip() == "not json at all"
+    assert cli_code._fmt_http_body("not json at all").plain == "not json at all"
     assert "empty" in cli_code._fmt_http_body("")
     assert "empty" in cli_code._fmt_http_body(None)
 

@@ -7,16 +7,13 @@ called once per kind. Nothing here registers on the root `app`.
 
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
 from typing import Any, Literal
 
 import typer
 from rich.table import Table
 
 from kizen_builder import output as out
-from kizen_builder.cli._mutations import _run_mutation
+from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
@@ -134,21 +131,10 @@ def add_field_commands(
             )
             raise typer.Exit(code=2)
 
-        from_stdin = False
-        if spec_file:
-            spec_text = Path(spec_file).read_text()
-        elif not display_name and not sys.stdin.isatty():
-            spec_text = sys.stdin.read()
-            from_stdin = True
-        else:
-            spec_text = ""
-
-        if spec_text:
-            try:
-                spec = json.loads(spec_text)
-            except json.JSONDecodeError as e:
-                err_console.print(f"[red]error parsing JSON:[/red] {e}")
-                raise typer.Exit(code=2) from e
+        spec, from_stdin = (
+            (None, False) if display_name else _read_spec(spec_file, optional=True)
+        )
+        if spec is not None:
             spec_fields = spec.get("fields", spec) if isinstance(spec, dict) else spec
             if not isinstance(spec_fields, list):
                 err_console.print(
