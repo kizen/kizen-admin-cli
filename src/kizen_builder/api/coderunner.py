@@ -2,8 +2,8 @@
 
 ``POST /api/coderunner/run`` executes a script in the same secure Lambda
 sandbox that automation ``code_step`` steps use, standalone: no automation,
-no record, no PUT. It creates nothing in the env, so like ``automations
-start`` it is a runtime action, not a schema mutation.
+no record, no PUT. ``kizen.api`` calls in the script use real credentials and
+can write live data, so the CLI asks y/N before calling it.
 
 The request/response shapes are ``CodeRunnerRequestRequest`` /
 ``CodeRunnerResponse``. See :mod:`kizen_builder.tools.coderunner` for the

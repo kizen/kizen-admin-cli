@@ -16,6 +16,14 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Breaking: `automations start`, `roundtrip --execute`, `code test` and
+  every `automations runs` verb except `pause` now y/N-confirm. Scripts must
+  pass `--yes` or they exit 2.** Each of them runs live and can't be undone;
+  `code test` runs in the same Lambda as a real `code_step` and its
+  `kizen.api` calls can write. `roundtrip --execute` previews first and
+  never prompts when validation fails. The run verbs show the run's
+  automation and status before asking. `runs pause` still acts at once, so a
+  run can be stopped fast. The run verbs gain `--json`.
 - **Breaking: an automation spec key the planner doesn't read is now a plan
   error.** A step or trigger config block key that the CLI used to drop
   silently fails `automations create`/`update` and `steps add` before the

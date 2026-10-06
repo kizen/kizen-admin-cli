@@ -42,7 +42,11 @@ sessions, and notes record intent, not reality.
 `--dry-run` → show the rendered plan to the user → wait for approval →
 re-run without `--dry-run` (add `--yes` since approval already happened in
 chat). Never apply without explicit approval, even for additive changes that
-look safe.
+look safe. Everything that executes asks first: `automations start`,
+`roundtrip --execute` and the `automations runs` verbs y/N-confirm (`--yes`
+skips). `runs pause` is the exception, so a run can be stopped fast. `code
+test` asks too: it runs in the same Lambda as a real step and can write. Get
+approval before running any of them.
 
 **4. Use the CLI for exploration; Python only for production scripts.** When
 investigating Kizen state — looking up fields, reading records, tracing
