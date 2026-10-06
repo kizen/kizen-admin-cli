@@ -414,7 +414,12 @@
  Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).                         
                                                                                                     
  Reads the plan JSON from `--plan-file` or stdin. Confirms with the user                            
- (unless `--yes`), executes operations, prints results.                                             
+ (unless `--yes`), executes operations, prints results. A plan piped on                             
+ stdin can't be confirmed interactively, so it needs `--yes`.                                       
+                                                                                                    
+ Refuses (exit 2) a plan built for a different business than the one this                           
+ folder resolves to. The ops are sent as they were planned, without                                 
+ re-checking live state; re-run the original verb to re-plan.                                       
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --plan-file          <str>  Path to a plan JSON file. Default: read from stdin.                  │

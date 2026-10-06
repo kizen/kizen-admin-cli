@@ -175,9 +175,11 @@ Every mutation goes through this loop:
    approval already happened in chat. The command re-plans against live
    state and applies.
 
-Plans are **ephemeral** — there's no on-disk plan store. Each run re-plans
-from live state, so an approved change applied later is still validated
-against reality at apply time. For automation updates, the plan bakes in
+Plans are **ephemeral** — there's no on-disk plan store. Re-running the
+verb with `--yes` re-plans against live state, so an approved change applied
+later is still validated against reality at apply time. `kizen apply`
+replays a saved plan's payloads without re-validating them, and refuses a
+plan built for another business. For automation updates, the plan bakes in
 `last_revision` — if someone edits the automation between plan and apply,
 the PUT fails loudly instead of clobbering their change.
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 import time
 
 import httpx
@@ -27,7 +28,13 @@ from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.planners import forms as form_planners
 from kizen_builder.tools.planners import objects as object_planners
 from kizen_builder.tools.planners import records as record_planners
-from tests.conftest import FAKE_BASE_URL, load_fixture, plain
+from tests.conftest import (
+    FAKE_BASE_URL,
+    FAKE_BUSINESS_ID,
+    OTHER_BUSINESS_ID,
+    load_fixture,
+    plain,
+)
 
 runner = CliRunner()
 
@@ -1754,16 +1761,89 @@ def test_apply_rejects_garbage_plan():
     assert "error parsing plan" in result.stderr
 
 
+def _plain(text: str) -> str:
+    """Rendered output without colour codes, box borders or line wrapping."""
+    return " ".join(re.sub(r"\x1b\[[0-9;]*m", "", text).replace("│", " ").split())
+
+
+def _apply_must_not_run(monkeypatch):
+    monkeypatch.setattr(
+        plan_tools,
+        "apply_plan",
+        lambda p: (_ for _ in ()).throw(AssertionError("apply_plan called")),
+    )
+
+
+def _plan_json(business_id=None, *, legacy=False):
+    plan = _fake_plan(business_id=business_id)
+    data = json.loads(plan_tools.plan_to_json(plan))
+    if legacy:
+        del data["business_id"]
+    return json.dumps(data)
+
+
+def test_apply_refuses_plan_for_another_business(monkeypatch):
+    _apply_must_not_run(monkeypatch)
+    result = runner.invoke(
+        cli.app, ["apply", "--yes"], input=_plan_json(OTHER_BUSINESS_ID)
+    )
+    assert result.exit_code == 2, result.output
+    err = _plain(result.stderr)
+    assert err.startswith("error:")
+    assert OTHER_BUSINESS_ID in err
+    assert FAKE_BUSINESS_ID in err
+
+
+def test_apply_plan_file_names_the_business_it_writes_to(monkeypatch, tmp_path):
+    monkeypatch.setattr(plan_tools, "apply_plan", _ok_result)
+    path = tmp_path / "plan.json"
+    path.write_text(_plan_json())
+    result = runner.invoke(cli.app, ["apply", "--plan-file", str(path), "--yes"])
+    assert result.exit_code == 0, result.output
+    assert f"Writing to profile 'testenv' (business_id {FAKE_BUSINESS_ID})" in _plain(
+        result.stdout
+    )
+
+
+def test_apply_plan_file_without_yes_still_prompts(monkeypatch, tmp_path):
+    _apply_must_not_run(monkeypatch)
+    path = tmp_path / "plan.json"
+    path.write_text(_plan_json())
+    result = runner.invoke(cli.app, ["apply", "--plan-file", str(path)], input="n\n")
+    assert result.exit_code == 1, result.output
+    assert "aborted" in result.output
+
+
+def test_apply_legacy_plan_warns_and_applies(monkeypatch):
+    monkeypatch.setattr(plan_tools, "apply_plan", _ok_result)
+    result = runner.invoke(
+        cli.app, ["apply", "--yes", "--json"], input=_plan_json(legacy=True)
+    )
+    assert result.exit_code == 0, result.output
+    assert "predates business binding" in _plain(result.stderr)
+    assert json.loads(result.stdout)["results"][0]["status"] == "ok"
+
+
+def test_apply_from_stdin_without_yes_refuses_to_prompt(monkeypatch):
+    _apply_must_not_run(monkeypatch)
+    result = runner.invoke(cli.app, ["apply"], input=_plan_json())
+    assert result.exit_code == 2, result.output
+    err = _plain(result.stderr)
+    assert "cannot prompt for confirmation after reading the plan from stdin" in err
+    assert "--yes" in err and "--plan-file" in err
+
+
 # ---------------------------------------------------------------------------
 # mutation verbs (plan → preview → confirm → apply)
 # ---------------------------------------------------------------------------
 
 
-def _fake_plan(action="create"):
+def _fake_plan(action="create", business_id=None):
     from kizen_builder.tools.plans import Plan, PlanOperation
 
     return Plan.build(
         env="testenv",
+        business_id=business_id,
         summary="test plan",
         operations=[
             PlanOperation(

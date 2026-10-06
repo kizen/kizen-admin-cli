@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
+import pytest
 import respx
 
 from kizen_builder.cli._mutations import _enrich_known_choice_failures
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.plans import Plan, PlanOperation
-from tests.conftest import FAKE_BASE_URL
+from tests.conftest import FAKE_BASE_URL, FAKE_BUSINESS_ID, OTHER_BUSINESS_ID
 
 
 def _field_op(**overrides) -> PlanOperation:
@@ -42,6 +45,7 @@ def test_plan_json_round_trip():
     restored = plan_tools.plan_from_json(text)
     assert restored.id == plan.id
     assert restored.env == plan.env
+    assert restored.business_id == plan.business_id == FAKE_BUSINESS_ID
     assert restored.operations[0].payload == plan.operations[0].payload
     assert (
         restored.operations[0].parent_object_uuid
@@ -424,3 +428,56 @@ def test_apply_permission_setting_ok_when_level_matches():
     assert r.status == "ok"
     assert r.message is None
     assert result.all_ok
+
+
+# ---------------------------------------------------------------------------
+# apply binds to the business the plan was built for
+# ---------------------------------------------------------------------------
+
+
+def _skip_plan(env: str = "testenv", business_id: str | None = None) -> Plan:
+    op = _field_op(
+        action="skip", payload={}, existing_uuid="22222222-2222-4222-8222-222222222222"
+    )
+    return Plan.build(env=env, summary="t", operations=[op], business_id=business_id)
+
+
+def _legacy(plan: Plan) -> Plan:
+    """The same plan as a CLI that predates ``business_id`` would have saved it."""
+    data = json.loads(plan_tools.plan_to_json(plan))
+    del data["business_id"]
+    return plan_tools.plan_from_json(json.dumps(data))
+
+
+@respx.mock
+def test_apply_refuses_plan_for_another_business():
+    plan = Plan.build(
+        env="testenv",
+        summary="t",
+        operations=[_field_op()],
+        business_id=OTHER_BUSINESS_ID,
+    )
+    with pytest.raises(plan_tools.PlanError) as exc:
+        plan_tools.apply_plan(plan)
+    assert OTHER_BUSINESS_ID in str(exc.value)
+    assert FAKE_BUSINESS_ID in str(exc.value)
+    assert not respx.calls
+
+
+def test_apply_result_names_the_resolved_profile_not_the_plan_label():
+    result = plan_tools.apply_plan(_skip_plan(env="Some-Other-Label"))
+    assert result.env == "testenv"
+
+
+def test_apply_legacy_plan_matching_profile_name_applies():
+    plan = _legacy(_skip_plan(env="TestEnv"))
+    assert plan.business_id is None
+    result = plan_tools.apply_plan(plan)
+    assert result.all_ok
+    assert result.env == "testenv"
+
+
+def test_apply_legacy_plan_with_another_profile_name_raises():
+    plan = _legacy(_skip_plan(env="elsewhere"))
+    with pytest.raises(plan_tools.PlanError, match="elsewhere"):
+        plan_tools.apply_plan(plan)

@@ -106,9 +106,12 @@ it.
 
 Plans are JSON-serializable and held in conversation context. `plan_to_json` /
 `plan_from_json` let a plan be saved from a `--dry-run --json` run and fed back
-to `kizen apply` later, but the tool keeps no on-disk plan store. A plan binds
-to one env (`Plan.env`), and its `id` is a short content hash used for display
-and cross-referencing rather than as a lookup key.
+to `kizen apply` later, but the tool keeps no on-disk plan store. A plan
+records the env label (`Plan.env`) and `business_id` it was built against, and
+`kizen apply` refuses a plan whose `business_id` differs from the resolved
+profile's. Replaying a saved plan sends its payloads as they were at plan time,
+without re-validating them against live state. The plan's `id` is a short
+content hash used for display and cross-referencing rather than as a lookup key.
 
 ### `PlanOperation` carries both `preview` and `payload`
 
@@ -175,7 +178,9 @@ pinned directory — see the checksum rule below.
 
 A pinned directory plus the identity checksum is what stops an agent from
 drifting onto the wrong environment: there's no ambient "active profile" pointer
-to flip.
+to flip. `kizen apply` holds a saved plan to the same check: the plan's
+`business_id` must equal the resolved profile's, so a plan saved in one folder
+can't be replayed into another environment.
 
 ## Where a new surface's code goes
 

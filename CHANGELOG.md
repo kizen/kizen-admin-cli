@@ -379,6 +379,16 @@ called out explicitly under **Changed** or **Removed**.
   template whose `content` is blank is now refused with its name, id and the
   two ways to fix it.
 
+- **`kizen apply` writes only to the business a plan was built for.** It used
+  to refuse nothing: a plan saved in one folder and replayed from another was
+  written to whatever environment the second folder resolved to, while the
+  output named the first. A plan now records its `business_id`, and `apply`
+  refuses (exit 2, before the confirm prompt) one built for another business.
+  Plans saved before this change carry no `business_id` and are matched by
+  profile name, with a warning. A plan piped on stdin now needs `--yes`
+  instead of ending in a bare `Aborted.`. A plan saved by this version won't
+  parse on an older CLI.
+
 - **Specs accept every api_name Kizen itself produces.** An api_name that
   started with a digit or underscore (`1099_forms`), or that carried Kizen's
   mixed-case collision suffix (`employee_m7SZCzg3`), failed spec validation, so

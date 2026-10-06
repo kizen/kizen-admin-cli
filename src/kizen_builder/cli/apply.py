@@ -6,11 +6,17 @@ import sys
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 from rich.prompt import Confirm
 
-from kizen_builder.cli._mutations import _enrich_known_choice_failures, _render_result
+from kizen_builder.cli._mutations import (
+    _enrich_known_choice_failures,
+    _render_plan,
+    _render_result,
+)
 from kizen_builder.cli._shared import app, cli_errors, console, err_console
 from kizen_builder.tools import plans as plan_tools
+from kizen_builder.tools.plans import PlanError
 
 
 @app.command("apply")
@@ -26,7 +32,12 @@ def apply_cmd(
     """Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).
 
     Reads the plan JSON from `--plan-file` or stdin. Confirms with the user
-    (unless `--yes`), executes operations, prints results.
+    (unless `--yes`), executes operations, prints results. A plan piped on
+    stdin can't be confirmed interactively, so it needs `--yes`.
+
+    Refuses (exit 2) a plan built for a different business than the one this
+    folder resolves to. The ops are sent as they were planned, without
+    re-checking live state; re-run the original verb to re-plan.
     """
     if plan_file:
         text = Path(plan_file).read_text()
@@ -45,16 +56,33 @@ def apply_cmd(
         err_console.print(f"[red]error parsing plan:[/red] {e}")
         raise typer.Exit(code=2) from e
 
-    if not json_out:
-        console.print(f"[bold]Apply plan {plan.id}[/bold]  [dim]→ {plan.env}[/dim]")
-        console.print(plan.summary)
-        for op in plan.operations:
-            console.print(f"  • {op.action} {op.kind}: {op.key}")
-    if not yes and not Confirm.ask(
-        f"Apply {len(plan.operations)} op(s)?", default=False
-    ):
-        console.print("[yellow]aborted[/yellow]")
-        raise typer.Exit(code=1)
+    with cli_errors():
+        try:
+            config = plan_tools.resolve_apply_target(plan)
+        except PlanError as e:
+            err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)
+            raise typer.Exit(code=2) from e
+    if plan.business_id is None:
+        err_console.print(
+            "[yellow]warning:[/yellow] this plan predates business binding; "
+            f"matched to profile '{config.name}' by name only."
+        )
+
+    preview_target = err_console if json_out else console
+    _render_plan(plan, preview_target)
+    preview_target.print(
+        f"Writing to profile '{config.name}' (business_id {config.business_id})."
+    )
+    if not yes:
+        if not plan_file:
+            err_console.print(
+                "[red]error:[/red] cannot prompt for confirmation after reading "
+                "the plan from stdin. Re-run with --yes (or use --plan-file)."
+            )
+            raise typer.Exit(code=2)
+        if not Confirm.ask(f"Apply {len(plan.operations)} op(s)?", default=False):
+            console.print("[yellow]aborted[/yellow]")
+            raise typer.Exit(code=1)
 
     with cli_errors():
         result = plan_tools.apply_plan(plan)
