@@ -14,6 +14,8 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-06
+
 ### Changed
 
 - **Breaking: `automations start`, `roundtrip --execute`, `code test` and
@@ -1048,5 +1050,6 @@ who isn't its author.
 The tool's history before versioning is recorded in [ROADMAP.md](ROADMAP.md)
 under "Shipped before 0.2.0".
 
-[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kizen/kizen-admin-cli/releases/tag/v0.2.0
