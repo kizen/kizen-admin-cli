@@ -7,7 +7,7 @@ from typing import Any
 import typer
 
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
-from kizen_builder.cli._shared import app, err_console
+from kizen_builder.cli._shared import app, err_console, warn_renamed_flag
 from kizen_builder.tools.planners import fields as field_planners
 
 fields_app = typer.Typer(
@@ -290,8 +290,9 @@ def field_options_add(
     object_api_name: str = typer.Argument(..., help="Parent object api_name."),
     field_api_name: str = typer.Argument(..., help="Field api_name."),
     option: list[str] = typer.Option(
-        [], "--option", "-o", help="Option label to add (repeatable)."
+        [], "--option", help="Option label to add (repeatable)."
     ),
+    option_short: list[str] = typer.Option([], "-o", hidden=True),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the plan without applying."
     ),
@@ -303,6 +304,9 @@ def field_options_add(
     ),
 ) -> None:
     """Add one or more options to a select-type field. Existing names are skipped."""
+    if option_short:
+        warn_renamed_flag("-o", "--option")
+        option = [*option, *option_short]
     if not option:
         err_console.print("[red]error:[/red] pass at least one --option.")
         raise typer.Exit(code=2)

@@ -123,7 +123,11 @@ def test_translated_payload_validates(path: str) -> None:
 def test_validator_flags_disconnected_graph() -> None:
     """The server silently accepts multi-root step graphs; this fixture is a
     capture of one such corrupt automation. validate_payload is the only
-    thing standing between a bad edit and silently orphaned steps."""
+    thing standing between a bad edit and silently orphaned steps.
+
+    The fixture also carries a condition with no rules (``query: []``). The
+    spec path rejects that, but the live path has to tolerate it so the
+    automation can still be read and fixed."""
     payload = live_to_payload(load_fixture("automations/condition_roundtrip.raw.json"))
     problems = validate_payload(payload)
     assert any("root step" in p for p in problems)

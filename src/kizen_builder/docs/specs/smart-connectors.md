@@ -56,8 +56,8 @@ package's `__config.json` is built from.
 ## The local dev loop
 
 ```bash
-kizen smart-connectors pull <connector> [--dir] [--live] [--force]
-kizen smart-connectors run  [--dir] [--dry-run]
+kizen smart-connectors pull <connector> [--dir] [--script draft|live] [--overwrite]
+kizen smart-connectors run  [--dir] [--skip-sql]
 kizen smart-connectors push [--dir] [--publish] [--dry-run] [--yes]
 kizen smart-connectors add-input <file> [--dir]      # swap in local sample data
 ```
@@ -163,7 +163,7 @@ smart-connectors push --publish                       # sample, then promote the
 smart-connectors suggest-variables <c> --spec         # starting point for the spec
 smart-connectors configure-flow <c> --spec-file <f>   # execution_variables + flow.loads
 smart-connectors activate <c>                         # status: operational (deactivate: inactive)
-smart-connectors start-flow <c> [--live]              # start-connector-flow
+smart-connectors start-flow <c> [--write-records]     # start-connector-flow
 ```
 
 The raw calls behind each step, because knowing them is what makes a failure
@@ -267,7 +267,7 @@ by the server and wasn't probed:
 | `push`, `generate-sample`, `push --publish` | ✓ | ✓ | ✓ |
 | `configure-flow` | ✓ | ✓ | ✓ |
 | `start-flow` (dry run) | ✓ | ✓ | ✓ |
-| `start-flow --live` | ✗ | ✓ | ✗ |
+| `start-flow --write-records` | ✗ | ✓ | ✗ |
 
 Outside `operational`, `start-flow` refuses a live run and says why. Queued
 anyway, a live run sits in `queued` forever with no error (step 8 above).
@@ -332,14 +332,19 @@ CLI: `kizen smart-connectors seeds list|add|remove`. The wire details:
   id. A category id 400s with the misleading "object does not exist".
 - **`group_id: null` seeds every record of the object** (the schema marks it
   `nullable`; stored and regenerated into a working seed table, confirmed live
-  2026-09-25). `seeds add` sends it when `--group` is omitted.
+  2026-09-25). `seeds add` sends it when `--filter-group` is omitted.
 - A segment seed exposes only the segment's records, so a record outside it
   reads as not found to the SQL — a match-or-create connector re-creates it on
-  every run. `seeds add --group` warns when the segment covers fewer records
-  than the object has.
+  every run. `seeds add --filter-group` warns when the segment covers fewer
+  records than the object has.
 - `fields_ids` (write-only — it doesn't come back on a read) picks which fields
   come along; the server always includes `kizen_id`. Omitting it exposes only
   `kizen_id` (confirmed live 2026-09-25).
+  Since a whole-list save re-sends every seed, `seeds add`/`remove` rebuild
+  `fields_ids` for each seed they re-save from its seed table's
+  `columns_mapping`, so a replace without `--field` keeps the current columns
+  (confirmed live 2026-10-05). A seed not yet in the script has no table to
+  rebuild from; the preview says it's re-saved as `kizen_id` only.
 - Only the field types in `metadata.kizen_data_seeds_allowed_field_types` can be
   seeded.
 
@@ -518,7 +523,8 @@ Authoring: `create` → `set-input` → `generate-sample` → `push --publish` �
 
 Every write previews and confirms first (`--dry-run` to stop after the preview,
 `--yes` to skip the prompt). Two exceptions run without a prompt because they
-write no records: `generate-sample`, and a `start-flow` without `--live`.
+write no records: `generate-sample`, and a `start-flow` without
+`--write-records`.
 
 ## See also
 

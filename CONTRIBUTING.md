@@ -164,7 +164,7 @@ src/kizen_builder/
     __init__.py                  #   exports `app`; imports every module below, IN ORDER
     _shared.py                   #   the root app + callback + error group, consoles, shared
                                  #   output options, cli_errors, the user-file readers
-    _mutations.py                #   plan → preview → confirm → apply (`_run_mutation`)
+    _mutations.py                #   plan → preview → confirm → apply (`_run_mutation`); `_confirm_or_abort`
     docs.py                      #   kizen docs
     envs.py                      #   kizen envs
     objects.py                   #   kizen objects — reads + create/update/delete
@@ -264,6 +264,13 @@ the same commit when the change is intentional:
 uv run python scripts/dump_cli_tree.py | diff scripts/cli-tree-baseline.txt -
 ```
 
+**Flag names.** `-o`/`--output` is the output format, `-y`/`--yes` skips the
+confirm, `-f`/`--field` names a field, `-p`/`-e` is the profile, and
+`-g`/`--group` is a permission group. A short flag never gets a second
+meaning; `tests/test_cli_flags.py` walks the command tree and enforces it. To
+rename a flag, keep the old spelling as a hidden option and call
+`warn_renamed_flag` (`cli/_shared.py`) when it's used.
+
 **A new cross-cutting topic** — one that spans surfaces, like `filters` or
 `code-steps` — goes at the root of `src/kizen_builder/docs/` rather than under
 `specs/`, and must be added to `GUIDE_TOPICS` in `docs.py`.
@@ -299,8 +306,14 @@ exit 1 from any command, and anything else into `error: internal: …`.
    `tools/planners/automations.py` and register it in `_STEP_BUILDERS` — or in
    `_TRIGGER_BUILDERS` for a trigger. These registries are the authoritative
    gate for what's wired.
-5. Update the wired list in `src/kizen_builder/docs/specs/automation.md`.
-6. If the type has an enum-typed field whose valid values you've confirmed
+5. Declare the block keys the builder reads with `@honours("key", ...)` on the
+   builder, or `@honours_all` if it forwards the whole block. A spec key
+   outside the declared set is a plan error, and
+   `test_declared_keys_match_what_the_builder_reads` fails if the declaration
+   and the builder's `block.get(...)` calls disagree. Read-dialect aliases the
+   builder accepts count as read.
+6. Update the wired list in `src/kizen_builder/docs/specs/automation.md`.
+7. If the type has an enum-typed field whose valid values you've confirmed
    (live, in a fixture, or via the drift snapshot once it captures enum
    values), add them to `KNOWN_ENUM_CHOICES` / `KNOWN_ENUM_CHOICES_TRIGGERS`
    in `tools/planners/automations.py` rather than only writing them into

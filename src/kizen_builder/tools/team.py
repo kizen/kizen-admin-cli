@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from kizen_builder.api import permissions as perm_api
 from kizen_builder.api import team as team_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
@@ -79,7 +80,7 @@ def get_team_member(ref: str) -> dict[str, Any]:
                     f"team member with id '{member_id}' not found."
                 ) from exc
             raise
-        role_names = {r["id"]: r.get("name") for r in team_api.list_roles(client)}
+        role_names = {r["id"]: r.get("name") for r in perm_api.list_roles(client)}
     return {
         "id": detail.get("id"),
         "full_name": detail.get("full_name"),

@@ -5,14 +5,16 @@ flips (activate/deactivate/move), and duplicate/delete.
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import Callable
 from typing import Any
 
 import typer
-from rich.prompt import Confirm
 
-from kizen_builder.cli._mutations import _read_spec, _run_mutation
+from kizen_builder.cli._mutations import (
+    _confirm_or_abort,
+    _read_spec,
+    _run_mutation,
+)
 from kizen_builder.cli._shared import cli_errors, console, err_console
 from kizen_builder.cli.automations import autos_app
 from kizen_builder.tools import automations as auto_tools
@@ -126,18 +128,11 @@ def _run_field_patch(
             typer.echo(json.dumps(preview, indent=2, default=list))
         return
 
-    if not yes:
-        if not sys.stdin.isatty():
-            err_console.print(
-                "[red]error:[/red] can't prompt (stdin consumed). "
-                "Preview with --dry-run, then re-run with --yes."
-            )
-            raise typer.Exit(code=2)
-        if not Confirm.ask(
-            f"Set {preview['field']} to {preview['after']!r}?", default=False
-        ):
-            console.print("[yellow]aborted[/yellow]")
-            raise typer.Exit(code=1)
+    _confirm_or_abort(
+        f"Set {preview['field']} to {preview['after']!r}?",
+        yes=yes,
+        hint="Preview with --dry-run, then re-run with --yes.",
+    )
 
     with cli_errors(LookupError):
         result = call(True)

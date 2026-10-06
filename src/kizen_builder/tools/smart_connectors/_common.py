@@ -63,7 +63,9 @@ def _safe_name(name: str | None) -> str:
 
 def _refuse_overwrite(path: Path, force: bool) -> None:
     if path.exists() and not force:
-        raise FileExistsError(f"{path} already exists. Pass --force to overwrite it.")
+        raise FileExistsError(
+            f"{path} already exists. Pass --overwrite to overwrite it."
+        )
 
 
 def save_file(
@@ -91,7 +93,7 @@ def save_file(
     if into_dir:
         path = path / name
         _refuse_overwrite(path, force)
-    # Write beside the target and swap it in, so a failed write under --force
+    # Write beside the target and swap it in, so a failed write under --overwrite
     # leaves the old file intact.
     part = path.with_name(f".{path.name}.part")
     try:

@@ -215,8 +215,10 @@ The registry, rather than the docs or the models, says what's actually wired:
 - `_TRIGGER_BUILDERS` / `_STEP_BUILDERS` in `tools/planners/automations.py` map
   an automation trigger or step type to the function that builds its wire block.
   A type absent from the dict raises with the sorted list of supported types,
-  whatever a spec model would accept. Adding one means writing the builder and
-  registering it; CONTRIBUTING.md has the checklist.
+  whatever a spec model would accept. Each builder also declares the block keys
+  it reads (`@honours`), and any other key in a spec block is a plan error.
+  Adding one means writing the builder, declaring its keys and registering it;
+  CONTRIBUTING.md has the checklist.
 - Field types are gated the same way, split across two files: the `FieldType`
   literal and its type-specific config models in `models/spec/` (validated by
   `_validate_type_specific_config`), and payload construction in

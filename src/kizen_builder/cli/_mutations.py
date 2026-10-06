@@ -195,3 +195,27 @@ def _read_spec(
     if optional and not text:
         return None, False
     return parse_json(text, "stdin"), True
+
+
+def _stdin_is_terminal() -> bool:
+    return sys.stdin.isatty()
+
+
+def _confirm_or_abort(
+    prompt: str, *, yes: bool, hint: str, stdin_consumed: bool = False
+) -> None:
+    """The y/N gate for commands that run outside `_run_mutation`'s plan.
+
+    `--yes` skips it. Without a terminal to ask on it exits 2 with `hint`;
+    a "no" prints `aborted` and exits 1.
+    """
+    if yes:
+        return
+    if stdin_consumed or not _stdin_is_terminal():
+        err_console.print(
+            f"[red]error:[/red] can't prompt (stdin is not a terminal). {hint}"
+        )
+        raise typer.Exit(code=2)
+    if not Confirm.ask(prompt, default=False):
+        console.print("[yellow]aborted[/yellow]")
+        raise typer.Exit(code=1)

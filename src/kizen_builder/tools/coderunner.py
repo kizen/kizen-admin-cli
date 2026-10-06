@@ -1,11 +1,11 @@
 """Run code_step scripts against the live sandbox (`POST /api/coderunner/run`).
 
 This is the primitive for *unit-testing* a code-step script before it goes
-into an automation. The script runs in the same secure Lambda sandbox
-``code_step`` uses, with the same ``inputs.<name>`` / ``outputs.<name> = …``
-namespace, so behaviour matches what you'd get inside an automation — but
-nothing is created in the env. Like ``automations start`` it's a confirm-free
-runtime action, not a schema mutation.
+into an automation, with the same ``inputs.<name>`` / ``outputs.<name> = …``
+namespace, so behaviour matches what you'd get inside an automation. Runs your
+script in the same Lambda as a real ``code_step``; ``kizen.api`` calls in it
+use real credentials and can write live data. The CLI asks y/N first
+(``--yes`` skips).
 
 Types are given by human ``data_type`` names (``number``, ``datetime``, …) or
 their equivalent short codes (``n``, ``dt``, …). Neither is a ``field_type`` —
@@ -75,7 +75,8 @@ def to_kizen_type(data_type: str | None) -> str:
     Mirrors ``remoteRunner.ts`` ``toKizenType``: a friendly name maps via
     :data:`DATA_TYPE_TO_KIZEN`; a token that is already a short code (``n``,
     ``dt``, …) is kept as-is; anything unrecognized defaults to ``s``. So
-    ``number`` and ``n`` are equivalent, and ``--output greeting:string`` works.
+    ``number`` and ``n`` are equivalent, and ``--declare-output greeting:string``
+    works.
     """
     t = (data_type or "").strip().lower()
     if t in _SHORT_CODES:

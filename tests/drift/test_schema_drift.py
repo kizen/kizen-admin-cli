@@ -22,10 +22,13 @@ from datetime import UTC, datetime
 
 import pytest
 
+from tests import builder_keys
 from tests.drift.contracts import (
+    KNOWN_SCHEMA_OMISSIONS,
     KNOWN_UNDOCUMENTED_BLOCKS,
     SNAPSHOT_PATH,
     UPDATE_ENV_VAR,
+    _resolve,
     diff,
     extract,
     load_snapshot,
@@ -115,3 +118,57 @@ def test_no_schema_drift(openapi_schema, drift_config, update_snapshot):
             "committing.",
             pytrace=False,
         )
+
+
+def test_forwarded_block_keys_are_declared_or_known_omissions(openapi_schema):
+    """Keys a builder forwards under the author's own spelling must be declared
+    by the live schema for that config block, or listed in
+    ``KNOWN_SCHEMA_OMISSIONS`` with a reason.
+
+    The plan-time check only knows what the CLI drops. This is the other half:
+    a key the CLI sends but Kizen doesn't document may be one Kizen accepts and
+    ignores. Drift tier only, never a runtime check, since the published
+    schema isn't a trustworthy oracle. Aliases the builder translates
+    (`relationship_fields` -> `relationship_field_ids`) never reach the wire
+    and aren't compared; neither are builders that forward their whole block
+    (`@honours_all`), or blocks the schema doesn't document at all
+    (``KNOWN_UNDOCUMENTED_BLOCKS``). Fails in both directions, like
+    ``test_undeclared_fields_match_the_known_omissions``.
+    """
+    from kizen_builder.tools.planners.automations import (
+        _STEP_BUILDERS,
+        _TRIGGER_BUILDERS,
+        _prefix_for,
+    )
+
+    blocks = {
+        f"schema:WriteStepRequest.{_prefix_for(t)}_{t}": b
+        for t, b in _STEP_BUILDERS.items()
+    } | {
+        f"schema:WriteTriggerRequest.trigger_{t}": b
+        for t, b in _TRIGGER_BUILDERS.items()
+    }
+    problems: list[str] = []
+    for key, builder in sorted(blocks.items()):
+        node = _resolve(openapi_schema, key.removeprefix("schema:"))
+        if builder.honoured_keys is None or node is None:
+            continue
+        undeclared = builder_keys.forwarded_as_is(builder.__name__) - set(
+            node.get("properties") or {}
+        )
+        known = set(KNOWN_SCHEMA_OMISSIONS.get(key, {}))
+        if undeclared - known:
+            problems.append(
+                f"{key}: undeclared, not listed: {sorted(undeclared - known)}"
+            )
+        if known - undeclared:
+            problems.append(
+                f"{key}: listed but no longer undeclared: {sorted(known - undeclared)}"
+            )
+    assert not problems, (
+        "Forwarded config-block keys disagree with KNOWN_SCHEMA_OMISSIONS:\n  "
+        + "\n  ".join(problems)
+        + "\n\nFor a new key, create a step with it and read it back: record "
+        "whether Kizen keeps it, with `confirmed live <date>`. For a listed key, "
+        "delete the entry."
+    )

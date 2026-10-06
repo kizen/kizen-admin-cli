@@ -86,6 +86,71 @@ def _mock_object_list():
     )
 
 
+def _paged(path: str, pages: list[list[dict]]) -> list[httpx.Response]:
+    """DRF envelopes for ``pages``, each ``next`` pointing at the following page."""
+    out = []
+    for i, items in enumerate(pages, start=1):
+        nxt = (
+            f"{FAKE_BASE_URL}{path}?page={i + 1}&page_size=200"
+            if i < len(pages)
+            else None
+        )
+        out.append(httpx.Response(200, json={"results": items, "next": nxt}))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# list_roles / list_permission_groups follow every page
+# ---------------------------------------------------------------------------
+
+
+def _assert_three_pages_followed(route, path: str) -> None:
+    assert route.call_count == 3
+    first, second, third = (c.request.url for c in route.calls)
+    assert first.path == path and dict(first.params) == {"page_size": "200"}
+    assert dict(second.params) == {"page": "2", "page_size": "200"}
+    assert dict(third.params) == {"page": "3", "page_size": "200"}
+
+
+@respx.mock
+def test_list_roles_follows_next_across_three_pages():
+    pages = [[{"id": f"r{n}", "name": f"Role {n}"}] for n in (1, 2, 3)]
+    route = respx.get(f"{FAKE_BASE_URL}/api/role").mock(
+        side_effect=_paged("/api/role", pages)
+    )
+
+    with KizenClient(load_env_config()) as client:
+        roles = perm_api.list_roles(client)
+
+    assert [r["id"] for r in roles] == ["r1", "r2", "r3"]
+    _assert_three_pages_followed(route, "/api/role")
+
+
+@respx.mock
+def test_list_permission_groups_follows_next_across_three_pages():
+    pages = [[{"id": f"g{n}", "name": f"Group {n}"}] for n in (1, 2, 3)]
+    route = respx.get(f"{FAKE_BASE_URL}/api/permission-group").mock(
+        side_effect=_paged("/api/permission-group", pages)
+    )
+
+    with KizenClient(load_env_config()) as client:
+        groups = perm_api.list_permission_groups(client)
+
+    assert [g["id"] for g in groups] == ["g1", "g2", "g3"]
+    _assert_three_pages_followed(route, "/api/permission-group")
+
+
+@respx.mock
+def test_list_roles_returns_a_bare_list_response_as_is():
+    body = [{"id": ROLE_ID, "name": "Sales Rep"}]
+    respx.get(f"{FAKE_BASE_URL}/api/role").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+
+    with KizenClient(load_env_config()) as client:
+        assert perm_api.list_roles(client) == body
+
+
 # ---------------------------------------------------------------------------
 # plan_create_role
 # ---------------------------------------------------------------------------
@@ -145,6 +210,22 @@ def test_plan_create_role_raises_when_name_already_exists():
         plan_create_role(name="Sales Rep")  # matches ROLE_LIST fixture
         raise AssertionError("expected PlanError")
     except PlanError as exc:
+        assert ROLE_ID in str(exc)
+
+
+@respx.mock
+def test_plan_create_role_already_exists_check_sees_page_two():
+    page_one = [{"id": "00000000-0000-4000-8000-000000000102", "name": "Other"}]
+    respx.get(f"{FAKE_BASE_URL}/api/role").mock(
+        side_effect=_paged("/api/role", [page_one, ROLE_LIST["results"]])
+    )
+    _mock_group_list()
+
+    try:
+        plan_create_role(name="Sales Rep")
+        raise AssertionError("expected PlanError")
+    except PlanError as exc:
+        assert "already exists" in str(exc)
         assert ROLE_ID in str(exc)
 
 

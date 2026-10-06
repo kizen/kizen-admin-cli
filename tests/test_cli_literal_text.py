@@ -236,7 +236,9 @@ def test_code_test_http_audit_prints_remote_text_literally(tmp_path):
     )
     script = tmp_path / "s.py"
     script.write_text("outputs.x=1")
-    result = runner.invoke(cli.app, ["code", "test", "--script", str(script), "-v"])
+    result = runner.invoke(
+        cli.app, ["code", "test", "--yes", "--script", str(script), "-v"]
+    )
     assert result.exit_code == 0, result.output
     assert "(empty)" in result.stdout
     assert "[dim]" not in result.stdout

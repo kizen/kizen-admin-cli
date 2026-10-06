@@ -20,6 +20,7 @@ from kizen_builder.cli._shared import (
     console,
     err_console,
     read_json_file,
+    warn_renamed_flag,
 )
 from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools.planners import permissions as perm_planners
@@ -172,9 +173,12 @@ def _slider(level: str, allowed: list[str], affordance: str) -> str:
 @perms_app.command("group")
 def perms_group(
     group: str = typer.Argument(..., help="Permission group name or UUID."),
-    fields: bool = typer.Option(
-        False, "--fields", help="Include per-field permission rows (extra API calls)."
+    field_permissions: bool = typer.Option(
+        False,
+        "--field-permissions",
+        help="Include per-field permission rows (extra API calls).",
     ),
+    fields: bool = typer.Option(False, "--fields", hidden=True),
     output: str = OUTPUT_OPTION,
     json_out: bool = JSON_OPTION,
     raw_out: bool = typer.Option(
@@ -184,8 +188,11 @@ def perms_group(
     """Show one permission group as a sectioned permission map (mirrors the UI).
 
     Each row shows a None / View / Create·Edit / Delete·All slider; positions the
-    permission can't take are dimmed. `--fields` adds per-field rows.
+    permission can't take are dimmed. `--field-permissions` adds per-field rows.
     """
+    if fields:
+        warn_renamed_flag("--fields", "--field-permissions")
+        field_permissions = True
     group_id = _resolve_group_id(group)
     if raw_out:
         with cli_errors():
@@ -194,7 +201,7 @@ def perms_group(
 
     fmt = out.resolve_format(output, json_out)
     with cli_errors():
-        d = perm_tools.describe_group(group_id, include_fields=fields)
+        d = perm_tools.describe_group(group_id, include_fields=field_permissions)
 
     # Unresolved-name warnings go to stderr, so they surface in every output
     # format without corrupting piped table/CSV output. `--json` carries them in
@@ -397,13 +404,15 @@ def perms_group_create(
     base: str = typer.Option(
         "default",
         "--base",
-        help="'default' = fresh group at Kizen default levels; 'clone' = copy --from.",
+        help="'default' = fresh group at Kizen default levels; 'clone' = copy "
+        "--source-group.",
     ),
-    from_group: str = typer.Option(
+    source_group: str | None = typer.Option(
         None,
-        "--from",
+        "--source-group",
         help="Template group (name or UUID) for --base clone / shape source.",
     ),
+    from_group: str | None = typer.Option(None, "--from", hidden=True),
     settings_file: str = typer.Option(
         None,
         "--settings-file",
@@ -420,10 +429,13 @@ def perms_group_create(
     ),
 ) -> None:
     """Create a permission group (full default structure, optionally shaped)."""
+    if from_group is not None:
+        warn_renamed_flag("--from", "--source-group")
+        source_group = from_group
     settings = None
     if settings_file:
         settings = read_json_file(settings_file, "--settings-file")
-    template_id = _resolve_group_id(from_group) if from_group else None
+    template_id = _resolve_group_id(source_group) if source_group else None
     _run_mutation(
         lambda: perm_planners.plan_create_permission_group(
             name=name,

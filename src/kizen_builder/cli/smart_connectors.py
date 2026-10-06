@@ -27,6 +27,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    warn_renamed_flag,
 )
 from kizen_builder.config import ConfigError
 from kizen_builder.tools import smart_connectors as sc_tools
@@ -131,12 +132,12 @@ def _connector_errors(*also: type[Exception]) -> Iterator[None]:
 @smart_connectors_app.command("create")
 def smart_connectors_create(
     name: str = typer.Argument(..., help="Display name for the new connector."),
-    obj: str = typer.Option(
-        ...,
+    obj: str | None = typer.Option(
+        None,
         "--object",
-        "-o",
-        help="Custom object api_name (or UUID) the connector writes to.",
+        help="Custom object api_name (or UUID) the connector writes to. Required.",
     ),
+    obj_short: str | None = typer.Option(None, "-o", hidden=True),
     connector_type: str = typer.Option(
         "spreadsheet",
         "--type",
@@ -177,6 +178,7 @@ def smart_connectors_create(
     It lands in `status: "setup"` with an empty draft script. Attach a reference
     file next (`set-input`) — that's what generates the SQL template.
     """
+    obj = _object_option(obj, obj_short)
     with _connector_errors():
         plan = sc_tools.plan_create_connector(
             name=name,
@@ -381,6 +383,33 @@ def smart_connectors_set_input(
             f"on the SQL, or `smart-connectors generate-sample {result['connector']}` "
             f"to produce the output sample publish requires.[/dim]"
         )
+
+
+def _object_option(obj: str | None, obj_short: str | None) -> str:
+    """Merge `--object` with its hidden old `-o` on `create` and `seeds
+    add`/`remove`, where `-o` means `--output` everywhere else."""
+    if obj_short is not None:
+        warn_renamed_flag("-o", "--object")
+        obj = obj_short
+    if obj is None:
+        err_console.print("[red]error:[/red] pass --object.")
+        raise typer.Exit(code=2)
+    return obj
+
+
+def _script_choice(script: str | None, live: bool) -> str:
+    """Merge `--script` with the hidden old `--live` (which meant `--script
+    live`) on `pull` and `download-sample`. Defaults to `draft`."""
+    if live:
+        if script not in (None, "live"):
+            raise typer.BadParameter(
+                f"--live means --script live; it can't be combined with "
+                f"--script {script}.",
+                param_hint="'--live'",
+            )
+        warn_renamed_flag("--live", "--script live")
+        return "live"
+    return script or "draft"
 
 
 def _output_tables(outputs: list[dict[str, Any]]) -> str:
@@ -725,5 +754,5 @@ def smart_connectors_configure_flow(
         console.print(f"  exposes [bold]{name}[/bold] → {uuid_}")
     console.print(
         "[dim]Next: `smart-connectors activate` (a live run silently queues "
-        "forever without it), then `start-flow --dry-run`.[/dim]"
+        "forever without it), then `start-flow` (dry run).[/dim]"
     )

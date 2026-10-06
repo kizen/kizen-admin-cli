@@ -21,6 +21,7 @@ import typer
 import kizen_builder
 import kizen_builder.cli as cli
 from kizen_builder import docs
+from tests.conftest import iter_commands
 
 SPECS_DIR = docs.specs_dir()
 
@@ -30,19 +31,12 @@ _EPILOG_TOPIC_REF = re.compile(r"kizen docs show ([a-z][a-z0-9-]*)")
 _SIBLING_MD_REF = re.compile(r"([a-z][a-z0-9_-]*\.md)")
 
 
-def _iter_commands(command, path):
-    """Walk the resolved Click command tree, yielding (path, command)."""
-    yield path, command
-    for name, sub in getattr(command, "commands", {}).items():
-        yield from _iter_commands(sub, path + [name])
-
-
 def test_every_epilog_docs_pointer_resolves():
     root = typer.main.get_command(cli.app)
     topics = set(docs.list_topics())
     seen = 0
     missing = []
-    for path, command in _iter_commands(root, []):
+    for path, command in iter_commands(root, []):
         epilog = getattr(command, "epilog", None)
         if not epilog:
             continue

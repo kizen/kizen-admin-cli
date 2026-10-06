@@ -217,6 +217,13 @@ accepted by the API and is technically wired into the step, but shows as
 So: `kizen messages create <automation> --template <name|uuid>`, then reference
 the returned UUID as the step's `email_template_id`.
 
+The template must have compiled `content`. The endpoint copies it into the
+message and rejects a blank one (`400 content: This field may not be blank.`,
+confirmed live 2026-09-29), and a template made in the UI can carry a
+`craft_json` with an empty `content`. `create` refuses such a template at plan
+time. Fix it by re-saving it in the Kizen email builder, or by rebuilding both
+fields with `kizen messages templates update <template> --spec-file <file>`.
+
 ## Merge fields in message content
 
 A merge field is **not** a bare `{{ <namespace>.<field_api_name> }}` token —
@@ -500,8 +507,10 @@ test send in Outlook.
 
 `kizen messages templates clone` is still the safe path for copying an
 existing design: it copies both content fields together, so the copy is
-internally consistent by construction. Build the design once in the builder
-UI (or with `create --spec-file`), then clone and surgically edit it.
+internally consistent by construction. A source with blank `content` is
+refused, for the reason given under *Automation messages* above. Build the
+design once in the builder UI (or with `create --spec-file`), then clone and
+surgically edit it.
 
 Everything needed to build on the generation slice — node shapes, the
 coupling rule, the compile findings, the spec-file format — is in this
