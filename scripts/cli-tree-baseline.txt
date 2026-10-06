@@ -3745,7 +3745,8 @@
                                                                                                     
  Seed a connector from another Kizen object's records.                                              
                                                                                                     
- Adding a seed the connector already has for that object replaces it.                               
+ Adding a seed the connector already has for that object replaces it,                               
+ keeping its fields unless --field is given.                                                        
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
@@ -3758,7 +3759,8 @@
 │                                                NOT a field category. Omit it to seed all         │
 │                                                records.                                          │
 │    --field       -f                     <str>  Field api_name to bring along (repeatable).       │
-│                                                kizen_id always comes.                            │
+│                                                kizen_id always comes. On a replace, omit it to   │
+│                                                keep the seed's current fields.                   │
 │    --regenerate      --no-regenerate           Refresh the draft's config so the kizen.<object>  │
 │                                                view exists (default). Your SQL is preserved.     │
 │                                                Without this the seed is inert.                   │

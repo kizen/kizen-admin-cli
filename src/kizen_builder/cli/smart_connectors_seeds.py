@@ -105,7 +105,8 @@ def smart_connectors_seeds_add(
         [],
         "--field",
         "-f",
-        help="Field api_name to bring along (repeatable). kizen_id always comes.",
+        help="Field api_name to bring along (repeatable). kizen_id always comes. "
+        "On a replace, omit it to keep the seed's current fields.",
     ),
     regenerate: bool = typer.Option(
         True,
@@ -123,7 +124,8 @@ def smart_connectors_seeds_add(
 ) -> None:
     """Seed a connector from another Kizen object's records.
 
-    Adding a seed the connector already has for that object replaces it.
+    Adding a seed the connector already has for that object replaces it,
+    keeping its fields unless --field is given.
     """
     with _connector_errors():
         plan = sc_tools.plan_add_seed(
@@ -144,9 +146,10 @@ def smart_connectors_seeds_add(
         t.add_column("value")
         t.add_row("object", plan["custom_object"])
         t.add_row("filter group", plan["filter_group"])
-        t.add_row(
-            "fields", ", ".join(plan["fields"]) if plan["fields"] else "kizen_id only"
-        )
+        fields = ", ".join(plan["fields"] or []) or "kizen_id only"
+        if plan.get("fields_kept"):
+            fields += " (kept from the current seed)"
+        t.add_row("fields", fields)
         t.add_row("SQL view", plan["view"])
         t.add_row(
             "refresh script config",
@@ -164,6 +167,7 @@ def smart_connectors_seeds_add(
             target.print(
                 "[dim]couldn't count the segment's records to check coverage[/dim]"
             )
+        _print_dropped_columns(target, plan)
         if not plan["regenerate"]:
             target.print(
                 "[yellow]![/yellow] without a refresh the view won't exist for the "
@@ -215,6 +219,7 @@ def smart_connectors_seeds_remove(
             f"[bold]{plan['custom_object']}[/bold] — {plan['view']} will no longer "
             f"be available to the SQL ({len(plan['payload'])} seed(s) left)"
         )
+        _print_dropped_columns(target, plan)
 
     if not _preview_and_confirm(
         plan,
@@ -226,6 +231,20 @@ def smart_connectors_seeds_remove(
     ):
         return
     _apply_seed_change(plan, json_out=json_out)
+
+
+def _print_dropped_columns(target: Console, plan: dict[str, Any]) -> None:
+    """One yellow line per seed whose re-save loses columns."""
+    for name, lost in (plan.get("dropped_columns") or {}).items():
+        if lost is None:
+            target.print(
+                f"[yellow]![/yellow] the {name} seed isn't in the script yet, so "
+                "its fields can't be rebuilt — it's re-saved as kizen_id only"
+            )
+        else:
+            target.print(
+                f"[yellow]![/yellow] re-saving the {name} seed drops {', '.join(lost)}"
+            )
 
 
 def _apply_seed_change(plan: dict[str, Any], *, json_out: bool) -> None:
