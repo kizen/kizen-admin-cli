@@ -26,6 +26,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    warn_renamed_flag,
 )
 from kizen_builder.config import ConfigError
 from kizen_builder.tools import smart_connectors as sc_tools
@@ -378,6 +379,21 @@ def smart_connectors_set_input(
         )
 
 
+def _script_choice(script: str | None, live: bool) -> str:
+    """Merge `--script` with the hidden old `--live` (which meant `--script
+    live`) on `pull` and `download-sample`. Defaults to `draft`."""
+    if live:
+        if script not in (None, "live"):
+            raise typer.BadParameter(
+                f"--live means --script live; it can't be combined with "
+                f"--script {script}.",
+                param_hint="'--live'",
+            )
+        warn_renamed_flag("--live", "--script live")
+        return "live"
+    return script or "draft"
+
+
 def _output_tables(outputs: list[dict[str, Any]]) -> str:
     """`contacts (4 rows, 12 cols), policies (3 rows, 9 cols)`."""
     return (
@@ -719,5 +735,5 @@ def smart_connectors_configure_flow(
         console.print(f"  exposes [bold]{name}[/bold] → {uuid_}")
     console.print(
         "[dim]Next: `smart-connectors activate` (a live run silently queues "
-        "forever without it), then `start-flow --dry-run`.[/dim]"
+        "forever without it), then `start-flow` (dry run).[/dim]"
     )

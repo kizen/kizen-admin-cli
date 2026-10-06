@@ -33,6 +33,15 @@ called out explicitly under **Changed** or **Removed**.
   `records archive` with more than one positional id exits 2 pointing at
   `--spec-file`. `records list --output csv` output is a valid spec file; pass
   a `--limit` above the record count, since it defaults to 100.
+- **Breaking: `smart-connectors start-flow --live` is now `--write-records`.**
+  `--live` meant "write real records" here and "use the live script" on
+  `pull` and `download-sample`. `start-flow --live` now stops with exit 2 and
+  names the new flag. `pull` and `download-sample` take `--script live`
+  instead. `--force` is split: `--overwrite` for local files (`pull`,
+  `download-sample`, `executions download`), and `--ignore-blockers` for
+  `send-webhook` and `start-flow`. The old spellings except
+  `start-flow --live` still work, with a warning, and will be removed in a
+  later release.
 - **`records archive` batches its requests and triggers no Kizen emails.** It
   used to send one request per id, and each one emailed you: archiving 3,000
   records meant 3,000 requests and 3,000 emails. It now sends up to 500 ids
@@ -156,14 +165,14 @@ called out explicitly under **Changed** or **Removed**.
   `.xlsx` results workbook, the only place the per-row errors and warnings
   behind a partial success appear. `--file output` is the zip of SQL-output
   CSVs, and `--file input` is the file the run consumed. It writes to `--out`
-  or `./<server filename>`, refuses to overwrite without `--force`, and exits
-  1 without writing when the run has no such file (a failed run has no
+  or `./<server filename>`, refuses to overwrite without `--overwrite`, and
+  exits 1 without writing when the run has no such file (a failed run has no
   report or output zip).
 - **`kizen smart-connectors download-sample <connector>`** saves a script's
   output-sample zip (one `<scope>.csv` per output table) without the web UI.
-  It takes the latest draft by default, `--live` for the live script, or
-  `--script <id>`, writes to `--out` or `./<server filename>`, and refuses to
-  overwrite an existing file without `--force`.
+  It takes the latest draft by default, `--script live` for the live script,
+  or `--script <id>`, writes to `--out` or `./<server filename>`, and refuses
+  to overwrite an existing file without `--overwrite`.
 
 - **Email template `text` blocks are now authored as structured paragraphs,
   not raw HTML — and can carry inline merge fields.** `TextBlockDef.html` is
@@ -731,9 +740,9 @@ called out explicitly under **Changed** or **Removed**.
   - `activate <c>` — the `status: operational` flip. Its own command because a
     live run of a connector that isn't operational sits queued forever with no
     error.
-  - `start-flow <c> [--live]` — queue a run, dry by default, refusing to start
-    one that can't work (no published script, no load steps, not operational)
-    without `--force`.
+  - `start-flow <c> [--write-records]` — queue a run, dry by default, refusing
+    to start one that can't work (no published script, no load steps, not
+    operational) without `--ignore-blockers`.
 - **Smart connectors can read from other Kizen objects.** `smart-connectors
   seeds list|add|remove` configures data seeds, which expose another object's
   records to the SQL as a `kizen.<object>` view — so a connector can join

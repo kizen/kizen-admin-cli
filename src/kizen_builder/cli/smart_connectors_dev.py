@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import typer
 from rich.markup import escape
 from rich.prompt import Confirm
 from rich.table import Table
 
 from kizen_builder import output as out
-from kizen_builder.cli._shared import JSON_OPTION, cli_errors, console, err_console
-from kizen_builder.cli.smart_connectors import smart_connectors_app
+from kizen_builder.cli._shared import (
+    JSON_OPTION,
+    cli_errors,
+    console,
+    err_console,
+    warn_renamed_flag,
+)
+from kizen_builder.cli.smart_connectors import _script_choice, smart_connectors_app
 from kizen_builder.tools import smart_connectors as sc_tools
 from kizen_builder.tools.plans import PlanError
 
@@ -20,12 +28,16 @@ def smart_connectors_pull(
     dir_: str = typer.Option(
         None, "--dir", "-d", help="Target directory (default: ./<api_name>)."
     ),
-    live: bool = typer.Option(
-        False, "--live", help="Pull the live script instead of the latest draft."
+    script: Literal["draft", "live"] | None = typer.Option(
+        None,
+        "--script",
+        help="Which script to pull: draft (the latest draft; the default) or live.",
     ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Overwrite an existing non-empty directory."
+    live: bool = typer.Option(False, "--live", hidden=True),
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Overwrite an existing non-empty directory."
     ),
+    force: bool = typer.Option(False, "--force", "-f", hidden=True),
     seed_limit: int = typer.Option(
         1000,
         "--seed-limit",
@@ -40,12 +52,17 @@ def smart_connectors_pull(
     Seeded objects (`seeds list`) are exported to data/ too, from the same saved
     filter group the live run uses, so `run` exercises the same joins.
     """
+    use_live = _script_choice(script, live) == "live"
+    if force:
+        warn_renamed_flag("--force", "--overwrite")
+        overwrite = True
+
     with cli_errors(LookupError, FileExistsError):
         res = sc_tools.pull_connector(
             connector,
             dest=dir_,
-            use_live=live,
-            overwrite=force,
+            use_live=use_live,
+            overwrite=overwrite,
             seed_limit=seed_limit or None,
         )
 

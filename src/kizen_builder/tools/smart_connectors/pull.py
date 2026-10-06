@@ -229,7 +229,7 @@ def pull_connector(
         if workdir.exists() and any(workdir.iterdir()) and not overwrite:
             raise FileExistsError(
                 f"{workdir} already exists and is not empty. Pass overwrite=True "
-                f"(--force) to replace connector.sql / __config.json in place."
+                f"(--overwrite) to replace connector.sql / __config.json in place."
             )
         data_dir.mkdir(parents=True, exist_ok=True)
 

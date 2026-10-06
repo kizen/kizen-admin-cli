@@ -12,8 +12,13 @@ from kizen_builder.cli._shared import (
     OUTPUT_OPTION,
     cli_errors,
     console,
+    warn_renamed_flag,
 )
-from kizen_builder.cli.smart_connectors import _output_tables, smart_connectors_app
+from kizen_builder.cli.smart_connectors import (
+    _output_tables,
+    _script_choice,
+    smart_connectors_app,
+)
 from kizen_builder.tools import smart_connectors as sc_tools
 
 
@@ -183,18 +188,20 @@ def smart_connectors_scripts(
 @smart_connectors_app.command("download-sample")
 def smart_connectors_download_sample(
     connector: str = typer.Argument(..., help="Connector UUID or api_name."),
-    live: bool = typer.Option(
-        False, "--live", help="The live script's sample instead of the draft's."
+    script: str | None = typer.Option(
+        None,
+        "--script",
+        help="Whose sample: draft (the latest draft; the default), live, or a "
+        "script id.",
     ),
-    script_id: str = typer.Option(
-        None, "--script", help="Script id (overrides the draft/live choice)."
-    ),
+    live: bool = typer.Option(False, "--live", hidden=True),
     dest: str = typer.Option(
         None, "--out", help="File or directory (default: ./<server filename>)."
     ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Overwrite an existing file."
+    overwrite: bool = typer.Option(
+        False, "--overwrite", help="Overwrite an existing file."
     ),
+    force: bool = typer.Option(False, "--force", "-f", hidden=True),
     json_out: bool = JSON_OPTION,
 ) -> None:
     """Save a script's output-sample zip (one <scope>.csv per output table).
@@ -202,9 +209,18 @@ def smart_connectors_download_sample(
     Writes the local file only. The sample is the one `generate-sample` last
     produced for that script.
     """
+    choice = _script_choice(script, live)
+    if force:
+        warn_renamed_flag("--force", "--overwrite")
+        overwrite = True
+
     with cli_errors(LookupError, OSError):
         res = sc_tools.download_sample(
-            connector, use_live=live, script_id=script_id, dest=dest, force=force
+            connector,
+            use_live=choice == "live",
+            script_id=None if choice in ("draft", "live") else choice,
+            dest=dest,
+            force=overwrite,
         )
 
     if json_out:
