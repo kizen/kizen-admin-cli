@@ -195,7 +195,7 @@ def steps_edit(
         step = step_tools.find_step(payload, key)
         target_object = (raw.get("custom_object") or {}).get("name")
         normalized = auto_tools.normalize_step_patch(
-            dict(patch), step["type"], payload, target_object
+            dict(patch), key, step["type"], payload, target_object
         )
         return step_tools.edit_step(payload, key, normalized)
 

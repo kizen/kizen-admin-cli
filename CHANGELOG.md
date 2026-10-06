@@ -107,6 +107,14 @@ called out explicitly under **Changed** or **Removed**.
   now exports its rows instead of warning you to hand-author the file. The
   preview's `fields` line now says `kizen_id only` when no `--field` is given,
   which is what the server actually exposes; it used to claim "all seedable".
+- **A condition step with no rules now fails at `--dry-run`, naming the
+  step.** That covers an empty `filter_config` query, a rule group with no
+  `filters`, `step_condition: {}`, and an `in_group`/`not_in_group` with no
+  `group_ids`, in `automations create`/`update`/`diff` specs and in `steps add`
+  and `steps edit`. Kizen accepts an empty filter and then shows an error on
+  the step in the UI, and a group condition with no groups has nothing to
+  test. Reading and editing a live automation that already carries one
+  still works, so `steps edit` can fix it.
 
 ### Added
 

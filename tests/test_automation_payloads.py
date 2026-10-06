@@ -27,6 +27,25 @@ def _build(spec: dict) -> dict:
     return _build_automation_payload(auto, LiveContext())
 
 
+# A raw condition rule that needs no field lookup.
+NAME_IS_X = {
+    "and": True,
+    "query": [
+        {
+            "and": True,
+            "filters": [
+                {
+                    "type": "fields",
+                    "field": "name",
+                    "subtype": "non_custom",
+                    "condition": "=",
+                    "value": "x",
+                }
+            ],
+        }
+    ],
+}
+
 BRANCHING_SPEC = {
     "api_name": "branching_test",
     "name": "Branching Test",
@@ -47,7 +66,7 @@ BRANCHING_SPEC = {
             "parent_key": None,
             "step_condition": {
                 "type": "custom_filter",
-                "filter_config": {"and": False, "query": [], "invalid": False},
+                "filter_config": NAME_IS_X,
             },
         },
         {
@@ -1678,6 +1697,104 @@ def test_condition_raw_filter_config_null_value_rejected(patch_live_lookups):
         _build(_condition_spec(raw))
 
 
+# A condition with no rules is accepted by the API, but the Kizen UI shows an
+# error on the step (reported 2026-09-29), so the spec and patch paths reject it.
+
+
+def _with_condition(spec, step_condition, **step_fields):
+    (step,) = spec["steps"]
+    step["step_condition"] = step_condition
+    step.update(step_fields)
+    return spec
+
+
+@pytest.mark.parametrize(
+    ("step_condition", "message"),
+    [
+        (
+            {"type": "custom_filter", "filter_config": {"and": False, "query": []}},
+            "'check' has no filter rules",
+        ),
+        (
+            {"type": "custom_filter", "filter_config": {"query": [{"filters": []}]}},
+            r"'check' has an empty rule group \(query\[0\]\)",
+        ),
+        ({}, "'check' has no filter rules"),
+        ({"type": "in_group"}, r"'check' \(in_group\) has no group_ids"),
+        (
+            {"type": "not_in_group", "group_ids": []},
+            r"'check' \(not_in_group\) has no group_ids",
+        ),
+    ],
+    ids=["empty_query", "empty_group", "empty_block", "in_group", "not_in_group"],
+)
+def test_condition_without_rules_rejected(patch_live_lookups, step_condition, message):
+    spec = _with_condition(_condition_spec(None), step_condition)
+    with pytest.raises(PlanError, match=message):
+        _build(spec)
+
+
+def test_skipped_condition_without_rules_rejected(patch_live_lookups):
+    spec = _with_condition(
+        _condition_spec(None),
+        {"type": "custom_filter", "filter_config": {"query": []}},
+        should_skip_execution=True,
+        continue_with_branch="yes",
+    )
+    with pytest.raises(PlanError, match="'check' has no filter rules"):
+        _build(spec)
+
+
+def test_in_group_condition_with_group_ids_builds(patch_live_lookups):
+    spec = _with_condition(
+        _condition_spec(None), {"type": "in_group", "group_ids": ["g-1"]}
+    )
+    block = _build(spec)["steps"][0]["step_condition"]
+    assert block["group_ids"] == ["g-1"]
+
+
+_LIVE_PAYLOAD = {
+    "name": "Cond",
+    "api_name": "cond",
+    "type": "record_based",
+    "steps": [],
+}
+
+
+def test_steps_add_condition_without_rules_rejected(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step
+
+    step = {
+        "key": "new_check",
+        "step_type": "condition",
+        "step_condition": {"type": "custom_filter", "filter_config": {"query": []}},
+    }
+    with pytest.raises(PlanError, match="'new_check' has no filter rules"):
+        build_wire_step(step, _LIVE_PAYLOAD, "patients")
+
+
+def test_steps_edit_condition_without_rules_rejected(patch_live_lookups):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {
+        "step_condition": {"type": "custom_filter", "filter_config": {"query": []}}
+    }
+    with pytest.raises(PlanError, match="'check' has no filter rules"):
+        normalize_step_patch(patch, "check", "condition", _LIVE_PAYLOAD, "patients")
+
+
+def test_steps_edit_without_condition_block_not_checked(patch_live_lookups):
+    """A live automation that already carries an empty condition can still be
+    edited, e.g. to rename the step, without the patch tripping the check."""
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {"user_description": "renamed"}
+    assert (
+        normalize_step_patch(patch, "check", "condition", _LIVE_PAYLOAD, "patients")
+        == patch
+    )
+
+
 # ---------------------------------------------------------------------------
 # search_records step — confirmed live (2026-07-22): custom_object/
 # filter_groups/destination_variable are each {"id"|"name": ...} objects on
@@ -1991,10 +2108,7 @@ def _merged_condition_spec(**condition: object) -> dict:
                 "condition",
                 0,
                 is_branch_group_initiator=True,
-                step_condition={
-                    "type": "custom_filter",
-                    "filter_config": {"and": False, "query": [], "invalid": False},
-                },
+                step_condition={"type": "custom_filter", "filter_config": NAME_IS_X},
                 **condition,
             ),
             _s("wait_yes", "check", "delay", 1, parent_branch="yes"),
