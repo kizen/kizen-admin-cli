@@ -939,7 +939,7 @@ def drift_control_flow(
             "parent_key": "goal",
             "step_condition": {
                 "type": "custom_filter",
-                "filter_config": {"and": False, "query": [], "invalid": False},
+                "filter_config": {"all": [{"field": "name", "op": "not_blank"}]},
             },
         },
         {
@@ -1084,7 +1084,7 @@ def drift_branch_groups(drift_client, scratch, drift_object) -> dict[str, Any]:
             is_branch_group_initiator=True,
             step_condition={
                 "type": "custom_filter",
-                "filter_config": {"and": False, "query": [], "invalid": False},
+                "filter_config": {"all": [{"field": "name", "op": "not_blank"}]},
             },
         ),
         wait("wait_yes", "check", parent_branch="yes"),

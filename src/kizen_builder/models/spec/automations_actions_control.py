@@ -161,7 +161,6 @@ class ActionStartAutomationConfig(BaseModel):
     automation_id: str | None = Field(
         default=None, description="Direct UUID fallback for automation_api_name."
     )
-    entity_id_source: str | None = None
 
 
 class ActionUpdatePipelineStatusConfig(BaseModel):

@@ -16,6 +16,7 @@ fixtures.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -160,3 +161,16 @@ def patch_live_lookups(monkeypatch: pytest.MonkeyPatch):
         lambda self, object_api_name: fake_get_object(object_api_name)["fields"],
     )
     return fake_get_object
+
+
+def plain(text: str) -> str:
+    """Strip ANSI codes and collapse the wrapping a prompt gets at 80 columns."""
+    return " ".join(re.sub(r"\x1b\[[0-9;]*m", "", text).split())
+
+
+@pytest.fixture
+def terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CliRunner's stdin is never a terminal; pretend it is so a y/N prompt runs."""
+    from kizen_builder.cli import _mutations
+
+    monkeypatch.setattr(_mutations, "_stdin_is_terminal", lambda: True)
