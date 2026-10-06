@@ -290,6 +290,16 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Roles and permission groups are read past the first page.** Dashboards and
+  saved views created without explicit sharing could miss the Admin role in a
+  business with many roles and be rejected. `roles list`, `permissions groups`,
+  `team get`, and the already-exists checks in role and group creation now see
+  every role and group.
+
+- **`credentials.toml` is never briefly readable by other users, and an
+  interrupted `kizen init` no longer erases stored profiles.** The file is
+  written to a private temp file and swapped into place.
+
 - **Specs accept every api_name Kizen itself produces.** An api_name that
   started with a digit or underscore (`1099_forms`), or that carried Kizen's
   mixed-case collision suffix (`employee_m7SZCzg3`), failed spec validation, so

@@ -8,7 +8,11 @@ the state it needs.
 
 from __future__ import annotations
 
+import os
+import stat
+
 import pytest
+import tomli_w
 
 from kizen_builder import config, profiles
 from kizen_builder.config import ConfigError, load_env_config
@@ -65,6 +69,73 @@ def test_write_profile_is_upsert_not_clobber():
     assert names.count("alpha") == 1
     assert names.count("beta") == 1
     assert "testenv" in names
+
+
+@pytest.fixture
+def own_store(tmp_path, monkeypatch):
+    """A fresh store under this test's own temp XDG_CONFIG_HOME."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    path = profiles.credentials_path()
+    assert path.is_relative_to(tmp_path)
+    return path
+
+
+def _mode(path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def test_write_profile_creates_the_store_at_0600(own_store):
+    _store("alpha", "AAAA")
+    assert _mode(own_store) == 0o600
+
+
+def test_write_profile_tightens_an_existing_0644_store(own_store):
+    _store("alpha", "AAAA")
+    own_store.chmod(0o644)
+    _store("beta", "BBBB")
+    assert _mode(own_store) == 0o600
+    assert {p.name for p in profiles.list_profiles()} == {"alpha", "beta"}
+
+
+def test_write_profile_serializes_into_a_file_already_0600(own_store, monkeypatch):
+    real_dump = tomli_w.dump
+    modes = []
+
+    def checking_dump(data, fh):
+        modes.append(stat.S_IMODE(os.fstat(fh.fileno()).st_mode))
+        real_dump(data, fh)
+
+    monkeypatch.setattr(tomli_w, "dump", checking_dump)
+    _store("alpha", "AAAA")
+    assert modes == [0o600]
+
+
+def test_failed_write_leaves_the_store_untouched(own_store, monkeypatch):
+    _store("alpha", "AAAA")
+    before = own_store.read_bytes()
+
+    def boom(data, fh):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(tomli_w, "dump", boom)
+    with pytest.raises(RuntimeError, match="disk full"):
+        _store("beta", "BBBB")
+
+    assert own_store.read_bytes() == before
+    assert list(own_store.parent.glob(".credentials.*.tmp")) == []
+
+
+def test_write_profile_through_a_symlink_keeps_the_link(own_store, tmp_path):
+    real = tmp_path / "elsewhere" / "credentials.toml"
+    real.parent.mkdir()
+    own_store.parent.mkdir(parents=True)
+    own_store.symlink_to(real)
+
+    _store("alpha", "AAAA")
+
+    assert own_store.is_symlink()
+    assert _mode(real) == 0o600
+    assert profiles.get_profile("alpha") is not None
 
 
 def test_write_pin_then_load_pin_roundtrips(tmp_path, monkeypatch):

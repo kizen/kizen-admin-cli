@@ -82,6 +82,28 @@ def test_get_team_member_by_uuid_resolves_role_names():
 
 
 @respx.mock
+def test_get_team_member_names_a_role_only_on_page_two():
+    _mock_team_get()
+    other = {"id": "00000000-0000-4000-8000-000000000102", "name": "Other"}
+    respx.get(f"{FAKE_BASE_URL}/api/role").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": [other],
+                    "next": f"{FAKE_BASE_URL}/api/role?page=2&page_size=200",
+                },
+            ),
+            httpx.Response(200, json=ROLE_LIST),
+        ]
+    )
+
+    d = get_team_member(MEMBER_ID)
+
+    assert d["roles"] == [{"id": ROLE_ID, "name": "Sales Rep"}]
+
+
+@respx.mock
 def test_get_team_member_by_uuid_skips_typeahead():
     """A UUID ref goes straight to the retrieve endpoint — no search call."""
     _mock_team_get()
