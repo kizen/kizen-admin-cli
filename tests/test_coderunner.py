@@ -21,7 +21,7 @@ from typer.testing import CliRunner
 import kizen_builder.cli as cli
 from kizen_builder.cli import code as cli_code
 from kizen_builder.tools import coderunner as cr
-from tests.conftest import FAKE_BASE_URL
+from tests.conftest import FAKE_BASE_URL, plain
 
 runner = CliRunner()
 RUN_URL = f"{FAKE_BASE_URL}/api/coderunner/run"
@@ -207,6 +207,7 @@ def test_cli_test_command_renders_outputs(tmp_path):
         [
             "code",
             "test",
+            "--yes",
             "--script",
             str(script),
             "--input",
@@ -237,6 +238,7 @@ def test_cli_test_command_json_output(tmp_path):
         [
             "code",
             "test",
+            "--yes",
             "--script",
             str(script),
             "--input",
@@ -265,6 +267,7 @@ def test_cli_surfaces_validation_400_error(tmp_path):
         [
             "code",
             "test",
+            "--yes",
             "--script",
             str(script),
             "--input",
@@ -302,7 +305,8 @@ def test_cli_surfaces_script_error_traceback(tmp_path):
     script = tmp_path / "s.py"
     script.write_text("outputs.x=1/0")
     result = runner.invoke(
-        cli.app, ["code", "test", "--script", str(script), "--declare-output", "x:n"]
+        cli.app,
+        ["code", "test", "--yes", "--script", str(script), "--declare-output", "x:n"],
     )
     assert result.exit_code == 1  # completed-but-failed run
     assert "ZeroDivisionError" in result.stdout
@@ -363,7 +367,8 @@ def test_cli_renders_http_requests_dict_shape(tmp_path):
     script = tmp_path / "s.py"
     script.write_text("outputs.ok=True")
     result = runner.invoke(
-        cli.app, ["code", "test", "--script", str(script), "--declare-output", "ok:b"]
+        cli.app,
+        ["code", "test", "--yes", "--script", str(script), "--declare-output", "ok:b"],
     )
     assert result.exit_code == 0, result.stdout
     assert "custom-objects" in result.stdout
@@ -389,7 +394,8 @@ def test_cli_shows_no_logs_hint_when_empty(tmp_path):
     script = tmp_path / "s.py"
     script.write_text("outputs.x=1")
     result = runner.invoke(
-        cli.app, ["code", "test", "--script", str(script), "--declare-output", "x:n"]
+        cli.app,
+        ["code", "test", "--yes", "--script", str(script), "--declare-output", "x:n"],
     )
     assert result.exit_code == 0, result.stdout
     assert "outputs.log" in result.stdout  # empty-logs hint mentions the channel
@@ -484,6 +490,7 @@ def test_cli_inputs_file_with_flag_override(tmp_path):
         [
             "code",
             "test",
+            "--yes",
             "--script",
             str(script),
             "--inputs-file",
@@ -511,7 +518,8 @@ def test_cli_unsupported_runtime_errors_before_call(tmp_path):
     script = tmp_path / "s.py"
     script.write_text("outputs.x=1")
     result = runner.invoke(
-        cli.app, ["code", "test", "--script", str(script), "--runtime", "python-2-7"]
+        cli.app,
+        ["code", "test", "--yes", "--script", str(script), "--runtime", "python-2-7"],
     )
     assert result.exit_code == 1
     assert "Unsupported" in result.stderr or "unsupported" in result.stderr
@@ -569,10 +577,12 @@ def test_cli_http_detail_flag_expands_bodies(tmp_path):
     script = tmp_path / "s.py"
     script.write_text("outputs.x=1")
     # Without -v: compact only, no bodies.
-    plain = runner.invoke(cli.app, ["code", "test", "--script", str(script)])
+    plain = runner.invoke(cli.app, ["code", "test", "--yes", "--script", str(script)])
     assert "request body" not in plain.stdout
     # With -v: request + response bodies shown, key redacted.
-    verbose = runner.invoke(cli.app, ["code", "test", "--script", str(script), "-v"])
+    verbose = runner.invoke(
+        cli.app, ["code", "test", "--yes", "--script", str(script), "-v"]
+    )
     assert verbose.exit_code == 0, verbose.stdout
     assert "request body" in verbose.stdout
     assert "response body" in verbose.stdout
@@ -602,8 +612,88 @@ def test_cli_failed_request_auto_expands_without_flag(tmp_path):
     )
     script = tmp_path / "s.py"
     script.write_text("outputs.x=1")
-    result = runner.invoke(cli.app, ["code", "test", "--script", str(script)])
+    result = runner.invoke(cli.app, ["code", "test", "--yes", "--script", str(script)])
     assert result.exit_code == 0, result.stdout
     # The failed (500) request's body auto-expands; the 200 one does not.
     assert "boom" in result.stdout
     assert "response body" in result.stdout
+
+
+# --- confirm gate: the script runs in the code_step Lambda and can write ---
+
+
+def _ok_route():
+    return respx.post(RUN_URL).mock(
+        return_value=httpx.Response(200, json=_http_run([]))
+    )
+
+
+@respx.mock
+def test_cli_without_terminal_or_yes_exits_2_without_posting(tmp_path):
+    route = _ok_route()
+    script = tmp_path / "s.py"
+    script.write_text("outputs.x=1")
+    result = runner.invoke(cli.app, ["code", "test", "--script", str(script)])
+    assert result.exit_code == 2, result.output
+    assert "can't prompt" in result.stderr
+    assert not route.called
+
+
+@respx.mock
+def test_cli_declined_prompt_exits_1_without_posting(tmp_path, monkeypatch, terminal):
+    route = _ok_route()
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "s.py").write_text("outputs.x=1")
+    result = runner.invoke(cli.app, ["code", "test", "--script", "s.py"], input="n\n")
+    assert result.exit_code == 1, result.output
+    assert "Run s.py in testenv on python-3-13?" in plain(result.stdout)
+    assert "aborted" in result.stdout
+    assert not route.called
+
+
+@respx.mock
+def test_cli_accepted_prompt_posts_once(tmp_path, terminal):
+    route = _ok_route()
+    script = tmp_path / "s.py"
+    script.write_text("outputs.x=1")
+    result = runner.invoke(
+        cli.app, ["code", "test", "--script", str(script)], input="y\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_cli_yes_posts_once_and_json_stdout_is_json(tmp_path, terminal):
+    route = _ok_route()
+    script = tmp_path / "s.py"
+    script.write_text("outputs.x=1")
+    # No input: a prompt would read EOF and fail the invocation.
+    result = runner.invoke(
+        cli.app, ["code", "test", "--script", str(script), "--yes", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert route.call_count == 1
+    json.loads(result.stdout)
+
+
+@respx.mock
+def test_cli_stdin_script_without_yes_exits_2_without_posting(terminal):
+    route = _ok_route()
+    result = runner.invoke(cli.app, ["code", "test"], input="outputs.x=1\n")
+    assert result.exit_code == 2, result.output
+    assert not route.called
+
+
+@respx.mock
+def test_cli_stdin_inputs_file_without_yes_exits_2_without_posting(tmp_path, terminal):
+    route = _ok_route()
+    script = tmp_path / "s.py"
+    script.write_text("outputs.x=1")
+    result = runner.invoke(
+        cli.app,
+        ["code", "test", "--script", str(script), "--inputs-file", "-"],
+        input='{"n": 1}',
+    )
+    assert result.exit_code == 2, result.output
+    assert not route.called

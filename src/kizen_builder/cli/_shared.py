@@ -26,7 +26,9 @@ app = typer.Typer(
         "The working directory's .kizen/profile pin selects the environment. "
         "Read commands are safe. Mutation verbs (create/update) build a plan "
         "from live state, show it, and confirm before applying; "
-        "--dry-run previews without applying."
+        "--dry-run previews without applying. Commands that execute live "
+        "(`start`, `runs`, `roundtrip --execute`, `code test`) ask first, "
+        "except `runs pause`."
     ),
     epilog=(
         "New here? Run `kizen docs show operating` before making changes — it "

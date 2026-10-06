@@ -579,7 +579,11 @@ as a real custom object's own api_name, and its span gets
   `is_any_of`/`not_any_of`, numbers use `>=`/`between` — *not* `in`/`gte`). Run
   `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
   dict for clause types the DSL doesn't cover (variable comparisons — see
-  "Variable-comparison condition step" above).
+  "Variable-comparison condition step" above). **A condition needs at least one
+  rule.** An empty `query`, a group with no `filters`, or an `in_group`/
+  `not_in_group` with no `group_ids` is rejected at plan time. The API accepts
+  an empty filter, but the UI then shows an error on the step (reported
+  2026-09-29). A group condition with no groups has nothing to test.
 
 ---
 
@@ -612,6 +616,19 @@ Why a translator is mandatory rather than nice-to-have:
   `automation_ids`), `archive_record.relationship_fields` (wants
   `relationship_field_ids`), and `field_updated.to_value` as a dict (stored as
   **null**).
+- **A key the planner doesn't read is a plan-time error.** Any top-level key
+  in a step or trigger config block that the type's builder doesn't read
+  fails `create`/`update`/`steps add` before the plan renders, even under
+  `--dry-run --json`, with a `plan error:` naming the key and every key that
+  block does read. Two limits: keys *inside* nested items
+  (`change_field_value.actions[]`, `code_step.inputs`/`outputs`,
+  `schedule_activity.schedule`) aren't checked, and neither is `steps edit`.
+  Types whose builder forwards the whole block to Kizen (`delay`, `goal`,
+  `stop_execution`, `initialize_variable`, `update_variable`,
+  `send_related_contact_text`, and every trigger except `manual`,
+  `new_entity_created` and `activity_logged`) accept any key, and Kizen may
+  still ignore one. `send_related_contact_text` is the exception within
+  them: an extra key whose value is a dict or list is dropped, not forwarded.
 
 Also: **automation updates need PUT, not PATCH.** PATCH refuses step/trigger
 changes, and PUT requires the current `revision` as `last_revision`.
@@ -786,7 +803,7 @@ and not the `team_member` selector's set on notify/send steps. Confirmed live
 | `round_robin_role` | `role_id` |
 | `round_robin_team_members` | `employee_ids` |
 | `round_robin_all` | — |
-| `team_selector_field` | `field_id` (or `field_ref`) |
+| `team_selector_field` | `field_id` |
 | `related_team_selector_field` | `related_field_id` |
 
 `owner`, `last_active`, `last_active_role` and `employees` are all valid on

@@ -1072,11 +1072,11 @@ def html_dashlet_config(
 
 def admin_role_id() -> str | None:
     """Return the UUID of the built-in 'Admin' role in this env, or None."""
-    from kizen_builder.api import team as team_api
+    from kizen_builder.api import permissions as perm_api
 
     config = load_env_config()
     with KizenClient(config) as client:
-        roles = team_api.list_roles(client)
+        roles = perm_api.list_roles(client)
     admin = next((r for r in roles if r.get("name") == "Admin"), None)
     return admin.get("id") if admin else None
 

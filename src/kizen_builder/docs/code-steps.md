@@ -63,9 +63,9 @@ the extra call entirely; see `kizen docs show automation`.
 
 ## Testing it: `kizen code test`
 
-Runs against the live sandbox (`POST /api/coderunner/run` — the same secure
-Lambda sandbox as a real `code_step`), creates nothing, and needs no
-confirmation.
+`POST /api/coderunner/run`. Runs your script in the same Lambda as a real
+`code_step`; `kizen.api` calls in it use real credentials and can write live
+data. Asks y/N first (`--yes` skips).
 
 ```
 kizen code test --script my_step.py \
@@ -83,12 +83,13 @@ kizen code test --script my_step.py \
 # --input / --output flags override same-named file entries.
 ```
 
-Read the script from `--script <file>` or stdin. Output shows `values`, the
-`logs`, an `http_requests` audit, and — on a script error — the full traceback
-(a raised script returns HTTP 400 with the run envelope; the command renders it
-and exits non-zero). `--json` emits the raw response. An unsupported
-`--runtime` fails client-side (supported: `python-3-12`, `python-3-13`; default
-`python-3-13`).
+Read the script from `--script <file>` or stdin. A script or `--inputs-file -`
+read from stdin leaves nothing to answer the prompt with, so pass `--yes`.
+Output shows `values`, the `logs`, an `http_requests` audit, and — on a script
+error — the full traceback (a raised script returns HTTP 400 with the run
+envelope; the command renders it and exits non-zero). `--json` emits the raw
+response. An unsupported `--runtime` fails client-side (supported:
+`python-3-12`, `python-3-13`; default `python-3-13`).
 
 ### Debugging `kizen.api` calls
 

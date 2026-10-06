@@ -16,6 +16,33 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Breaking: `automations start`, `roundtrip --execute`, `code test` and
+  every `automations runs` verb except `pause` now y/N-confirm. Scripts must
+  pass `--yes` or they exit 2.** Each of them runs live and can't be undone;
+  `code test` runs in the same Lambda as a real `code_step` and its
+  `kizen.api` calls can write. `roundtrip --execute` previews first and
+  never prompts when validation fails. The run verbs show the run's
+  automation and status before asking. `runs pause` still acts at once, so a
+  run can be stopped fast. The run verbs gain `--json`.
+- **Breaking: an automation spec key the planner doesn't read is now a plan
+  error.** A step or trigger config block key that the CLI used to drop
+  silently fails `automations create`/`update` and `steps add` before the
+  plan renders, including under `--dry-run --json`, with a `plan error:`
+  line naming the key and the keys that block does read. Before, the
+  automation applied without it and reported success. For example,
+  `create_related_entity`'s `fields_to_set` never reached Kizen. A spec that
+  applied cleanly before can fail after upgrading: remove the key, or rename
+  it to the one the error lists. Dead keys removed from the config models,
+  so they now fail the same way: `owner`, `relationship_field_ref` and
+  `relationship_field_id` on `create_related_entity`; `operands`, `operator`
+  and `output` on `math_operator`; `update_mode` and `field_updates` on
+  `modify_related_entities`; `field_ref` on `assign_team_member`;
+  `entity_id_source` on `start_automation`; `email_template_name`,
+  `email_template_id`, `relationship_field_ref` and `relationship_field_id`
+  on `send_related_contact_email`; `activity_type_name` on the
+  `activity_logged` trigger. `create_related_entity` now reads
+  `target_object` as the target object, so `target_custom_object` no longer
+  needs to repeat it.
 - **Breaking: `records delete` is removed; `records archive` is the one way
   to remove records.** Kizen's delete was always an archive (same restorable
   state, same id), so the two commands did the same thing. `records archive`
@@ -135,8 +162,16 @@ called out explicitly under **Changed** or **Removed**.
   records". `seeds list` shows such a seed's filter group as `all records`
   instead of `—`, and `pull` now exports its rows instead of warning you to
   hand-author the file. The preview's `fields` line now says `kizen_id only`
-  when no `--field` is given, which is what the server actually exposes; it
-  used to claim "all seedable".
+  when a new seed has no `--field`, which is what the server actually exposes;
+  it used to claim "all seedable".
+- **A condition step with no rules now fails at `--dry-run`, naming the
+  step.** That covers an empty `filter_config` query, a rule group with no
+  `filters`, `step_condition: {}`, and an `in_group`/`not_in_group` with no
+  `group_ids`, in `automations create`/`update`/`diff` specs and in `steps add`
+  and `steps edit`. Kizen accepts an empty filter and then shows an error on
+  the step in the UI, and a group condition with no groups has nothing to
+  test. Reading and editing a live automation that already carries one
+  still works, so `steps edit` can fix it.
 
 ### Added
 
@@ -319,6 +354,30 @@ called out explicitly under **Changed** or **Removed**.
   `docs/specs/permission-group.md`.
 
 ### Fixed
+
+- **`smart-connectors seeds add` and `seeds remove` keep a seed's fields when
+  they re-save it.** Adding a seed for an object the connector already seeds,
+  without `--field`, used to narrow it to `kizen_id`; it now keeps the columns
+  the seed exposes (the preview says `kept from the current seed`). And
+  changing one seed no longer narrows another seed that exposes every field of
+  its object to `kizen_id`. When a re-save does drop columns, because
+  `--field` leaves some out, a field was deleted, or the seed isn't in the
+  script yet, the preview names them in a yellow `!` line.
+
+- **Roles and permission groups are read past the first page.** Dashboards and
+  saved views created without explicit sharing could miss the Admin role in a
+  business with many roles and be rejected. `roles list`, `permissions groups`,
+  `team get`, and the already-exists checks in role and group creation now see
+  every role and group.
+
+- **`credentials.toml` is never briefly readable by other users, and an
+  interrupted `kizen init` no longer erases stored profiles.** The file is
+  written to a private temp file and swapped into place.
+
+- **`messages create` and `templates clone` refuse a template with no compiled
+  content at plan time instead of failing with a bare 400 on apply.** A
+  template whose `content` is blank is now refused with its name, id and the
+  two ways to fix it.
 
 - **Specs accept every api_name Kizen itself produces.** An api_name that
   started with a digit or underscore (`1099_forms`), or that carried Kizen's

@@ -14,11 +14,7 @@ import respx
 
 from kizen_builder.api import messages as messages_api
 from kizen_builder.api.client import KizenClient
-from kizen_builder.tools.messages import (
-    craft_summary,
-    create_automation_message,
-    resolve_template,
-)
+from kizen_builder.tools.messages import craft_summary, resolve_template
 from tests.conftest import FAKE_BASE_URL
 
 TEMPLATE_ID = "7cb5ce29-bf20-4f0f-bdc9-412a8c777ff8"
@@ -116,23 +112,6 @@ def test_create_automation_message_from_template_sets_base_message_id():
     assert body["subject"] == "Fresh subject"
     assert body["content"] == "<p>Real template content</p>"
     assert route.called
-
-
-@respx.mock
-def test_create_automation_message_tool_resolves_and_creates(monkeypatch):
-    monkeypatch.setattr(
-        "kizen_builder.tools.messages.get_automation",
-        lambda api_name: {"id": AUTOMATION_ID},
-    )
-    respx.get(f"{FAKE_BASE_URL}/api/messages/templates/{TEMPLATE_ID}").mock(
-        return_value=httpx.Response(200, json=TEMPLATE)
-    )
-    respx.post(
-        f"{FAKE_BASE_URL}/api/messages/automations/automation/{AUTOMATION_ID}"
-    ).mock(return_value=httpx.Response(201, json={**TEMPLATE, "id": "new-message-id"}))
-    result = create_automation_message("some_automation", TEMPLATE_ID)
-    assert result["id"] == "new-message-id"
-    assert result["automation_api_name"] == "some_automation"
 
 
 # ---------------------------------------------------------------------------

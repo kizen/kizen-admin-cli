@@ -36,7 +36,8 @@ applies known wire-format transformations:
 * read-only fields (``id`` on action items, ``stats``, ``has_error``,
   ``deleted``, ``related_*`` metadata) get stripped.
 
-Adding a new step type means: write a builder function, add it to
+Adding a new step type means: write a builder function, declare the block
+keys it reads with :func:`honours` (or :func:`honours_all`), add it to
 :data:`_STEP_BUILDERS`. Same for triggers.
 """
 
@@ -760,6 +761,54 @@ def _resolve_object(value: Any, ctx: LiveContext) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Honoured keys — what each builder reads from its spec block
+# ---------------------------------------------------------------------------
+
+_Builder = Callable[..., dict[str, Any]]
+
+
+def honours(*keys: str) -> Callable[[_Builder], _Builder]:
+    """Declare the config-block keys a step/trigger builder reads.
+
+    Any other key in a spec block is a plan-time error: the builder would
+    drop it and the step would apply without it. Declared here, next to the
+    builder, so the list moves with the code it describes;
+    ``tests/test_automation_payloads.py`` checks it against the builder's
+    real ``block.get(...)`` calls.
+    """
+
+    def mark(builder: _Builder) -> _Builder:
+        builder.honoured_keys = frozenset(keys)  # type: ignore[attr-defined]
+        return builder
+
+    return mark
+
+
+def honours_all(builder: _Builder) -> _Builder:
+    """Declare that a builder forwards the block to the server rather than
+    picking named keys, so there is nothing to reject. Some still drop a
+    class of value: `send_related_contact_text` forwards only extra keys
+    whose values are scalars, and drops dict or list values."""
+    builder.honoured_keys = None  # type: ignore[attr-defined]
+    return builder
+
+
+def _reject_unhonoured_keys(
+    builder: _Builder, block: dict[str, Any], where: str
+) -> None:
+    honoured: frozenset[str] | None = builder.honoured_keys  # type: ignore[attr-defined]
+    if honoured is None:
+        return
+    unknown = sorted(set(block) - honoured)
+    if unknown:
+        raise PlanError(
+            f"{where}: {', '.join(unknown)} would be silently dropped — the "
+            f"planner doesn't read {'that key' if len(unknown) == 1 else 'those keys'}. "
+            f"Keys it reads: {', '.join(sorted(honoured)) or '(none)'}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Triggers
 # ---------------------------------------------------------------------------
 
@@ -797,20 +846,24 @@ def _build_trigger_payload(t: AutomationTriggerDef, ctx: LiveContext) -> dict[st
     cfg_field = f"trigger_{t.trigger_type}"
     spec_block = getattr(t, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
+    _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
     p[cfg_field] = builder(block_dict, ctx)
     return p
 
 
+@honours()
 def _trigger_manual(_block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
     return {}
 
 
+@honours("action")
 def _trigger_new_entity_created(
     block: dict[str, Any], _ctx: LiveContext
 ) -> dict[str, Any]:
     return {"action": block.get("action", "create_only")}
 
 
+@honours("activity_type", "activity_type_id")
 def _trigger_activity_logged(
     block: dict[str, Any], _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -822,6 +875,7 @@ def _trigger_activity_logged(
     return out
 
 
+@honours_all
 def _trigger_on_or_around_date(
     block: dict[str, Any], ctx: LiveContext
 ) -> dict[str, Any]:
@@ -845,11 +899,13 @@ def _trigger_on_or_around_date(
     return _strip(out)
 
 
+@honours_all
 def _trigger_webhook(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
     # Drop server-assigned id; pass through the rest as-is.
     return _strip(block, drop={"id"})
 
 
+@honours_all
 def _trigger_field_updated(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
     ref = block.get("field_ref", "")
     out: dict[str, Any] = _strip(block, drop={"field_ref"})
@@ -872,6 +928,7 @@ def _trigger_field_updated(block: dict[str, Any], ctx: LiveContext) -> dict[str,
     return out
 
 
+@honours_all
 def _trigger_form_submitted(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
     # WIRE SHAPE UNVERIFIED: no live capture of this trigger type exists yet
     # (unlike every other builder here, which was reverse-engineered from a
@@ -893,6 +950,7 @@ def _trigger_form_submitted(block: dict[str, Any], ctx: LiveContext) -> dict[str
     return _strip(out)
 
 
+@honours_all
 def _trigger_survey_submitted(
     block: dict[str, Any], ctx: LiveContext
 ) -> dict[str, Any]:
@@ -910,6 +968,7 @@ def _trigger_survey_submitted(
     return _strip(out)
 
 
+@honours_all
 def _trigger_schedule(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
     # Wire shape is flat and matches the read shape exactly: {rrule,
     # is_advanced}. Confirmed live (2026-07-22) on a global
@@ -917,6 +976,7 @@ def _trigger_schedule(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any
     return _strip(block)
 
 
+@honours_all
 def _trigger_scheduled_activity_overdue(
     block: dict[str, Any], _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1088,7 +1148,12 @@ def _build_step_payload(
     cfg_field = _block_field_for(step.step_type)
     spec_block = getattr(step, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
+    _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
     wire_block = builder(block_dict, auto, ctx)
+    if step.step_type == "condition":
+        problem = _condition_rules_problem(step.key, wire_block)
+        if problem:
+            raise PlanError(problem)
     p[cfg_field] = wire_block
     return p
 
@@ -1131,6 +1196,7 @@ def _normalize_llm_decision(ld: Any) -> Any:
     return out
 
 
+@honours("type", "llm_decision", "filter_config", "group_ids", "groups")
 def _step_condition(
     block: dict[str, Any], auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1150,6 +1216,27 @@ def _step_condition(
         out["group_ids"] = [_unwrap_id(g) for g in block["groups"] if _unwrap_id(g)]
     # NEVER set yes_step_ids / no_step_ids — server crashes.
     return out
+
+
+def _condition_rules_problem(key: str, block: dict[str, Any]) -> str | None:
+    """Why a built ``step_condition`` has nothing to evaluate, or None.
+
+    The API accepts a condition with no rules, but the Kizen UI shows an
+    error on the step. Checked on spec and patch paths only: live reads of
+    automations that already carry one must keep working.
+    """
+    kind = block.get("type")
+    if kind in ("in_group", "not_in_group"):
+        if not block.get("group_ids"):
+            return f"condition step '{key}' ({kind}) has no group_ids"
+    elif kind == "custom_filter":
+        query = (block.get("filter_config") or {}).get("query")
+        if not query:
+            return f"condition step '{key}' has no filter rules"
+        for i, group in enumerate(query):
+            if not group.get("filters"):
+                return f"condition step '{key}' has an empty rule group (query[{i}])"
+    return None
 
 
 def _render_filter_config(
@@ -1186,6 +1273,7 @@ def _render_filter_config(
         raise PlanError(f"invalid filter_config: {e}") from e
 
 
+@honours_all
 def _step_delay(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1199,6 +1287,7 @@ def _step_delay(
     return out
 
 
+@honours_all
 def _step_goal(
     block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1234,6 +1323,7 @@ def _step_goal(
     return out
 
 
+@honours_all
 def _step_stop_execution(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1244,6 +1334,13 @@ def _step_stop_execution(
     return {k: v for k, v in cleaned.items() if v is not None}
 
 
+@honours(
+    "record_source",
+    "relationship_field_ids",
+    "relationship_fields",
+    "automation_variable_name",
+    "automation_variable",
+)
 def _step_archive_record(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1289,12 +1386,28 @@ def _team_member_selector(block: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+@honours(
+    "type",
+    "role_id",
+    "role",
+    "employee_id",
+    "employee",
+    "field_id",
+    "field",
+    "related_field_id",
+    "related_field",
+    "employee_ids",
+    "employees",
+)
 def _step_assign_team_member(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     return _team_member_selector(block)
 
 
+# `type` isn't read, but the builder always emits it with the only valid
+# value, so a block copied from `steps get` re-applies unchanged.
+@honours("type", "step_key", "step", "trigger_key")
 def _step_go_to_automation_step(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1310,6 +1423,19 @@ def _step_go_to_automation_step(
     return out
 
 
+@honours(
+    "record_source",
+    "resume_paused_automations",
+    "relationship_field_ids",
+    "relationship_fields",
+    "automation_variable_name",
+    "automation_variable",
+    "automation_ids",
+    "automations",
+    "automation_api_name",
+    "automation_id",
+    "automation_variable_overrides",
+)
 def _step_start_automation(
     block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1437,6 +1563,25 @@ def _collapse_variable_overrides(overrides: list[Any]) -> list[dict[str, Any]]:
     return [{"automation_id": aid, "variable_overrides": groups[aid]} for aid in order]
 
 
+# `actions`, or one flat change whose keys `_change_field_value_action` reads.
+@honours(
+    "actions",
+    "field_resolution",
+    "update_mode",
+    "field_value_mappings",
+    "fields_to_clear",
+    "value_type",
+    "change_type",
+    "field_to_modify",
+    "field_ref",
+    "field",
+    "specific_field_value",
+    "context_entity_field",
+    "automation_target_relationship_field",
+    "related_object",
+    "related_object_field",
+    "variable",
+)
 def _step_change_field_value(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1531,6 +1676,13 @@ def _change_field_value_action(
     return out
 
 
+@honours(
+    "automation_target_relationship_fields",
+    "relationship_field_ref",
+    "relationship_field_id",
+    "object_to_modify",
+    "fields_to_modify",
+)
 def _step_modify_related_entities(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1562,6 +1714,26 @@ def _step_modify_related_entities(
     return out
 
 
+@honours(
+    "new_entity_name",
+    "new_entity_name_html",
+    "new_entity_owner_type",
+    "new_entity_owner_sub_type",
+    "new_entity_stage",
+    "new_entity_owner_role",
+    "new_entity_owner_variable",
+    "new_entity_owner_employees",
+    "context_entity_field",
+    "target_custom_object",
+    "target_object",
+    "target_variable",
+    "variable_field_resolution",
+    "context_entity_field_resolution",
+    "automations_to_start",
+    "existing_record_found_action",
+    "archived_record_found_action",
+    "field_values",
+)
 def _step_create_related_entity(
     block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1579,7 +1751,9 @@ def _step_create_related_entity(
             _unwrap_id(e) for e in (block.get("new_entity_owner_employees") or []) if e
         ],
         "context_entity_field": _unwrap_id(block.get("context_entity_field")),
-        "target_custom_object": _resolve_object(block.get("target_custom_object"), ctx),
+        "target_custom_object": _resolve_object(
+            block.get("target_custom_object") or block.get("target_object"), ctx
+        ),
         "target_variable": _unwrap_variable_name(block.get("target_variable")),
         "variable_field_resolution": block.get(
             "variable_field_resolution", "overwrite"
@@ -1603,6 +1777,14 @@ def _step_create_related_entity(
     return {k: v for k, v in out.items() if v is not None}
 
 
+@honours(
+    "custom_object",
+    "filter_type",
+    "filter_config",
+    "filter_groups",
+    "destination_variable",
+    "destination_variable_resolution",
+)
 def _step_search_records(
     block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1721,6 +1903,7 @@ def _variable_step_extras(block: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in block.items() if k not in handled and v is not None}
 
 
+@honours_all
 def _step_initialize_variable(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1732,6 +1915,7 @@ def _step_initialize_variable(
     }
 
 
+@honours_all
 def _step_update_variable(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1767,6 +1951,17 @@ def _normalize_variable(v: Any) -> Any:
     return v
 
 
+@honours(
+    "model_name",
+    "prompt",
+    "html_prompt",
+    "business_plugin_app_id",
+    "business_plugin_app",
+    "destinations",
+    "is_advanced",
+    "data_type",
+    "merge_field_validation",
+)
 def _step_call_llm(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1830,6 +2025,21 @@ def _normalize_destinations(destinations: list[dict[str, Any]]) -> list[dict[str
     return resolved
 
 
+@honours(
+    "model_name",
+    "prompt",
+    "html_prompt",
+    "business_plugin_app_id",
+    "business_plugin_app",
+    "input_field_ref",
+    "input_field",
+    "input_field_id",
+    "file_field",
+    "destinations",
+    "is_advanced",
+    "data_type",
+    "merge_field_validation",
+)
 def _step_file_content_extraction(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1968,6 +2178,15 @@ def _resolve_llm_destinations(
     return resolved
 
 
+@honours(
+    "activity_type",
+    "activity_type_id",
+    "schedule",
+    "notifications",
+    "assigned_to",
+    "association_configs",
+    "note",
+)
 def _step_schedule_activity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -2084,6 +2303,7 @@ def _normalize_assigned_to(at: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in out.items() if v is not None}
 
 
+@honours("send_to_contact_field", "send_from_owner", "email", "cc_team_member")
 def _step_send_related_contact_email(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -2106,6 +2326,7 @@ def _step_send_related_contact_email(
     return out
 
 
+@honours_all
 def _step_send_related_contact_text(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -2125,6 +2346,13 @@ def _step_send_related_contact_text(
     return out
 
 
+@honours(
+    "team_member",
+    "cc_team_member",
+    "id",
+    "email_template_id",
+    "email_template",
+)
 def _step_notify_member_via_email(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -2199,6 +2427,13 @@ def _merge_field_resolvers(
     return resolve_label, resolve_objectname
 
 
+@honours(
+    "team_member",
+    "content",
+    "html_content",
+    "base_message_id",
+    "message_template_id",
+)
 def _step_notify_member_via_text(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -2231,6 +2466,14 @@ def _step_notify_member_via_text(
     return out
 
 
+@honours(
+    "type",
+    "subtype",
+    "field",
+    "field_id",
+    "variable",
+    "simple_builder_arguments",
+)
 def _step_math_operator(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -2268,6 +2511,7 @@ def _step_math_operator(
 # --- code_step (already validated against live API) ------------------------
 
 
+@honours("script", "runtime", "inputs", "outputs", "secrets")
 def _step_code_step(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:

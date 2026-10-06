@@ -13,6 +13,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from kizen_builder.api.client import KizenAPIError
+from kizen_builder.cli._mutations import _confirm_or_abort
 from kizen_builder.cli._shared import (
     _short,
     app,
@@ -21,14 +22,15 @@ from kizen_builder.cli._shared import (
     err_console,
     warn_renamed_flag,
 )
+from kizen_builder.config import load_env_config
 from kizen_builder.tools import coderunner as code_tools
 
 code_app = typer.Typer(
     help=(
         "Unit-test code_step scripts in the live sandbox via "
-        "`POST /api/coderunner/run`. Runs standalone — no automation, no "
-        "record, nothing created in the env — so it's confirm-free like "
-        "`automations start`."
+        "`POST /api/coderunner/run`. Runs your script in the same Lambda as a "
+        "real `code_step`; `kizen.api` calls in it use real credentials and "
+        "can write live data. Asks y/N first (`--yes` skips)."
     ),
     no_args_is_help=True,
 )
@@ -370,6 +372,9 @@ def code_test(
     runtime: str = typer.Option(
         None, "--runtime", help="python-3-13 (default) or python-3-12."
     ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
     json_out: bool = typer.Option(
         False, "--json", help="Emit the raw response as JSON."
     ),
@@ -400,9 +405,10 @@ def code_test(
     same-named file entries. Add `--http-detail` / `-v` to see each
     `kizen.api` call's request and response bodies when debugging.
 
-    Confirm-free: this executes sandboxed code and creates nothing in the env,
-    so it sits outside the plan/preview/confirm gate (like `automations
-    start`).
+    Runs your script in the same Lambda as a real `code_step`; `kizen.api`
+    calls in it use real credentials and can write live data. Asks y/N first
+    (`--yes` skips). A script or `--inputs-file -` read from stdin leaves
+    nothing to answer the prompt with, so it needs `--yes`.
     """
     if outputs_old:
         warn_renamed_flag("--output", "--declare-output")
@@ -458,6 +464,18 @@ def code_test(
         d = _parse_output_spec(s)
         output_map[d["name"]] = d
     parsed_outputs = list(output_map.values())
+
+    if not yes:
+        with cli_errors():
+            env = load_env_config().name
+        _confirm_or_abort(
+            f"Run {script_file or 'stdin'} in {env} on "
+            f"{runtime or code_tools.DEFAULT_RUNTIME}? Its kizen.api calls can "
+            "write live data.",
+            yes=False,
+            hint="Re-run with --yes.",
+            stdin_consumed=not script_file or inputs_file == "-",
+        )
 
     # The inner handler pre-empts `cli_errors` for the one API failure that
     # deserves more than a single line; everything else here — a bad config, a

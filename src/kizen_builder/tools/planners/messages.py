@@ -13,7 +13,11 @@ from kizen_builder.config import load_env_config
 from kizen_builder.models.spec.email_templates import EmailTemplateDef
 from kizen_builder.tools import email_craft
 from kizen_builder.tools.automations import get_automation
-from kizen_builder.tools.messages import craft_summary, resolve_template
+from kizen_builder.tools.messages import (
+    craft_summary,
+    has_compiled_content,
+    resolve_template,
+)
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 
 # Only value ever observed live for a created template (see
@@ -47,6 +51,20 @@ _CLONED_FIELDS = (
 )
 
 
+def _require_compiled_content(tmpl: dict[str, Any]) -> None:
+    """Refuse a template with blank ``content``: the server rejects it on
+    apply with a bare ``400 content: This field may not be blank.``"""
+    if has_compiled_content(tmpl):
+        return
+    has_tree = "has a builder tree but " if tmpl.get("craft_json") else "has "
+    raise PlanError(
+        f"email template '{tmpl.get('name')}' ({tmpl.get('id')}) {has_tree}no "
+        "compiled `content`, so nothing would be sent. Re-save it in the Kizen "
+        "email builder, or rebuild it with `kizen messages templates update "
+        f"{tmpl.get('id')} --spec-file <file>`"
+    )
+
+
 def plan_create_automation_message(automation_api_name: str, template: str) -> Plan:
     """Plan creating an automation-scoped message from an email template.
 
@@ -65,6 +83,7 @@ def plan_create_automation_message(automation_api_name: str, template: str) -> P
             tmpl = resolve_template(client, template)
         except (LookupError, ValueError) as e:
             raise PlanError(str(e)) from e
+    _require_compiled_content(tmpl)
 
     payload = {"automation_id": automation["id"], "template": tmpl}
     op = PlanOperation(
@@ -108,6 +127,7 @@ def plan_clone_template(source: str, new_name: str) -> Plan:
     view and real output disagree.
     """
     config, src = _resolve(source)
+    _require_compiled_content(src)
     payload: dict[str, Any] = {"name": new_name}
     payload.update({f: src.get(f) for f in _CLONED_FIELDS if src.get(f) is not None})
 

@@ -340,6 +340,11 @@ CLI: `kizen smart-connectors seeds list|add|remove`. The wire details:
 - `fields_ids` (write-only — it doesn't come back on a read) picks which fields
   come along; the server always includes `kizen_id`. Omitting it exposes only
   `kizen_id` (confirmed live 2026-09-25).
+  Since a whole-list save re-sends every seed, `seeds add`/`remove` rebuild
+  `fields_ids` for each seed they re-save from its seed table's
+  `columns_mapping`, so a replace without `--field` keeps the current columns
+  (confirmed live 2026-10-05). A seed not yet in the script has no table to
+  rebuild from; the preview says it's re-saved as `kizen_id` only.
 - Only the field types in `metadata.kizen_data_seeds_allowed_field_types` can be
   seeded.
 

@@ -159,7 +159,7 @@ _GROUP_CREATE = ["permissions", "group-create", "--name", "N", "--base", "clone"
          "--group is deprecated; use --filter-group."),
         (_WEBHOOK, ["--employee", "a@x.test"], ["-e", "a@x.test"],
          "-e is deprecated; use --employee."),
-        (["code", "test"], ["--declare-output", "x:n"], ["--output", "x:n"],
+        (["code", "test", "--yes"], ["--declare-output", "x:n"], ["--output", "x:n"],
          "--output is deprecated; use --declare-output."),
         ([*_SC, "run"], ["--skip-sql"], ["--dry-run"],
          "--dry-run is deprecated; use --skip-sql."),

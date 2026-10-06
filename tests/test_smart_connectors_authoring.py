@@ -3206,6 +3206,20 @@ def _mock_filter_groups(object_id: str = "obj-lines") -> None:
     _mock_record_counts(object_id, segment=7, total=7)
 
 
+def _mock_seed_tables(*tables):
+    """Serve the draft script whose `config_metadata` carries these seed tables."""
+    respx.get(f"{BASE}/order_import/sql-scripts/draft-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": "draft-1", "config_metadata": {"seed_tables": list(tables)}},
+        )
+    )
+
+
+def _lines_table(*cols):
+    return {**SEED_TABLE, "columns_mapping": [{"col": c, "type": "str"} for c in cols]}
+
+
 @respx.mock
 def test_plan_add_seed_resolves_the_group_by_name_and_validates_fields():
     _mock_object_lookups()
@@ -3309,14 +3323,83 @@ def test_plan_add_seed_replaces_the_existing_seed_for_the_same_object():
             200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW]}
         )
     )
+    _mock_seed_tables(SEED_TABLE)
     plan = sct.plan_add_seed(
         "order_import", custom_object="order_lines", group="Active Only"
     )
     assert plan["replacing"] is True
-    # Same row id, so the seed is updated rather than swapped out from under the script.
+    # Same row id, so the seed is updated rather than swapped out from under the
+    # script; without --field it keeps the columns its table exposes now.
     assert plan["payload"] == [
-        {"custom_object_id": "obj-lines", "group_id": "grp-1", "id": "seed-1"}
+        {
+            "custom_object_id": "obj-lines",
+            "group_id": "grp-1",
+            "fields_ids": ["f-lines-sku"],
+            "id": "seed-1",
+        }
     ]
+    assert plan["fields"] == ["sku"]
+    assert plan["fields_kept"] is True
+    assert plan["dropped_columns"] == {}
+
+
+@respx.mock
+def test_plan_add_seed_replace_with_fields_sends_exactly_those_and_names_the_rest():
+    _mock_object_lookups()
+    respx.get(f"{BASE}/metadata").mock(return_value=httpx.Response(200, json=METADATA))
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW]}
+        )
+    )
+    _mock_seed_tables(_lines_table("kizen_id", "name", "sku"))
+
+    plan = sct.plan_add_seed(
+        "order_import", custom_object="order_lines", fields=["sku"]
+    )
+
+    assert plan["payload"][0]["fields_ids"] == ["f-lines-sku"]
+    assert plan["fields"] == ["sku"]
+    assert plan["fields_kept"] is False
+    assert plan["dropped_columns"] == {"order_lines": ["name"]}
+
+
+@respx.mock
+def test_plan_add_seed_replace_without_a_seed_table_says_it_cant_keep_fields():
+    """A seed saved with --no-regenerate has no table to rebuild its fields
+    from, so the replace goes out as kizen_id only — and says so."""
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW]}
+        )
+    )
+    _mock_seed_tables()
+
+    plan = sct.plan_add_seed("order_import", custom_object="order_lines")
+
+    assert plan["payload"] == [
+        {"custom_object_id": "obj-lines", "group_id": None, "id": "seed-1"}
+    ]
+    assert plan["fields"] is None
+    assert plan["fields_kept"] is False
+    assert plan["dropped_columns"] == {"order_lines": None}
+
+
+@respx.mock
+def test_plan_add_seed_names_columns_that_no_longer_map_to_a_field():
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW]}
+        )
+    )
+    _mock_seed_tables(_lines_table("kizen_id", "sku", "retired_col"))
+
+    plan = sct.plan_add_seed("order_import", custom_object="order_lines")
+
+    assert plan["payload"][0]["fields_ids"] == ["f-lines-sku"]
+    assert plan["dropped_columns"] == {"order_lines": ["retired_col"]}
 
 
 @respx.mock
@@ -3385,6 +3468,80 @@ def test_plan_remove_seed_preserves_another_seeds_field_restriction():
             "fields_ids": ["f-lines-sku"],
         }
     ]
+
+
+SEED_ROW_ORDERS = {
+    "id": "seed-2",
+    "custom_object_id": "obj-orders",
+    "group_id": None,
+    "group": None,
+    "custom_object": {"id": "obj-orders", "name": "orders"},
+}
+# Every live order_lines field, in an order unlike LINE_FIELDS', so the
+# payload has to follow the table's column order.
+FULL_LINES_TABLE = _lines_table("kizen_id", "sku", "order_rel", "name")
+FULL_LINES_IDS = ["f-lines-sku", "f-lines-rel", "f-lines-name"]
+
+
+@respx.mock
+def test_plan_add_seed_keeps_every_field_of_a_fully_exposed_seed():
+    """Regression: a kept seed exposing every field used to be re-sent without
+    `fields_ids`, which the server reads as kizen_id only."""
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW]}
+        )
+    )
+    _mock_seed_tables(FULL_LINES_TABLE)
+
+    plan = sct.plan_add_seed("order_import", custom_object="orders")
+
+    kept = next(p for p in plan["payload"] if p["custom_object_id"] == "obj-lines")
+    assert kept["fields_ids"] == FULL_LINES_IDS
+    assert plan["dropped_columns"] == {}
+
+
+@respx.mock
+def test_plan_remove_seed_keeps_every_field_of_a_fully_exposed_seed():
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW, SEED_ROW_ORDERS]}
+        )
+    )
+    _mock_seed_tables(FULL_LINES_TABLE)
+
+    plan = sct.plan_remove_seed("order_import", "orders")
+
+    assert plan["payload"] == [
+        {
+            "custom_object_id": "obj-lines",
+            "group_id": "grp-1",
+            "id": "seed-1",
+            "fields_ids": FULL_LINES_IDS,
+        }
+    ]
+    assert plan["dropped_columns"] == {}
+
+
+@respx.mock
+def test_plan_remove_seed_warns_about_a_kept_seed_with_no_table():
+    _mock_object_lookups()
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(
+            200, json={**DETAIL, "kizen_data_seeds": [SEED_ROW, SEED_ROW_ORDERS]}
+        )
+    )
+    _mock_seed_tables(_lines_table("kizen_id"))
+
+    plan = sct.plan_remove_seed("order_import", "order_lines")
+
+    # orders has no table to rebuild from; a kizen_id-only table needs no warning.
+    assert plan["payload"] == [
+        {"custom_object_id": "obj-orders", "group_id": None, "id": "seed-2"}
+    ]
+    assert plan["dropped_columns"] == {"orders": None}
 
 
 @respx.mock
@@ -3507,6 +3664,7 @@ def test_plan_add_seed_without_a_group_seeds_every_record():
         )
     )
 
+    _mock_seed_tables(SEED_TABLE)
     plan = sct.plan_add_seed(
         "order_import", custom_object="order_lines", fields=["sku"]
     )
@@ -3654,6 +3812,54 @@ def test_seeds_add_preview_shows_all_records_for_a_null_group(monkeypatch):
     assert "all records" in result.stdout
     assert "records outside it" not in result.stdout
     assert "couldn't count" not in result.stdout
+
+
+def test_seeds_add_preview_says_the_fields_were_kept(monkeypatch):
+    plan = _seed_add_plan(replacing=True, fields=["sku"], fields_kept=True)
+    result, _ = _seeds_add(monkeypatch, plan, "--dry-run")
+    assert result.exit_code == 0
+    assert "sku (kept from the current seed)" in result.stdout
+    assert "kizen_id only" not in result.stdout
+
+
+def test_seeds_add_preview_names_the_columns_a_resave_drops(monkeypatch):
+    plan = _seed_add_plan(
+        replacing=True,
+        fields=["sku"],
+        dropped_columns={"order_lines": ["name", "qty"], "orders": None},
+    )
+    result, _ = _seeds_add(monkeypatch, plan, "--dry-run")
+    assert result.exit_code == 0
+    assert "re-saving the order_lines seed drops name, qty" in result.stdout
+    assert "the orders seed isn't in the script yet" in result.stdout
+
+    # --json keeps the warning on stderr with the rest of the preview.
+    result, _ = _seeds_add(monkeypatch, plan, "--dry-run", "--json")
+    assert result.exit_code == 0
+    assert "drops name, qty" in result.stderr
+    assert json.loads(result.stdout)["dropped_columns"]["order_lines"] == [
+        "name",
+        "qty",
+    ]
+
+
+def test_seeds_remove_preview_names_the_columns_a_resave_drops(monkeypatch):
+    from typer.testing import CliRunner
+
+    import kizen_builder.cli as cli
+
+    plan = {
+        **_seed_add_plan(payload=[{"custom_object_id": "obj-orders"}]),
+        "dropped_columns": {"orders": ["retired_col"]},
+    }
+    monkeypatch.setattr(sct, "plan_remove_seed", lambda *a, **k: plan)
+    result = CliRunner().invoke(
+        cli.app,
+        ["smart-connectors", "seeds", "remove", "order_import", "-o", "order_lines"]
+        + ["--dry-run"],
+    )
+    assert result.exit_code == 0
+    assert "re-saving the orders seed drops retired_col" in result.stdout
 
 
 @respx.mock
