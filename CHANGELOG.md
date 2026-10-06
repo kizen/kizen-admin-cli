@@ -354,6 +354,11 @@ called out explicitly under **Changed** or **Removed**.
   interrupted `kizen init` no longer erases stored profiles.** The file is
   written to a private temp file and swapped into place.
 
+- **`messages create` and `templates clone` refuse a template with no compiled
+  content at plan time instead of failing with a bare 400 on apply.** A
+  template whose `content` is blank is now refused with its name, id and the
+  two ways to fix it.
+
 - **Specs accept every api_name Kizen itself produces.** An api_name that
   started with a digit or underscore (`1099_forms`), or that carried Kizen's
   mixed-case collision suffix (`employee_m7SZCzg3`), failed spec validation, so

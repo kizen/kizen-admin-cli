@@ -1394,6 +1394,7 @@ def drift_messaging(
     path (with ``last_revision``) as a side effect.
     """
     from kizen_builder.api import messages as msg_api
+    from kizen_builder.tools.messages import has_compiled_content
 
     inline_steps = [
         {
@@ -1433,7 +1434,13 @@ def drift_messaging(
             "notify_member_via_email step's message resource must be seeded "
             "from one (see api/messages.py)"
         )
-    template = msg_api.get_template(drift_client, templates[0]["id"])
+    details = (msg_api.get_template(drift_client, t["id"]) for t in templates)
+    template = next((d for d in details if has_compiled_content(d)), None)
+    if template is None:
+        pytest.skip(
+            f"the drift environment's {len(templates)} email template(s) all "
+            "have blank `content`; a message seeded from one 400s on create"
+        )
     notify_message = msg_api.create_automation_message_from_template(
         drift_client, record["uuid"], template
     )
