@@ -43,18 +43,12 @@ class TriggerActivityLoggedConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    activity_type_name: str | None = Field(
-        default=None,
-        description=(
-            "Activity type name. NOT resolved by the builder (only "
-            "activity_type/activity_type_id are read) — there is no "
-            "`kizen lookup` command. Use `kizen activities list` to find the "
-            "activity type, then pass its UUID directly as activity_type_id."
-        ),
-    )
     activity_type_id: str | None = Field(
         default=None,
-        description="Activity type UUID. The wire key the builder actually reads.",
+        description=(
+            "Activity type UUID — find it with `kizen activities list`. "
+            "There is no name lookup."
+        ),
     )
 
 

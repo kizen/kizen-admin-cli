@@ -270,7 +270,6 @@ that exercises all of them.
       "step_type": "create_related_entity", "order": 1,
       "action_create_related_entity": {
         "target_object": "service_tickets",
-        "target_custom_object": "service_tickets",
         "new_entity_name": "Escalation for {{ entity_record.name }}",
         "new_entity_name_html": "<p>Escalation for {{ entity_record.name }}</p>",
         "new_entity_owner_type": "assign_from_context_record",
@@ -316,22 +315,12 @@ Two placeholder tokens, both filled in from the previous two sections:
   from `activities get <site_visit_api_name>`, used by `schedule_activity`'s
   `activity_type_id`.
 
-**A schema gap, `confirmed live 2026-08-13`: `create_related_entity`'s
-declared spec field is dead.** The model documents `target_object` as the
-key to set ("api_name of the target custom object... resolved to UUID from
-state at apply time") and `--dry-run` accepts a spec that sets only
-`target_object` — plan-time validation checks the declared model, and the
-declared model is satisfied. But the **builder that turns the spec into a
-wire payload reads `target_custom_object`, an entirely different,
-undeclared key**, not `target_object`. Sending only `target_object` passes
-`--dry-run` and then 400s on apply: `target_custom_object: This field is
-required.` This fixture sends **both** keys for exactly this reason — the
-same workaround already used in this repo's own drift-test fixtures
-(`tests/drift/test_roundtrip_automations.py`'s `drift_related_steps`). This is
-a doc/CLI gap worth its own follow-up item — either wire the declared
-`target_object` field into the builder or drop it from the model in favor of
-`target_custom_object` — and is not fixed here: this item is docs, fixtures,
-and tests only.
+**`create_related_entity` names its target with `target_object`**, which
+resolves to the object's UUID at plan time and goes on the wire as
+`target_custom_object`. A spec that sets only `target_object` applies,
+`confirmed live 2026-10-05`. A block may also set `target_custom_object`
+(a block copied from `steps get` carries it), and that wins when both are
+given, but `target_object` is still required.
 
 `condition.filter_config` uses the bare field api_name and an option
 **label** (`"High"`), not a UUID — `kizen docs show filters` resolves it at
