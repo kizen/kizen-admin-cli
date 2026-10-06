@@ -144,8 +144,6 @@ called out explicitly under **Changed** or **Removed**.
   preview's `fields` line now says `kizen_id only` when a new seed has no
   `--field`, which is what the server actually exposes; it used to claim "all
   seedable".
-  preview's `fields` line now says `kizen_id only` when no `--field` is given,
-  which is what the server actually exposes; it used to claim "all seedable".
 - **A condition step with no rules now fails at `--dry-run`, naming the
   step.** That covers an empty `filter_config` query, a rule group with no
   `filters`, `step_condition: {}`, and an `in_group`/`not_in_group` with no
@@ -345,6 +343,7 @@ called out explicitly under **Changed** or **Removed**.
   its object to `kizen_id`. When a re-save does drop columns, because
   `--field` leaves some out, a field was deleted, or the seed isn't in the
   script yet, the preview names them in a yellow `!` line.
+
 - **Roles and permission groups are read past the first page.** Dashboards and
   saved views created without explicit sharing could miss the Admin role in a
   business with many roles and be rejected. `roles list`, `permissions groups`,
