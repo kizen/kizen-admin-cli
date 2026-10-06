@@ -24,15 +24,8 @@ from typing import Any
 
 from kizen_builder.api.client import KizenClient
 
-
-def _unwrap(resp: Any) -> list[dict[str, Any]]:
-    """Return a plain list from either a bare list or a paginated envelope."""
-    if isinstance(resp, list):
-        return resp
-    if isinstance(resp, dict) and "results" in resp:
-        return list(resp["results"])
-    return []
-
+# The shared next-link loop until KizenClient grows a paginate helper.
+from kizen_builder.api.smart_connectors import _paginate
 
 # --- roles --------------------------------------------------------------
 
@@ -42,7 +35,7 @@ def list_roles(client: KizenClient, search: str | None = None) -> list[dict[str,
     params: dict[str, Any] = {"page_size": 200}
     if search:
         params["search"] = search
-    return _unwrap(client.get("/api/role", params=params))
+    return _paginate(client, "/api/role", params)
 
 
 def get_role(client: KizenClient, role_id: str) -> dict[str, Any]:
@@ -77,7 +70,7 @@ def list_permission_groups(
     params: dict[str, Any] = {"page_size": 200}
     if search:
         params["search"] = search
-    return _unwrap(client.get("/api/permission-group", params=params))
+    return _paginate(client, "/api/permission-group", params)
 
 
 def get_permission_group(client: KizenClient, group_id: str) -> dict[str, Any]:

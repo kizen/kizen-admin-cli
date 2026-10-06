@@ -8,13 +8,14 @@ preview shows a `change` (current level -> target level) per op read from
 the live group, not just the target.
 
 A group is created at a **base** (`--base default` = fresh group at Kizen's
-default levels, or `--base clone --from <group>` = copy an existing group).
+default levels, or `--base clone --source-group <group>` = copy an existing
+group).
 The `--settings-file` is an optional **JSON list of shaping ops** applied
 *after* creation to raise/lower specific permissions.
 
 > To see the current level structure of a group (section/object/field keys and
 > the levels each accepts), read a live one: `kizen permissions group <name>`
-> (add `--fields` for per-field rows, `--raw` for wire JSON).
+> (add `--field-permissions` for per-field rows, `--raw` for wire JSON).
 
 ---
 
@@ -58,8 +59,8 @@ is not a dict (e.g. `true`) is also a `PlanError`, naming the op's index.
 
 ## Gotchas
 
-- **Names, not UUIDs, everywhere they can be** — `--from` takes a group name or
-  UUID. But `object_id`/`field_id` inside ops are **UUIDs**; get them from
+- **Names, not UUIDs, everywhere they can be** — `--source-group` takes a group
+  name or UUID. But `object_id`/`field_id` inside ops are **UUIDs**; get them from
   `kizen objects get <api_name> -o json` and `kizen permissions group <name>`.
 - Roles attach permission groups — see `kizen roles create/update --group ...`.
 
@@ -169,8 +170,9 @@ and only resets leaf values, which is why `group-create` needs a `--base`.
 `kizen roles list|get|create|update|delete` and `kizen permissions
 groups|group|meta|group-create|group-update|group-delete`. **Names are
 accepted anywhere a role or group is referenced** — resolved to a UUID, with
-an available-list on a miss. `kizen permissions group <name> [--fields]`
-renders the sectioned slider view that mirrors the permission editor.
+an available-list on a miss. `kizen permissions group <name>
+[--field-permissions]` renders the sectioned slider view that mirrors the
+permission editor.
 
 `group-update` applies shaping ops directly — `object`/`field` ops call
 `object-update`, `section` ops call the section PATCH — it never assembles a

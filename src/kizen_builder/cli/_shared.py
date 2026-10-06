@@ -1,6 +1,6 @@
 """Objects every command module needs: the root Typer app and its callback,
-the two consoles, the shared output-format options, `cli_errors()`, and
-`_short`.
+the two consoles, the shared output-format options, `cli_errors()`,
+`warn_renamed_flag()`, and `_short`.
 
 Nothing here imports a command module, so every other module in the
 package can import this one.
@@ -26,7 +26,9 @@ app = typer.Typer(
         "The working directory's .kizen/profile pin selects the environment. "
         "Read commands are safe. Mutation verbs (create/update) build a plan "
         "from live state, show it, and confirm before applying; "
-        "--dry-run previews without applying."
+        "--dry-run previews without applying. Commands that execute live "
+        "(`start`, `runs`, `roundtrip --execute`, `code test`) ask first, "
+        "except `runs pause`."
     ),
     epilog=(
         "New here? Run `kizen docs show operating` before making changes — it "
@@ -74,6 +76,28 @@ def cli_errors(*also: type[Exception]) -> Iterator[None]:
     except _ALWAYS_EXPECTED + also as e:
         err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)
         raise typer.Exit(code=1) from e
+
+
+def warn_renamed_flag(old: str, new: str) -> None:
+    """Warn that a renamed flag's old spelling was used.
+
+    A renamed flag keeps its old spelling as a hidden `typer.Option` beside the
+    new one; the command merges the two in its body and calls this when the old
+    one was passed::
+
+        overwrite: bool = typer.Option(False, "--overwrite", help="..."),
+        force: bool = typer.Option(False, "--force", "-f", hidden=True),
+        ...
+        if force:
+            warn_renamed_flag("--force", "--overwrite")
+            overwrite = True
+
+    The warning goes to stderr only, so `--json` stdout stays parseable.
+    """
+    err_console.print(
+        f"[yellow]warning:[/yellow] {escape(old)} is deprecated; use {escape(new)}.",
+        emoji=False,
+    )
 
 
 def _version_callback(value: bool) -> None:

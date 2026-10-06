@@ -20,7 +20,7 @@ kizen automations list                       # list automations (summary)
 kizen automations get <api_name>             # one automation incl. triggers + steps
 kizen automations show <api_name>            # step tree with synthesized step keys (handles for steps verbs)
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
-kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check)
+kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms
 kizen automations diff <api_name> --spec-file <path>  # preview what `update` from this spec would change — read-only
 kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen docs show automation)
 kizen automations runs list <api_name>       # recent runs for an automation
@@ -56,7 +56,7 @@ kizen smart-connectors executions download <connector> <eid> [--file report|outp
                                                         # save its .xlsx report (default), output zip, or input file
 kizen smart-connectors executions sql <connector> <eid> # the SQL used in one execution
 kizen smart-connectors scripts <connector>              # the connector's draft + live SQL scripts
-kizen smart-connectors download-sample <connector> [--live] [--out path]  # save a script's output-sample zip
+kizen smart-connectors download-sample <connector> [--script draft|live|<id>] [--out path]  # save a script's output-sample zip
 kizen smart-connectors events <connector-uuid>          # event history / audit trail (UUID only)
 
 kizen filter-groups list <object> [--search <text>]     # per-object saved filters (segments)
@@ -69,7 +69,7 @@ kizen columns get <object> <uuid|name>                  # one column template's 
 kizen roles list                             # list roles (name, user count, # perm groups, default flag)
 kizen roles get <name|uuid>                  # one role: default flag, app permissions, attached groups + level counts
 kizen permissions groups                     # list permission groups (raw)
-kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --fields adds per-field rows; --raw for wire JSON
+kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --field-permissions adds per-field rows; --raw for wire JSON
 kizen permissions meta                        # the permissions catalog (sections, capabilities, defaults)
 
 kizen activities list [--object <api_name>] [--search <text>]  # activity types
@@ -89,7 +89,7 @@ kizen surveys get <api_name|uuid>            # one survey: metadata + fields
 # render/submit. Submissions/subscribers/page-view/upload are not covered yet.
 ```
 
-### Runtime (state-changing, but confirm-free)
+### Runtime (runs live; asks first, except `runs pause`)
 
 ```
 kizen automations start <api_name> --record <uuid>              # fire on one entity
@@ -101,17 +101,14 @@ kizen automations start <api_name> --record <uuid> --wait --show-logs  # fire, b
 
 kizen code test --script s.py \
     --input n=21:number --input who=world:string \
-    --output doubled:number --output greeting:string \
+    --declare-output doubled:number --declare-output greeting:string \
     [--secret MY_API_KEY] [--runtime python-3-13]              # unit-test a code_step script in the sandbox
 kizen code test --script s.py --inputs-file in.json --outputs-file out.json  # bulk inputs/outputs (JSON)
 ```
 
-`automations start` is the one state-changing command outside the
-plan/preview/confirm gate. That's deliberate: it triggers an *existing*
-automation on a record (a runtime action), it doesn't create or alter schema,
-so there's nothing to preview and no destructive blast radius. It prints the
-new `execution_id` and the `kizen automations runs view <id>` command to
-watch it. (A standing decision, not an oversight.)
+`automations start` runs live outside the plan gate, so it asks y/N first
+(`--yes` skips). It prints the new `execution_id` and the `kizen automations
+runs view <id>` command to watch it.
 
 `--record` is **optional**: global (record-less) automations start without it.
 Record-based automations (those bound to a custom object) still require
@@ -127,14 +124,14 @@ Record-based automations (those bound to a custom object) still require
   automations receive it as `client_id`, custom-object automations as
   `record_id` — you pass one id regardless of the object.
 
-`code test` (`POST /api/coderunner/run`) runs a Python script in the same
-secure Lambda sandbox `code_step` uses — standalone, no automation, no record,
-nothing created in the env — so it's the primitive for unit-testing a
-code-step script before wiring it into an automation. Confirm-free like
-`automations start`. The script uses the code-step namespace (`inputs.<name>`
-to read, `outputs.<name> = …` to write, `outputs.log("…")` to emit a debug
-line — plain `print()` is NOT captured); `kizen.api` works inside with auth
-auto-injected (paths relative to `/api`, e.g. `/custom-objects`).
+`code test` (`POST /api/coderunner/run`) is the primitive for unit-testing a
+code-step script before wiring it into an automation. Runs your script in the
+same Lambda as a real `code_step`; `kizen.api` calls in it use real credentials
+and can write live data. Asks y/N first (`--yes` skips). The script uses the
+code-step namespace (`inputs.<name>` to read, `outputs.<name> = …` to write,
+`outputs.log("…")` to emit a debug line — plain `print()` is NOT captured);
+`kizen.api` works inside with auth auto-injected (paths relative to `/api`,
+e.g. `/custom-objects`).
 Inputs/outputs are typed by a data_type **name** (`number`, `datetime`, …) or
 its short code (`n`, `dt`, …) — both work, unknown defaults to `string`; it is
 NOT a raw `field_type` (`integer` maps to `number` for you). Scalar values are
@@ -156,11 +153,8 @@ kizen automations runs debug-step <exec_uuid> --history <id> --action execute|sk
 kizen automations runs debug-sendit <exec_uuid>                  # run a debug-mode execution to completion
 ```
 
-These execution-control verbs are confirm-free for the same reason `start`
-is: they act on an execution's own runtime state, not schema. Confirmed live
-for pause/resume/cancel; the debug-* family is wired from the public API
-schema but not live-exercised (needs a debug-mode execution with real
-step/history ids — see `kizen docs show automation-runtime`).
+These verbs ask y/N first, except `pause`. Live status: `kizen docs show
+automation-runtime`.
 
 ### Mutate (plan → preview → confirm → apply, all in one command)
 
@@ -238,8 +232,8 @@ kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
 # submissions, subscribers, page-view, and upload endpoints are NOT covered yet — later slice
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)
-kizen smart-connectors pull <connector> [--dir path] [--live] [--force]   # build a local workdir (connector.sql + __config.json + data/)
-kizen smart-connectors run [--dir path] [--dry-run]        # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
+kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # build a local workdir (connector.sql + __config.json + data/)
+kizen smart-connectors run [--dir path] [--skip-sql]       # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
 kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
 # `run`/`add-input` need `uv sync --extra connectors` (chdb). `push` previews a SQL diff and confirms
@@ -254,9 +248,9 @@ kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side o
 kizen smart-connectors push --publish [--dir path]               # sample, then publish; refreshes the output columns configure-flow checks
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
-kizen smart-connectors activate <connector> [--status operational|inactive] # a LIVE run without this sits queued forever, silently
+kizen smart-connectors activate <connector>                # a LIVE run without this sits queued forever, silently
 kizen smart-connectors deactivate <connector>                      # status inactive: no live runs; every edit and dry runs still work
-kizen smart-connectors start-flow <connector> [--live] [--force]   # queue a run; dry run unless --live
+kizen smart-connectors start-flow <connector> [--write-records] [--ignore-blockers]   # queue a run; dry run unless --write-records
 # `set-input` on a connector that already has a file replaces it, keeping your SQL. What that leaves stale:
 # kizen docs show smart-connectors (Replacing the reference file).
 # Editing a live connector: pull → edit → run → push --publish, repeatable from one directory. Which
@@ -264,10 +258,9 @@ kizen smart-connectors start-flow <connector> [--live] [--force]   # queue a run
 
 # smart connectors — read from other Kizen objects (exposed to the SQL as a kizen.<object> view)
 kizen smart-connectors seeds list <connector>
-kizen smart-connectors seeds add <connector> --object <o> [--group <saved filter group>] [--field f ...]
+kizen smart-connectors seeds add <connector> --object <o> [--filter-group <saved filter group>] [--field f ...]
 kizen smart-connectors seeds remove <connector> --object <o>
-# --group is a saved filter group / segment (`kizen filter-groups list <o>`), NOT a field category.
-# Omit it to seed all records; why a segment seed can duplicate records: kizen docs show smart-connectors.
+# Omit --filter-group to seed all records; why a segment seed can duplicate records: kizen docs show smart-connectors.
 # `add` refreshes the script config so the view exists (your SQL is kept) — without that a seed does nothing.
 # `pull` exports each seeded object's rows to data/ from the same filter group (or all records), so `run` hits the same joins.
 
@@ -294,7 +287,7 @@ kizen records move <pipeline> <uuid> --stage <name>                # move a reco
 kizen roles create --name X [--group <name|uuid> ...] [--permission <flag> ...] [--default]
 kizen roles update <name|uuid> [--name Y] [--group <name|uuid> ...] [--default/--no-default]  # --group REPLACES the set
 kizen roles delete <name|uuid>
-kizen permissions group-create --name X [--base default|clone] [--from <name|uuid>] [--settings-file f]
+kizen permissions group-create --name X [--base default|clone] [--source-group <name|uuid>] [--settings-file f]
 kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
 kizen permissions group-delete <name|uuid>
 

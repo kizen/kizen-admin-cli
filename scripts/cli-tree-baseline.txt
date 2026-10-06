@@ -4,7 +4,8 @@
  Kizen Admin CLI — drive a Kizen environment from the conversation. The working directory's         
  .kizen/profile pin selects the environment. Read commands are safe. Mutation verbs (create/update) 
  build a plan from live state, show it, and confirm before applying; --dry-run previews without     
- applying.                                                                                          
+ applying. Commands that execute live (`start`, `runs`, `roundtrip --execute`, `code test`) ask     
+ first, except `runs pause`.                                                                        
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --profile,--env       -p,-e      <str>  Profile to target. Normally the working directory's      │
@@ -57,8 +58,9 @@
 │                   from scratch runs create → set-input → (SQL loop) → generate-sample → push     │
 │                   --publish → configure-flow → activate → start-flow.                            │
 │ code              Unit-test code_step scripts in the live sandbox via `POST                      │
-│                   /api/coderunner/run`. Runs standalone — no automation, no record, nothing      │
-│                   created in the env — so it's confirm-free like `automations start`.            │
+│                   /api/coderunner/run`. Runs your script in the same Lambda as a real            │
+│                   `code_step`; `kizen.api` calls in it use real credentials and can write live   │
+│                   data. Asks y/N first (`--yes` skips).                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  New here? Run `kizen docs show operating` before making changes — it covers the approval gate and  
@@ -226,7 +228,7 @@
 │ *    field_api_name      <str>  Field api_name. [required]                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --option   -o      <str>  Option label to add (repeatable).                                      │
+│ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -737,13 +739,16 @@
  Translates the live automation into a PUT payload and validates the                                
  step graph. With --execute, PUTs the payload unchanged, re-fetches, and                            
  reports semantic drift — an empty diff means the translator is faithful                            
- for every step/trigger type in this automation.                                                    
+ for every step/trigger type in this automation. Writes live: asks to                               
+ confirm unless --yes, after a preview that PUTs nothing.                                           
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name. [required]                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --execute  -x        PUT the translated payload back (intended no-op) and diff the result.       │
+│                      Writes live: asks to confirm unless --yes.                                  │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit full result as JSON.                                                   │
 │ --payload            Print the translated PUT payload.                                           │
 │ --help               Show this message and exit.                                                 │
@@ -772,7 +777,7 @@
 │                  other per-step diagnostic detail `runs view`'s Steps table has no column        │
 │                  for). No new API call: reads the same step history `runs view` already          │
 │                  fetches.                                                                        │
-│ pause            Pause a running execution.                                                      │
+│ pause            Pause a running execution. Acts immediately; no confirmation.                   │
 │ resume           Resume a paused execution.                                                      │
 │ cancel           Cancel an execution. Irreversible.                                              │
 │ skip-and-resume  Resume an execution paused on a step failure by skipping that step.             │
@@ -791,7 +796,9 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                      │
+│ --yes   -y        Skip the y/N confirmation prompt.                                              │
+│ --json            Emit the result as JSON.                                                       │
+│ --help            Show this message and exit.                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs debug-rerun [OPTIONS] {execution_id}                                       
@@ -802,8 +809,10 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --step        <str>  Step UUID to re-execute (from `runs view`). [required]                   │
-│    --help               Show this message and exit.                                              │
+│ *  --step          <str>  Step UUID to re-execute (from `runs view`). [required]                 │
+│    --yes   -y             Skip the y/N confirmation prompt.                                      │
+│    --json                 Emit the result as JSON.                                               │
+│    --help                 Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs debug-restart [OPTIONS] {execution_id}                                     
@@ -814,8 +823,10 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --step        <str>  Step UUID to restart from (from `runs view`). [required]                 │
-│    --help               Show this message and exit.                                              │
+│ *  --step          <str>  Step UUID to restart from (from `runs view`). [required]               │
+│    --yes   -y             Skip the y/N confirmation prompt.                                      │
+│    --json                 Emit the result as JSON.                                               │
+│    --help                 Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs debug-sendit [OPTIONS] {execution_id}                                      
@@ -826,7 +837,9 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                      │
+│ --yes   -y        Skip the y/N confirmation prompt.                                              │
+│ --json            Emit the result as JSON.                                                       │
+│ --help            Show this message and exit.                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs debug-step [OPTIONS] {execution_id}                                        
@@ -837,10 +850,12 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --history        <str>  History-row id (from `runs view`). [required]                         │
-│ *  --action         <str>  One of: execute, skip, debug. [required]                              │
-│    --branch         <str>  Branch to continue on ('yes'/'no'), if applicable.                    │
-│    --help                  Show this message and exit.                                           │
+│ *  --history          <str>  History-row id (from `runs view`). [required]                       │
+│ *  --action           <str>  One of: execute, skip, debug. [required]                            │
+│    --branch           <str>  Branch to continue on ('yes'/'no'), if applicable.                  │
+│    --yes      -y             Skip the y/N confirmation prompt.                                   │
+│    --json                    Emit the result as JSON.                                            │
+│    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs list [OPTIONS] {api_name}                                                  
@@ -881,12 +896,13 @@
                                                                                                     
  Usage: automations runs pause [OPTIONS] {execution_id}                                             
                                                                                                     
- Pause a running execution.                                                                         
+ Pause a running execution. Acts immediately; no confirmation.                                      
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --json          Emit the result as JSON.                                                         │
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -898,7 +914,9 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                      │
+│ --yes   -y        Skip the y/N confirmation prompt.                                              │
+│ --json            Emit the result as JSON.                                                       │
+│ --help            Show this message and exit.                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs skip-and-resume [OPTIONS] {execution_id}                                   
@@ -909,9 +927,11 @@
 │ *    execution_id      <str>  Run (execution) UUID. [required]                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --skip-step        <str>  Step UUID to skip (from `runs view`). [required]                    │
-│    --branch           <str>  Branch to continue on after skipping ('yes'/'no'), if applicable.   │
-│    --help                    Show this message and exit.                                         │
+│ *  --skip-step          <str>  Step UUID to skip (from `runs view`). [required]                  │
+│    --branch             <str>  Branch to continue on after skipping ('yes'/'no'), if applicable. │
+│    --yes        -y             Skip the y/N confirmation prompt.                                 │
+│    --json                      Emit the result as JSON.                                          │
+│    --help                      Show this message and exit.                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations runs view [OPTIONS] {execution_id}                                              
@@ -970,10 +990,8 @@
  contact automations and record_id otherwise; it is optional for global                             
  (record-less) automations and required for record-based ones.                                      
                                                                                                     
- Deliberately confirm-free: this is a runtime action (fire an existing                              
- automation on a record), not a schema mutation, so it sits outside the                             
- plan/preview/confirm gate that guards create/update. That is a standing                            
- decision, not an oversight.                                                                        
+ Runs live outside the plan gate and can't be undone, so it asks y/N                                
+ first (`--yes` skips). The rule: `kizen docs show operating`, rule 3.                              
                                                                                                     
  `--wait` blocks until the run finishes, printing each new step's status                            
  the moment it appears (a dim heartbeat during a real gap between steps —                           
@@ -1009,6 +1027,7 @@
 │ --show-logs                                Print each new step's detailed_log once that step     │
 │                                            finishes — a code_step's log is only available then,  │
 │                                            not while it's still running. Implies --wait.         │
+│ --yes            -y                        Skip the y/N confirmation prompt.                     │
 │ --json                                     Emit JSON.                                            │
 │ --help                                     Show this message and exit.                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -1191,9 +1210,9 @@
                                                                                                     
  Usage: code [OPTIONS] COMMAND [ARGS]...                                                            
                                                                                                     
- Unit-test code_step scripts in the live sandbox via `POST /api/coderunner/run`. Runs standalone —  
- no automation, no record, nothing created in the env — so it's confirm-free like `automations      
- start`.                                                                                            
+ Unit-test code_step scripts in the live sandbox via `POST /api/coderunner/run`. Runs your script   
+ in the same Lambda as a real `code_step`; `kizen.api` calls in it use real credentials and can     
+ write live data. Asks y/N first (`--yes` skips).                                                   
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -1218,39 +1237,42 @@
  anything unrecognized defaults to `string` (it is NOT a raw                                        
  `field_type`: `integer` maps to number for you). See `--input` for                                 
  the full code table. For many inputs, use `--inputs-file` /                                        
- `--outputs-file` (JSON); `--input`/`--output` flags override                                       
+ `--outputs-file` (JSON); `--input`/`--declare-output` flags override                               
  same-named file entries. Add `--http-detail` / `-v` to see each                                    
  `kizen.api` call's request and response bodies when debugging.                                     
                                                                                                     
- Confirm-free: this executes sandboxed code and creates nothing in the env,                         
- so it sits outside the plan/preview/confirm gate (like `automations                                
- start`).                                                                                           
+ Runs your script in the same Lambda as a real `code_step`; `kizen.api`                             
+ calls in it use real credentials and can write live data. Asks y/N first                           
+ (`--yes` skips). A script or `--inputs-file -` read from stdin leaves                              
+ nothing to answer the prompt with, so it needs `--yes`.                                            
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --script                <str>  Path to the script file. Omit to read from stdin.                 │
-│ --input                 <str>  An input: name=value:type (repeatable). type is a data_type name  │
-│                                or its short code — string/s, number/n, boolean/b, phone/p,       │
-│                                uuid/u (bare id), list/l ([{t,v},…] JSON), date/d (YYYY-MM-DD),   │
-│                                datetime/dt (ISO 8601), file/f (uuid); defaults to string. e.g.   │
-│                                --input n=21:number --input who=world:string. Overrides           │
-│                                same-named entries in --inputs-file.                              │
-│ --output                <str>  An output: name:type (repeatable). Declares the expected output   │
-│                                type (same names/codes as --input). e.g. --output doubled:number  │
-│                                --output greeting:string. Overrides --outputs-file.               │
-│ --inputs-file           <str>  JSON file of inputs for bulk runs: {"n": {"type": "number",       │
-│                                "value": 21}, …} (or a bare {"n": 21}). '-' reads stdin (only     │
-│                                when --script is a file). Individual --input flags override by    │
-│                                name.                                                             │
-│ --outputs-file          <str>  JSON file of output types: {"doubled": "number", "greeting":      │
-│                                "string"}. Individual --output flags override by name.            │
-│ --secret                <str>  Secret api-name to inject into the sandbox (repeatable). The      │
-│                                value lives in the env; only the name is passed.                  │
-│ --runtime               <str>  python-3-13 (default) or python-3-12.                             │
-│ --json                         Emit the raw response as JSON.                                    │
-│ --http-detail   -v             Expand each captured kizen.api call with its request and response │
-│                                bodies (failed calls expand automatically). Secrets stay          │
-│                                redacted; --json still has the full payload.                      │
-│ --help                         Show this message and exit.                                       │
+│ --script                  <str>  Path to the script file. Omit to read from stdin.               │
+│ --input                   <str>  An input: name=value:type (repeatable). type is a data_type     │
+│                                  name or its short code — string/s, number/n, boolean/b,         │
+│                                  phone/p, uuid/u (bare id), list/l ([{t,v},…] JSON), date/d      │
+│                                  (YYYY-MM-DD), datetime/dt (ISO 8601), file/f (uuid); defaults   │
+│                                  to string. e.g. --input n=21:number --input who=world:string.   │
+│                                  Overrides same-named entries in --inputs-file.                  │
+│ --declare-output          <str>  An output: name:type (repeatable). Declares the expected output │
+│                                  type (same names/codes as --input). e.g. --declare-output       │
+│                                  doubled:number --declare-output greeting:string. Overrides      │
+│                                  --outputs-file.                                                 │
+│ --inputs-file             <str>  JSON file of inputs for bulk runs: {"n": {"type": "number",     │
+│                                  "value": 21}, …} (or a bare {"n": 21}). '-' reads stdin (only   │
+│                                  when --script is a file). Individual --input flags override by  │
+│                                  name.                                                           │
+│ --outputs-file            <str>  JSON file of output types: {"doubled": "number", "greeting":    │
+│                                  "string"}. Individual --declare-output flags override by name.  │
+│ --secret                  <str>  Secret api-name to inject into the sandbox (repeatable). The    │
+│                                  value lives in the env; only the name is passed.                │
+│ --runtime                 <str>  python-3-13 (default) or python-3-12.                           │
+│ --yes             -y             Skip the y/N confirmation prompt.                               │
+│ --json                           Emit the raw response as JSON.                                  │
+│ --http-detail     -v             Expand each captured kizen.api call with its request and        │
+│                                  response bodies (failed calls expand automatically). Secrets    │
+│                                  stay redacted; --json still has the full payload.               │
+│ --help                           Show this message and exit.                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: columns [OPTIONS] COMMAND [ARGS]...                                                         
@@ -1692,7 +1714,7 @@
 │ *    field_api_name       <str>  Field api_name. [required]                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --option   -o      <str>  Option label to add (repeatable).                                      │
+│ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -2044,7 +2066,7 @@
 │ *    field_api_name      <str>  Field api_name. [required]                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --option   -o      <str>  Option label to add (repeatable).                                      │
+│ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -2669,17 +2691,17 @@
  Show one permission group as a sectioned permission map (mirrors the UI).                          
                                                                                                     
  Each row shows a None / View / Create·Edit / Delete·All slider; positions the                      
- permission can't take are dimmed. `--fields` adds per-field rows.                                  
+ permission can't take are dimmed. `--field-permissions` adds per-field rows.                       
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    group      <str>  Permission group name or UUID. [required]                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --fields                 Include per-field permission rows (extra API calls).                    │
-│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
-│ --json                   Alias for --output json.                                                │
-│ --raw                    Emit the full Kizen API response as JSON.                               │
-│ --help                   Show this message and exit.                                             │
+│ --field-permissions                 Include per-field permission rows (extra API calls).         │
+│ --output             -o      <str>  Output format: table (default), json, or csv.                │
+│ --json                              Alias for --output json.                                     │
+│ --raw                               Emit the full Kizen API response as JSON.                    │
+│ --help                              Show this message and exit.                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: permissions group-create [OPTIONS]                                                          
@@ -2689,9 +2711,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ *  --name                   <str>  Permission group name. [required]                             │
 │    --base                   <str>  'default' = fresh group at Kizen default levels; 'clone' =    │
-│                                    copy --from.                                                  │
+│                                    copy --source-group.                                          │
 │                                    [default: default]                                            │
-│    --from                   <str>  Template group (name or UUID) for --base clone / shape        │
+│    --source-group           <str>  Template group (name or UUID) for --base clone / shape        │
 │                                    source.                                                       │
 │    --settings-file          <str>  JSON list of shaping ops applied after create                 │
 │                                    (object/field/section).                                       │
@@ -3322,7 +3344,7 @@
 │ send-webhook       Fire a connector's real inbound webhook. This writes records.                 │
 │ activate           Flip a connector to `operational` so live runs actually execute.              │
 │ deactivate         Set a connector to `inactive` so no live run starts.                          │
-│ start-flow         Queue an execution of the connector (dry run unless --live).                  │
+│ start-flow         Queue an execution of the connector (dry run unless --write-records).         │
 │ list               List smart connectors in the current env.                                     │
 │ get                Show one connector's detail, including its draft/live SQL scripts.            │
 │ metadata           Dump the connector-type / matching-rule metadata catalog (JSON).              │
@@ -3341,7 +3363,7 @@
 │ seeds              Seed a connector with rows from other Kizen objects, exposed to its SQL as a  │
 │                    `kizen.<object>` view so incoming data can be joined against what's already   │
 │                    in Kizen. A seed covers every record of the seeded object, or only those in a │
-│                    saved filter group (segment) given with --group.                              │
+│                    saved filter group (segment) given with --filter-group.                       │
 │ executions         Inspect a connector's executions (runs). `list <connector>` shows its run     │
 │                    history; `get <connector> <id>` shows one run — status, the full error,       │
 │                    per-step record counts, and its files; `download` saves the run's Excel       │
@@ -3362,13 +3384,10 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --status           <str>  operational|inactive — the only two an update can set. Defaults to     │
-│                           operational.                                                           │
-│                           [default: operational]                                                 │
-│ --dry-run                 Show the change without applying.                                      │
-│ --yes      -y             Skip the confirmation prompt.                                          │
-│ --json                    Emit JSON.                                                             │
-│ --help                    Show this message and exit.                                            │
+│ --dry-run            Show the change without applying.                                           │
+│ --yes      -y        Skip the confirmation prompt.                                               │
+│ --json               Emit JSON.                                                                  │
+│ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors add-input [OPTIONS] {input_file}                                           
@@ -3425,23 +3444,21 @@
 │ *    name      <str>  Display name for the new connector. [required]                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --object           -o      <str>  Custom object api_name (or UUID) the connector writes to.   │
-│                                      [required]                                                  │
-│    --type                     <str>  spreadsheet|webhook|schedule|activity|bulkaction|polling_t… │
-│                                      [default: spreadsheet]                                      │
-│    --description              <str>  Connector description.                                      │
-│    --cadence                  <int>  Seconds between runs. Required for --type schedule; also    │
-│                                      the batching window for webhook. See `smart-connectors      │
-│                                      metadata`.                                                  │
-│    --activity-object          <str>  For --type activity: the activity TYPE (name or UUID) to    │
-│                                      listen to — see `kizen activities list`, not a custom       │
-│                                      object.                                                     │
-│    --sql-version              <str>  SQL engine version. Webhook connectors need 4.1.x; lower    │
-│                                      versions fail sample generation.                            │
-│    --dry-run                         Show the plan without creating.                             │
-│    --yes              -y             Skip the confirmation prompt.                               │
-│    --json                            Emit JSON (plan with --dry-run, result otherwise).          │
-│    --help                            Show this message and exit.                                 │
+│ --object                   <str>  Custom object api_name (or UUID) the connector writes to.      │
+│                                   Required.                                                      │
+│ --type                     <str>  spreadsheet|webhook|schedule|activity|bulkaction|polling_thir… │
+│                                   [default: spreadsheet]                                         │
+│ --description              <str>  Connector description.                                         │
+│ --cadence                  <int>  Seconds between runs. Required for --type schedule; also the   │
+│                                   batching window for webhook. See `smart-connectors metadata`.  │
+│ --activity-object          <str>  For --type activity: the activity TYPE (name or UUID) to       │
+│                                   listen to — see `kizen activities list`, not a custom object.  │
+│ --sql-version              <str>  SQL engine version. Webhook connectors need 4.1.x; lower       │
+│                                   versions fail sample generation.                               │
+│ --dry-run                         Show the plan without creating.                                │
+│ --yes              -y             Skip the confirmation prompt.                                  │
+│ --json                            Emit JSON (plan with --dry-run, result otherwise).             │
+│ --help                            Show this message and exit.                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors deactivate [OPTIONS] {connector}                                           
@@ -3473,12 +3490,12 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --live                   The live script's sample instead of the draft's.                        │
-│ --script          <str>  Script id (overrides the draft/live choice).                            │
-│ --out             <str>  File or directory (default: ./<server filename>).                       │
-│ --force   -f             Overwrite an existing file.                                             │
-│ --json                   Alias for --output json.                                                │
-│ --help                   Show this message and exit.                                             │
+│ --script           <str>  Whose sample: draft (the latest draft; the default), live, or a script │
+│                           id.                                                                    │
+│ --out              <str>  File or directory (default: ./<server filename>).                      │
+│ --overwrite               Overwrite an existing file.                                            │
+│ --json                    Alias for --output json.                                               │
+│ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors events [OPTIONS] {smart_connector_id}                                      
@@ -3527,14 +3544,14 @@
 │ *    execution_id      <str>  Execution UUID (from `executions list`). [required]                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --file           <report|output|input>  report: the .xlsx results workbook, with per-row errors, │
-│                                         warnings and status. output: the zip of SQL-output CSVs. │
-│                                         input: the file the run consumed.                        │
-│                                         [default: report]                                        │
-│ --out            <str>                  File or directory (default: ./<server filename>).        │
-│ --force  -f                             Overwrite an existing file.                              │
-│ --json                                  Alias for --output json.                                 │
-│ --help                                  Show this message and exit.                              │
+│ --file             <report|output|input>  report: the .xlsx results workbook, with per-row       │
+│                                           errors, warnings and status. output: the zip of        │
+│                                           SQL-output CSVs. input: the file the run consumed.     │
+│                                           [default: report]                                      │
+│ --out              <str>                  File or directory (default: ./<server filename>).      │
+│ --overwrite                               Overwrite an existing file.                            │
+│ --json                                    Alias for --output json.                               │
+│ --help                                    Show this message and exit.                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors executions get [OPTIONS] {connector} {execution_id}                        
@@ -3653,14 +3670,16 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --dir         -d      <str>  Target directory (default: ./<api_name>).                           │
-│ --live                       Pull the live script instead of the latest draft.                   │
-│ --force       -f             Overwrite an existing non-empty directory.                          │
-│ --seed-limit          <int>  Max rows to export per seeded object (0 for all). Seeded objects    │
-│                              can be whole tables; the local copy exists to exercise the joins.   │
-│                              [default: 1000]                                                     │
-│ --json                       Alias for --output json.                                            │
-│ --help                       Show this message and exit.                                         │
+│ --dir         -d      <str>         Target directory (default: ./<api_name>).                    │
+│ --script              <draft|live>  Which script to pull: draft (the latest draft; the default)  │
+│                                     or live.                                                     │
+│ --overwrite                         Overwrite an existing non-empty directory.                   │
+│ --seed-limit          <int>         Max rows to export per seeded object (0 for all). Seeded     │
+│                                     objects can be whole tables; the local copy exists to        │
+│                                     exercise the joins.                                          │
+│                                     [default: 1000]                                              │
+│ --json                              Alias for --output json.                                     │
+│ --help                              Show this message and exit.                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors push [OPTIONS]                                                             
@@ -3689,10 +3708,10 @@
  data/output/. Needs the 'connectors' extra.                                                        
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --dir      -d      <str>  Connector working directory (from `pull`). [default: .]                │
-│ --dry-run                 Build the databases but skip running the user SQL.                     │
-│ --json                    Alias for --output json.                                               │
-│ --help                    Show this message and exit.                                            │
+│ --dir       -d      <str>  Connector working directory (from `pull`). [default: .]               │
+│ --skip-sql                 Build the databases but skip running the user SQL.                    │
+│ --json                     Alias for --output json.                                              │
+│ --help                     Show this message and exit.                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors scripts [OPTIONS] {connector}                                              
@@ -3712,7 +3731,7 @@
                                                                                                     
  Seed a connector with rows from other Kizen objects, exposed to its SQL as a `kizen.<object>` view 
  so incoming data can be joined against what's already in Kizen. A seed covers every record of the  
- seeded object, or only those in a saved filter group (segment) given with --group.                 
+ seeded object, or only those in a saved filter group (segment) given with --filter-group.          
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -3727,28 +3746,28 @@
                                                                                                     
  Seed a connector from another Kizen object's records.                                              
                                                                                                     
- Adding a seed the connector already has for that object replaces it.                               
+ Adding a seed the connector already has for that object replaces it,                               
+ keeping its fields unless --field is given.                                                        
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --object      -o                     <str>  Object api_name (or UUID) to seed from.           │
-│                                                [required]                                        │
-│    --group       -g                     <str>  Saved filter group (segment) name or UUID on that │
-│                                                object — see `kizen filter-groups list <object>`. │
-│                                                NOT a field category. Omit it to seed all         │
-│                                                records.                                          │
-│    --field       -f                     <str>  Field api_name to bring along (repeatable).       │
-│                                                kizen_id always comes.                            │
-│    --regenerate      --no-regenerate           Refresh the draft's config so the kizen.<object>  │
-│                                                view exists (default). Your SQL is preserved.     │
-│                                                Without this the seed is inert.                   │
-│                                                [default: regenerate]                             │
-│    --dry-run                                   Show the plan without writing.                    │
-│    --yes         -y                            Skip the confirmation prompt.                     │
-│    --json                                      Emit JSON.                                        │
-│    --help                                      Show this message and exit.                       │
+│ --object                               <str>  Object api_name (or UUID) to seed from. Required.  │
+│ --filter-group                         <str>  Saved filter group (segment) name or UUID on that  │
+│                                               object — see `kizen filter-groups list <object>`.  │
+│                                               NOT a field category. Omit it to seed all records. │
+│ --field         -f                     <str>  Field api_name to bring along (repeatable).        │
+│                                               kizen_id always comes. On a replace, omit it to    │
+│                                               keep the seed's current fields.                    │
+│ --regenerate        --no-regenerate           Refresh the draft's config so the kizen.<object>   │
+│                                               view exists (default). Your SQL is preserved.      │
+│                                               Without this the seed is inert.                    │
+│                                               [default: regenerate]                              │
+│ --dry-run                                     Show the plan without writing.                     │
+│ --yes           -y                            Skip the confirmation prompt.                      │
+│ --json                                        Emit JSON.                                         │
+│ --help                                        Show this message and exit.                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors seeds list [OPTIONS] {connector}                                           
@@ -3779,15 +3798,14 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --object      -o                     <str>  Seeded object api_name (or UUID) to drop.         │
-│                                                [required]                                        │
-│    --regenerate      --no-regenerate           Refresh the draft's config so the view stops      │
-│                                                being advertised.                                 │
-│                                                [default: regenerate]                             │
-│    --dry-run                                   Show the plan without writing.                    │
-│    --yes         -y                            Skip the confirmation prompt.                     │
-│    --json                                      Emit JSON.                                        │
-│    --help                                      Show this message and exit.                       │
+│ --object                             <str>  Seeded object api_name (or UUID) to drop. Required.  │
+│ --regenerate      --no-regenerate           Refresh the draft's config so the view stops being   │
+│                                             advertised.                                          │
+│                                             [default: regenerate]                                │
+│ --dry-run                                   Show the plan without writing.                       │
+│ --yes         -y                            Skip the confirmation prompt.                        │
+│ --json                                      Emit JSON.                                           │
+│ --help                                      Show this message and exit.                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors send-webhook [OPTIONS] {connector}                                         
@@ -3803,12 +3821,13 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --body   -b      <str>  JSON payload to POST, or @path to read one from a file. [required]    │
-│    --query  -q      <str>  key=value query-string param (repeatable).                            │
-│    --force                 Send even when the plan reports blockers.                             │
-│    --yes    -y             Skip the confirmation prompt.                                         │
-│    --json                  Emit JSON.                                                            │
-│    --help                  Show this message and exit.                                           │
+│ *  --body             -b      <str>  JSON payload to POST, or @path to read one from a file.     │
+│                                      [required]                                                  │
+│    --query            -q      <str>  key=value query-string param (repeatable).                  │
+│    --ignore-blockers                 Send even when the plan reports blockers.                   │
+│    --yes              -y             Skip the confirmation prompt.                               │
+│    --json                            Emit JSON.                                                  │
+│    --help                            Show this message and exit.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors set-input [OPTIONS] {input_file}                                           
@@ -3848,7 +3867,7 @@
                                                                                                     
  Usage: smart-connectors start-flow [OPTIONS] {connector}                                           
                                                                                                     
- Queue an execution of the connector (dry run unless --live).                                       
+ Queue an execution of the connector (dry run unless --write-records).                              
                                                                                                     
  Runs are asynchronous; watch one with `smart-connectors executions get`,                           
  which shows the executor's own error for a failed run.                                             
@@ -3860,12 +3879,12 @@
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --live             Write real records. Without this the run is a dry run: the whole flow is      │
-│                    validated, nothing is written.                                                │
-│ --force            Queue the run even when the plan reports blockers.                            │
-│ --yes    -y        Skip the confirmation prompt.                                                 │
-│ --json             Emit JSON.                                                                    │
-│ --help             Show this message and exit.                                                   │
+│ --write-records              Write real records. Without this the run is a server-side dry run:  │
+│                              the flow is validated and nothing is written.                       │
+│ --ignore-blockers            Queue the run even when the plan reports blockers.                  │
+│ --yes              -y        Skip the confirmation prompt.                                       │
+│ --json                       Emit JSON.                                                          │
+│ --help                       Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors suggest-variables [OPTIONS] {connector}                                    
@@ -3904,9 +3923,8 @@
 │ *  --body         -b      <str>  A representative JSON payload, or @path to read one from a      │
 │                                  file.                                                           │
 │                                  [required]                                                      │
-│ *  --employee     -e      <str>  Team member (email, name, or UUID) to attribute the sample to.  │
-│                                  Must be real — a blank employee_id fails validation.            │
-│                                  [required]                                                      │
+│    --employee             <str>  Team member (email, name, or UUID) to attribute the sample to.  │
+│                                  Must be real — a blank employee_id fails validation. Required.  │
 │    --querystring          <str>  Sample query string.                                            │
 │    --timestamp            <str>  Sample timestamp. [default: 2026-01-01 00:00:00]                │
 │    --json                        Emit JSON.                                                      │
@@ -4075,7 +4093,7 @@
 │ *    field_api_name      <str>  Field api_name. [required]                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --option   -o      <str>  Option label to add (repeatable).                                      │
+│ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │

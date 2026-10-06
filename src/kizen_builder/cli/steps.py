@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import Callable
 from typing import Any
 
 import typer
 from rich.markup import escape
-from rich.prompt import Confirm
 
-from kizen_builder.cli._mutations import _read_spec
+from kizen_builder.cli._mutations import _confirm_or_abort, _read_spec
 from kizen_builder.cli._shared import cli_errors, console, err_console
 from kizen_builder.cli.automations import autos_app
 from kizen_builder.tools import automations as auto_tools
@@ -105,16 +103,12 @@ def _run_step_patch(
             console.print("[green]validated[/green] — dry run, nothing applied")
         return
 
-    if not yes:
-        if stdin_consumed or not sys.stdin.isatty():
-            err_console.print(
-                "[red]error:[/red] can't prompt (stdin consumed). "
-                "Preview with --dry-run, then re-run with --yes."
-            )
-            raise typer.Exit(code=2)
-        if not Confirm.ask("Apply this step patch?", default=False):
-            console.print("[yellow]aborted[/yellow]")
-            raise typer.Exit(code=1)
+    _confirm_or_abort(
+        "Apply this step patch?",
+        yes=yes,
+        hint="Preview with --dry-run, then re-run with --yes.",
+        stdin_consumed=stdin_consumed,
+    )
 
     with cli_errors(LookupError, PlanError):
         result = auto_tools.patch_steps(api_name, mutate, execute=True)
@@ -195,7 +189,7 @@ def steps_edit(
         step = step_tools.find_step(payload, key)
         target_object = (raw.get("custom_object") or {}).get("name")
         normalized = auto_tools.normalize_step_patch(
-            dict(patch), step["type"], payload, target_object
+            dict(patch), key, step["type"], payload, target_object
         )
         return step_tools.edit_step(payload, key, normalized)
 

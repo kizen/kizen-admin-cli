@@ -13,15 +13,24 @@ from rich.markup import escape
 from rich.table import Table
 
 from kizen_builder.api.client import KizenAPIError
-from kizen_builder.cli._shared import _short, app, cli_errors, console, err_console
+from kizen_builder.cli._mutations import _confirm_or_abort
+from kizen_builder.cli._shared import (
+    _short,
+    app,
+    cli_errors,
+    console,
+    err_console,
+    warn_renamed_flag,
+)
+from kizen_builder.config import load_env_config
 from kizen_builder.tools import coderunner as code_tools
 
 code_app = typer.Typer(
     help=(
         "Unit-test code_step scripts in the live sandbox via "
-        "`POST /api/coderunner/run`. Runs standalone — no automation, no "
-        "record, nothing created in the env — so it's confirm-free like "
-        "`automations start`."
+        "`POST /api/coderunner/run`. Runs your script in the same Lambda as a "
+        "real `code_step`; `kizen.api` calls in it use real credentials and "
+        "can write live data. Asks y/N first (`--yes` skips)."
     ),
     no_args_is_help=True,
 )
@@ -48,7 +57,7 @@ def _parse_input_spec(spec: str) -> dict[str, Any]:
 
 
 def _parse_output_spec(spec: str) -> dict[str, Any]:
-    """Parse a `--output name:type` spec into {name, code}. Default string.
+    """Parse a `--declare-output name:type` spec into {name, code}. Default string.
 
     `type` is a friendly data_type name or a short code (resolved downstream).
     """
@@ -56,7 +65,9 @@ def _parse_output_spec(spec: str) -> dict[str, Any]:
     if not colon:
         name, code = spec, "s"
     if not name.strip():
-        raise typer.BadParameter(f"--output must be name[:type] (got {spec!r}).")
+        raise typer.BadParameter(
+            f"--declare-output must be name[:type] (got {spec!r})."
+        )
     return {"name": name.strip(), "code": code.strip() or "s"}
 
 
@@ -332,11 +343,13 @@ def code_test(
     ),
     outputs: list[str] = typer.Option(
         [],
-        "--output",
+        "--declare-output",
         help="An output: name:type (repeatable). Declares the expected output "
-        "type (same names/codes as --input). e.g. --output doubled:number "
-        "--output greeting:string. Overrides --outputs-file.",
+        "type (same names/codes as --input). e.g. --declare-output "
+        "doubled:number --declare-output greeting:string. Overrides "
+        "--outputs-file.",
     ),
+    outputs_old: list[str] = typer.Option([], "--output", hidden=True),
     inputs_file: str = typer.Option(
         None,
         "--inputs-file",
@@ -348,7 +361,7 @@ def code_test(
         None,
         "--outputs-file",
         help='JSON file of output types: {"doubled": "number", "greeting": '
-        '"string"}. Individual --output flags override by name.',
+        '"string"}. Individual --declare-output flags override by name.',
     ),
     secrets: list[str] = typer.Option(
         [],
@@ -358,6 +371,9 @@ def code_test(
     ),
     runtime: str = typer.Option(
         None, "--runtime", help="python-3-13 (default) or python-3-12."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
     json_out: bool = typer.Option(
         False, "--json", help="Emit the raw response as JSON."
@@ -385,14 +401,18 @@ def code_test(
     anything unrecognized defaults to `string` (it is NOT a raw
     `field_type`: `integer` maps to number for you). See `--input` for
     the full code table. For many inputs, use `--inputs-file` /
-    `--outputs-file` (JSON); `--input`/`--output` flags override
+    `--outputs-file` (JSON); `--input`/`--declare-output` flags override
     same-named file entries. Add `--http-detail` / `-v` to see each
     `kizen.api` call's request and response bodies when debugging.
 
-    Confirm-free: this executes sandboxed code and creates nothing in the env,
-    so it sits outside the plan/preview/confirm gate (like `automations
-    start`).
+    Runs your script in the same Lambda as a real `code_step`; `kizen.api`
+    calls in it use real credentials and can write live data. Asks y/N first
+    (`--yes` skips). A script or `--inputs-file -` read from stdin leaves
+    nothing to answer the prompt with, so it needs `--yes`.
     """
+    if outputs_old:
+        warn_renamed_flag("--output", "--declare-output")
+        outputs = [*outputs, *outputs_old]
     if script_file:
         try:
             script = Path(script_file).read_text()
@@ -414,7 +434,8 @@ def code_test(
             raise typer.Exit(code=2)
         script = sys.stdin.read()
 
-    # Merge: file entries first, then --input/--output flags override by name.
+    # Merge: file entries first, then --input/--declare-output flags override by
+    # name.
     input_map: dict[str, dict[str, Any]] = {}
     if inputs_file:
         if inputs_file == "-":
@@ -443,6 +464,18 @@ def code_test(
         d = _parse_output_spec(s)
         output_map[d["name"]] = d
     parsed_outputs = list(output_map.values())
+
+    if not yes:
+        with cli_errors():
+            env = load_env_config().name
+        _confirm_or_abort(
+            f"Run {script_file or 'stdin'} in {env} on "
+            f"{runtime or code_tools.DEFAULT_RUNTIME}? Its kizen.api calls can "
+            "write live data.",
+            yes=False,
+            hint="Re-run with --yes.",
+            stdin_consumed=not script_file or inputs_file == "-",
+        )
 
     # The inner handler pre-empts `cli_errors` for the one API failure that
     # deserves more than a single line; everything else here — a bad config, a

@@ -450,6 +450,7 @@ def build_wire_step(
 
 def normalize_step_patch(
     patch: dict[str, Any],
+    key: str,
     step_type: str,
     payload: dict[str, Any],
     target_object: str | None,
@@ -458,14 +459,18 @@ def normalize_step_patch(
 
     Lets `steps edit` accept the same authoring shapes as create specs
     (field_refs, api_names) as well as raw wire dicts — builders are
-    idempotent on wire shapes.
+    idempotent on wire shapes. A condition patch that carries
+    `step_condition` must also have at least one rule, the same check
+    `automations create`/`update` and `steps add` apply.
     """
     from kizen_builder.models.spec import AutomationDef
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         LiveContext,
         _block_field_for,
+        _condition_rules_problem,
     )
+    from kizen_builder.tools.plans import PlanError
 
     cfg_key = _block_field_for(step_type)
     builder = _STEP_BUILDERS.get(step_type)
@@ -477,6 +482,10 @@ def normalize_step_patch(
             target_object=target_object,
         )
         patch[cfg_key] = builder(dict(patch[cfg_key]), auto, LiveContext())
+        if step_type == "condition":
+            problem = _condition_rules_problem(key, patch[cfg_key])
+            if problem:
+                raise PlanError(problem)
     return patch
 
 
@@ -847,11 +856,10 @@ def get_execution_history(execution_id: str) -> list[dict[str, Any]]:
 
 # ---------------------------------------------------------------------------
 # Execution control — pause/resume/cancel/skip-and-resume/debug-*. Runtime
-# actions on an execution's own state (not a schema mutation), same category
-# as `start_automation` above: confirm-free by standing decision, no
-# plan/preview gate. Confirmed live (2026-07-22) for pause/
-# resume/cancel against a real delayed execution; debug-* wired from the
-# public schema but not live-exercised (see api/automations.py).
+# actions on an execution's own state (not a schema mutation), so no
+# plan/preview gate; the CLI confirms every verb but pause (`kizen docs show
+# operating`, rule 3). Which verbs are confirmed live: `kizen docs show
+# automation-runtime`, § Controlling a run.
 # ---------------------------------------------------------------------------
 
 

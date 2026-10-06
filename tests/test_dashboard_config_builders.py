@@ -14,7 +14,9 @@ dashboards (see `kizen docs show reference`, "Dashboards / Homepages API"):
 
 from __future__ import annotations
 
+import httpx
 import pytest
+import respx
 
 from kizen_builder.tools import dashboards as dash_tools
 from kizen_builder.tools.dashboards import (
@@ -36,6 +38,7 @@ from kizen_builder.tools.dashboards import (
 )
 from kizen_builder.tools.planners import dashboards as dash_planners
 from kizen_builder.tools.plans import PlanError
+from tests.conftest import FAKE_BASE_URL
 
 OBJECT_ID = "18a93b82-9925-4fd8-9c18-7d291412f0fa"
 FIELD_ID = "ce136267-283e-4c3f-9d24-7184c66de6d8"
@@ -301,6 +304,32 @@ class _NullClientCtx:
 
     def __exit__(self, *exc):
         return False
+
+
+# ---------------------------------------------------------------------------
+# admin_role_id reads every page of roles
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_admin_role_id_finds_admin_on_page_two():
+    admin_id = "00000000-0000-4000-8000-000000000199"
+    respx.get(f"{FAKE_BASE_URL}/api/role").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": "r1", "name": "Sales Rep"}],
+                    "next": f"{FAKE_BASE_URL}/api/role?page=2&page_size=200",
+                },
+            ),
+            httpx.Response(
+                200, json={"results": [{"id": admin_id, "name": "Admin"}], "next": None}
+            ),
+        ]
+    )
+
+    assert dash_tools.admin_role_id() == admin_id
 
 
 # ---------------------------------------------------------------------------

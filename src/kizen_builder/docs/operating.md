@@ -42,7 +42,11 @@ sessions, and notes record intent, not reality.
 `--dry-run` → show the rendered plan to the user → wait for approval →
 re-run without `--dry-run` (add `--yes` since approval already happened in
 chat). Never apply without explicit approval, even for additive changes that
-look safe.
+look safe. Everything that executes asks first: `automations start`,
+`roundtrip --execute` and the `automations runs` verbs y/N-confirm (`--yes`
+skips). `runs pause` is the exception, so a run can be stopped fast. `code
+test` asks too: it runs in the same Lambda as a real step and can write. Get
+approval before running any of them.
 
 **4. Use the CLI for exploration; Python only for production scripts.** When
 investigating Kizen state — looking up fields, reading records, tracing
@@ -196,7 +200,8 @@ wire dialect, and the quirks that bite — lives in
 - `stop_execution` needs no config block — the planner emits the empty one.
 - A type not in the wired list raises `PlanError` — add a builder following
   `_STEP_BUILDERS` / `_TRIGGER_BUILDERS`. Config models are `extra="allow"`, so
-  they round-trip the richer shapes returned by `kizen automations get`.
+  they round-trip the richer shapes returned by `kizen automations get`; a key
+  the type's builder doesn't read is still a plan error.
 - Condition `filter_config` uses the shared filter DSL — the same one
   `records list --filter` and saved views take. `kizen docs show filters` has
   both layers (the friendly DSL and the wire form it resolves to), the per-type

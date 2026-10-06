@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import time
@@ -32,6 +33,7 @@ from tests.conftest import (
     FAKE_BUSINESS_ID,
     OTHER_BUSINESS_ID,
     load_fixture,
+    plain,
 )
 
 runner = CliRunner()
@@ -519,6 +521,7 @@ def test_start_var_flags_reach_the_tool(monkeypatch):
         [
             "automations",
             "start",
+            "--yes",
             "flow",
             "-r",
             "rec-1",
@@ -537,7 +540,8 @@ def test_start_var_flags_reach_the_tool(monkeypatch):
 def test_start_rejects_malformed_var(monkeypatch):
     monkeypatch.setattr(auto_tools, "start_automation", lambda *a, **k: {})
     result = runner.invoke(
-        cli.app, ["automations", "start", "flow", "-r", "rec-1", "--var", "novalue"]
+        cli.app,
+        ["automations", "start", "--yes", "flow", "-r", "rec-1", "--var", "novalue"],
     )
     assert result.exit_code != 0
 
@@ -594,7 +598,7 @@ def test_start_wait_composes_start_and_wait_in_order(monkeypatch):
     monkeypatch.setattr(auto_tools, "wait_for_execution", fake_wait)
 
     result = runner.invoke(
-        cli.app, ["automations", "start", "flow", "-r", "rec-1", "--wait"]
+        cli.app, ["automations", "start", "--yes", "flow", "-r", "rec-1", "--wait"]
     )
 
     assert result.exit_code == 0
@@ -619,7 +623,9 @@ def test_start_without_wait_never_calls_wait_for_execution(monkeypatch):
 
     monkeypatch.setattr(auto_tools, "wait_for_execution", boom)
 
-    result = runner.invoke(cli.app, ["automations", "start", "flow", "-r", "rec-1"])
+    result = runner.invoke(
+        cli.app, ["automations", "start", "--yes", "flow", "-r", "rec-1"]
+    )
 
     assert result.exit_code == 0
     assert len(calls) == 1
@@ -667,6 +673,7 @@ def test_start_wait_streams_new_history_rows_once(monkeypatch):
         [
             "automations",
             "start",
+            "--yes",
             "flow",
             "-r",
             "rec-1",
@@ -718,6 +725,7 @@ def test_start_wait_heartbeats_during_a_gap_with_no_new_rows(monkeypatch):
         [
             "automations",
             "start",
+            "--yes",
             "flow",
             "-r",
             "rec-1",
@@ -768,6 +776,7 @@ def test_start_wait_without_show_logs_never_prints_detailed_log(monkeypatch):
         [
             "automations",
             "start",
+            "--yes",
             "flow",
             "-r",
             "rec-1",
@@ -827,6 +836,7 @@ def test_start_wait_survives_a_transient_history_fetch_error(monkeypatch):
         [
             "automations",
             "start",
+            "--yes",
             "flow",
             "-r",
             "rec-1",
@@ -863,6 +873,7 @@ def test_start_wait_history_4xx_surfaces_immediately(monkeypatch):
         [
             "automations",
             "start",
+            "--yes",
             "flow",
             "-r",
             "rec-1",
@@ -896,7 +907,8 @@ def test_start_wait_json_output_is_valid_json_only(monkeypatch):
     )
 
     result = runner.invoke(
-        cli.app, ["automations", "start", "flow", "-r", "rec-1", "--wait", "--json"]
+        cli.app,
+        ["automations", "start", "--yes", "flow", "-r", "rec-1", "--wait", "--json"],
     )
 
     assert result.exit_code == 0
@@ -943,7 +955,16 @@ def test_start_show_logs_implies_wait_and_adds_steps_to_json(monkeypatch):
 
     result = runner.invoke(
         cli.app,
-        ["automations", "start", "flow", "-r", "rec-1", "--show-logs", "--json"],
+        [
+            "automations",
+            "start",
+            "--yes",
+            "flow",
+            "-r",
+            "rec-1",
+            "--show-logs",
+            "--json",
+        ],
     )
 
     assert result.exit_code == 0
@@ -971,7 +992,7 @@ def test_start_wait_exit_code_reuses_runs_view_wait_mapping(monkeypatch):
     )
 
     result = runner.invoke(
-        cli.app, ["automations", "start", "flow", "-r", "rec-1", "--wait"]
+        cli.app, ["automations", "start", "--yes", "flow", "-r", "rec-1", "--wait"]
     )
 
     assert result.exit_code == 1
@@ -1360,6 +1381,258 @@ def test_runs_logs_json_emits_raw_blobs(monkeypatch):
     assert len(payload) == 1
     assert payload[0]["index"] == 1
     assert payload[0]["detailed_log"] == {"logs": ["hi"]}
+
+
+# ---------------------------------------------------------------------------
+# Commands that execute live ask first (`--yes` skips); `runs pause` doesn't.
+# ---------------------------------------------------------------------------
+
+RUN_ID = "2461cd64-c82c-406c-a6fd-f27e4918e31e"
+STEP_ID = "0b6c0e0c-3f43-4c8e-9d5e-2a1f0c9d7e11"
+
+
+def _gate_start(monkeypatch):
+    writes = []
+
+    def fake_start(api_name, record_id, *, variables=None):
+        writes.append(api_name)
+        return {"execution_id": "e1", "record_id": record_id, "raw": {}}
+
+    monkeypatch.setattr(auto_tools, "start_automation", fake_start)
+    return ["automations", "start", "flow", "-r", "rec-1", "--var", "a=1"], writes
+
+
+def _gate_start_wait(monkeypatch):
+    writes = []
+
+    def fake_start_and_wait(api_name, record_id, **kw):
+        writes.append(api_name)
+        return {"execution_id": None, "status": "completed", "timed_out": False}
+
+    monkeypatch.setattr(auto_tools, "start_and_wait", fake_start_and_wait)
+    return ["automations", "start", "flow", "--wait"], writes
+
+
+def _roundtrip_result(api_name, execute):
+    result = {
+        "env": "testenv",
+        "api_name": api_name,
+        "id": "a1",
+        "revision_before": 4,
+        "n_steps": 2,
+        "n_triggers": 1,
+        "validation_problems": [],
+        "payload": {},
+        "executed": execute,
+    }
+    if execute:
+        result.update(revision_after=5, drift=[])
+    return result
+
+
+def _fake_roundtrip(monkeypatch, problems=()):
+    """Stub roundtrip_automation; returns the list of `execute` values it got."""
+    calls = []
+
+    def fake_roundtrip(api_name, execute=False):
+        calls.append(execute)
+        result = _roundtrip_result(api_name, execute and not problems)
+        return {**result, "validation_problems": list(problems)}
+
+    monkeypatch.setattr(auto_tools, "roundtrip_automation", fake_roundtrip)
+    return calls
+
+
+def _gate_roundtrip(monkeypatch):
+    writes = []
+
+    def fake_roundtrip(api_name, execute=False):
+        if execute:
+            writes.append(api_name)
+        return _roundtrip_result(api_name, execute)
+
+    monkeypatch.setattr(auto_tools, "roundtrip_automation", fake_roundtrip)
+    return ["automations", "roundtrip", "flow", "--execute"], writes
+
+
+def _fake_run(monkeypatch):
+    monkeypatch.setattr(
+        auto_tools,
+        "get_execution",
+        lambda execution_id: {
+            "execution_id": execution_id,
+            "status": "running",
+            "automation_api_name": "flow",
+        },
+    )
+
+
+# verb -> (tool function it calls, the verb's required flags)
+RUN_VERBS = {
+    "resume": ("resume_execution", []),
+    "cancel": ("cancel_execution", []),
+    "skip-and-resume": ("skip_and_resume_execution", ["--skip-step", STEP_ID]),
+    "debug-sendit": ("debug_sendit", []),
+    "debug-rerun": ("debug_rerun", ["--step", STEP_ID]),
+    "debug-restart": ("debug_restart", ["--step", STEP_ID]),
+    "debug-step": ("debug_step", ["--history", "h1", "--action", "execute"]),
+}
+
+
+def _gate_run_verb(verb, monkeypatch):
+    _fake_run(monkeypatch)
+    tool, flags = RUN_VERBS[verb]
+    writes = []
+
+    def fake_action(execution_id, *args):
+        writes.append(execution_id)
+        return {
+            "env": "testenv",
+            "execution_id": execution_id,
+            "status_before": "running",
+            "status_after": "cancelled",
+        }
+
+    monkeypatch.setattr(auto_tools, tool, fake_action)
+    return ["automations", "runs", verb, RUN_ID, *flags], writes
+
+
+GATED = [
+    pytest.param(_gate_start, id="start"),
+    pytest.param(_gate_start_wait, id="start-wait"),
+    pytest.param(_gate_roundtrip, id="roundtrip-execute"),
+    *(
+        pytest.param(functools.partial(_gate_run_verb, verb), id=f"runs-{verb}")
+        for verb in RUN_VERBS
+    ),
+]
+
+
+@pytest.mark.parametrize("gate", GATED)
+def test_gated_command_without_terminal_exits_2_and_never_writes(monkeypatch, gate):
+    argv, writes = gate(monkeypatch)
+    result = runner.invoke(cli.app, argv)
+    assert result.exit_code == 2, result.output
+    assert "can't prompt" in result.stderr
+    assert not writes
+
+
+@pytest.mark.parametrize("gate", GATED)
+def test_gated_command_declined_exits_1_and_never_writes(monkeypatch, terminal, gate):
+    argv, writes = gate(monkeypatch)
+    result = runner.invoke(cli.app, argv, input="n\n")
+    assert result.exit_code == 1, result.output
+    assert "aborted" in result.stdout
+    assert not writes
+
+
+@pytest.mark.parametrize("gate", GATED)
+def test_gated_command_accepted_writes_once(monkeypatch, terminal, gate):
+    argv, writes = gate(monkeypatch)
+    result = runner.invoke(cli.app, argv, input="y\n")
+    assert result.exit_code == 0, result.output
+    assert len(writes) == 1
+
+
+@pytest.mark.parametrize("gate", GATED)
+def test_gated_command_yes_writes_once_and_stdout_is_json(monkeypatch, terminal, gate):
+    argv, writes = gate(monkeypatch)
+    # No input: a prompt would read EOF and fail the invocation.
+    result = runner.invoke(cli.app, [*argv, "--yes", "--json"])
+    assert result.exit_code == 0, result.output
+    assert len(writes) == 1
+    json.loads(result.stdout)
+
+
+def test_start_prompt_names_env_record_and_variable_count(monkeypatch, terminal):
+    argv, _ = _gate_start(monkeypatch)
+    result = runner.invoke(cli.app, argv, input="n\n")
+    assert "Start flow in testenv on rec-1 with 1 seeded variable(s)?" in plain(
+        result.stdout
+    )
+
+
+def test_start_prompt_says_global_without_a_record(monkeypatch, terminal):
+    argv, _ = _gate_start_wait(monkeypatch)
+    result = runner.invoke(cli.app, argv, input="n\n")
+    assert "on global with 0 seeded variable(s)?" in plain(result.stdout)
+
+
+def test_roundtrip_execute_previews_without_writing_then_puts(monkeypatch, terminal):
+    calls = _fake_roundtrip(monkeypatch)
+    result = runner.invoke(
+        cli.app, ["automations", "roundtrip", "flow", "--execute"], input="y\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == [False, True]
+    assert "testenv" in result.stdout and "rev 4" in result.stdout
+
+
+def test_roundtrip_execute_yes_makes_one_execute_call(monkeypatch):
+    calls = _fake_roundtrip(monkeypatch)
+    result = runner.invoke(
+        cli.app, ["automations", "roundtrip", "flow", "--execute", "--yes"]
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == [True]
+
+
+def test_roundtrip_without_execute_never_executes(monkeypatch):
+    calls = _fake_roundtrip(monkeypatch)
+    result = runner.invoke(cli.app, ["automations", "roundtrip", "flow"])
+    assert result.exit_code == 0, result.output
+    assert calls == [False]
+
+
+def test_roundtrip_execute_with_validation_problems_never_prompts(
+    monkeypatch, terminal
+):
+    calls = _fake_roundtrip(monkeypatch, problems=["bad"])
+    # No input: a prompt would read EOF and fail differently.
+    result = runner.invoke(cli.app, ["automations", "roundtrip", "flow", "--execute"])
+    assert result.exit_code == 1, result.output
+    assert calls == [False]
+    assert "FAILED" in result.stdout
+    assert "?" not in result.stdout
+
+
+def test_runs_cancel_prompt_shows_the_run(monkeypatch, terminal):
+    argv, _ = _gate_run_verb("cancel", monkeypatch)
+    result = runner.invoke(cli.app, argv, input="n\n")
+    assert "flow" in result.stdout and RUN_ID in result.stdout
+    assert "status running" in plain(result.stdout)
+    assert "Cancel this run? It can't be undone." in plain(result.stdout)
+
+
+def test_runs_debug_rerun_prompt_shows_the_step(monkeypatch, terminal):
+    argv, _ = _gate_run_verb("debug-rerun", monkeypatch)
+    result = runner.invoke(cli.app, argv, input="n\n")
+    assert f"step: {STEP_ID}" in plain(result.stdout)
+
+
+def test_runs_cancel_yes_json_reports_status_before_and_after(monkeypatch):
+    argv, _ = _gate_run_verb("cancel", monkeypatch)
+    result = runner.invoke(cli.app, [*argv, "--yes", "--json"])
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.stdout)
+    assert out["status_before"] == "running"
+    assert out["status_after"] == "cancelled"
+
+
+def test_runs_pause_never_prompts(monkeypatch):
+    paused = []
+
+    def fake_pause(execution_id):
+        paused.append(execution_id)
+        return {"status_before": "running", "status_after": "paused"}
+
+    monkeypatch.setattr(auto_tools, "pause_execution", fake_pause)
+    # No terminal and no --yes: any prompt would exit 2.
+    result = runner.invoke(cli.app, ["automations", "runs", "pause", RUN_ID])
+    assert result.exit_code == 0, result.output
+    assert paused == [RUN_ID]
+    result = runner.invoke(cli.app, ["automations", "runs", "pause", RUN_ID, "--json"])
+    assert json.loads(result.stdout)["status_after"] == "paused"
 
 
 def test_config_error_exits_nonzero(monkeypatch):
