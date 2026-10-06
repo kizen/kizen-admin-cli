@@ -7,7 +7,7 @@ name = "kizen-builder"
 # SemVer, static, and the single source of truth. Bumping it is a release
 # decision — see docs/RELEASING.md. `kizen --version` reads *installed*
 # metadata, so a bump only shows after a re-sync or reinstall.
-version = "0.2.0"
+version = "0.3.0"
 description = "Command-line tool for designing and iterating on a Kizen environment via the Kizen REST API."
 readme = "README.md"
 requires-python = ">=3.12"
