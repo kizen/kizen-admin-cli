@@ -10,7 +10,12 @@ from rich.console import Console
 from rich.markup import escape
 
 from kizen_builder import output as out
-from kizen_builder.cli._shared import cli_errors, console, err_console
+from kizen_builder.cli._shared import (
+    cli_errors,
+    console,
+    err_console,
+    warn_renamed_flag,
+)
 from kizen_builder.cli.smart_connectors import (
     _connector_errors,
     _preview_and_confirm,
@@ -93,9 +98,10 @@ def smart_connectors_send_webhook(
     query: list[str] = typer.Option(
         [], "--query", "-q", help="key=value query-string param (repeatable)."
     ),
-    force: bool = typer.Option(
-        False, "--force", help="Send even when the plan reports blockers."
+    ignore_blockers: bool = typer.Option(
+        False, "--ignore-blockers", help="Send even when the plan reports blockers."
     ),
+    force: bool = typer.Option(False, "--force", hidden=True),
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the confirmation prompt."
     ),
@@ -108,6 +114,10 @@ def smart_connectors_send_webhook(
     cadence rather than processed per request, so expect up to a full cadence
     interval before an execution shows up in `executions list`.
     """
+    if force:
+        warn_renamed_flag("--force", "--ignore-blockers")
+        ignore_blockers = True
+
     text = Path(body[1:]).read_text() if body.startswith("@") else body
     try:
         parsed = json.loads(text)
@@ -125,10 +135,10 @@ def smart_connectors_send_webhook(
     with _connector_errors():
         plan = sc_tools.plan_send_webhook(connector, parsed, querystring=params or None)
 
-    if plan["blockers"] and not force:
+    if plan["blockers"] and not ignore_blockers:
         for blocker in plan["blockers"]:
             err_console.print(f"[red]blocked:[/red] {blocker}")
-        err_console.print("[dim]Pass --force to send anyway.[/dim]")
+        err_console.print("[dim]Pass --ignore-blockers to send anyway.[/dim]")
         raise typer.Exit(code=1)
 
     def render(target: Console) -> None:
@@ -284,21 +294,25 @@ def smart_connectors_deactivate(
 @smart_connectors_app.command("start-flow")
 def smart_connectors_start_flow(
     connector: str = typer.Argument(..., help="Connector UUID or api_name."),
-    live: bool = typer.Option(
+    write_records: bool = typer.Option(
         False,
-        "--live",
-        help="Write real records. Without this the run is a dry run: the whole "
-        "flow is validated, nothing is written.",
+        "--write-records",
+        help="Write real records. Without this the run is a server-side dry run: "
+        "the flow is validated and nothing is written.",
     ),
-    force: bool = typer.Option(
-        False, "--force", help="Queue the run even when the plan reports blockers."
+    live: bool = typer.Option(False, "--live", hidden=True),
+    ignore_blockers: bool = typer.Option(
+        False,
+        "--ignore-blockers",
+        help="Queue the run even when the plan reports blockers.",
     ),
+    force: bool = typer.Option(False, "--force", hidden=True),
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the confirmation prompt."
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
-    """Queue an execution of the connector (dry run unless --live).
+    """Queue an execution of the connector (dry run unless --write-records).
 
     Runs are asynchronous; watch one with `smart-connectors executions get`,
     which shows the executor's own error for a failed run.
@@ -306,18 +320,32 @@ def smart_connectors_start_flow(
     Webhook connectors aren't started this way — they run on a real inbound POST
     to their webhook endpoint, batched on the connector's cadence.
     """
-    with _connector_errors():
-        plan = sc_tools.plan_start_flow(connector, dry_run=not live)
+    # A hard error, not an alias: an alias would keep `--live` meaning "write
+    # records" here while it means "use the live script" on `pull`.
+    if live:
+        err_console.print(
+            "[red]error:[/red] start-flow --live was renamed --write-records "
+            "(it writes real records); re-run with --write-records."
+        )
+        raise typer.Exit(code=2)
+    if force:
+        warn_renamed_flag("--force", "--ignore-blockers")
+        ignore_blockers = True
 
-    if plan["blockers"] and not force:
+    with _connector_errors():
+        plan = sc_tools.plan_start_flow(connector, dry_run=not write_records)
+
+    if plan["blockers"] and not ignore_blockers:
         for blocker in plan["blockers"]:
             err_console.print(f"[red]blocked:[/red] {blocker}")
-        err_console.print("[dim]Pass --force to queue the run anyway.[/dim]")
+        err_console.print("[dim]Pass --ignore-blockers to queue the run anyway.[/dim]")
         raise typer.Exit(code=1)
 
     def render(target: Console) -> None:
         kind = (
-            "[red]LIVE[/red] (writes records)" if live else "dry run (writes nothing)"
+            "[red]LIVE[/red] (writes records)"
+            if write_records
+            else "dry run (writes nothing)"
         )
         target.print(
             f"[bold]{plan['connector_api_name']}[/bold] — {kind}, "
@@ -331,9 +359,9 @@ def smart_connectors_start_flow(
     if not _preview_and_confirm(
         plan,
         render=render,
-        action="live run" if live else "dry run",
+        action="live run" if write_records else "dry run",
         dry_run=False,
-        yes=yes or not live,
+        yes=yes or not write_records,
         json_out=json_out,
     ):
         return
@@ -345,11 +373,11 @@ def smart_connectors_start_flow(
         out.emit_json(result)
         return
     console.print(
-        f"[green]queued[/green] {'live' if live else 'dry'} run of "
+        f"[green]queued[/green] {'live' if write_records else 'dry'} run of "
         f"{result['connector']} — execution {result['execution']}"
     )
     console.print(
         f"[dim]Watch it: `smart-connectors executions get {result['connector']} "
         f"{result['execution']}`; history: `smart-connectors executions list "
-        f"{result['connector']}{' --include-dry-run' if not live else ''}`.[/dim]"
+        f"{result['connector']}{' --include-dry-run' if not write_records else ''}`.[/dim]"
     )

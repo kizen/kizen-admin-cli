@@ -23,6 +23,7 @@ package and is served by ``kizen docs show`` (see ``kizen_builder.docs``).
 from __future__ import annotations
 
 import os
+import tempfile
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,9 +150,20 @@ def write_profile(creds: ProfileCreds, path: Path | None = None) -> Path:
         "base_url": creds.base_url,
     }
 
-    with target.open("wb") as fh:
-        tomli_w.dump(data, fh)
-    os.chmod(target, 0o600)
+    # mkstemp creates the file at 0600, and os.replace swaps it in whole, so the
+    # store is never readable by others and never left truncated. Resolving
+    # first keeps a symlinked store a symlink.
+    real = target.resolve()
+    fd, tmp = tempfile.mkstemp(dir=real.parent, prefix=".credentials.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            tomli_w.dump(data, fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, real)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     return target
 
 

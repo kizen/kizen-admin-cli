@@ -406,7 +406,9 @@ def drift_automation(drift_client, scratch, drift_object) -> dict[str, Any]:
                     "parent_key": None,
                     "step_condition": {
                         "type": "custom_filter",
-                        "filter_config": {"and": False, "query": [], "invalid": False},
+                        "filter_config": {
+                            "all": [{"field": "name", "op": "not_blank"}]
+                        },
                     },
                 },
                 {

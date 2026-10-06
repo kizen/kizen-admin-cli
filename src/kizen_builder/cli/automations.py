@@ -1,4 +1,4 @@
-"""`kizen automations` — reads (list/get/show/round-trip), `start`, and the
+"""`kizen automations` — reads (list/get/show), `roundtrip`, `start`, and the
 modification/failure diagnostics. Mutations live in `automations_write`.
 """
 
@@ -15,7 +15,7 @@ from rich.table import Table
 
 from kizen_builder import output as out
 from kizen_builder.api.client import KizenAPIError
-from kizen_builder.cli._mutations import _read_spec
+from kizen_builder.cli._mutations import _confirm_or_abort, _read_spec
 from kizen_builder.cli._run_render import (
     history_duration,
     print_step_log,
@@ -30,6 +30,7 @@ from kizen_builder.cli._shared import (
     console,
     err_console,
 )
+from kizen_builder.config import load_env_config
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
 from kizen_builder.tools.planners import automations as auto_planners
@@ -229,7 +230,11 @@ def autos_roundtrip(
         False,
         "--execute",
         "-x",
-        help="PUT the translated payload back (intended no-op) and diff the result.",
+        help="PUT the translated payload back (intended no-op) and diff the "
+        "result. Writes live: asks to confirm unless --yes.",
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit full result as JSON."),
     show_payload: bool = typer.Option(
@@ -241,10 +246,25 @@ def autos_roundtrip(
     Translates the live automation into a PUT payload and validates the
     step graph. With --execute, PUTs the payload unchanged, re-fetches, and
     reports semantic drift — an empty diff means the translator is faithful
-    for every step/trigger type in this automation.
+    for every step/trigger type in this automation. Writes live: asks to
+    confirm unless --yes, after a preview that PUTs nothing.
     """
     with cli_errors(LookupError, PlanError):
-        result = auto_tools.roundtrip_automation(api_name, execute=execute)
+        result = auto_tools.roundtrip_automation(api_name, execute=execute and yes)
+    if execute and not yes and not result["validation_problems"]:
+        (err_console if json_out else console).print(
+            f"[bold]{api_name}[/bold] in {result['env']}  [dim](rev "
+            f"{result['revision_before']}, {result['n_triggers']} triggers, "
+            f"{result['n_steps']} steps)[/dim]"
+        )
+        _confirm_or_abort(
+            "PUT this automation's translated payload back live?",
+            yes=False,
+            hint=f"Run `kizen automations roundtrip {api_name}` without --execute "
+            "to preview only.",
+        )
+        with cli_errors(LookupError, PlanError):
+            result = auto_tools.roundtrip_automation(api_name, execute=True)
 
     if json_out:
         typer.echo(json.dumps(result, indent=2))
@@ -629,6 +649,9 @@ def autos_start(
         "code_step's log is only available then, not while it's still "
         "running. Implies --wait.",
     ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
     """Trigger an automation, optionally on a record and seeding variables.
@@ -641,10 +664,8 @@ def autos_start(
     contact automations and record_id otherwise; it is optional for global
     (record-less) automations and required for record-based ones.
 
-    Deliberately confirm-free: this is a runtime action (fire an existing
-    automation on a record), not a schema mutation, so it sits outside the
-    plan/preview/confirm gate that guards create/update. That is a standing
-    decision, not an oversight.
+    Runs live outside the plan gate and can't be undone, so it asks y/N
+    first (`--yes` skips). The rule: `kizen docs show operating`, rule 3.
 
     `--wait` blocks until the run finishes, printing each new step's status
     the moment it appears (a dim heartbeat during a real gap between steps —
@@ -665,6 +686,17 @@ def autos_start(
         raise typer.BadParameter("--poll-interval must be > 0.")
 
     variables = _parse_start_variables(var, vars_json)
+
+    if not yes:
+        with cli_errors():
+            env = load_env_config().name
+        _confirm_or_abort(
+            f"Start {api_name} in {env} on {record_id or 'global'} with "
+            f"{len(variables)} seeded variable(s)? It runs live and can't be undone.",
+            yes=False,
+            hint=f"Check it with `kizen automations show {api_name}`, then re-run "
+            "with --yes.",
+        )
 
     if not effective_wait:
         # Byte-for-byte identical to `start` before `--wait` existed: exactly

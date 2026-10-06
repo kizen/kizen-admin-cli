@@ -341,6 +341,12 @@ KNOWN_UNDOCUMENTED_BLOCKS: dict[str, str] = {
 #:   ``parent_condition`` / ``prefix`` / ``goal_type``), and the schema's
 #:   ``yes_step_ids`` / ``no_step_ids`` 500 on write —
 #:   ``test_automation_write_dialect_is_accepted``.
+#:
+#: The ``schema:`` entries are step/trigger config-block keys a builder declares
+#: with ``@honours`` and forwards under the author's own spelling, checked by
+#: ``test_forwarded_block_keys_are_declared_or_known_omissions``. There an
+#: undeclared key may be one Kizen accepts and drops, so each reason says
+#: whether a read-back keeps it.
 KNOWN_SCHEMA_OMISSIONS: dict[str, dict[str, str]] = {
     "POST /api/automation2/automations": {
         "return_all_steps_errors": (
@@ -360,6 +366,20 @@ KNOWN_SCHEMA_OMISSIONS: dict[str, dict[str, str]] = {
         "custom_objects": (
             "same as *_section — undeclared but accepted and echoed back "
             "(confirmed live 2026-08-05)"
+        ),
+    },
+    "schema:WriteStepRequest.action_create_related_entity": {
+        "field_values": (
+            "a silent no-op: the create returns 200 and the read-back has no "
+            "`field_values` key (confirmed live 2026-10-05). The builder's "
+            "pass-through should go"
+        ),
+    },
+    "schema:WriteStepRequest.action_go_to_automation_step": {
+        "type": (
+            "the builder always sends the fixed value `go_to_automation_step`; "
+            "accepted, and absent from the read-back, which carries only "
+            "`step`/`trigger` (confirmed live 2026-10-05). Carries no data"
         ),
     },
 }

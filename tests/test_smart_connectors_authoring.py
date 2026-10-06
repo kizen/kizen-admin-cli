@@ -12,6 +12,7 @@ import copy
 import csv
 import io
 import json
+import re
 import time
 import zipfile
 
@@ -1057,7 +1058,7 @@ def test_download_sample_cli_names_the_state_when_there_is_no_sample(tmp_path):
 
 
 @respx.mock
-def test_download_sample_refuses_to_overwrite_without_force(tmp_path):
+def test_download_sample_refuses_to_overwrite_without_overwrite(tmp_path):
     target = tmp_path / "s.zip"
     target.write_bytes(b"keep me")
     _mock_script("draft-1", status="draft").mock(
@@ -1066,10 +1067,10 @@ def test_download_sample_refuses_to_overwrite_without_force(tmp_path):
     args = ["smart-connectors", "download-sample", "order_import", "--out", str(target)]
     refused = CliRunner().invoke(cli.app, args)
     assert refused.exit_code == 1
-    assert "--force" in refused.output
+    assert "--overwrite" in refused.output
     assert target.read_bytes() == b"keep me"
 
-    forced = CliRunner().invoke(cli.app, [*args, "--force", "--json"])
+    forced = CliRunner().invoke(cli.app, [*args, "--overwrite", "--json"])
     assert forced.exit_code == 0, forced.output
     assert json.loads(forced.stdout)["path"] == str(target)
     assert target.read_bytes() == TWO_TABLE_ZIP
@@ -1116,7 +1117,7 @@ def test_save_file_refuses_an_existing_path_before_downloading(tmp_path, env_con
     target = tmp_path / "s.zip"
     target.write_bytes(b"keep me")
     download = respx.get(f"{FAKE_BASE_URL}/api/files/f1/download")
-    with pytest.raises(FileExistsError, match="--force"):
+    with pytest.raises(FileExistsError, match="--overwrite"):
         sct.save_file(env_config, "f1", target, fallback_name="s.zip")
     assert not download.called
 
@@ -1296,6 +1297,217 @@ def test_list_executions_surfaces_the_whole_executor_error():
     )
     rows = sct.list_executions("order_import")
     assert rows[0]["error_details"] == long_error
+
+
+READY_TO_RUN = {
+    **DETAIL,
+    "status": "operational",
+    "flow": {**DETAIL["flow"], "loads": [{"id": "load-1"}]},
+}
+
+
+def _mock_start_flow() -> tuple[respx.Route, respx.Route]:
+    read = respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=READY_TO_RUN)
+    )
+    post = respx.post(f"{BASE}/conn-uuid/start-connector-flow").mock(
+        return_value=httpx.Response(200, json={"execution_id": "exec-1"})
+    )
+    return read, post
+
+
+@respx.mock
+def test_start_flow_without_a_flag_queues_a_dry_run_without_prompting():
+    _, post = _mock_start_flow()
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "start-flow", "order_import"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Apply" not in result.output
+    assert json.loads(post.calls.last.request.content) == {"is_dry_run": True}
+    assert "--include-dry-run" in result.output
+
+
+@respx.mock
+def test_start_flow_write_records_queues_a_live_run_after_the_confirm():
+    _, post = _mock_start_flow()
+    args = ["smart-connectors", "start-flow", "order_import", "--write-records"]
+
+    declined = CliRunner().invoke(cli.app, args, input="n\n")
+    assert declined.exit_code == 1
+    assert "LIVE" in declined.output
+    assert not post.called
+
+    result = CliRunner().invoke(cli.app, [*args, "--yes"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(post.calls.last.request.content) == {"is_dry_run": False}
+    assert "--include-dry-run" not in result.output
+
+
+@respx.mock
+def test_start_flow_live_is_an_error_that_names_write_records():
+    read, post = _mock_start_flow()
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "start-flow", "order_import", "--live", "--yes"]
+    )
+    assert result.exit_code == 2
+    assert (
+        "error: start-flow --live was renamed --write-records (it writes real "
+        "records); re-run with --write-records."
+    ) in " ".join(result.stderr.split())
+    assert not read.called
+    assert not post.called
+
+
+def _stub_flag_rename_tools(monkeypatch) -> list:
+    """Stub every tool the renamed flags reach, recording each call in order."""
+    calls: list = []
+    blocked = {
+        "connector": "conn-uuid",
+        "connector_api_name": "order_import",
+        "status": "setup",
+        "is_dry_run": True,
+        "load_steps": 0,
+        "cadence": 60,
+        "body": {"a": 1},
+        "querystring": {},
+        "blockers": ["blocked for the test"],
+    }
+    results = {
+        "pull_connector": {"connector": "order_import"},
+        "download_sample": {"path": "s.zip"},
+        "download_execution_file": {"path": "report.xlsx"},
+        "plan_start_flow": blocked,
+        "apply_start_flow": {"connector": "order_import", "execution": "e1"},
+        "plan_send_webhook": blocked,
+        "apply_send_webhook": {"connector": "order_import", "accepted": True},
+    }
+    for name, result in results.items():
+
+        def fake(*args, _name=name, _result=result, **kwargs):
+            calls.append((_name, args, kwargs))
+            return _result
+
+        monkeypatch.setattr(sct, name, fake)
+    return calls
+
+
+_WEBHOOK = ["send-webhook", "order_import", "--body", '{"a": 1}', "--yes"]
+
+
+@pytest.mark.parametrize(
+    ("command", "new", "old", "warning"),
+    [
+        (["pull", "c"], ["--overwrite"], ["--force"], "--force; use --overwrite"),
+        (["pull", "c"], ["--overwrite"], ["-f"], "--force; use --overwrite"),
+        (["pull", "c"], ["--script", "live"], ["--live"], "--live; use --script live"),
+        (
+            ["download-sample", "c"],
+            ["--overwrite"],
+            ["--force"],
+            "--force; use --overwrite",
+        ),
+        (["download-sample", "c"], ["--overwrite"], ["-f"], "--force; use --overwrite"),
+        (
+            ["download-sample", "c"],
+            ["--script", "live"],
+            ["--live"],
+            "--live; use --script live",
+        ),
+        (
+            ["executions", "download", "c", "e1"],
+            ["--overwrite"],
+            ["--force"],
+            "--force; use --overwrite",
+        ),
+        (
+            ["executions", "download", "c", "e1"],
+            ["--overwrite"],
+            ["-f"],
+            "--force; use --overwrite",
+        ),
+        (
+            ["start-flow", "c"],
+            ["--ignore-blockers"],
+            ["--force"],
+            "--force; use --ignore-blockers",
+        ),
+        (
+            _WEBHOOK,
+            ["--ignore-blockers"],
+            ["--force"],
+            "--force; use --ignore-blockers",
+        ),
+    ],
+)
+def test_old_flag_spellings_warn_and_behave_like_the_new_ones(
+    monkeypatch, command, new, old, warning
+):
+    calls = _stub_flag_rename_tools(monkeypatch)
+    base = ["smart-connectors", *command, "--json"]
+
+    current = CliRunner().invoke(cli.app, [*base, *new])
+    assert current.exit_code == 0, current.output
+    assert "deprecated" not in current.stderr
+    expected = list(calls)
+    assert expected, "the new spelling reached no tool"
+    calls.clear()
+
+    aliased = CliRunner().invoke(cli.app, [*base, *old])
+    assert aliased.exit_code == 0, aliased.output
+    old_name, new_name = warning.split("; use ")
+    assert f"warning: {old_name} is deprecated; use {new_name}." in " ".join(
+        aliased.stderr.split()
+    )
+    assert calls == expected
+    assert json.loads(aliased.stdout) == json.loads(current.stdout)
+
+
+@pytest.mark.parametrize(
+    ("script", "use_live", "script_id"),
+    [
+        (None, False, None),
+        ("draft", False, None),
+        ("live", True, None),
+        ("s-9", False, "s-9"),
+    ],
+)
+def test_download_sample_script_takes_draft_live_or_an_id(
+    monkeypatch, script, use_live, script_id
+):
+    calls = _stub_flag_rename_tools(monkeypatch)
+    args = ["smart-connectors", "download-sample", "c", "--json"]
+    result = CliRunner().invoke(
+        cli.app, args + (["--script", script] if script else [])
+    )
+    assert result.exit_code == 0, result.output
+    [(_, _, kwargs)] = calls
+    assert (kwargs["use_live"], kwargs["script_id"]) == (use_live, script_id)
+
+
+@pytest.mark.parametrize(
+    ("command", "script"),
+    [("pull", "draft"), ("download-sample", "draft"), ("download-sample", "s-9")],
+)
+def test_live_with_another_script_choice_is_a_usage_error(monkeypatch, command, script):
+    calls = _stub_flag_rename_tools(monkeypatch)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", command, "c", "--live", "--script", script]
+    )
+    assert result.exit_code == 2
+    # Typer renders usage errors in a box, in colour when CI forces a terminal.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output).replace("│", " ")
+    assert "--live means --script live" in " ".join(plain.split())
+    assert calls == []
+
+
+def test_pull_script_rejects_anything_but_draft_or_live(monkeypatch):
+    calls = _stub_flag_rename_tools(monkeypatch)
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "pull", "c", "--script", "s-9"]
+    )
+    assert result.exit_code == 2
+    assert calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -1565,7 +1777,7 @@ def test_executions_download_refuses_a_failed_runs_missing_file(tmp_path, kind):
 
 
 @respx.mock
-def test_executions_download_refuses_to_overwrite_without_force(tmp_path):
+def test_executions_download_refuses_to_overwrite_without_overwrite(tmp_path):
     target = tmp_path / "orders.csv"
     target.write_bytes(b"keep me")
     _mock_execution(EXEC_ROW)
@@ -1585,10 +1797,10 @@ def test_executions_download_refuses_to_overwrite_without_force(tmp_path):
     ]
     refused = CliRunner().invoke(cli.app, args)
     assert refused.exit_code == 1
-    assert "--force" in refused.output
+    assert "--overwrite" in refused.output
     assert target.read_bytes() == b"keep me"
 
-    forced = CliRunner().invoke(cli.app, [*args, "--force"])
+    forced = CliRunner().invoke(cli.app, [*args, "--overwrite"])
     assert forced.exit_code == 0, forced.output
     assert target.read_bytes() == b"new"
 
@@ -1612,7 +1824,8 @@ def test_start_flow_names_the_queued_execution_in_its_hint():
         return_value=httpx.Response(200, json={"execution_id": EID})
     )
     result = CliRunner().invoke(
-        cli.app, ["smart-connectors", "start-flow", "order_import", "--force"]
+        cli.app,
+        ["smart-connectors", "start-flow", "order_import", "--ignore-blockers"],
     )
     assert result.exit_code == 0, result.output
     text = " ".join(result.output.split())

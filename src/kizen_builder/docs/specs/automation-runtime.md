@@ -2,7 +2,7 @@
 
 Everything about an automation *execution* (a run), as opposed to the
 automation's own definition. Runs are runtime state, not schema, so these
-commands sit outside the plan→preview→confirm gate.
+commands sit outside the plan→preview gate; they ask y/N first instead.
 
 - The automation **definition** → `kizen docs show automation`
 - Editing **one step** of a definition → `kizen docs show automation-step`
@@ -14,8 +14,8 @@ kizen automations start <api_name> --record <uuid>
 kizen automations start <api_name> --record <uuid> --var org_match=true
 ```
 
-Confirm-free by standing decision: it triggers an *existing* automation on a
-record, creating and altering nothing, so there is no plan to preview.
+Asks for y/N confirmation (`--yes` skips it): it runs live and can't be
+undone. See `kizen docs show operating`, rule 3.
 
 ```
 POST /api/automation2/automations/<automation-identifier>/start
@@ -126,7 +126,8 @@ reason (`--timeout 0` waits indefinitely).
 
 ## Controlling a run
 
-Confirm-free, same standing decision as `start`. CLI: `kizen automations runs
+Every verb except `pause` asks for y/N confirmation (`--yes` skips it). CLI:
+`kizen automations runs
 pause|resume|cancel|skip-and-resume|debug-rerun|debug-restart|debug-step|debug-sendit <exec>`.
 
 ```

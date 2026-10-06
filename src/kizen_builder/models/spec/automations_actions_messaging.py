@@ -38,28 +38,15 @@ class ActionSendRelatedContactEmailConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    email_template_name: str | None = Field(
-        default=None,
-        description=(
-            "NOT read by the builder (dead field) — the step's real wire key "
-            "is `email` (an {id} association pointing at an AutomationMessage, "
-            "not an email template). Use `kizen messages create <automation> "
-            "--template <name>` to create the message resource, then pass its "
-            "UUID as `email`."
-        ),
-    )
-    email_template_id: str | None = Field(
-        default=None, description="NOT read by the builder — see email_template_name."
-    )
     email: str | dict[str, Any] | None = Field(
         default=None,
-        description="AutomationMessage id (bare UUID or {id: uuid}) — the real wire key.",
+        description=(
+            "AutomationMessage id (bare UUID or {id: uuid}) — an "
+            "AutomationMessage, not an email template. Use `kizen messages "
+            "create <automation> --template <name>` to create one from a "
+            "template, then pass its UUID here."
+        ),
     )
-    relationship_field_ref: str | None = Field(
-        default=None,
-        description="'object.field' for the relationship field pointing to the contact.",
-    )
-    relationship_field_id: str | None = None
 
 
 class ActionNotifyMemberViaEmailConfig(BaseModel):
@@ -184,10 +171,6 @@ class ActionAssignTeamMemberConfig(BaseModel):
     )
     employee_ids: list[str] = Field(
         default_factory=list, description="The pool for `round_robin_team_members`."
-    )
-    field_ref: str | None = Field(
-        default=None,
-        description="'object.field' for team_selector_field type. Resolved to UUID at apply time.",
     )
 
 
