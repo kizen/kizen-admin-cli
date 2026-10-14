@@ -175,6 +175,9 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **`team update`** assigns and removes team members' roles (`--role`
+  replaces the set; `--add-role`/`--remove-role` change one at a time), with
+  the usual dry-run and confirmation. It refuses to remove the last Admin.
 - **Automation specs can build branch groups, parallel branches and skipped
   conditions.** Two new step types, `branch` and `merge_branches`, and three
   step fields: `is_branch_group_initiator`, `continue_with_branch` and
