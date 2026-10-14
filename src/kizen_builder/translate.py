@@ -35,6 +35,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools.planners.automations import (
     _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
@@ -248,7 +249,7 @@ def _live_trigger_to_wire(
     if trigger.get("skip_non_working_days") is not None:
         p["skip_non_working_days"] = trigger["skip_non_working_days"]
 
-    cfg_key = f"trigger_{trigger_type}"
+    cfg_key = trigger_config_field(trigger_type)
     block = dict(trigger.get(cfg_key) or {})
     builder = _TRIGGER_BUILDERS.get(trigger_type)
     if builder is not None:

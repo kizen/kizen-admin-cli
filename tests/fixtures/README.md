@@ -60,7 +60,7 @@ Step types covered: condition, code_step, stop_execution, archive_record,
 go_to_automation_step, start_automation, change_field_value,
 modify_related_entities, create_related_entity, initialize_variable,
 update_variable, call_llm, file_content_extraction, schedule_activity,
-delete_scheduled_activity (unsupported-type error path).
+plugin_code_step, delete_scheduled_activity (unsupported-type error path).
 
 ## Refreshing
 

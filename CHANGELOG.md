@@ -172,11 +172,28 @@ called out explicitly under **Changed** or **Removed**.
   the step in the UI, and a group condition with no groups has nothing to
   test. Reading and editing a live automation that already carries one
   still works, so `steps edit` can fix it.
+- **A `call_llm` step that sets `data_type` is now rejected at plan time.**
+  Kizen accepted the key and discarded it, so the step was saved without it.
 - **A step's plan error from an automation spec now starts with `step
   '<key>': `**, e.g. `step 'run_script': code_step input …`.
 
 ### Added
 
+- **Specs can author the `email_received` trigger and goal trigger.** Set
+  `trigger_type: email_received` at the top level or in a goal's `triggers`,
+  with an optional `trigger_email_received_from_contact: {receiving_inbox,
+  selected_integrated_inboxes}`. `receiving_inbox` defaults to `any`;
+  `selected_integrated_inboxes` takes inbox UUIDs. Contact automations only.
+- **Automation specs can author `plugin_code_step` steps**, and automations
+  that contain them update, diff and round-trip. Name the plugin by its
+  installed api_name. There's no plugin app id. Inputs and outputs take the
+  `code_step` shapes, and an input can also be `business_plugin_config`
+  (the plugin's install config, per Kizen's 2026-10-13 release; run-time
+  delivery not confirmed live). `show`, `roundtrip` and `steps`
+  now print a live plugin step in the same shape a spec takes.
+- **`team update`** assigns and removes team members' roles (`--role`
+  replaces the set; `--add-role`/`--remove-role` change one at a time), with
+  the usual dry-run and confirmation. It refuses to remove the last Admin.
 - **Extraction and transcription steps can read their file from a related
   record or an automation variable.** `file_content_extraction` and
   `audio_transcription` take `input_value_source` as an alternative to
@@ -379,6 +396,10 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
+  longer fail with HTTP 400 on automations with an Email Received trigger or
+  goal.** They sent the trigger's config under the wrong key, so the
+  automation could only be edited in the UI.
 - **`activate`, `deactivate`, `move`, `steps add|edit|remove` and `roundtrip
   --execute` no longer fail with HTTP 400** on an automation whose extraction
   or transcription step reads from a related record or a variable. Each of

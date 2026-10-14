@@ -1,0 +1,235 @@
+{
+  "id": "33715d6f-f3c2-4cbe-adaa-c90a6afa40d4",
+  "name": "Plugin Code Steps",
+  "api_name": "plugin_code_steps",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+    "name": "client_client",
+    "description": null,
+    "entity_name": "Contact",
+    "object_name": "Contacts",
+    "object_class": "contacts",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "04258010-d68c-4393-9ee7-861ccfc53256",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "8df96ac8-2188-4884-8674-889c952cedb4",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "2641066d-3bca-4cf4-9ac8-29f6cb3dcdc3",
+          "name": "context_text",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-14T13:58:10.636217Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "6f975330-7085-412a-beed-a2860fb8d7e1",
+      "step_type": "plugin_code_step",
+      "order": 1,
+      "description": "Action: Plugin Code Step",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "8df96ac8-2188-4884-8674-889c952cedb4",
+      "parent_condition": "",
+      "action_plugin_code_step": {
+        "plugin_app_api_name": "example_plugin",
+        "action_step_api_name": "summarize_records",
+        "notify_plugin_developer_on_failure": false,
+        "secrets": [],
+        "inputs": [
+          {
+            "input_type": "field",
+            "name": "heading",
+            "field": {
+              "id": "321de730-826e-46fc-b507-533fb5386701",
+              "name": "first_name",
+              "display_name": "First Name",
+              "deleted": false
+            },
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "static_value",
+            "name": "object",
+            "static_value": {
+              "value": "client_client",
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "string",
+            "is_list": false
+          }
+        ],
+        "outputs": [
+          {
+            "output_type": "field",
+            "name": "context",
+            "field": {
+              "id": "27d03bf6-ac68-4e68-a0d1-9b0858dc19f9",
+              "name": "last_name",
+              "display_name": "Last Name",
+              "deleted": false
+            },
+            "conflict_resolution": "update_if_blank",
+            "create_missing_option": false,
+            "data_type": "string",
+            "is_list": false
+          }
+        ]
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "0ac5809d-1f89-4ecf-8e24-f3ed8fc1d80c",
+      "step_type": "plugin_code_step",
+      "order": 2,
+      "description": "Action: Plugin Code Step",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "6f975330-7085-412a-beed-a2860fb8d7e1",
+      "parent_condition": "",
+      "action_plugin_code_step": {
+        "plugin_app_api_name": "example_plugin",
+        "action_step_api_name": "summarize_records",
+        "notify_plugin_developer_on_failure": false,
+        "secrets": [
+          {
+            "id": "fac4a709-46e1-4746-9b5e-7fbd458e7f7e",
+            "name": "business_id",
+            "deleted": false
+          }
+        ],
+        "inputs": [
+          {
+            "input_type": "static_value",
+            "name": "object",
+            "static_value": {
+              "value": "client_client",
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "variable",
+            "name": "heading",
+            "variable": {
+              "name": "context_text",
+              "deleted": false
+            },
+            "data_type": "string",
+            "is_list": false
+          }
+        ],
+        "outputs": [
+          {
+            "output_type": "variable",
+            "name": "records_json",
+            "variable": {
+              "name": "context_text",
+              "deleted": false
+            },
+            "conflict_resolution": "overwrite",
+            "create_missing_option": false,
+            "data_type": "string",
+            "is_list": false
+          }
+        ]
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "2641066d-3bca-4cf4-9ac8-29f6cb3dcdc3",
+      "name": "context_text",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-14T13:58:10.636217Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    }
+  ],
+  "revision": 1,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-14T08:58:10.597710-05:00",
+  "updated": "2026-10-14T08:58:10.597719-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

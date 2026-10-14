@@ -1,4 +1,4 @@
-"""`kizen team` — team-member lookup."""
+"""`kizen team` — team-member lookup and role changes."""
 
 from __future__ import annotations
 
@@ -6,16 +6,22 @@ import typer
 from rich.table import Table
 
 from kizen_builder import output as out
+from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
     console,
+    err_console,
 )
+from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools import team as team_tools
+from kizen_builder.tools.planners import team as team_planners
 
-team_app = typer.Typer(help="Look up team members.", no_args_is_help=True)
+team_app = typer.Typer(
+    help="Look up team members and change their roles.", no_args_is_help=True
+)
 app.add_typer(team_app, name="team")
 
 
@@ -104,4 +110,59 @@ def team_get(
         table=table,
         csv_rows=d["roles"],
         csv_columns=[out.Column("name", "name"), out.Column("id", "id")],
+    )
+
+
+@team_app.command(
+    "update",
+    epilog="Endpoint behavior and the last-Admin guard: see `kizen docs show team`",
+)
+def team_update(
+    member: str = typer.Argument(..., help="Team member id, name, or email."),
+    role: list[str] = typer.Option(
+        None,
+        "--role",
+        help="Replace the member's roles with these (name or UUID, repeatable).",
+    ),
+    add_role: list[str] = typer.Option(
+        None, "--add-role", help="Role to add (name or UUID, repeatable)."
+    ),
+    remove_role: list[str] = typer.Option(
+        None, "--remove-role", help="Role to remove (name or UUID, repeatable)."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Change a team member's roles. --role replaces the whole set.
+
+    With --add-role/--remove-role, roles you don't name are left alone.
+    Removing the business's last Admin is refused.
+    """
+    if role and (add_role or remove_role):
+        err_console.print(
+            "[red]error:[/red] pass either --role or --add-role/--remove-role, not both."
+        )
+        raise typer.Exit(code=2)
+    if not (role or add_role or remove_role):
+        err_console.print("[red]error:[/red] pass --role, or --add-role/--remove-role.")
+        raise typer.Exit(code=2)
+
+    with cli_errors(LookupError):
+        set_ids = [perm_tools.resolve_role(r)["id"] for r in role] if role else None
+        add_ids = [perm_tools.resolve_role(r)["id"] for r in add_role or []]
+        remove_ids = [perm_tools.resolve_role(r)["id"] for r in remove_role or []]
+    _run_mutation(
+        lambda: team_planners.plan_update_team_member_roles(
+            member, set_roles=set_ids, add=add_ids, remove=remove_ids
+        ),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
     )

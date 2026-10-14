@@ -282,3 +282,67 @@ def test_update_and_delete_still_plan_against_a_blank_template():
     assert spec_update.operations[0].payload["content"]
     delete = message_planners.plan_delete_template(TEMPLATE_ID)
     assert delete.operations[0].action == "delete"
+
+
+# ---------------------------------------------------------------------------
+# The op each planner builds (only the template GET is mocked: no writes)
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_clone_copies_set_fields_and_omits_null_ones():
+    _mock_template(
+        _template(
+            type="email",
+            sender_type="business",
+            from_name_type="default",
+            custom_from_name=None,
+            external_account=None,
+            sender_field=None,
+            sender_role=None,
+            sender_team_member=None,
+            created="2026-10-01T00:00:00Z",
+            is_editable=True,
+        )
+    )
+    (op,) = message_planners.plan_clone_template(TEMPLATE_ID, "Copy").operations
+    assert (op.action, op.kind, op.existing_uuid) == ("create", "email_template", None)
+    assert op.payload == {
+        "name": "Copy",
+        "type": "email",
+        "subject": "Hello",
+        "content": "<p>hi</p>",
+        "craft_json": CRAFT,
+        "sender_type": "business",
+        "from_name_type": "default",
+    }
+
+
+@respx.mock
+def test_delete_template_targets_the_resolved_id():
+    _mock_template(_template())
+    (op,) = message_planners.plan_delete_template(TEMPLATE_ID).operations
+    assert (op.action, op.kind) == ("delete", "email_template")
+    assert op.existing_uuid == TEMPLATE_ID
+    assert op.payload == {}
+
+
+@respx.mock
+def test_automation_message_op_carries_automation_id_and_resolved_template(
+    monkeypatch,
+):
+    looked_up: list[str] = []
+
+    def get_automation(api_name):
+        looked_up.append(api_name)
+        return {"id": AUTOMATION_ID}
+
+    monkeypatch.setattr(message_planners, "get_automation", get_automation)
+    template = _template()
+    _mock_template(template)
+    (op,) = message_planners.plan_create_automation_message(
+        "some_automation", TEMPLATE_ID
+    ).operations
+    assert looked_up == ["some_automation"]
+    assert (op.action, op.kind) == ("create", "automation_message")
+    assert op.payload == {"automation_id": AUTOMATION_ID, "template": template}

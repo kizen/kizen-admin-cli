@@ -9,11 +9,16 @@ apply_plan wiring for the new ``record`` / ``field_option`` kinds and the
 from __future__ import annotations
 
 import json
+import re
+from types import SimpleNamespace
 
 import httpx
 import pytest
 import respx
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
+from kizen_builder.cli import records_write
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools import records as record_tools
 from kizen_builder.tools.planners.fields import (
@@ -30,7 +35,7 @@ from kizen_builder.tools.planners.records import (
     plan_update_records,
     plan_upsert_records,
 )
-from kizen_builder.tools.plans import PlanError
+from kizen_builder.tools.plans import Plan, PlanError
 from tests.conftest import FAKE_BASE_URL, load_fixture
 
 PATIENTS = "patients"
@@ -498,3 +503,127 @@ def test_apply_delete_field_deletes(patch_live_lookups):
     result = plan_tools.apply_plan(plan)
     assert route.call_count == 1
     assert result.all_ok
+
+
+# ---------------------------------------------------------------------------
+# kizen records — input guards exit 2 before any planner runs
+# ---------------------------------------------------------------------------
+
+runner = CliRunner()
+UUID = "00000000-0000-4000-8000-0000000000e1"
+
+
+@pytest.fixture
+def planners_must_not_run(monkeypatch):
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("planner was called")
+
+    for name in (
+        "plan_create_records",
+        "plan_update_records",
+        "plan_upsert_records",
+        "plan_archive_records",
+        "plan_set_field",
+    ):
+        monkeypatch.setattr(records_write.record_planners, name, refuse)
+
+
+@pytest.fixture
+def stdin_is_a_tty(monkeypatch):
+    # CliRunner swaps sys.stdin for a pipe during invoke, so patch the name
+    # records_write reads it through.
+    monkeypatch.setattr(
+        records_write,
+        "sys",
+        SimpleNamespace(stdin=SimpleNamespace(isatty=lambda: True)),
+    )
+
+
+def _stderr(result) -> str:
+    return " ".join(re.sub(r"\x1b\[[0-9;]*m|│", "", result.stderr).split())
+
+
+@pytest.mark.parametrize(
+    "argv, error",
+    [
+        (
+            ["create", PATIENTS, "--field", "name=x", "--spec-file", "r.csv"],
+            "pass --field or --spec-file, not both",
+        ),
+        (
+            ["update", PATIENTS, UUID, "--field", "name=x", "--spec-file", "r.csv"],
+            "pass a record UUID or --spec-file, not both",
+        ),
+        (["update", PATIENTS, UUID], "give at least one --field to change"),
+        (["update", PATIENTS, "--field", "name=x"], "--field needs a record UUID"),
+        (
+            ["upsert", PATIENTS, "Acme", "--field", "name=x", "--spec-file", "r.csv"],
+            "pass a lookup_value or --spec-file, not both",
+        ),
+        (["upsert", PATIENTS, "Acme"], "give at least one --field to set"),
+        (["upsert", PATIENTS, "--field", "name=x"], "--field needs a lookup_value"),
+        (
+            ["set-field", PATIENTS, "--field", "name", "--value", "x"],
+            "pass at least one record UUID",
+        ),
+    ],
+    ids=lambda v: " ".join(v[:3]) if isinstance(v, list) else None,
+)
+def test_records_guard_exits_2(planners_must_not_run, argv, error):
+    result = runner.invoke(cli.app, ["records", *argv])
+    assert result.exit_code == 2, result.output
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert _stderr(result).startswith(f"error: {error}")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [["create", PATIENTS], ["archive", PATIENTS]],
+    ids=["create", "archive"],
+)
+def test_records_with_no_input_on_a_tty_exits_2(
+    planners_must_not_run, stdin_is_a_tty, argv
+):
+    result = runner.invoke(cli.app, ["records", *argv])
+    assert result.exit_code == 2, result.output
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert _stderr(result).startswith("error: no records provided.")
+
+
+@pytest.mark.parametrize("flag", ["novalue", "=x"])
+def test_field_flag_without_name_and_value_is_a_usage_error(
+    planners_must_not_run, flag
+):
+    result = runner.invoke(cli.app, ["records", "create", PATIENTS, "--field", flag])
+    assert result.exit_code == 2, result.output
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert f"--field must be name=value (got '{flag}')" in _stderr(result)
+    assert "error:" not in result.stderr
+
+
+def test_field_flag_decodes_json_literals_and_keeps_bad_json_as_text(monkeypatch):
+    seen = []
+
+    def plan_create_records(object_api_name, records):
+        seen.append((object_api_name, records))
+        return Plan.build(env="testenv", summary="t", operations=[])
+
+    monkeypatch.setattr(
+        records_write.record_planners, "plan_create_records", plan_create_records
+    )
+    result = runner.invoke(
+        cli.app,
+        [
+            "records",
+            "create",
+            PATIENTS,
+            "--field",
+            'tags=["a","b"]',
+            "--field",
+            "note={oops",
+            "--dry-run",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen == [(PATIENTS, [{"tags": ["a", "b"], "note": "{oops"}])]

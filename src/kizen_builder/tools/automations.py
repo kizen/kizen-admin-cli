@@ -471,8 +471,9 @@ def normalize_step_patch(
     Lets `steps edit` accept the same authoring shapes as create specs
     (field_refs, api_names) as well as raw wire dicts — builders are
     idempotent on wire shapes. A condition patch that carries
-    `step_condition` must also have at least one rule, the same check
-    `automations create`/`update` and `steps add` apply.
+    `step_condition` must also have at least one rule, and a goal's
+    email_received trigger set to selected inboxes must name one: the same
+    checks `automations create`/`update` and `steps add` apply.
     """
     from kizen_builder.filtering import VariableReferenceError
     from kizen_builder.tools.planners.automations import (
@@ -480,6 +481,7 @@ def normalize_step_patch(
         LiveContext,
         _block_field_for,
         _condition_rules_problem,
+        _inbox_selection_problem,
     )
     from kizen_builder.tools.plans import PlanError
 
@@ -491,10 +493,13 @@ def normalize_step_patch(
             patch[cfg_key] = builder(dict(patch[cfg_key]), auto, LiveContext())
         except VariableReferenceError as e:
             raise PlanError(f"step '{key}': {e}") from e
+        problem = None
         if step_type == "condition":
             problem = _condition_rules_problem(key, patch[cfg_key])
-            if problem:
-                raise PlanError(problem)
+        elif step_type == "goal":
+            problem = _inbox_selection_problem(patch[cfg_key]["triggers"])
+        if problem:
+            raise PlanError(problem)
     return patch
 
 
