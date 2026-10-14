@@ -33,6 +33,8 @@ ALL_FIXTURES = [
     "automations/archive_record.raw.json",
     "automations/branching_test.raw.json",
     "automations/condition_code_step.raw.json",
+    "automations/condition_variable_rhs.raw.json",
+    "automations/condition_variable_rhs_pipeline.raw.json",
     "automations/create_and_modify_related.raw.json",
     "automations/extraction_input_sources.raw.json",
     "automations/form_submission.raw.json",
@@ -486,6 +488,27 @@ def test_diff_wire_payloads_ignores_key_resynthesis() -> None:
     live = live_to_payload(raw)
     spec = _rekey(live_to_payload(raw), "authored_")
     assert diff_wire_payloads(live, spec) == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "automations/condition_variable_rhs.raw.json",
+        "automations/condition_variable_rhs_pipeline.raw.json",
+    ],
+)
+def test_ui_built_variable_comparison_survives_translation(path: str) -> None:
+    """A field compared to a variable carries `value_type: "variable"` and the
+    variable's name as `value`; the raw filter_config passes through intact."""
+    raw = load_fixture(path)
+    (live_cond,) = [s for s in raw["steps"] if s["step_type"] == "condition"]
+    live = live_to_payload(raw)
+    (cond,) = _steps_by_type(live, "condition")
+    assert (
+        cond["step_condition"]["filter_config"]
+        == live_cond["step_condition"]["filter_config"]
+    )
+    assert diff_wire_payloads(live, _rekey(live_to_payload(raw), "authored_")) == []
 
 
 def test_diff_wire_payloads_ignores_go_to_key_resynthesis() -> None:

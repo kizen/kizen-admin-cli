@@ -1,0 +1,705 @@
+{
+  "id": "5675fa8a-45d8-47b0-a93b-4d9663f8a6bf",
+  "name": "Condition Variable RHS",
+  "api_name": "condition_variable_rhs",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "98649f6d-b809-4c9a-980d-8ee54708a8a6",
+    "name": "encounters",
+    "description": "Represents an interaction between a patient and a healthcare provider. Maps to FHIR R4 Encounter resource.",
+    "entity_name": "Encounter",
+    "object_name": "Encounters",
+    "object_class": "custom_objects",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "d073e336-7aae-47b3-bdad-9f24ae1ea973",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "461485b8-3211-4f66-90ea-cadd79c1434f",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "zz_strings = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "a5667784-8b72-4c0c-a3b1-3cfa5742b42b",
+          "name": "zz_strings",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-14T13:54:40.988734Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "3708bd61-b838-4af2-aea8-34d439c82c66",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "zz_uuids = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "461485b8-3211-4f66-90ea-cadd79c1434f",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "764993ef-7176-4636-96e8-ec17d112ffc1",
+          "name": "zz_uuids",
+          "data_type": "uuid",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-14T13:54:41.000736Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "ea1eb703-febc-4592-a8c7-e7608c4baa2d",
+      "step_type": "initialize_variable",
+      "order": 2,
+      "description": "zz_conditions = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "3708bd61-b838-4af2-aea8-34d439c82c66",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "7f501610-8d06-4743-9129-f88eb16bc53e",
+          "name": "zz_conditions",
+          "data_type": "entity",
+          "data_subtype": {
+            "id": "76572554-4933-4b8b-b66a-f38fdc986953",
+            "name": "conditions",
+            "description": "Represents a clinical condition, problem, or diagnosis associated with a patient. Maps to FHIR R4 Condition resource.",
+            "entity_name": "Condition",
+            "object_name": "Conditions",
+            "object_class": "custom_objects",
+            "object_type": "standard",
+            "default_on_activities": true,
+            "deleted": false
+          },
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-14T13:54:41.021091Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "ed97e0da-54ff-472b-9040-c52c7c22bfe7",
+      "step_type": "initialize_variable",
+      "order": 3,
+      "description": "zz_member = <i>empty</i>",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "ea1eb703-febc-4592-a8c7-e7608c4baa2d",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "7a9cb125-5d74-4ca4-b2dc-3ba80ae83ef7",
+          "name": "zz_member",
+          "data_type": "employee",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-14T13:54:41.032998Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "29f8ccad-070e-443a-9486-2cfabe74a5fe",
+      "step_type": "search_records",
+      "order": 4,
+      "description": "Overwrite Array 'zz_conditions' Where Condition undefined",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "ed97e0da-54ff-472b-9040-c52c7c22bfe7",
+      "parent_condition": "",
+      "action_search_records": {
+        "custom_object": {
+          "id": "76572554-4933-4b8b-b66a-f38fdc986953",
+          "name": "conditions",
+          "object_name": "Conditions",
+          "entity_name": "Condition",
+          "deleted": false
+        },
+        "filter_type": "custom_filter",
+        "filter_config": {
+          "and": true,
+          "query": [
+            {
+              "id": "query-0",
+              "and": true,
+              "filters": [
+                {
+                  "type": "fields",
+                  "field": "name",
+                  "value": false,
+                  "subtype": "non_custom",
+                  "condition": "is_blank"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "filter_groups": [],
+        "destination_variable": {
+          "name": "zz_conditions",
+          "deleted": false
+        },
+        "destination_variable_resolution": "overwrite"
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "7e23b9da-99bc-4a9b-9e24-4946d2d7fc4b",
+      "step_type": "condition",
+      "order": 5,
+      "description": "Encounter Fields 'Encounter Class' Is Any Of Variable 'zz_strings' AND Fields 'Special Arrangements' Contains None Of Variable 'zz_uuids' AND Fields 'Owner' Is Any Of Variable 'zz_uuids' AND Fields 'Conditions' Is Any Of Variable 'zz_conditions' AND Fields 'Owner' Is None Of Variable 'zz_member'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": "29f8ccad-070e-443a-9486-2cfabe74a5fe",
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": true,
+          "query": [
+            {
+              "id": "query-0",
+              "and": true,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::4e83924c-3c21-450b-8bbc-5e99d72f5501",
+                  "value": "zz_strings",
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "value_type": "variable",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            false
+                          ],
+                          [
+                            "custom_object_id",
+                            "98649f6d-b809-4c9a-980d-8ee54708a8a6"
+                          ],
+                          [
+                            "object_type",
+                            "standard"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/custom-objects/98649f6d-b809-4c9a-980d-8ee54708a8a6/fields/4e83924c-3c21-450b-8bbc-5e99d72f5501",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "encounter_class",
+                          "relation": {},
+                          "field_type": "dropdown"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value_type",
+                      "variable"
+                    ],
+                    [
+                      "variable",
+                      {
+                        "name": "zz_strings",
+                        "is_array": true,
+                        "data_type": "string"
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Encounter Class' Is Any Of Variable 'zz_strings' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::e70a46ea-dac6-4e75-8896-0c8ce972ea95",
+                  "value": "zz_uuids",
+                  "subtype": "custom",
+                  "condition": "!has_any",
+                  "value_type": "variable",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "98649f6d-b809-4c9a-980d-8ee54708a8a6"
+                          ],
+                          [
+                            "object_type",
+                            "standard"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/custom-objects/98649f6d-b809-4c9a-980d-8ee54708a8a6/fields/e70a46ea-dac6-4e75-8896-0c8ce972ea95",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "special_arrangements",
+                          "relation": {},
+                          "field_type": "checkboxes"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "!has_any"
+                    ],
+                    [
+                      "value_type",
+                      "variable"
+                    ],
+                    [
+                      "variable",
+                      {
+                        "name": "zz_uuids",
+                        "is_array": true,
+                        "data_type": "uuid"
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Special Arrangements' Contains None Of Variable 'zz_uuids' "
+                },
+                {
+                  "type": "fields",
+                  "field": "owner",
+                  "value": "zz_uuids",
+                  "subtype": "non_custom",
+                  "condition": "is_any_of",
+                  "value_type": "variable",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "98649f6d-b809-4c9a-980d-8ee54708a8a6"
+                          ],
+                          [
+                            "object_type",
+                            "standard"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/custom-objects/98649f6d-b809-4c9a-980d-8ee54708a8a6/fields/e5e01b14-47a2-4965-b424-cfff326863c6",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "owner",
+                          "relation": {},
+                          "field_type": "team_selector"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value_type",
+                      "variable"
+                    ],
+                    [
+                      "variable",
+                      {
+                        "name": "zz_uuids",
+                        "is_array": true,
+                        "data_type": "uuid"
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Owner' Is Any Of Variable 'zz_uuids' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::ae78e103-ab10-47d5-9dbc-730c26ae4882",
+                  "value": "zz_conditions",
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "value_type": "variable",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "98649f6d-b809-4c9a-980d-8ee54708a8a6"
+                          ],
+                          [
+                            "object_type",
+                            "standard"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/custom-objects/98649f6d-b809-4c9a-980d-8ee54708a8a6/fields/ae78e103-ab10-47d5-9dbc-730c26ae4882",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "conditions",
+                          "relation": {
+                            "fetch_url": "standard",
+                            "related_object": "76572554-4933-4b8b-b66a-f38fdc986953"
+                          },
+                          "field_type": "relationship"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value_type",
+                      "variable"
+                    ],
+                    [
+                      "variable",
+                      {
+                        "name": "zz_conditions",
+                        "is_array": true,
+                        "data_type": "entity",
+                        "data_subtype": {
+                          "id": "76572554-4933-4b8b-b66a-f38fdc986953",
+                          "name": "conditions",
+                          "deleted": false,
+                          "description": "Represents a clinical condition, problem, or diagnosis associated with a patient. Maps to FHIR R4 Condition resource.",
+                          "entity_name": "Condition",
+                          "object_name": "Conditions",
+                          "object_type": "standard"
+                        }
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Conditions' Is Any Of Variable 'zz_conditions' "
+                },
+                {
+                  "type": "fields",
+                  "field": "owner",
+                  "value": "zz_member",
+                  "subtype": "non_custom",
+                  "condition": "is_none_of",
+                  "value_type": "variable",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "98649f6d-b809-4c9a-980d-8ee54708a8a6"
+                          ],
+                          [
+                            "object_type",
+                            "standard"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/custom-objects/98649f6d-b809-4c9a-980d-8ee54708a8a6/fields/e5e01b14-47a2-4965-b424-cfff326863c6",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "owner",
+                          "relation": {},
+                          "field_type": "team_selector"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_none_of"
+                    ],
+                    [
+                      "value_type",
+                      "variable"
+                    ],
+                    [
+                      "variable",
+                      {
+                        "name": "zz_member",
+                        "is_array": false,
+                        "data_type": "employee"
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Owner' Is None Of Variable 'zz_member'"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [],
+        "no_steps": [],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "a5667784-8b72-4c0c-a3b1-3cfa5742b42b",
+      "name": "zz_strings",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-14T13:54:40.988734Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "764993ef-7176-4636-96e8-ec17d112ffc1",
+      "name": "zz_uuids",
+      "data_type": "uuid",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-14T13:54:41.000736Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "7f501610-8d06-4743-9129-f88eb16bc53e",
+      "name": "zz_conditions",
+      "data_type": "entity",
+      "data_subtype": {
+        "id": "76572554-4933-4b8b-b66a-f38fdc986953",
+        "name": "conditions",
+        "description": "Represents a clinical condition, problem, or diagnosis associated with a patient. Maps to FHIR R4 Condition resource.",
+        "entity_name": "Condition",
+        "object_name": "Conditions",
+        "object_class": "custom_objects",
+        "object_type": "standard",
+        "default_on_activities": true,
+        "deleted": false
+      },
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-14T13:54:41.021091Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "7a9cb125-5d74-4ca4-b2dc-3ba80ae83ef7",
+      "name": "zz_member",
+      "data_type": "employee",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-14T13:54:41.032998Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    }
+  ],
+  "revision": 2,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-14T08:54:40.949525-05:00",
+  "updated": "2026-10-14T08:57:30.375021-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}
