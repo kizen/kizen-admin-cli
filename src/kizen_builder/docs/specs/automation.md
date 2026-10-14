@@ -637,12 +637,40 @@ as a real custom object's own api_name, and its span gets
 - **A variable the UI creates inline** (from a step's variable picker) is an
   ordinary root-chain `initialize_variable` with `sources: []`. Spec it that
   way. Confirmed live 2026-09-28.
-- **String and UUID arrays** are a variable with `is_array: true` (plus
-  `array_aggregation_mode` on the variable step). A static array value is a
-  `static` source with `source_subtype` (`string`/`uuid`), a list `value`
-  and `array_separator`. Give `value` as a list: with a single string such as
-  `"a\nb"`, GET drops `array_separator`, so the separator is lost on any
-  read-back and `diff` shows it as a change. Confirmed live 2026-09-29.
+- **String and UUID arrays** are a variable with `is_array: true`, plus two
+  keys on the variable step: `array_aggregation_mode` (`add_all` or
+  `add_first_non_blank`) and `deduplicate_array` (bool). A static array
+  value is a `static` source with `source_subtype` (`string`/`uuid`), a list
+  `value` and `array_separator`. Give `value` as a list: with a single string
+  such as `"a\nb"`, GET drops `array_separator`, so the separator is lost on
+  any read-back and `diff` shows it as a change. Confirmed live 2026-09-29.
+  In the builder, `array_aggregation_mode` is "Choose Source Handling"
+  (*Add All Sources* / *First Non-Blank Source Only*) and `deduplicate_array`
+  is "Unique Values Only". Confirmed live 2026-10-14.
+- **`value_resolution` on `update_variable`** says how the sources combine
+  with an array variable's current value. Confirmed live 2026-10-14, starting
+  from `[a]` with `deduplicate_array: false`:
+
+  | `value_resolution` | sources `[b]` | sources empty |
+  |---|---|---|
+  | `add_only` | `[a, b]` (and `[a, c]` gives `[a, a, c]`) | not observed |
+  | `overwrite` | `[b]` | `[]` |
+  | `overwrite_except_null` | `[b]` | `[a]`: kept |
+  | null / omitted | `[b]` | `[]` |
+
+  - It works on array variables only. On a scalar variable the server 400s
+    with "Value resolution is supported for array variables only." The
+    planner refuses it first when the spec's `initialize_variable` for that
+    name has no `is_array: true`.
+  - Only `update_variable` takes it. On `initialize_variable` the server
+    drops it silently, so the planner refuses it there.
+  - Any other value is a plan error.
+  - **A PUT that omits it keeps the stored value** on a step whose `id` is
+    carried. Only an explicit `null` resets it, and the planner drops nulls,
+    so deleting the key from a spec doesn't clear it. Set `overwrite`
+    instead, which behaved the same as null.
+  - The builder UI has no control for it as of 2026-10-14, and opening the
+    step doesn't show a stored value.
 - **`stop_execution`'s "Action Options" dropdown is a required choice in
   the builder UI, and two of its five options don't stop anything.**
   Confirmed live (one automation with all 5 steps built through the UI,

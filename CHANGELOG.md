@@ -216,6 +216,16 @@ called out explicitly under **Changed** or **Removed**.
   step. Contacts automations and other filters (`search_records`,
   `records list --filter`, filter groups, dashlets) reject `"variable"`.
   `kizen docs show filters` lists the field types and variable kinds.
+- **`update_variable` specs take `value_resolution`** (`add_only`,
+  `overwrite`, `overwrite_except_null`), Kizen's 2026-10-13 option for how
+  an update combines with an array variable's current value. Invalid values
+  are a plan error. So are `array_aggregation_mode` values other than
+  `add_all`/`add_first_non_blank`, which used to reach the server unchecked.
+  `value_resolution` on an `initialize_variable` step is now a plan error
+  too: Kizen accepted it there and silently dropped it. `kizen docs show
+  automation` has what each value does. It works on array variables only,
+  and setting it on a variable the spec defines as scalar is a plan error.
+  The builder UI doesn't show the option yet.
 - **Automation specs can build branch groups, parallel branches and skipped
   conditions.** Two new step types, `branch` and `merge_branches`, and three
   step fields: `is_branch_group_initiator`, `continue_with_branch` and

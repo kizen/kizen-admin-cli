@@ -147,6 +147,15 @@ class ActionSearchRecordsConfig(BaseModel):
     )
 
 
+ArrayAggregationMode = Literal["add_first_non_blank", "add_all"]
+
+_ARRAY_AGGREGATION_MODE_DESCRIPTION = (
+    "Array variables: 'add_all' adds every source, 'add_first_non_blank' only "
+    "the first non-blank one."
+)
+_DEDUPLICATE_ARRAY_DESCRIPTION = "Array variables: keep unique values only."
+
+
 class ActionInitializeVariableConfig(BaseModel):
     """Config for `step_type: initialize_variable`."""
 
@@ -155,6 +164,12 @@ class ActionInitializeVariableConfig(BaseModel):
     variable: AutomationVariableConfig
     sources: list[VariableSourceConfig] = Field(default_factory=list)
     is_required: bool = False
+    array_aggregation_mode: ArrayAggregationMode | None = Field(
+        default=None, description=_ARRAY_AGGREGATION_MODE_DESCRIPTION
+    )
+    deduplicate_array: bool | None = Field(
+        default=None, description=_DEDUPLICATE_ARRAY_DESCRIPTION
+    )
 
 
 class ActionUpdateVariableConfig(BaseModel):
@@ -164,6 +179,25 @@ class ActionUpdateVariableConfig(BaseModel):
 
     variable: AutomationVariableConfig
     sources: list[VariableSourceConfig] = Field(default_factory=list)
+    array_aggregation_mode: ArrayAggregationMode | None = Field(
+        default=None, description=_ARRAY_AGGREGATION_MODE_DESCRIPTION
+    )
+    deduplicate_array: bool | None = Field(
+        default=None, description=_DEDUPLICATE_ARRAY_DESCRIPTION
+    )
+    value_resolution: (
+        Literal["add_only", "overwrite", "overwrite_except_null"] | None
+    ) = Field(
+        default=None,
+        description=(
+            "Array variables only; the server 400s it on a scalar variable. "
+            "How the sources combine with the array's current value: "
+            "'add_only' appends (duplicates kept when deduplicate_array is false), "
+            "'overwrite' replaces it, even with an empty array, "
+            "'overwrite_except_null' replaces it unless the sources are empty. "
+            "Null (the default) behaved like 'overwrite'."
+        ),
+    )
 
 
 class ActionMathOperatorConfig(BaseModel):
