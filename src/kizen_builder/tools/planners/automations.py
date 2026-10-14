@@ -1251,19 +1251,21 @@ def _scalar_value_resolution_problem(
 
     The server 400s it (confirmed live 2026-10-14). Only a variable the spec
     defines exactly once is checked; anything else is left to the server.
-    Spec path only, like ``_condition_rules_problem``.
+    Spec path only, like ``_condition_rules_problem``. ``auto.steps`` may be
+    typed spec steps or a live payload's raw wire dicts.
     """
     name = block.get("variable")
     if block.get("value_resolution") is None or not isinstance(name, str):
         return None
-    defs = [
-        s.action_initialize_variable.variable
-        for s in auto.steps
-        if s.step_type == "initialize_variable"
-        and s.action_initialize_variable is not None
-        and s.action_initialize_variable.variable.name == name
+    inits = [
+        _to_dict(_to_dict(s).get("action_initialize_variable")) for s in auto.steps
     ]
-    if len(defs) != 1 or getattr(defs[0], "is_array", False):
+    defs = [
+        v
+        for v in (i.get("variable") for i in inits)
+        if isinstance(v, dict) and v.get("name") == name
+    ]
+    if len(defs) != 1 or defs[0].get("is_array"):
         return None
     return (
         f"update_variable step '{key}' sets value_resolution on '{name}', "

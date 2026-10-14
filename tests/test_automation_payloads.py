@@ -2663,6 +2663,35 @@ def test_update_variable_value_resolution_on_undefined_variable_passes(
     assert steps[1]["action_update_variable"]["value_resolution"] == "add_only"
 
 
+def test_value_resolution_check_reads_raw_wire_steps():
+    """``steps add`` can hand the check a live payload's raw step dicts."""
+    from types import SimpleNamespace
+
+    from kizen_builder.tools.planners.automations import (
+        _scalar_value_resolution_problem,
+    )
+
+    def init(is_array):
+        return {
+            "step_type": "initialize_variable",
+            "action_initialize_variable": {
+                "variable": {
+                    "name": "tags",
+                    "data_type": "string",
+                    "is_array": is_array,
+                }
+            },
+        }
+
+    block = {"variable": "tags", "value_resolution": "add_only"}
+    scalar = SimpleNamespace(steps=[init(False), {"step_type": "delay"}])
+    assert "isn't an array variable" in _scalar_value_resolution_problem(
+        "bump", block, scalar
+    )
+    array = SimpleNamespace(steps=[init(True)])
+    assert _scalar_value_resolution_problem("bump", block, array) is None
+
+
 def test_translate_keeps_value_resolution_on_scalar_variable():
     from kizen_builder.translate import live_to_payload
 
