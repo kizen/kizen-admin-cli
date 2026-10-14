@@ -34,6 +34,7 @@ ALL_FIXTURES = [
     "automations/branching_test.raw.json",
     "automations/condition_code_step.raw.json",
     "automations/create_and_modify_related.raw.json",
+    "automations/email_received.raw.json",
     "automations/form_submission.raw.json",
     "automations/kitchen_sink_triggers.raw.json",
     "automations/llm_comparison.raw.json",
@@ -156,6 +157,48 @@ def test_no_variable_ids_survive_translation(path: str) -> None:
         iv = s.get("action_initialize_variable")
         if iv and isinstance(iv.get("variable"), dict):
             assert "id" not in iv["variable"]
+
+
+def test_email_received_rides_under_its_from_contact_key() -> None:
+    """The one trigger type whose config key isn't `trigger_<type>`. Sending
+    `trigger_email_received` is a 400 on every re-PUT, at the top level and
+    in a goal (confirmed live 2026-10-14)."""
+    payload = live_to_payload(load_fixture("automations/email_received.raw.json"))
+    (trigger,) = [t for t in payload["triggers"] if t["type"] == "email_received"]
+    assert trigger["trigger_email_received_from_contact"] == {"receiving_inbox": "any"}
+
+    (goal,) = _steps_by_type(payload, "goal")
+    (nested,) = goal["step_goal"]["triggers"]
+    # Reads expand each selected inbox to {id, email}; the wire takes the id.
+    assert nested["trigger_email_received_from_contact"] == {
+        "receiving_inbox": "selected_integrated_inboxes",
+        "selected_integrated_inboxes": ["1cf296ff-d456-413b-80bd-dda8576ead55"],
+    }
+    assert "trigger_email_received" not in json.dumps(payload).replace(
+        "trigger_email_received_from_contact", ""
+    )
+
+
+def test_email_received_empty_selection_still_translates() -> None:
+    """The server saves "selected inboxes" with an empty list (200,
+    2026-10-14), so a read of one must re-PUT as is. Specs still reject it."""
+    raw = load_fixture("automations/email_received.raw.json")
+    empty = {
+        "receiving_inbox": "selected_integrated_inboxes",
+        "selected_integrated_inboxes": [],
+    }
+    (trigger,) = [t for t in raw["triggers"] if t["trigger_type"] == "email_received"]
+    trigger["trigger_email_received_from_contact"] = empty
+    (goal,) = [s for s in raw["steps"] if s["step_type"] == "goal"]
+    goal["step_goal"]["triggers"][0]["trigger_email_received_from_contact"] = empty
+
+    payload = live_to_payload(raw)
+    (trigger,) = [t for t in payload["triggers"] if t["type"] == "email_received"]
+    (goal,) = _steps_by_type(payload, "goal")
+    assert trigger["trigger_email_received_from_contact"] == empty
+    assert (
+        goal["step_goal"]["triggers"][0]["trigger_email_received_from_contact"] == empty
+    )
 
 
 @pytest.mark.parametrize("path", ALL_FIXTURES)

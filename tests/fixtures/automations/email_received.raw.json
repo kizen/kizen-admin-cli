@@ -1,0 +1,108 @@
+{
+  "id": "145c92a4-b44d-4cf5-8556-06128db72418",
+  "name": "Email Reply Intake",
+  "api_name": "email_reply_intake",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+    "name": "client_client",
+    "description": null,
+    "entity_name": "Contact",
+    "object_name": "Contacts",
+    "object_class": "contacts",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "5ed0149b-de8a-462d-a600-878d21892133",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    },
+    {
+      "id": "5e8590fd-5837-4d50-a271-766764374db0",
+      "order": 1,
+      "description": "Email Received",
+      "user_description": "",
+      "trigger_type": "email_received",
+      "trigger_email_received_from_contact": {
+        "receiving_inbox": "any",
+        "selected_integrated_inboxes": []
+      },
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "e5c51bae-8240-452f-8b6b-3d19815bb9f8",
+      "step_type": "goal",
+      "order": 0,
+      "description": "Goal - Email Received",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_pending": 0,
+        "number_met": 0,
+        "number_not_met": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "step_goal": {
+        "wait_type": "never",
+        "delay_type": "",
+        "delay_amount": null,
+        "specific_datetime": null,
+        "triggers": [
+          {
+            "id": "0201b34c-3087-4e7e-9a1a-33b6c2ceb6be",
+            "description": "Email Received",
+            "user_description": "",
+            "trigger_type": "email_received",
+            "trigger_email_received_from_contact": {
+              "receiving_inbox": "selected_integrated_inboxes",
+              "selected_integrated_inboxes": [
+                {
+                  "id": "1cf296ff-d456-413b-80bd-dda8576ead55",
+                  "email": "alex@example.com"
+                }
+              ]
+            }
+          }
+        ],
+        "value_origin": null,
+        "variable": null
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [],
+  "revision": 1,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-14T08:54:27.889869-05:00",
+  "updated": "2026-10-14T08:54:27.889881-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}
