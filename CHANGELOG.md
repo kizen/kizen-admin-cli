@@ -186,6 +186,19 @@ called out explicitly under **Changed** or **Removed**.
   one or the other: a step with both, or neither, is a plan error. The hop
   must be a single-valued relationship. The Kizen UI can't open an
   automation that uses one of these sources yet.
+- **Condition steps can compare a field to an array variable (`"variable":
+  "<name>"` in a filter spec).** `{"field": "status", "op": "is_any_of",
+  "variable": "allowed_statuses"}` compiles to the rule the Kizen UI writes
+  for its "Variable" option, and the step opens in the UI editor. It is
+  accepted on dropdown, checkboxes, team-member and relationship fields, with
+  `is_any_of` or `not_any_of`. In a test run a dropdown rule matched with the
+  array holding either option names or option UUIDs; the other field types
+  were not run. The variable must be declared in the same automation, by
+  `initialize_variable` or as a `search_records` destination, and be a kind
+  the UI offers for that field; anything else is a plan error naming the
+  step. Contacts automations and other filters (`search_records`,
+  `records list --filter`, filter groups, dashlets) reject `"variable"`.
+  `kizen docs show filters` lists the field types and variable kinds.
 - **Automation specs can build branch groups, parallel branches and skipped
   conditions.** Two new step types, `branch` and `merge_branches`, and three
   step fields: `is_branch_group_initiator`, `continue_with_branch` and

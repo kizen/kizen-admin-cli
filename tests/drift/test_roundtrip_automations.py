@@ -42,7 +42,12 @@ from kizen_builder.tools.planners.automations import (
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
 )
-from tests.drift.conftest import create_field_on, debris_api_name, debris_name
+from tests.drift.conftest import (
+    _create_drift_object,
+    create_field_on,
+    debris_api_name,
+    debris_name,
+)
 
 pytestmark = pytest.mark.drift
 
@@ -466,6 +471,82 @@ def test_automation_read_shape_keys_the_planner_depends_on(drift_automation):
     # A manual trigger is auto-prepended by the planner alongside the declared one.
     trigger_types = sorted(t["trigger_type"] for t in live["triggers"])
     assert trigger_types == ["manual", "new_entity_created"], trigger_types
+
+
+# ---------------------------------------------------------------------------
+# A field compared to an array variable
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def drift_variable_condition(drift_client, scratch) -> dict[str, Any]:
+    """A dropdown "is any of" a string-array variable, built by the planner,
+    on an object of its own."""
+    obj = _create_drift_object(drift_client, scratch, "array_variable_object")
+    field = create_field_on(
+        drift_client,
+        scratch,
+        obj,
+        {
+            "name": "Drift Array Variable Status",
+            "api_name": debris_api_name("array_variable_status"),
+            "field_type": "dropdown",
+            "options": ["Open", "Closed"],
+        },
+    )
+    spec = _base_spec("array_variable", obj)
+    spec["steps"] = [
+        {
+            "key": "allowed",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "parent_key": None,
+            "action_initialize_variable": {
+                "sources": [],
+                "variable": {
+                    "name": "allowed_statuses",
+                    "data_type": "string",
+                    "is_array": True,
+                },
+                "array_aggregation_mode": "add_all",
+            },
+        },
+        {
+            "key": "check",
+            "step_type": "condition",
+            "order": 1,
+            "parent_key": "allowed",
+            "step_condition": {
+                "type": "custom_filter",
+                "filter_config": {
+                    "all": [
+                        {
+                            "field": field["name"],
+                            "op": "is_any_of",
+                            "variable": "allowed_statuses",
+                        }
+                    ]
+                },
+            },
+        },
+    ]
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_variable_comparison_survives_the_roundtrip(drift_variable_condition):
+    """The server stores the clause as sent: `value` is the variable's name,
+    `value_type` says so, and the UI's `view_model` comes back intact."""
+
+    def clause(steps, kind_key):
+        (step,) = [s for s in steps if s[kind_key] == "condition"]
+        (only,) = step["step_condition"]["filter_config"]["query"][0]["filters"]
+        return only
+
+    sent = clause(drift_variable_condition["sent"]["steps"], "type")
+    live = clause(drift_variable_condition["live"]["steps"], "step_type")
+    assert sent["value"] == "allowed_statuses"
+    assert sent["value_type"] == "variable"
+    assert {k: live[k] for k in sent} == sent
 
 
 # ---------------------------------------------------------------------------
