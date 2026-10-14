@@ -41,6 +41,7 @@ ALL_FIXTURES = [
     "automations/merged_condition.raw.json",
     "automations/merged_condition_skipped.raw.json",
     "automations/on_or_around_date_goto.raw.json",
+    "automations/plugin_code_steps.raw.json",
     "automations/schedule_trigger.raw.json",
     "automations/sets_variable_overrides.raw.json",
     "automations/two_code_steps.raw.json",
@@ -703,6 +704,86 @@ def test_field_value_mappings_stay_bare_uuids(form: dict) -> None:
     for m in mappings:
         assert all(isinstance(v, str) for v in m["source_values"])
         assert all(isinstance(v, str) for v in m["target_values"])
+
+
+# ---------------------------------------------------------------------------
+# Plugin steps
+# ---------------------------------------------------------------------------
+
+
+def test_plugin_steps_translate_to_the_write_dialect() -> None:
+    """Reads expand fields to {id, name, display_name, deleted}, variables
+    to {name, deleted} and secrets to {id, name, deleted}; the write
+    carries bare {id} fields and {name} variables and secrets."""
+    payload = live_to_payload(load_fixture("automations/plugin_code_steps.raw.json"))
+    with_fields = _step_block(payload, "plugin_code_step", 0)
+    with_variable = _step_block(payload, "plugin_code_step", 1)
+    assert with_fields == {
+        "plugin_app_api_name": "example_plugin",
+        "action_step_api_name": "summarize_records",
+        "notify_plugin_developer_on_failure": False,
+        "secrets": [],
+        "inputs": [
+            {
+                "name": "heading",
+                "input_type": "field",
+                "field": {"id": "321de730-826e-46fc-b507-533fb5386701"},
+                "data_type": "string",
+                "is_list": False,
+            },
+            {
+                "name": "object",
+                "input_type": "static_value",
+                "static_value": {
+                    "value": "client_client",
+                    "entity_record": None,
+                    "employee": None,
+                },
+                "data_type": "string",
+                "is_list": False,
+            },
+        ],
+        "outputs": [
+            {
+                "name": "context",
+                "output_type": "field",
+                "field": {"id": "27d03bf6-ac68-4e68-a0d1-9b0858dc19f9"},
+                "conflict_resolution": "update_if_blank",
+                "create_missing_option": False,
+                "data_type": "string",
+                "is_list": False,
+            }
+        ],
+    }
+    assert with_variable["secrets"] == [{"name": "business_id"}]
+    assert with_variable["inputs"][1]["variable"] == {"name": "context_text"}
+    assert with_variable["outputs"][0]["variable"] == {"name": "context_text"}
+
+
+def test_plugin_step_install_config_input_reads_back_bare() -> None:
+    """A UI-built `business_plugin_config` input reads with every other
+    source key null (seen live 2026-10-14); none of them is written back."""
+    raw = copy.deepcopy(load_fixture("automations/plugin_code_steps.raw.json"))
+    step = next(s for s in raw["steps"] if s["step_type"] == "plugin_code_step")
+    step["action_plugin_code_step"]["inputs"] = [
+        {
+            "input_type": "business_plugin_config",
+            "name": "settings",
+            "variable": None,
+            "field": None,
+            "related_field": None,
+            "static_value": None,
+            "data_type": "string",
+            "is_list": False,
+        }
+    ]
+    (inp,) = _step_block(live_to_payload(raw), "plugin_code_step")["inputs"]
+    assert inp == {
+        "name": "settings",
+        "input_type": "business_plugin_config",
+        "data_type": "string",
+        "is_list": False,
+    }
 
 
 # ---------------------------------------------------------------------------

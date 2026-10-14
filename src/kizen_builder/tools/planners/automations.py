@@ -2567,15 +2567,48 @@ def _step_code_step(
         "runtime": block.get("runtime", "python-3-13"),
         "inputs": [_code_input(i, auto, ctx) for i in (block.get("inputs") or [])],
         "outputs": [_code_output(o, auto, ctx) for o in (block.get("outputs") or [])],
-        "secrets": [
-            {"name": s.get("name") if isinstance(s, dict) else s}
-            for s in (block.get("secrets") or [])
+        "secrets": _secret_names(block.get("secrets")),
+    }
+
+
+@honours(
+    "plugin_app_api_name",
+    "action_step_api_name",
+    "notify_plugin_developer_on_failure",
+    "inputs",
+    "outputs",
+    "secrets",
+)
+def _step_plugin_code_step(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    where = "plugin_code_step"
+    return {
+        "plugin_app_api_name": block.get("plugin_app_api_name"),
+        "action_step_api_name": block.get("action_step_api_name"),
+        "notify_plugin_developer_on_failure": (
+            block.get("notify_plugin_developer_on_failure") or False
+        ),
+        "secrets": _secret_names(block.get("secrets")),
+        "inputs": [_code_input(i, auto, ctx, where) for i in block.get("inputs") or []],
+        "outputs": [
+            _code_output(o, auto, ctx, where) for o in block.get("outputs") or []
         ],
     }
 
 
+def _secret_names(secrets: list[Any] | None) -> list[dict[str, Any]]:
+    """Secrets as `[{name}]`, from bare names, spec dicts or expanded reads."""
+    return [
+        {"name": s.get("name") if isinstance(s, dict) else s} for s in (secrets or [])
+    ]
+
+
 def _code_input(
-    inp: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    inp: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+    where: str = "code_step",
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": inp["name"],
@@ -2594,7 +2627,7 @@ def _code_input(
         )
         if not field_uuid:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'field' but has no field/field_ref/field_id"
+                f"{where} input '{inp['name']}' is type 'field' but has no field/field_ref/field_id"
             )
         out["field"] = {"id": field_uuid}
     elif it == "variable":
@@ -2606,7 +2639,7 @@ def _code_input(
         )
         if not name:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'variable' but has no variable_name"
+                f"{where} input '{inp['name']}' is type 'variable' but has no variable_name"
             )
         out["variable"] = {"name": name}
     elif it == "static_value":
@@ -2626,7 +2659,7 @@ def _code_input(
         fld_id = _unwrap_id(fld) or inp.get("field_id")
         if not fld_id:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'related_field' but "
+                f"{where} input '{inp['name']}' is type 'related_field' but "
                 "has no `field` (the relationship field on the automation's object)"
             )
         out["field"] = {"id": fld_id}
@@ -2634,7 +2667,7 @@ def _code_input(
         rf_id = _unwrap_id(rf)
         if not rf_id:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'related_field' but "
+                f"{where} input '{inp['name']}' is type 'related_field' but "
                 "has no `related_field` (the field on the related object)"
             )
         out["related_field"] = {"id": rf_id}
@@ -2646,7 +2679,10 @@ def _code_input(
 
 
 def _code_output(
-    o: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    o: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+    where: str = "code_step",
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": o["name"],
@@ -2665,7 +2701,7 @@ def _code_output(
         )
         if not field_uuid:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'field' but has no field/field_ref/field_id"
+                f"{where} output '{o['name']}' is type 'field' but has no field/field_ref/field_id"
             )
         out["field"] = {"id": field_uuid}
     elif ot == "variable":
@@ -2677,7 +2713,7 @@ def _code_output(
         )
         if not name:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'variable' but has no variable_name"
+                f"{where} output '{o['name']}' is type 'variable' but has no variable_name"
             )
         out["variable"] = {"name": name}
     elif ot == "related_field":
@@ -2688,7 +2724,7 @@ def _code_output(
         fld_id = _unwrap_id(fld) or o.get("field_id")
         if not fld_id:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'related_field' but "
+                f"{where} output '{o['name']}' is type 'related_field' but "
                 "has no `field` (the relationship field on the automation's object)"
             )
         out["field"] = {"id": fld_id}
@@ -2696,7 +2732,7 @@ def _code_output(
         rf_id = _unwrap_id(rf)
         if not rf_id:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'related_field' but "
+                f"{where} output '{o['name']}' is type 'related_field' but "
                 "has no `related_field` (the field on the related object)"
             )
         out["related_field"] = {"id": rf_id}
@@ -2720,6 +2756,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "goal": _step_goal,
     "stop_execution": _step_stop_execution,
     "code_step": _step_code_step,
+    "plugin_code_step": _step_plugin_code_step,
     "archive_record": _step_archive_record,
     "go_to_automation_step": _step_go_to_automation_step,
     "start_automation": _step_start_automation,

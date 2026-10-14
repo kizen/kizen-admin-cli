@@ -163,7 +163,7 @@ A `goal` step's `step_goal.triggers` are wait-until triggers with the same
 to wait for a reply. Its `wait_type` is `never`, `delay` or
 `specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
 
-## Wired step types (26)
+## Wired step types (27)
 
 | step_type | config block | purpose |
 |-----------|--------------|---------|
@@ -173,6 +173,7 @@ to wait for a reply. Its `wait_type` is `never`, `delay` or
 | `stop_execution` | `action_stop_execution` | end this branch — the "Action Options" choice below is required in the UI |
 | `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
+| `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
 | `call_llm` | `action_call_llm` | prompt an LLM, write to `destinations` |
 | `file_content_extraction` | `action_file_content_extraction` | extract from a file field |
 | `audio_transcription` | `action_audio_transcription` | transcribe an audio field |
@@ -210,7 +211,7 @@ quirks (custom_object/filter_groups/destination_variable are each
 scalars).
 
 Other step types exist in Kizen (`send_email`, `change_tags`,
-`http_request`, `plugin_code_step`, `update_pipeline_status`,
+`http_request`, `update_pipeline_status`,
 `modify_automation`, `request_info_via_text`, `delete_scheduled_activity`,
 `modify_related_entities_automation` — not to be confused with the wired
 `modify_related_entities`) but aren't wired here and raise `PlanError` if you
@@ -237,6 +238,51 @@ explicitly rather than inferring it from the bound field.
 For the Python side — the `inputs.` / `outputs.` / `secrets[…]` / `kizen.api`
 namespace, how each `data_type` arrives inside the script, and unit-testing a
 script before wiring it in — see `kizen docs show code-steps`.
+
+### `plugin_code_step`
+
+Runs a step from an installed plugin's manifest. The block has six keys:
+
+```json
+{ "step_type": "plugin_code_step", "key": "summarize", "parent_key": null,
+  "action_plugin_code_step": {
+    "plugin_app_api_name": "example_plugin",
+    "action_step_api_name": "summarize_records",
+    "notify_plugin_developer_on_failure": false,
+    "inputs":  [ { "name": "heading", "input_type": "field",
+                   "field_ref": "client_client.first_name" },
+                 { "name": "settings", "input_type": "business_plugin_config" } ],
+    "outputs": [ { "name": "records_json", "output_type": "variable",
+                   "variable_name": "context_text" } ],
+    "secrets": ["api_key"] } }
+```
+
+- `plugin_app_api_name` is the **installed** plugin's api_name, as
+  `business-plugin-apps` lists it. A preview install is
+  `<api_name>_preview_<branch>` (confirmed live 2026-10-05).
+  `action_step_api_name` names the step in that plugin's manifest. `GET
+  /external-integrations/bootstrap` lists each install's steps under
+  `automation_action_configs` (confirmed live 2026-10-14).
+- There's **no plugin-app id**, unlike the LLM steps. `business_plugin_app_id`
+  in this block is a plan error.
+- The server checks the names: an api_name with no install, including a
+  catalog plugin that isn't installed, and an `action_step_api_name` the
+  plugin doesn't ship are each a 400 naming the key. It also checks the
+  bindings against the manifest, and a required input or output that's
+  missing is a 400 naming it (all confirmed live 2026-10-14).
+- `inputs` and `outputs` take the `code_step` shapes above. `inputs` also
+  takes `input_type: business_plugin_config`, for plugin steps only. On the
+  wire it's `{name, input_type, data_type?, is_list?}` with no source key. A
+  UI-built step reads back in that shape (seen 2026-10-14), bound to a
+  parameter the manifest declares `static_value`. Kizen's 2026-10-13 release
+  notes say the step receives the install config as a JSON string and that
+  the manifest declares the parameter with `input_source:
+  business_plugin_config`. Neither is **confirmed live**, and neither is
+  writing one from the CLI.
+- `secrets` takes names, as for `code_step`, and is sent as `[{name}]`.
+- Step `id`s carry over as for any step. `activate`, `deactivate`, `steps`
+  edits to other steps and `roundtrip --execute` keep a plugin step's inputs,
+  outputs and secrets intact (confirmed live 2026-10-14).
 
 ### `modify_related_entities` — field shape
 
@@ -634,7 +680,8 @@ Why a translator is mandatory rather than nice-to-have:
   `--dry-run --json`, with a `plan error:` naming the key and every key that
   block does read. Two limits: keys *inside* nested items
   (`change_field_value.actions[]`, `code_step.inputs`/`outputs`,
-  `schedule_activity.schedule`) aren't checked, and neither is `steps edit`.
+  `plugin_code_step.inputs`/`outputs`, `schedule_activity.schedule`) aren't
+  checked, and neither is `steps edit`.
   Types whose builder forwards the whole block to Kizen (`delay`, `goal`,
   `stop_execution`, `initialize_variable`, `update_variable`,
   `send_related_contact_text`, and every trigger except `manual`,

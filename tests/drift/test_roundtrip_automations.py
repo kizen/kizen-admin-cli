@@ -102,6 +102,9 @@ ACTIVITY_STEPS = frozenset({"schedule_activity"})
 
 BRANCH_GROUP_STEPS = frozenset({"condition", "merge_branches", "branch", "delay"})
 
+#: Needs an installed plugin that ships steps; skipped when there is none.
+PLUGIN_STEPS = frozenset({"plugin_code_step"})
+
 COVERED_STEP_TYPES = (
     BRANCHING_STEPS
     | BRANCH_GROUP_STEPS
@@ -111,6 +114,7 @@ COVERED_STEP_TYPES = (
     | MESSAGING_STEPS
     | AI_STEPS
     | ACTIVITY_STEPS
+    | PLUGIN_STEPS
 )
 
 #: Nine of the eleven wired trigger types ride on one record-based automation.
@@ -1781,6 +1785,129 @@ def test_extraction_steps_take_a_bare_input_field_uuid(
         # Defaults the planner fills in rather than leaving to the server.
         assert dest["conflict_resolution"] == "overwrite_except_null"
         assert dest["confidence_threshold"] == 0.7
+
+
+# ---------------------------------------------------------------------------
+# Steps: plugin
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def drift_plugin_steps(
+    drift_client, scratch, drift_object, drift_step_fields
+) -> dict[str, Any]:
+    """Two `plugin_code_step`s running the first step of the first installed
+    plugin that ships one, read from `GET /external-integrations/bootstrap`
+    (each install's `automation_action_configs`). An environment with no
+    such plugin skips the type rather than naming one here.
+
+    The server checks inputs and outputs against the step's manifest, and a
+    missing required one is a 400 that names it, so every required parameter
+    is bound: in the first step the first input and output to a field and
+    the rest statically or to a variable, in the second all to a variable.
+    """
+    bootstrap = drift_client.get("/api/external-integrations/bootstrap")
+    found = next(
+        (
+            (api_name, app["automation_action_configs"][0])
+            for api_name, app in sorted(bootstrap.items())
+            if isinstance(app, dict) and app.get("automation_action_configs")
+        ),
+        None,
+    )
+    if found is None:
+        pytest.skip("no installed plugin in the drift environment ships a step")
+    plugin_app_api_name, manifest = found
+    text_id = drift_step_fields["text"]["id"]
+    var = "drift_plugin_out"
+
+    def bind(param: dict[str, Any], kind: str, as_input: bool) -> dict[str, Any]:
+        typed = {"input_type" if as_input else "output_type": kind}
+        source = {
+            "field": {"field_id": text_id},
+            "variable": {"variable_name": var},
+            "static_value": {"static_value": "x"},
+        }[kind]
+        return {
+            "name": param["name"],
+            **typed,
+            **source,
+            "data_type": param.get("data_type") or "string",
+        }
+
+    required_in = [p for p in manifest.get("inputs") or [] if p.get("required")]
+    required_out = [p for p in manifest.get("outputs") or [] if p.get("required")]
+
+    def block(first: str, rest_in: str) -> dict[str, Any]:
+        return {
+            "plugin_app_api_name": plugin_app_api_name,
+            "action_step_api_name": manifest["action_step_api_name"],
+            "inputs": [
+                bind(p, first if i == 0 else rest_in, True)
+                for i, p in enumerate(required_in)
+            ],
+            "outputs": [
+                bind(p, first if i == 0 else "variable", False)
+                for i, p in enumerate(required_out)
+            ],
+        }
+
+    spec = _base_spec("plugin", drift_object)
+    spec["steps"] = [
+        {
+            "key": "init",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "parent_key": None,
+            "action_initialize_variable": {
+                "variable": {"name": var, "data_type": "string"},
+                "sources": [],
+            },
+        },
+        {
+            "key": "with_fields",
+            "step_type": "plugin_code_step",
+            "order": 1,
+            "parent_key": "init",
+            "action_plugin_code_step": block("field", "static_value"),
+        },
+        {
+            "key": "with_variable",
+            "step_type": "plugin_code_step",
+            "order": 2,
+            "parent_key": "with_fields",
+            "action_plugin_code_step": block("variable", "variable"),
+        },
+    ]
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_plugin_steps_are_accepted(drift_plugin_steps):
+    assert _sent_step_types(drift_plugin_steps) >= set(PLUGIN_STEPS)
+    assert set(_live_steps_by_type(drift_plugin_steps)) >= set(PLUGIN_STEPS)
+
+
+def test_plugin_steps_read_back_as_sent(drift_plugin_steps):
+    """The read expands fields, variables and secrets; translated back, each
+    plugin block is the one the planner sent."""
+    from kizen_builder.translate import live_to_payload
+
+    def blocks(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            s["action_plugin_code_step"]
+            for s in sorted(steps, key=lambda s: s["order"])
+            if s["type"] == "plugin_code_step"
+        ]
+
+    sent = blocks(drift_plugin_steps["sent"]["steps"])
+    read = blocks(live_to_payload(drift_plugin_steps["live"])["steps"])
+    assert len(sent) == 2
+    for s_block, r_block in zip(sent, read, strict=True):
+        for key in ("plugin_app_api_name", "action_step_api_name", "secrets"):
+            assert r_block[key] == s_block[key], key
+        for side in ("inputs", "outputs"):
+            for s_item, r_item in zip(s_block[side], r_block[side], strict=True):
+                assert {k: r_item.get(k) for k in s_item} == s_item
 
 
 # ---------------------------------------------------------------------------
