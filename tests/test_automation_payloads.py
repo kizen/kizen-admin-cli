@@ -12,6 +12,7 @@ import json
 import pytest
 
 from kizen_builder.models.spec import AutomationDef
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools.planners.automations import (
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
@@ -386,6 +387,32 @@ def test_call_llm_preserves_explicit_html_prompt(patch_live_lookups):
     payload = _build(spec)
     action = payload["steps"][0]["action_call_llm"]
     assert action["html_prompt"] == "<p>custom <b>markup</b></p>"
+
+
+def test_call_llm_rejects_data_type(patch_live_lookups):
+    """Kizen accepts `data_type` on call_llm and drops it (confirmed live
+    2026-10-14), so the planner refuses it rather than forwarding a no-op."""
+    spec = {
+        "api_name": "call_llm_data_type_test",
+        "name": "Call LLM Data Type Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "llm",
+                "step_type": "call_llm",
+                "order": 0,
+                "parent_key": None,
+                "action_call_llm": {
+                    "model_name": "gemini/gemini-2.5-flash",
+                    "prompt": "plain",
+                    "data_type": "text",
+                },
+            }
+        ],
+    }
+    with pytest.raises(PlanError, match="data_type"):
+        _build(spec)
 
 
 def test_call_llm_destinations_resolve_field_ref(patch_live_lookups):
@@ -1173,6 +1200,101 @@ def test_trigger_schedule(patch_live_lookups):
     }
 
 
+def _email_received_spec(block: dict | None) -> dict:
+    trigger: dict = {"trigger_type": "email_received", "order": 1}
+    goal_trigger: dict = {"trigger_type": "email_received"}
+    if block is not None:
+        trigger["trigger_email_received_from_contact"] = block
+        goal_trigger["trigger_email_received_from_contact"] = block
+    return {
+        "api_name": "email_received_test",
+        "name": "Email Received Test",
+        "type": "record_based",
+        "target_object": "client_client",
+        "triggers": [trigger],
+        "steps": [
+            {
+                "key": "g0",
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {"wait_type": "never", "triggers": [goal_trigger]},
+            }
+        ],
+    }
+
+
+def _email_received_blocks(payload: dict) -> tuple[dict, dict]:
+    top = next(t for t in payload["triggers"] if t["type"] == "email_received")
+    (goal,) = payload["steps"][0]["step_goal"]["triggers"]
+    assert "trigger_email_received" not in top
+    assert "trigger_email_received" not in goal
+    return (
+        top["trigger_email_received_from_contact"],
+        goal["trigger_email_received_from_contact"],
+    )
+
+
+@pytest.mark.parametrize(
+    "block, wire",
+    [
+        # Omitted entirely: the server requires receiving_inbox, and `any` is
+        # the UI default.
+        (None, {"receiving_inbox": "any"}),
+        ({}, {"receiving_inbox": "any"}),
+        ({"receiving_inbox": "any"}, {"receiving_inbox": "any"}),
+        (
+            {
+                "receiving_inbox": "selected_integrated_inboxes",
+                "selected_integrated_inboxes": ["1cf296ff-d456-413b-80bd-dda8576ead55"],
+            },
+            {
+                "receiving_inbox": "selected_integrated_inboxes",
+                "selected_integrated_inboxes": ["1cf296ff-d456-413b-80bd-dda8576ead55"],
+            },
+        ),
+    ],
+)
+def test_trigger_email_received(patch_live_lookups, block, wire):
+    """email_received: the config rides under
+    `trigger_email_received_from_contact`, at the top level and in a goal.
+    The wire matches what saved live (2026-10-14)."""
+    assert _email_received_blocks(_build(_email_received_spec(block))) == (wire, wire)
+
+
+@pytest.mark.parametrize("where", ["trigger", "goal"])
+def test_trigger_email_received_selected_needs_an_inbox(patch_live_lookups, where):
+    empty = {
+        "receiving_inbox": "selected_integrated_inboxes",
+        "selected_integrated_inboxes": [],
+    }
+    spec = _email_received_spec(None)
+    if where == "trigger":
+        spec["triggers"][0]["trigger_email_received_from_contact"] = empty
+    else:
+        spec["steps"][0]["step_goal"]["triggers"][0][
+            "trigger_email_received_from_contact"
+        ] = empty
+    with pytest.raises(PlanError, match="needs at least one inbox UUID"):
+        _build(spec)
+
+
+def test_goal_trigger_without_a_type_is_a_plan_error(patch_live_lookups):
+    spec = _email_received_spec(None)
+    del spec["steps"][0]["step_goal"]["triggers"][0]["trigger_type"]
+    with pytest.raises(PlanError, match="goal trigger 0 has no trigger_type"):
+        _build(spec)
+
+
+def test_trigger_email_received_from_contact_is_not_a_type():
+    """The config key's spelling is not a trigger type; the server says
+    "No such trigger_type" (confirmed live 2026-10-14)."""
+    spec = _email_received_spec(None)
+    spec["triggers"][0]["trigger_type"] = "email_received_from_contact"
+    with pytest.raises(ValueError, match="unknown trigger_type.*'email_received'"):
+        AutomationDef.model_validate(spec)
+
+
 def test_unsupported_step_type_raises_with_supported_list(patch_live_lookups):
     spec = {
         "api_name": "dsa_test",
@@ -1250,6 +1372,310 @@ def test_code_step_related_field_output_requires_related_field(patch_live_lookup
     spec["steps"][0]["action_code_step"]["outputs"][0].pop("related_field")
     with pytest.raises(PlanError, match="has no `related_field`"):
         _build(spec)
+
+
+def test_code_step_errors_keep_their_prefix(patch_live_lookups):
+    spec = _code_step_related_output_spec()
+    output = spec["steps"][0]["action_code_step"]["outputs"][0]
+    output.pop("field")
+    with pytest.raises(
+        PlanError,
+        match=rf"^code_step output '{output['name']}' is type 'related_field'",
+    ):
+        _build(spec)
+
+
+# ---------------------------------------------------------------------------
+# plugin_code_step
+# ---------------------------------------------------------------------------
+
+PLUGIN_SPEC = {
+    "api_name": "plugin_code_steps",
+    "name": "Plugin Code Steps",
+    "type": "record_based",
+    "target_object": "client_client",
+    "steps": [
+        {
+            "key": "summarize",
+            "step_type": "plugin_code_step",
+            "order": 0,
+            "parent_key": None,
+            "action_plugin_code_step": {
+                "plugin_app_api_name": "example_plugin",
+                "action_step_api_name": "summarize_records",
+                "inputs": [
+                    {
+                        "name": "heading",
+                        "input_type": "field",
+                        "field_ref": "client_client.first_name",
+                        "data_type": "string",
+                        "is_list": False,
+                    },
+                    {
+                        "name": "prior",
+                        "input_type": "variable",
+                        "variable_name": "context_text",
+                    },
+                ],
+                "outputs": [
+                    {
+                        "name": "context",
+                        "output_type": "field",
+                        "field_ref": "client_client.last_name",
+                        "conflict_resolution": "update_if_blank",
+                    },
+                    {
+                        "name": "records_json",
+                        "output_type": "variable",
+                        "variable_name": "context_text",
+                    },
+                ],
+                "secrets": ["business_id"],
+            },
+        },
+        {
+            "key": "convert",
+            "step_type": "plugin_code_step",
+            "order": 1,
+            "parent_key": "summarize",
+            "action_plugin_code_step": {
+                "plugin_app_api_name": "example_plugin_preview_some_branch",
+                "action_step_api_name": "convert_to_pdf",
+                "notify_plugin_developer_on_failure": True,
+            },
+        },
+    ],
+}
+
+
+def _plugin_spec(**block_overrides: object) -> dict:
+    spec = json.loads(json.dumps(PLUGIN_SPEC))
+    spec["steps"][0]["action_plugin_code_step"].update(block_overrides)
+    return spec
+
+
+def test_plugin_code_step_builds_the_wire_block(patch_live_lookups):
+    """Wire shape confirmed live 2026-10-05 and 2026-10-14: both api names
+    verbatim, no plugin-app id, code_step-shaped inputs/outputs, secrets
+    as `[{name}]`."""
+    first, second = _build(PLUGIN_SPEC)["steps"]
+    assert first["action_plugin_code_step"] == {
+        "plugin_app_api_name": "example_plugin",
+        "action_step_api_name": "summarize_records",
+        "notify_plugin_developer_on_failure": False,
+        "secrets": [{"name": "business_id"}],
+        "inputs": [
+            {
+                "name": "heading",
+                "input_type": "field",
+                "field": {"id": "321de730-826e-46fc-b507-533fb5386701"},
+                "data_type": "string",
+                "is_list": False,
+            },
+            {
+                "name": "prior",
+                "input_type": "variable",
+                "variable": {"name": "context_text"},
+            },
+        ],
+        "outputs": [
+            {
+                "name": "context",
+                "output_type": "field",
+                "field": {"id": "27d03bf6-ac68-4e68-a0d1-9b0858dc19f9"},
+                "conflict_resolution": "update_if_blank",
+            },
+            {
+                "name": "records_json",
+                "output_type": "variable",
+                "variable": {"name": "context_text"},
+            },
+        ],
+    }
+    assert second["action_plugin_code_step"] == {
+        "plugin_app_api_name": "example_plugin_preview_some_branch",
+        "action_step_api_name": "convert_to_pdf",
+        "notify_plugin_developer_on_failure": True,
+        "secrets": [],
+        "inputs": [],
+        "outputs": [],
+    }
+
+
+def test_plugin_code_step_install_config_input_carries_no_source(patch_live_lookups):
+    """`business_plugin_config` has no key of its own on the wire, and the
+    UI-built read of one carries only nulls for the other sources."""
+    spec = _plugin_spec(
+        inputs=[
+            {
+                "name": "settings",
+                "input_type": "business_plugin_config",
+                "data_type": "string",
+                "is_list": False,
+            }
+        ]
+    )
+    (inp,) = _build(spec)["steps"][0]["action_plugin_code_step"]["inputs"]
+    assert inp == {
+        "name": "settings",
+        "input_type": "business_plugin_config",
+        "data_type": "string",
+        "is_list": False,
+    }
+
+
+def test_code_step_still_rejects_install_config_input():
+    spec = {
+        "api_name": "code_only",
+        "name": "Code Only",
+        "type": "global",
+        "steps": [
+            {
+                "key": "s1",
+                "step_type": "code_step",
+                "order": 0,
+                "parent_key": None,
+                "action_code_step": {
+                    "script": "pass",
+                    "inputs": [
+                        {"name": "settings", "input_type": "business_plugin_config"}
+                    ],
+                },
+            }
+        ],
+    }
+    with pytest.raises(ValueError) as exc:
+        AutomationDef.model_validate(spec)
+    message = str(exc.value)
+    for valid in ("'field'", "'variable'", "'related_field'", "'static_value'"):
+        assert valid in message
+
+
+def test_plugin_code_step_rejects_a_plugin_app_id(patch_live_lookups):
+    """LLM steps take `business_plugin_app_id`; plugin steps don't, and the
+    server would drop it."""
+    spec = _plugin_spec(business_plugin_app_id="11111111-1111-1111-1111-111111111111")
+    with pytest.raises(
+        PlanError, match="business_plugin_app_id would be silently dropped"
+    ):
+        _build(spec)
+
+
+def test_plugin_code_step_requires_the_step_api_name():
+    spec = _plugin_spec()
+    del spec["steps"][0]["action_plugin_code_step"]["action_step_api_name"]
+    with pytest.raises(ValueError, match="action_step_api_name"):
+        AutomationDef.model_validate(spec)
+
+
+def test_plugin_code_step_errors_name_the_step_type(patch_live_lookups):
+    spec = _plugin_spec(inputs=[{"name": "file", "input_type": "field"}])
+    with pytest.raises(
+        PlanError,
+        match="plugin_code_step input 'file' is type 'field' but has no "
+        "field/field_ref/field_id",
+    ):
+        _build(spec)
+
+
+def test_plugin_code_step_id_forwarded(patch_live_lookups):
+    spec = json.loads(json.dumps(PLUGIN_SPEC))
+    spec["steps"][0]["id"] = "plugin-step-uuid-123"
+    first, second = _build(spec)["steps"]
+    assert first["id"] == "plugin-step-uuid-123"
+    assert "id" not in second
+
+
+def test_diff_automation_reproduced_plugin_spec_has_no_plugin_step_lines(
+    patch_live_lookups,
+):
+    """The diff isn't empty: the stub object's id, error_notification_email
+    and initialize_variable read keys show up, as they do without plugin
+    steps (00-inbox/automation-diff-shows-read-only-trigger-keys.md)."""
+    raw = load_fixture("automations/plugin_code_steps.raw.json")
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    keys = ["init", "with_fields", "with_variable"]
+    spec = {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "record_based",
+        "target_object": "client_client",
+        "triggers": [
+            {
+                "trigger_type": "manual",
+                "order": 0,
+                "id": raw["triggers"][0]["id"],
+                "description": raw["triggers"][0]["description"],
+            }
+        ],
+        "steps": [
+            {
+                "key": key,
+                "id": step["id"],
+                "step_type": step["step_type"],
+                "order": step["order"],
+                "parent_key": keys[i - 1] if i else None,
+                "description": step["description"],
+                "action_on_failure": step["action_on_failure"],
+                _block_field_for(step["step_type"]): step[
+                    _block_field_for(step["step_type"])
+                ],
+            }
+            for i, (key, step) in enumerate(zip(keys, steps, strict=True))
+        ],
+    }
+    plugin_ids = {s["id"][:8] for s in steps if s["step_type"] == "plugin_code_step"}
+    assert len(plugin_ids) == 2
+    step_paths = [
+        d["path"].split(".")[1]
+        for d in diff_automation(spec)["diff"]
+        if d["path"].startswith("steps.")
+    ]
+    assert not [p for p in step_paths if p in plugin_ids or p.startswith("new:")]
+
+
+@pytest.mark.parametrize("verb", ["activate", "edit_other_step"])
+def test_put_rebuilds_plugin_steps_through_the_builder(monkeypatch, verb):
+    """`activate`/`deactivate` and every `steps` verb re-PUT the plugin steps
+    they don't touch. Until 2026-10-14 those went through `_generic_block`,
+    which kept expanded read objects; the server tolerated it then (checked
+    live), but the PUT now carries the same blocks a spec would build."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.tools import automations as auto_tools
+    from kizen_builder.tools.planners.automations import _step_plugin_code_step
+
+    raw = load_fixture("automations/plugin_code_steps.raw.json")
+    captured: dict = {}
+    monkeypatch.setattr(
+        auto_api,
+        "list_automations",
+        lambda client: [{"api_name": raw["api_name"], "id": raw["id"]}],
+    )
+    monkeypatch.setattr(auto_api, "get_automation", lambda client, automation_id: raw)
+
+    def fake_update_automation(client, automation_id, payload, last_revision=None):
+        captured.update(payload)
+        return {}
+
+    monkeypatch.setattr(auto_api, "update_automation", fake_update_automation)
+    if verb == "activate":
+        auto_tools.set_active(raw["api_name"], True, execute=True)
+    else:
+
+        def mutate(payload: dict, _raw: dict) -> dict:
+            payload["steps"][0]["user_description"] = "edited"
+            return {}
+
+        auto_tools.patch_steps(raw["api_name"], mutate, execute=True)
+
+    sent = {s["id"]: s for s in captured["steps"]}
+    plugin_steps = [s for s in raw["steps"] if s["step_type"] == "plugin_code_step"]
+    assert len(plugin_steps) == 2
+    for step in plugin_steps:
+        expected = _step_plugin_code_step(
+            dict(step["action_plugin_code_step"]), None, None
+        )
+        assert sent[step["id"]]["action_plugin_code_step"] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -2507,7 +2933,7 @@ def test_builder_output_passes_the_check():
         for t in payload["triggers"]:
             builder = _TRIGGER_BUILDERS.get(t["type"])
             if builder is not None:
-                block = t.get(f"trigger_{t['type']}") or {}
+                block = t.get(trigger_config_field(t["type"])) or {}
                 _reject_unhonoured_keys(builder, block, f"{path.name} {t['key']}")
     declared = {t for t, b in _STEP_BUILDERS.items() if b.honoured_keys is not None}
     assert declared - checked == _UNCAPTURED

@@ -278,5 +278,19 @@
     "number_active": 0,
     "number_paused": 0,
     "number_completed": 0
+  },
+  {
+    "env": "testenv",
+    "id": "33715d6f-f3c2-4cbe-adaa-c90a6afa40d4",
+    "name": "Plugin Code Steps",
+    "api_name": "plugin_code_steps",
+    "type": "record_based",
+    "active": false,
+    "revision": 1,
+    "custom_object_id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+    "custom_object_name": "client_client",
+    "number_active": 0,
+    "number_paused": 0,
+    "number_completed": 0
   }
 ]
