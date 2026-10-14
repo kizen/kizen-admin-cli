@@ -1704,6 +1704,112 @@ def test_condition_raw_filter_config_null_value_rejected(patch_live_lookups):
         _build(_condition_spec(raw))
 
 
+def _variable_spec(rule, *declarations):
+    """A condition step comparing to a variable, after root-chain steps that
+    declare variables."""
+    spec = _condition_spec({"all": [rule]})
+    (check,) = spec["steps"]
+    steps = [
+        {
+            "key": f"declare{i}",
+            "order": i,
+            "parent_key": f"declare{i - 1}" if i else None,
+        }
+        | step
+        for i, step in enumerate(declarations)
+    ]
+    check.update(order=len(steps), parent_key=steps[-1]["key"] if steps else None)
+    spec["steps"] = [*steps, check]
+    return spec
+
+
+def _init_variable(name, data_type, is_array=True):
+    return {
+        "step_type": "initialize_variable",
+        "action_initialize_variable": {
+            "sources": [],
+            "variable": {"name": name, "data_type": data_type, "is_array": is_array},
+        },
+    }
+
+
+def _search_into(name, obj="patients", filter_config=None):
+    return {
+        "step_type": "search_records",
+        "action_search_records": {
+            "custom_object": {"name": obj},
+            "filter_type": "custom_filter",
+            "filter_config": filter_config or NAME_IS_X,
+            "destination_variable": name,
+        },
+    }
+
+
+def test_condition_compares_a_field_to_a_declared_array_variable(
+    patch_live_lookups, patients_filter_schema
+):
+    payload = _build(
+        _variable_spec(
+            {"field": "gender", "op": "is_any_of", "variable": "genders"},
+            _init_variable("genders", "string"),
+        )
+    )
+    (clause,) = payload["steps"][-1]["step_condition"]["filter_config"]["query"][0][
+        "filters"
+    ]
+    assert clause["value"] == "genders"
+    assert clause["value_type"] == "variable"
+    assert clause["condition"] == "is_any_of"
+    assert [
+        "variable",
+        {"name": "genders", "is_array": True, "data_type": "string"},
+    ] in (clause["view_model"])
+
+
+@pytest.mark.parametrize(
+    ("declarations", "message"),
+    [
+        (
+            [],
+            "step 'check': variable 'genders' isn't declared in this "
+            "automation (declared arrays: none)",
+        ),
+        (
+            [_init_variable("genders", "string", is_array=False)],
+            "step 'check': variable 'genders' isn't an array — comparing a "
+            "field to a variable needs an array variable",
+        ),
+        (
+            # Declared by the search, so the error is about its kind.
+            [_init_variable("other", "string"), _search_into("genders")],
+            "step 'check': field 'gender' (dropdown) can't be compared to "
+            "an entity (patients) array variable",
+        ),
+    ],
+)
+def test_condition_variable_checked_against_the_spec_declarations(
+    patch_live_lookups, patients_filter_schema, declarations, message
+):
+    spec = _variable_spec(
+        {"field": "gender", "op": "is_any_of", "variable": "genders"}, *declarations
+    )
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value) == message
+
+
+def test_search_records_filter_rejects_a_variable(
+    patch_live_lookups, patients_filter_schema
+):
+    rule = {"field": "name", "op": "is_any_of", "variable": "found"}
+    spec = _variable_spec(
+        {"field": "gender", "op": "is_blank"},
+        _search_into("found", filter_config={"all": [rule]}),
+    )
+    with pytest.raises(PlanError, match="only works in a condition step"):
+        _build(spec)
+
+
 # A condition with no rules is accepted by the API, but the Kizen UI shows an
 # error on the step (reported 2026-09-29), so the spec and patch paths reject it.
 

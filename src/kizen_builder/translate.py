@@ -61,9 +61,11 @@ class _NoLookupContext:
 
 
 class _NoTargetAuto:
-    """Stand-in AutomationDef: builders only touch ``target_object``."""
+    """Stand-in AutomationDef: builders only touch ``target_object`` and
+    ``steps`` (a condition step's declared variables)."""
 
     target_object = None
+    steps = ()
 
 
 _SHIM_CTX = _NoLookupContext()
