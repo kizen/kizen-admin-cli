@@ -1174,7 +1174,10 @@ def _build_step_payload(
     spec_block = getattr(step, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
-    wire_block = builder(block_dict, auto, ctx)
+    try:
+        wire_block = builder(block_dict, auto, ctx)
+    except PlanError as e:
+        raise PlanError(f"step '{step.key}': {e}") from e
     problem = None
     if step.step_type == "condition":
         problem = _condition_rules_problem(step.key, wire_block)
@@ -2082,6 +2085,7 @@ def _normalize_destinations(destinations: list[dict[str, Any]]) -> list[dict[str
     "input_field",
     "input_field_id",
     "file_field",
+    "input_value_source",
     "destinations",
     "is_advanced",
     "data_type",
@@ -2107,12 +2111,43 @@ def _step_file_content_extraction(
         or block.get("input_field_id")
         or block.get("file_field")
     )
+    input_field = None
     if input_ref:
         if isinstance(input_ref, str) and "." in input_ref:
             obj_api, fld_api = input_ref.split(".", 1)
-            out["input_field"] = ctx.field_uuid(obj_api, fld_api)
+            input_field = ctx.field_uuid(obj_api, fld_api)
         else:
-            out["input_field"] = _resolve_field(input_ref, auto, ctx) or input_ref
+            input_field = _resolve_field(input_ref, auto, ctx) or input_ref
+    # Same wire conventions as variable sources: bare UUIDs, variable by name.
+    source = None
+    if block.get("input_value_source"):
+        (source,) = _normalize_variable_sources([block.get("input_value_source")])
+        for key in ("field", "relationship_field"):
+            ref = source.get(key)
+            if isinstance(ref, str) and "." in ref:
+                obj_api, fld_api = ref.split(".", 1)
+                source[key] = ctx.field_uuid(obj_api, fld_api)
+    # Kizen takes exactly one of the two, and every read mirrors input_field
+    # into a context_entity_field source. Collapse the mirror, so a re-save
+    # sends what was written.
+    if input_field and source:
+        if (
+            source.get("type") != "context_entity_field"
+            or source.get("field") != input_field
+        ):
+            raise PlanError(
+                "set input_field_ref or input_value_source, not both — Kizen "
+                "accepts only one."
+            )
+        source = None
+    if not input_field and not source:
+        raise PlanError(
+            "needs an input — set input_field_ref (a file field on the target "
+            "record) or input_value_source (a related record's field, or a "
+            "variable)."
+        )
+    out["input_field"] = input_field
+    out["input_value_source"] = source
     if block.get("html_prompt") is not None:
         out["html_prompt"] = block["html_prompt"]
     elif out.get("prompt"):

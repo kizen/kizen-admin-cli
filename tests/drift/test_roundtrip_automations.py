@@ -1787,6 +1787,167 @@ def test_extraction_steps_take_a_bare_input_field_uuid(
         assert dest["confidence_threshold"] == 0.7
 
 
+@pytest.fixture(scope="session")
+def drift_extraction_sources(
+    drift_client,
+    scratch,
+    drift_object,
+    drift_related_object,
+    drift_step_fields,
+    drift_llm_models,
+) -> dict[str, Any]:
+    """The related-record hop must be single-valued, so this creates a
+    `many_to_one` field on `drift_object`. `drift_related_object`'s
+    `hop_field` is the to-many inverse, which Kizen rejects."""
+    hop = create_field_on(
+        drift_client,
+        scratch,
+        drift_object,
+        {
+            "name": "Drift Source Record",
+            "api_name": debris_api_name("source_hop"),
+            "field_type": "relationship",
+            "relation": {
+                "target_object": drift_related_object["api_name"],
+                "relation_type": "many_to_one",
+                "related_name": "Drift Source Children",
+            },
+        },
+    )
+    related_files = create_field_on(
+        drift_client,
+        scratch,
+        drift_related_object,
+        {
+            "name": "Drift Related Attachment",
+            "api_name": debris_api_name("rel_files"),
+            "field_type": "files",
+        },
+    )
+    related = {
+        "type": "related_object_field",
+        "relationship_field": hop["id"],
+        "field": related_files["id"],
+    }
+    destinations = [{"field": drift_step_fields["longtext"]["id"]}]
+    spec = _base_spec("extraction_sources", drift_object)
+    spec["steps"] = [
+        {
+            "key": "init",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "parent_key": None,
+            "action_initialize_variable": {
+                "variable": {"name": "drift_file", "data_type": "string"},
+                "sources": [],
+            },
+        },
+        {
+            "key": "extract_related",
+            "step_type": "file_content_extraction",
+            "order": 1,
+            "parent_key": "init",
+            "action_file_content_extraction": _llm_block(
+                drift_llm_models["extraction"],
+                prompt="Summarize the related record's document.",
+                input_value_source=related,
+                data_type="image",
+                destinations=destinations,
+            ),
+        },
+        {
+            "key": "transcribe_related",
+            "step_type": "audio_transcription",
+            "order": 2,
+            "parent_key": "extract_related",
+            "action_audio_transcription": _llm_block(
+                drift_llm_models["transcription"],
+                prompt="Transcribe the related record's recording.",
+                input_value_source=related,
+                data_type="audio",
+                destinations=destinations,
+            ),
+        },
+        {
+            "key": "extract_variable",
+            "step_type": "file_content_extraction",
+            "order": 3,
+            "parent_key": "transcribe_related",
+            "action_file_content_extraction": _llm_block(
+                drift_llm_models["extraction"],
+                prompt="Summarize the file in the variable.",
+                input_value_source={
+                    "type": "automation_variable",
+                    "variable": "drift_file",
+                },
+                data_type="image",
+                destinations=destinations,
+            ),
+        },
+    ]
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_extraction_input_sources_are_accepted(drift_extraction_sources):
+    sent = [
+        s[f"action_{s['type']}"]
+        for s in drift_extraction_sources["sent"]["steps"]
+        if s["type"] != "initialize_variable"
+    ]
+    live = [
+        s[f"action_{s['step_type']}"]
+        for s in sorted(
+            drift_extraction_sources["live"]["steps"], key=lambda s: s["order"]
+        )
+        if s["step_type"] != "initialize_variable"
+    ]
+    assert len(live) == len(sent) == 3
+    for wrote, read in zip(sent, live, strict=True):
+        assert "input_field" not in wrote
+        assert read["input_value_source"]["type"] == wrote["input_value_source"]["type"]
+        assert read["input_field"] is None
+
+
+def test_extraction_input_sources_put_back_unchanged(
+    drift_client, drift_extraction_sources
+):
+    """What every read-modify-write verb does: translate the read, PUT it,
+    re-read. Before input_value_source was read, this PUT carried no input
+    and Kizen 400'd it."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.translate import live_to_payload, semantic_diff, validate_payload
+
+    before = drift_extraction_sources["live"]
+    payload = live_to_payload(before)
+    assert validate_payload(payload) == []
+    auto_api.update_automation(
+        drift_client,
+        drift_extraction_sources["uuid"],
+        payload,
+        last_revision=payload.get("last_revision"),
+    )
+    after = auto_api.get_automation(drift_client, drift_extraction_sources["uuid"])
+    assert list(semantic_diff(before, after)) == []
+
+
+def test_input_field_reads_back_mirrored_as_a_context_source(
+    drift_ai_steps, drift_step_fields
+):
+    """A step written with only `input_field` reads back with a matching
+    `context_entity_field` source as well. The extraction builder collapses
+    that mirror back to `input_field`; if Kizen stops mirroring, the collapse
+    rule needs revisiting."""
+    attachment_id = drift_step_fields["files"]["id"]
+    live = _live_steps_by_type(drift_ai_steps)
+    for step_type in ("file_content_extraction", "audio_transcription"):
+        (step,) = live[step_type]
+        block = step[f"action_{step_type}"]
+        source = block["input_value_source"]
+        assert source["type"] == "context_entity_field", step_type
+        assert source["field"]["id"] == attachment_id, step_type
+        assert block["input_field"]["id"] == attachment_id, step_type
+
+
 # ---------------------------------------------------------------------------
 # Steps: plugin
 # ---------------------------------------------------------------------------

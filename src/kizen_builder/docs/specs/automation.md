@@ -175,8 +175,8 @@ to wait for a reply. Its `wait_type` is `never`, `delay` or
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
 | `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
 | `call_llm` | `action_call_llm` | prompt an LLM, write to `destinations` |
-| `file_content_extraction` | `action_file_content_extraction` | extract from a file field |
-| `audio_transcription` | `action_audio_transcription` | transcribe an audio field |
+| `file_content_extraction` | `action_file_content_extraction` | extract from a file field on the record, a related record, or in a variable (`input_value_source`) |
+| `audio_transcription` | `action_audio_transcription` | transcribe an audio field on the record, a related record, or in a variable (`input_value_source`) |
 | `change_field_value` | `action_change_field_value` | set/clear a field |
 | `archive_record` | `action_archive_record` | archive the record |
 | `create_related_entity` | `action_create_related_entity` | create a related record |
@@ -333,6 +333,43 @@ one or more relationship-field hops.
   "target_values": [<uuid>], "order": 0}, ...]`. Each entry maps one source
   option UUID (on the field being read) to one target option UUID (on
   `field_to_modify`); `order` controls evaluation order for multiple rules.
+
+### Extraction input
+
+`file_content_extraction` and `audio_transcription` read their file from one
+of two keys, and Kizen accepts **exactly one**. Both, even when they agree, or
+neither, is a 400: `Only one of input_field or input_value_source should be
+set`. The planner refuses either case with a `PlanError` first.
+
+```json
+{ "input_field_ref": "claims.claim_attachment" }
+{ "input_value_source": { "type": "related_object_field",
+                          "relationship_field": "claims.policy",
+                          "field": "policies.policy_document" } }
+{ "input_value_source": { "type": "automation_variable", "variable": "claim_file" } }
+{ "input_value_source": { "type": "context_entity_field", "field": "claims.claim_attachment" } }
+```
+
+- `input_field_ref` (or `input_field` / `input_field_id`) is a file field on
+  the automation's own record.
+- `related_object_field` reads a file field on a related record:
+  `relationship_field` is the hop on `target_object`, `field` the file field
+  on the related object. **The hop must be single-valued** — a to-many hop
+  400s `Relationship field must be single-valued`.
+- `automation_variable` reads the file from a variable, named by `variable`.
+- `field` and `relationship_field` take a UUID or a dotted `"object.field"`
+  ref. The wire takes bare UUIDs, and `variable` as the name.
+- Every read mirrors `input_field` into a `context_entity_field` source as
+  well, and nulls `input_field` for the other source types. The planner
+  collapses the mirror back to `input_field`, so `steps get` output re-applies
+  as it is.
+
+Confirmed live 2026-10-14. The type enum also lists `specific_value`,
+`automation_entity_variable_field` and `blank`; those are unprobed as file
+inputs and pass through with the same unwrapping. The builder UI offers only
+fields on the record as a source, and an automation with a related-record or
+variable source does not open in the UI editor — it returns to the
+automation list.
 
 ### LLM & extraction destinations
 
@@ -737,6 +774,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
+| Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
 
 `automation_variable_overrides` items carry a fixed key set on read, most null
 per entry — `value_source` says which one is live: `context_entity_field`,
@@ -783,7 +821,7 @@ Beyond the step/trigger tables above:
 | `on_or_around_date` trigger | `field_id` |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}` |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
-| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves |
+| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see [Extraction input](#extraction-input) |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string |
 | `start_automation` | `automation_ids`, `relationship_field_ids` |

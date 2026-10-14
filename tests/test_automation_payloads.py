@@ -1380,7 +1380,7 @@ def test_code_step_errors_keep_their_prefix(patch_live_lookups):
     output.pop("field")
     with pytest.raises(
         PlanError,
-        match=rf"^code_step output '{output['name']}' is type 'related_field'",
+        match=rf"^step 's1': code_step output '{output['name']}' is type 'related_field'",
     ):
         _build(spec)
 
