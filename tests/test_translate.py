@@ -34,6 +34,7 @@ ALL_FIXTURES = [
     "automations/branching_test.raw.json",
     "automations/condition_code_step.raw.json",
     "automations/create_and_modify_related.raw.json",
+    "automations/extraction_input_sources.raw.json",
     "automations/form_submission.raw.json",
     "automations/kitchen_sink_triggers.raw.json",
     "automations/llm_comparison.raw.json",
@@ -274,6 +275,138 @@ def test_extraction_destination_related_object_field_is_bare_uuid(
     blk = _step_block(kitchen, "file_content_extraction")
     rel = [d for d in blk["destinations"] if "related_object_field" in d]
     assert rel and all(isinstance(d["related_object_field"], str) for d in rel)
+
+
+# extraction_input_sources.raw.json: one step per probed input_value_source
+# type, plus an input_field-only step whose read carries the mirrored
+# context_entity_field source. Captured live 2026-10-14.
+_POLICY_HOP = "62bb1252-acf9-4bca-914e-91e9f4ab952b"
+_POLICY_DOCUMENT = "ee4cecb6-10a9-435f-b82c-4798a64808de"
+_CLAIM_ATTACHMENT = "a32c92f6-60d2-4dfe-83c3-66a85b7b7107"
+
+
+@pytest.fixture(scope="module")
+def extraction_sources() -> dict:
+    raw = load_fixture("automations/extraction_input_sources.raw.json")
+    return live_to_payload(raw)
+
+
+def test_related_record_source_is_written_as_input_value_source(
+    extraction_sources: dict,
+) -> None:
+    related = {
+        "type": "related_object_field",
+        "field": _POLICY_DOCUMENT,
+        "relationship_field": _POLICY_HOP,
+    }
+    extract = _step_block(extraction_sources, "file_content_extraction", 0)
+    transcribe = _step_block(extraction_sources, "audio_transcription")
+    for blk in (extract, transcribe):
+        assert blk["input_value_source"] == related
+        assert "input_field" not in blk
+
+
+def test_variable_source_is_written_by_name(extraction_sources: dict) -> None:
+    blk = _step_block(extraction_sources, "file_content_extraction", 1)
+    assert blk["input_value_source"] == {
+        "type": "automation_variable",
+        "variable": "claim_file",
+    }
+    assert "input_field" not in blk
+
+
+def test_mirrored_context_source_collapses_to_input_field(
+    extraction_sources: dict,
+) -> None:
+    """Every read mirrors input_field into a context_entity_field source, and
+    Kizen 400s when a write carries both."""
+    raw = load_fixture("automations/extraction_input_sources.raw.json")
+    read = raw["steps"][4]["action_file_content_extraction"]
+    assert read["input_value_source"]["type"] == "context_entity_field"
+    blk = _step_block(extraction_sources, "file_content_extraction", 2)
+    assert blk["input_field"] == _CLAIM_ATTACHMENT
+    assert "input_value_source" not in blk
+
+
+def _extraction_step(block: dict):
+    from kizen_builder.models.spec import AutomationDef, AutomationStepDef
+
+    step = AutomationStepDef.model_validate(
+        {
+            "key": "extract",
+            "step_type": "file_content_extraction",
+            "order": 0,
+            "action_file_content_extraction": {"model_name": "kizen/lite", **block},
+        }
+    )
+    auto = AutomationDef(
+        name="t", api_name="t", type="record_based", target_object="claims"
+    )
+    return step, auto
+
+
+class _RefContext:
+    def field_uuid(self, obj: str, fld: str) -> str:
+        return {
+            ("claims", "policy"): _POLICY_HOP,
+            ("policies", "policy_document"): _POLICY_DOCUMENT,
+        }[(obj, fld)]
+
+
+def test_source_dotted_refs_resolve_to_bare_uuids() -> None:
+    from kizen_builder.tools.planners.automations import _build_step_payload
+
+    step, auto = _extraction_step(
+        {
+            "input_value_source": {
+                "type": "related_object_field",
+                "relationship_field": "claims.policy",
+                "field": "policies.policy_document",
+            }
+        }
+    )
+    blk = _build_step_payload(step, auto, _RefContext())[
+        "action_file_content_extraction"
+    ]
+    assert blk["input_value_source"] == {
+        "type": "related_object_field",
+        "relationship_field": _POLICY_HOP,
+        "field": _POLICY_DOCUMENT,
+    }
+    assert "input_field" not in blk
+
+
+def test_input_field_and_a_different_source_is_refused() -> None:
+    from kizen_builder.tools.planners.automations import _build_step_payload
+
+    step, auto = _extraction_step(
+        {
+            "input_field_id": _CLAIM_ATTACHMENT,
+            "input_value_source": {
+                "type": "automation_variable",
+                "variable": "claim_file",
+            },
+        }
+    )
+    with pytest.raises(PlanError) as e:
+        _build_step_payload(step, auto, _RefContext())
+    assert str(e.value) == (
+        "step 'extract': set input_field_ref or input_value_source, not both "
+        "— Kizen accepts only one."
+    )
+
+
+def test_extraction_without_an_input_is_refused() -> None:
+    from kizen_builder.tools.planners.automations import _build_step_payload
+
+    step, auto = _extraction_step({"prompt": "Summarize."})
+    with pytest.raises(PlanError) as e:
+        _build_step_payload(step, auto, _RefContext())
+    assert str(e.value) == (
+        "step 'extract': needs an input — set input_field_ref (a file field "
+        "on the target record) or input_value_source (a related record's "
+        "field, or a variable)."
+    )
 
 
 def test_modify_related_entities_tags_are_bare_uuids(kitchen: dict) -> None:

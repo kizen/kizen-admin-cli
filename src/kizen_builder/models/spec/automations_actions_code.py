@@ -121,6 +121,16 @@ class ActionAudioTranscriptionConfig(BaseModel):
         description="'object.field' for the audio file field. Resolved to UUID at apply time.",
     )
     input_field_id: str | None = None
+    input_value_source: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Read the file from a related record or a variable instead: "
+            "{type: related_object_field, relationship_field (single-valued), "
+            "field}, {type: automation_variable, variable: <name>} or "
+            "{type: context_entity_field, field}. Fields take a UUID or "
+            "'object.field'. Set this or input_field_ref, never both."
+        ),
+    )
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = False
     data_type: str | None = None
@@ -150,6 +160,16 @@ class ActionFileContentExtractionConfig(BaseModel):
         description="'object.field' for the file field. Resolved to UUID at apply time.",
     )
     input_field_id: str | None = None
+    input_value_source: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Read the file from a related record or a variable instead: "
+            "{type: related_object_field, relationship_field (single-valued), "
+            "field}, {type: automation_variable, variable: <name>} or "
+            "{type: context_entity_field, field}. Fields take a UUID or "
+            "'object.field'. Set this or input_field_ref, never both."
+        ),
+    )
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = False
     data_type: str | None = None

@@ -177,6 +177,15 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Extraction and transcription steps can read their file from a related
+  record or an automation variable.** `file_content_extraction` and
+  `audio_transcription` take `input_value_source` as an alternative to
+  `input_field_ref`: `{type: related_object_field, relationship_field,
+  field}` or `{type: automation_variable, variable}`, with dotted
+  `object.field` refs resolved. `steps get` prints it in the same shape. Set
+  one or the other: a step with both, or neither, is a plan error. The hop
+  must be a single-valued relationship. The Kizen UI can't open an
+  automation that uses one of these sources yet.
 - **Automation specs can build branch groups, parallel branches and skipped
   conditions.** Two new step types, `branch` and `merge_branches`, and three
   step fields: `is_branch_group_initiator`, `continue_with_branch` and
@@ -356,6 +365,12 @@ called out explicitly under **Changed** or **Removed**.
   `docs/specs/permission-group.md`.
 
 ### Fixed
+
+- **`activate`, `deactivate`, `move`, `steps add|edit|remove` and `roundtrip
+  --execute` no longer fail with HTTP 400** on an automation whose extraction
+  or transcription step reads from a related record or a variable. Each of
+  them re-saves the whole automation, and the re-save dropped the step's
+  input.
 
 - **`smart-connectors seeds add` and `seeds remove` keep a seed's fields when
   they re-save it.** Adding a seed for an object the connector already seeds,
