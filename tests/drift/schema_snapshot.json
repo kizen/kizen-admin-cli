@@ -2,7 +2,7 @@
   "_meta": {
     "base_url": "https://app.go.kizen.com",
     "captured": "2026-10-14",
-    "contracts_tracked": 67,
+    "contracts_tracked": 68,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
       "title": "Kizen API",
@@ -1109,6 +1109,24 @@
       "required": [
         "content",
         "team_member"
+      ],
+      "surface": "automations",
+      "type": "object"
+    },
+    "schema:WriteStepRequest.action_plugin_code_step": {
+      "label": "step config: plugin_code_step",
+      "present": true,
+      "properties": {
+        "action_step_api_name": "string",
+        "inputs": "array[PluginCodeStepInputRequest]",
+        "notify_plugin_developer_on_failure": "boolean",
+        "outputs": "array[PluginCodeStepOutputRequest]",
+        "plugin_app_api_name": "string",
+        "secrets": "array[PluginCodeStepSecretRequest]"
+      },
+      "required": [
+        "action_step_api_name",
+        "plugin_app_api_name"
       ],
       "surface": "automations",
       "type": "object"
