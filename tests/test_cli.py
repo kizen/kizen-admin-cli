@@ -2980,3 +2980,78 @@ def test_team_get_reports_ambiguous_ref_as_a_cli_error(monkeypatch):
 
     assert result.exit_code == 1
     assert "ambiguous" in result.stderr
+
+
+def test_team_update_refuses_role_with_add_role_before_any_api_call(monkeypatch):
+    def no_call(*a, **kw):
+        raise AssertionError("no API call expected")
+
+    monkeypatch.setattr(perm_tools, "resolve_role", no_call)
+
+    result = runner.invoke(
+        cli.app, ["team", "update", "m1", "--role", "Admin", "--add-role", "Sales"]
+    )
+
+    assert result.exit_code == 2
+    assert "pass either --role or --add-role/--remove-role, not both." in result.stderr
+
+
+def test_team_update_without_a_role_flag_is_an_error(monkeypatch):
+    def no_call(*a, **kw):
+        raise AssertionError("no API call expected")
+
+    monkeypatch.setattr(perm_tools, "resolve_role", no_call)
+
+    result = runner.invoke(cli.app, ["team", "update", "m1"])
+
+    assert result.exit_code == 2
+    assert "pass --role, or --add-role/--remove-role." in result.stderr
+
+
+def test_team_update_dry_run_plans_without_writing(monkeypatch):
+    from kizen_builder.tools.planners import team as team_planners
+    from kizen_builder.tools.plans import Plan, PlanOperation
+
+    calls = {}
+
+    def fake_plan(member, *, set_roles, add, remove):
+        calls.update(member=member, set_roles=set_roles, add=add, remove=remove)
+        return Plan.build(
+            env="testenv",
+            summary="Change roles",
+            operations=[
+                PlanOperation(
+                    action="update",
+                    kind="team_member",
+                    key="Alex Example",
+                    payload={
+                        "team_member_ids": ["m1"],
+                        "role_ids_to_add": ["r-sales"],
+                        "role_ids_to_remove": [],
+                    },
+                    existing_uuid="m1",
+                )
+            ],
+        )
+
+    def no_apply(plan):
+        raise AssertionError("dry run must not apply")
+
+    monkeypatch.setattr(
+        perm_tools, "resolve_role", lambda ref: {"id": f"r-{ref.lower()}"}
+    )
+    monkeypatch.setattr(team_planners, "plan_update_team_member_roles", fake_plan)
+    monkeypatch.setattr(plan_tools, "apply_plan", no_apply)
+
+    result = runner.invoke(
+        cli.app, ["team", "update", "m1", "--add-role", "Sales", "--dry-run", "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == {
+        "member": "m1",
+        "set_roles": None,
+        "add": ["r-sales"],
+        "remove": [],
+    }
+    assert json.loads(result.stdout)["operations"][0]["kind"] == "team_member"

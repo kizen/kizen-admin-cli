@@ -37,6 +37,7 @@ from typing import Any
 
 import pytest
 
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools.planners.automations import (
     _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
@@ -101,6 +102,9 @@ ACTIVITY_STEPS = frozenset({"schedule_activity"})
 
 BRANCH_GROUP_STEPS = frozenset({"condition", "merge_branches", "branch", "delay"})
 
+#: Needs an installed plugin that ships steps; skipped when there is none.
+PLUGIN_STEPS = frozenset({"plugin_code_step"})
+
 COVERED_STEP_TYPES = (
     BRANCHING_STEPS
     | BRANCH_GROUP_STEPS
@@ -110,9 +114,10 @@ COVERED_STEP_TYPES = (
     | MESSAGING_STEPS
     | AI_STEPS
     | ACTIVITY_STEPS
+    | PLUGIN_STEPS
 )
 
-#: Nine of the ten wired trigger types ride on one record-based automation.
+#: Nine of the eleven wired trigger types ride on one record-based automation.
 RECORD_TRIGGER_TYPES = frozenset(
     {
         "manual",
@@ -130,7 +135,12 @@ RECORD_TRIGGER_TYPES = frozenset(
 #: `schedule` is global-only, so it needs an automation of its own.
 GLOBAL_TRIGGER_TYPES = frozenset({"manual", "schedule"})
 
-COVERED_TRIGGER_TYPES = RECORD_TRIGGER_TYPES | GLOBAL_TRIGGER_TYPES
+#: `email_received` is Contact-only, so it needs one too.
+CONTACT_TRIGGER_TYPES = frozenset({"manual", "email_received"})
+
+COVERED_TRIGGER_TYPES = (
+    RECORD_TRIGGER_TYPES | GLOBAL_TRIGGER_TYPES | CONTACT_TRIGGER_TYPES
+)
 
 
 # ---------------------------------------------------------------------------
@@ -483,7 +493,7 @@ def drift_triggers(
     drift_form,
     drift_survey,
 ) -> dict[str, Any]:
-    """One automation carrying nine of the ten wired trigger types.
+    """One automation carrying nine of the eleven wired trigger types.
 
     Directly analogous to the offline ``kitchen_sink_triggers.raw.json``
     capture, which is the evidence that many triggers on one automation is a
@@ -492,10 +502,11 @@ def drift_triggers(
     ``test_automation_read_shape_keys_the_planner_depends_on``), so the
     ordering stays under this spec's control.
 
-    ``schedule`` is the one that can't ride along: a record-based automation
-    rejects it outright (*"Trigger type 'schedule' is only available for
-    global agentic workflows"*, confirmed live 2026-08-06), so it gets its
-    own global automation in :func:`drift_schedule_trigger`.
+    ``schedule`` can't ride along: a record-based automation rejects it
+    outright (*"Trigger type 'schedule' is only available for global agentic
+    workflows"*, confirmed live 2026-08-06), so it gets its own global
+    automation in :func:`drift_schedule_trigger`. ``email_received`` is
+    Contact-only, so it gets :func:`drift_email_received_trigger`.
     """
     activity_id = drift_activity_type["id"]
     spec = _base_spec("trigs", drift_object)
@@ -616,7 +627,46 @@ def drift_schedule_trigger(drift_client, scratch) -> dict[str, Any]:
     return _create_automation(drift_client, scratch, spec)
 
 
-def test_every_wired_trigger_type_is_accepted(drift_triggers, drift_schedule_trigger):
+@pytest.fixture(scope="session")
+def drift_email_received_trigger(drift_client, scratch) -> dict[str, Any]:
+    """`email_received`, as a trigger and as a goal's wait-until trigger.
+
+    A custom-object automation rejects it ("only client custom object is
+    allowed", confirmed live 2026-10-14), so it runs on Contact.
+    """
+    spec = {
+        "api_name": debris_api_name("email"),
+        "name": debris_name("automation email"),
+        "type": "record_based",
+        "target_object": "client_client",
+        "active": False,
+        "triggers": [
+            {"trigger_type": "manual", "order": 0, "trigger_manual": {}},
+            {
+                "trigger_type": "email_received",
+                "order": 1,
+                "trigger_email_received_from_contact": {"receiving_inbox": "any"},
+            },
+        ],
+        "steps": [
+            {
+                "key": "goal",
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {
+                    "wait_type": "never",
+                    "triggers": [{"trigger_type": "email_received"}],
+                },
+            }
+        ],
+    }
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_every_wired_trigger_type_is_accepted(
+    drift_triggers, drift_schedule_trigger, drift_email_received_trigger
+):
     """The write half: every wired type goes out and the POST succeeds."""
     sent = {t["type"] for t in drift_triggers["sent"]["triggers"]}
     assert sent == set(RECORD_TRIGGER_TYPES), sorted(
@@ -628,7 +678,9 @@ def test_every_wired_trigger_type_is_accepted(drift_triggers, drift_schedule_tri
 
     scheduled = {t["type"] for t in drift_schedule_trigger["sent"]["triggers"]}
     assert scheduled == set(GLOBAL_TRIGGER_TYPES)
-    assert sent | scheduled == set(COVERED_TRIGGER_TYPES)
+    contact = {t["type"] for t in drift_email_received_trigger["sent"]["triggers"]}
+    assert contact == set(CONTACT_TRIGGER_TYPES)
+    assert sent | scheduled | contact == set(COVERED_TRIGGER_TYPES)
 
 
 def test_schedule_trigger_is_flat_in_both_dialects(drift_schedule_trigger):
@@ -650,6 +702,43 @@ def test_schedule_trigger_is_flat_in_both_dialects(drift_schedule_trigger):
     assert live["is_advanced"] is False
 
 
+def test_email_received_reads_back_as_sent(drift_email_received_trigger):
+    """The config key is `trigger_email_received_from_contact` in both
+    dialects, and reads add an empty `selected_integrated_inboxes`."""
+    record = drift_email_received_trigger
+    sent = next(t for t in record["sent"]["triggers"] if t["type"] == "email_received")
+    live = next(
+        t for t in record["live"]["triggers"] if t["trigger_type"] == "email_received"
+    )
+    expected = {"receiving_inbox": "any", "selected_integrated_inboxes": []}
+    assert sent["trigger_email_received_from_contact"] == {"receiving_inbox": "any"}
+    assert live["trigger_email_received_from_contact"] == expected
+
+    (goal,) = _live_steps_by_type(record)["goal"]
+    (nested,) = goal["step_goal"]["triggers"]
+    assert nested["trigger_type"] == "email_received"
+    assert nested["trigger_email_received_from_contact"] == expected
+
+
+def test_email_received_puts_back_unchanged(drift_client, drift_email_received_trigger):
+    """What every re-PUT verb (`activate`, `steps edit`, `roundtrip
+    --execute`) does to the trigger and the goal: translate, PUT, re-read."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.translate import live_to_payload, semantic_diff, validate_payload
+
+    before = drift_email_received_trigger["live"]
+    payload = live_to_payload(before)
+    assert validate_payload(payload) == []
+    auto_api.update_automation(
+        drift_client,
+        drift_email_received_trigger["uuid"],
+        payload,
+        last_revision=payload.get("last_revision"),
+    )
+    after = auto_api.get_automation(drift_client, drift_email_received_trigger["uuid"])
+    assert list(semantic_diff(before, after)) == []
+
+
 def test_every_wired_trigger_type_survives_the_roundtrip(drift_triggers):
     """The read half: same set comes back, keyed the way ``LiveContext`` and
     the read→write translator expect (``trigger_type``, plus a
@@ -662,8 +751,8 @@ def test_every_wired_trigger_type_survives_the_roundtrip(drift_triggers):
             # No config block: the manual trigger carries no configuration at
             # all (recorded in KNOWN_UNDOCUMENTED_BLOCKS for the same reason).
             continue
-        assert f"trigger_{ttype}" in trigger, (
-            f"live read of a '{ttype}' trigger has no trigger_{ttype} block; "
+        assert trigger_config_field(ttype) in trigger, (
+            f"live read of a '{ttype}' trigger has no {trigger_config_field(ttype)} block; "
             "the planner's read→write translation keys off exactly that name"
         )
 
@@ -1656,21 +1745,18 @@ def test_ai_steps_are_accepted(drift_ai_steps):
     assert set(_live_steps_by_type(drift_ai_steps)) == set(AI_STEPS)
 
 
-def test_call_llm_uses_the_action_call_llm_block_not_the_schemas_spelling(
-    drift_ai_steps,
-):
-    """``GET /api/docs/schema`` declares the property as ``action_llm_call``;
-    the API accepts — and the read returns — ``action_call_llm``. Recorded in
-    ``KNOWN_UNDOCUMENTED_BLOCKS``; this is the behavioural half of that claim,
-    so the entry cannot rot into a stale note."""
+def test_call_llm_block_is_action_call_llm(drift_ai_steps):
+    """The API accepts, and the read returns, ``action_call_llm``. Until
+    Kizen's 2026-10-13 release ``GET /api/docs/schema`` spelled the property
+    ``action_llm_call``, so this pins the spelling the CLI sends."""
     sent = next(s for s in drift_ai_steps["sent"]["steps"] if s["type"] == "call_llm")
     assert "action_call_llm" in sent
     assert "action_llm_call" not in sent
     (live,) = _live_steps_by_type(drift_ai_steps)["call_llm"]
     assert "action_call_llm" in live, (
-        "the read response no longer uses `action_call_llm` — if it now uses "
-        "the schema's `action_llm_call`, the divergence has closed and the "
-        "KNOWN_UNDOCUMENTED_BLOCKS entry should go"
+        "the read response no longer uses `action_call_llm`; the schema "
+        "spelled it `action_llm_call` until the 2026-10-13 release, so check "
+        "which spelling the write and read now use"
     )
 
 
@@ -1860,6 +1946,129 @@ def test_input_field_reads_back_mirrored_as_a_context_source(
         assert source["type"] == "context_entity_field", step_type
         assert source["field"]["id"] == attachment_id, step_type
         assert block["input_field"]["id"] == attachment_id, step_type
+
+
+# ---------------------------------------------------------------------------
+# Steps: plugin
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def drift_plugin_steps(
+    drift_client, scratch, drift_object, drift_step_fields
+) -> dict[str, Any]:
+    """Two `plugin_code_step`s running the first step of the first installed
+    plugin that ships one, read from `GET /external-integrations/bootstrap`
+    (each install's `automation_action_configs`). An environment with no
+    such plugin skips the type rather than naming one here.
+
+    The server checks inputs and outputs against the step's manifest, and a
+    missing required one is a 400 that names it, so every required parameter
+    is bound: in the first step the first input and output to a field and
+    the rest statically or to a variable, in the second all to a variable.
+    """
+    bootstrap = drift_client.get("/api/external-integrations/bootstrap")
+    found = next(
+        (
+            (api_name, app["automation_action_configs"][0])
+            for api_name, app in sorted(bootstrap.items())
+            if isinstance(app, dict) and app.get("automation_action_configs")
+        ),
+        None,
+    )
+    if found is None:
+        pytest.skip("no installed plugin in the drift environment ships a step")
+    plugin_app_api_name, manifest = found
+    text_id = drift_step_fields["text"]["id"]
+    var = "drift_plugin_out"
+
+    def bind(param: dict[str, Any], kind: str, as_input: bool) -> dict[str, Any]:
+        typed = {"input_type" if as_input else "output_type": kind}
+        source = {
+            "field": {"field_id": text_id},
+            "variable": {"variable_name": var},
+            "static_value": {"static_value": "x"},
+        }[kind]
+        return {
+            "name": param["name"],
+            **typed,
+            **source,
+            "data_type": param.get("data_type") or "string",
+        }
+
+    required_in = [p for p in manifest.get("inputs") or [] if p.get("required")]
+    required_out = [p for p in manifest.get("outputs") or [] if p.get("required")]
+
+    def block(first: str, rest_in: str) -> dict[str, Any]:
+        return {
+            "plugin_app_api_name": plugin_app_api_name,
+            "action_step_api_name": manifest["action_step_api_name"],
+            "inputs": [
+                bind(p, first if i == 0 else rest_in, True)
+                for i, p in enumerate(required_in)
+            ],
+            "outputs": [
+                bind(p, first if i == 0 else "variable", False)
+                for i, p in enumerate(required_out)
+            ],
+        }
+
+    spec = _base_spec("plugin", drift_object)
+    spec["steps"] = [
+        {
+            "key": "init",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "parent_key": None,
+            "action_initialize_variable": {
+                "variable": {"name": var, "data_type": "string"},
+                "sources": [],
+            },
+        },
+        {
+            "key": "with_fields",
+            "step_type": "plugin_code_step",
+            "order": 1,
+            "parent_key": "init",
+            "action_plugin_code_step": block("field", "static_value"),
+        },
+        {
+            "key": "with_variable",
+            "step_type": "plugin_code_step",
+            "order": 2,
+            "parent_key": "with_fields",
+            "action_plugin_code_step": block("variable", "variable"),
+        },
+    ]
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_plugin_steps_are_accepted(drift_plugin_steps):
+    assert _sent_step_types(drift_plugin_steps) >= set(PLUGIN_STEPS)
+    assert set(_live_steps_by_type(drift_plugin_steps)) >= set(PLUGIN_STEPS)
+
+
+def test_plugin_steps_read_back_as_sent(drift_plugin_steps):
+    """The read expands fields, variables and secrets; translated back, each
+    plugin block is the one the planner sent."""
+    from kizen_builder.translate import live_to_payload
+
+    def blocks(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            s["action_plugin_code_step"]
+            for s in sorted(steps, key=lambda s: s["order"])
+            if s["type"] == "plugin_code_step"
+        ]
+
+    sent = blocks(drift_plugin_steps["sent"]["steps"])
+    read = blocks(live_to_payload(drift_plugin_steps["live"])["steps"])
+    assert len(sent) == 2
+    for s_block, r_block in zip(sent, read, strict=True):
+        for key in ("plugin_app_api_name", "action_step_api_name", "secrets"):
+            assert r_block[key] == s_block[key], key
+        for side in ("inputs", "outputs"):
+            for s_item, r_item in zip(s_block[side], r_block[side], strict=True):
+                assert {k: r_item.get(k) for k in s_item} == s_item
 
 
 # ---------------------------------------------------------------------------

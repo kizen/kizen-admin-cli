@@ -135,6 +135,7 @@ def test_forwarded_block_keys_are_declared_or_known_omissions(openapi_schema):
     (``KNOWN_UNDOCUMENTED_BLOCKS``). Fails in both directions, like
     ``test_undeclared_fields_match_the_known_omissions``.
     """
+    from kizen_builder.models.spec.automations_triggers import trigger_config_field
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         _TRIGGER_BUILDERS,
@@ -145,7 +146,7 @@ def test_forwarded_block_keys_are_declared_or_known_omissions(openapi_schema):
         f"schema:WriteStepRequest.{_prefix_for(t)}_{t}": b
         for t, b in _STEP_BUILDERS.items()
     } | {
-        f"schema:WriteTriggerRequest.trigger_{t}": b
+        f"schema:WriteTriggerRequest.{trigger_config_field(t)}": b
         for t, b in _TRIGGER_BUILDERS.items()
     }
     problems: list[str] = []

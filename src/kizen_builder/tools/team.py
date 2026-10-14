@@ -49,6 +49,25 @@ def team_member_candidates(
     return exact or matches
 
 
+def resolve_team_member_id(client: KizenClient, ref: str) -> str:
+    """Resolve a team member id, name, or email to their id.
+
+    A UUID is returned as-is; anything else must match exactly one member.
+    """
+    if is_uuid(ref):
+        return ref
+    candidates = team_member_candidates(client, ref, limit=5)
+    if not candidates:
+        raise LookupError(f"team member '{ref}' not found.")
+    if len(candidates) > 1:
+        names = [m.get("full_name") or m.get("email") for m in candidates]
+        raise LookupError(
+            f"team member '{ref}' is ambiguous ({len(candidates)} matches: "
+            f"{names}). Use the id."
+        )
+    return candidates[0]["id"]
+
+
 def get_team_member(ref: str) -> dict[str, Any]:
     """Resolve a team member by id, name, or email and return their roles.
 
@@ -59,19 +78,7 @@ def get_team_member(ref: str) -> dict[str, Any]:
     """
     config = load_env_config()
     with KizenClient(config) as client:
-        if is_uuid(ref):
-            member_id = ref
-        else:
-            candidates = team_member_candidates(client, ref, limit=5)
-            if not candidates:
-                raise LookupError(f"team member '{ref}' not found.")
-            if len(candidates) > 1:
-                names = [m.get("full_name") or m.get("email") for m in candidates]
-                raise LookupError(
-                    f"team member '{ref}' is ambiguous ({len(candidates)} matches: "
-                    f"{names}). Use the id."
-                )
-            member_id = candidates[0]["id"]
+        member_id = resolve_team_member_id(client, ref)
         try:
             detail = team_api.get_team_member(client, member_id)
         except KizenAPIError as exc:

@@ -54,6 +54,7 @@ from kizen_builder.models.spec import (
     AutomationStepDef,
     AutomationTriggerDef,
 )
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
@@ -843,11 +844,14 @@ def _build_trigger_payload(t: AutomationTriggerDef, ctx: LiveContext) -> dict[st
             f"trigger type '{t.trigger_type}' not yet supported. "
             f"Supported: {sorted(_TRIGGER_BUILDERS)}"
         )
-    cfg_field = f"trigger_{t.trigger_type}"
+    cfg_field = trigger_config_field(t.trigger_type)
     spec_block = getattr(t, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
     p[cfg_field] = builder(block_dict, ctx)
+    problem = _inbox_selection_problem([p])
+    if problem:
+        raise PlanError(problem)
     return p
 
 
@@ -989,6 +993,20 @@ def _trigger_scheduled_activity_overdue(
     return out
 
 
+@honours("receiving_inbox", "selected_integrated_inboxes")
+def _trigger_email_received(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
+    # Contact automations only: a custom object gets 400 "only client custom
+    # object is allowed" (confirmed live 2026-10-14). Reads expand each
+    # selected inbox to {id, email}; the wire takes bare UUIDs. An empty
+    # selection passes through; only specs reject it (_inbox_selection_problem).
+    receiving_inbox = block.get("receiving_inbox") or "any"
+    inboxes = [_unwrap_id(i) for i in block.get("selected_integrated_inboxes") or []]
+    out: dict[str, Any] = {"receiving_inbox": receiving_inbox}
+    if inboxes or receiving_inbox == "selected_integrated_inboxes":
+        out["selected_integrated_inboxes"] = inboxes
+    return out
+
+
 _TRIGGER_BUILDERS: dict[str, Any] = {
     "manual": _trigger_manual,
     "new_entity_created": _trigger_new_entity_created,
@@ -1000,6 +1018,7 @@ _TRIGGER_BUILDERS: dict[str, Any] = {
     "scheduled_activity_overdue": _trigger_scheduled_activity_overdue,
     "form_submitted": _trigger_form_submitted,
     "survey_submitted": _trigger_survey_submitted,
+    "email_received": _trigger_email_received,
 }
 
 
@@ -1036,6 +1055,12 @@ class KnownChoices:
 # session) — do not also write the list into `automation.md` prose (check
 # the registry, not the prose).
 KNOWN_ENUM_CHOICES_TRIGGERS: dict[str, dict[str, KnownChoices]] = {
+    "email_received": {
+        "receiving_inbox": KnownChoices(
+            values=("any", "selected_integrated_inboxes"),
+            source="tests/fixtures/automations/email_received.raw.json",
+        ),
+    },
     "on_or_around_date": {
         "date_offset": KnownChoices(
             values=("on_day", "on_day_and_time", "days_before", "days_after"),
@@ -1153,10 +1178,13 @@ def _build_step_payload(
         wire_block = builder(block_dict, auto, ctx)
     except PlanError as e:
         raise PlanError(f"step '{step.key}': {e}") from e
+    problem = None
     if step.step_type == "condition":
         problem = _condition_rules_problem(step.key, wire_block)
-        if problem:
-            raise PlanError(problem)
+    elif step.step_type == "goal":
+        problem = _inbox_selection_problem(wire_block["triggers"])
+    if problem:
+        raise PlanError(problem)
     p[cfg_field] = wire_block
     return p
 
@@ -1242,6 +1270,26 @@ def _condition_rules_problem(key: str, block: dict[str, Any]) -> str | None:
     return None
 
 
+def _inbox_selection_problem(triggers: list[dict[str, Any]]) -> str | None:
+    """Why an email_received trigger can never fire, or None.
+
+    The server saves "selected inboxes" with an empty list (200, 2026-10-14).
+    Checked on spec and patch paths only, so live reads still re-PUT it.
+    """
+    for t in triggers:
+        if t.get("type") != "email_received":
+            continue
+        block = t.get("trigger_email_received_from_contact") or {}
+        selected = block.get("receiving_inbox") == "selected_integrated_inboxes"
+        if selected and not block.get("selected_integrated_inboxes"):
+            return (
+                f"trigger '{t.get('key')}' (email_received): receiving_inbox "
+                "'selected_integrated_inboxes' needs at least one inbox UUID "
+                "in selected_integrated_inboxes"
+            )
+    return None
+
+
 def _render_filter_config(
     fc: dict[str, Any], object_api_name: str | None
 ) -> dict[str, Any]:
@@ -1305,6 +1353,8 @@ def _step_goal(
     triggers = []
     for i, t in enumerate(block.get("triggers") or []):
         trigger_type = t.get("trigger_type") or t.get("type")
+        if not trigger_type:
+            raise PlanError(f"goal trigger {i} has no trigger_type")
         p: dict[str, Any] = {
             "key": t.get("key") or f"goal_trigger_{i}",
             "type": trigger_type,
@@ -1317,7 +1367,7 @@ def _step_goal(
             p["id"] = t["id"]
         if t.get("description"):
             p["description"] = t["description"]
-        cfg_field = f"trigger_{trigger_type}"
+        cfg_field = trigger_config_field(trigger_type)
         nested = dict(t.get(cfg_field) or {})
         builder = _TRIGGER_BUILDERS.get(trigger_type)
         p[cfg_field] = builder(nested, ctx) if builder else _strip(nested)
@@ -1962,7 +2012,6 @@ def _normalize_variable(v: Any) -> Any:
     "business_plugin_app",
     "destinations",
     "is_advanced",
-    "data_type",
     "merge_field_validation",
 )
 def _step_call_llm(
@@ -1996,8 +2045,6 @@ def _step_call_llm(
         )
     if block.get("is_advanced") is not None:
         out["is_advanced"] = block["is_advanced"]
-    if block.get("data_type"):
-        out["data_type"] = block["data_type"]
     if block.get("merge_field_validation"):
         out["merge_field_validation"] = block["merge_field_validation"]
     return {k: v for k, v in out.items() if v is not None}
@@ -2555,15 +2602,48 @@ def _step_code_step(
         "runtime": block.get("runtime", "python-3-13"),
         "inputs": [_code_input(i, auto, ctx) for i in (block.get("inputs") or [])],
         "outputs": [_code_output(o, auto, ctx) for o in (block.get("outputs") or [])],
-        "secrets": [
-            {"name": s.get("name") if isinstance(s, dict) else s}
-            for s in (block.get("secrets") or [])
+        "secrets": _secret_names(block.get("secrets")),
+    }
+
+
+@honours(
+    "plugin_app_api_name",
+    "action_step_api_name",
+    "notify_plugin_developer_on_failure",
+    "inputs",
+    "outputs",
+    "secrets",
+)
+def _step_plugin_code_step(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    where = "plugin_code_step"
+    return {
+        "plugin_app_api_name": block.get("plugin_app_api_name"),
+        "action_step_api_name": block.get("action_step_api_name"),
+        "notify_plugin_developer_on_failure": (
+            block.get("notify_plugin_developer_on_failure") or False
+        ),
+        "secrets": _secret_names(block.get("secrets")),
+        "inputs": [_code_input(i, auto, ctx, where) for i in block.get("inputs") or []],
+        "outputs": [
+            _code_output(o, auto, ctx, where) for o in block.get("outputs") or []
         ],
     }
 
 
+def _secret_names(secrets: list[Any] | None) -> list[dict[str, Any]]:
+    """Secrets as `[{name}]`, from bare names, spec dicts or expanded reads."""
+    return [
+        {"name": s.get("name") if isinstance(s, dict) else s} for s in (secrets or [])
+    ]
+
+
 def _code_input(
-    inp: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    inp: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+    where: str = "code_step",
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": inp["name"],
@@ -2582,7 +2662,7 @@ def _code_input(
         )
         if not field_uuid:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'field' but has no field/field_ref/field_id"
+                f"{where} input '{inp['name']}' is type 'field' but has no field/field_ref/field_id"
             )
         out["field"] = {"id": field_uuid}
     elif it == "variable":
@@ -2594,7 +2674,7 @@ def _code_input(
         )
         if not name:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'variable' but has no variable_name"
+                f"{where} input '{inp['name']}' is type 'variable' but has no variable_name"
             )
         out["variable"] = {"name": name}
     elif it == "static_value":
@@ -2614,7 +2694,7 @@ def _code_input(
         fld_id = _unwrap_id(fld) or inp.get("field_id")
         if not fld_id:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'related_field' but "
+                f"{where} input '{inp['name']}' is type 'related_field' but "
                 "has no `field` (the relationship field on the automation's object)"
             )
         out["field"] = {"id": fld_id}
@@ -2622,7 +2702,7 @@ def _code_input(
         rf_id = _unwrap_id(rf)
         if not rf_id:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'related_field' but "
+                f"{where} input '{inp['name']}' is type 'related_field' but "
                 "has no `related_field` (the field on the related object)"
             )
         out["related_field"] = {"id": rf_id}
@@ -2634,7 +2714,10 @@ def _code_input(
 
 
 def _code_output(
-    o: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    o: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+    where: str = "code_step",
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": o["name"],
@@ -2653,7 +2736,7 @@ def _code_output(
         )
         if not field_uuid:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'field' but has no field/field_ref/field_id"
+                f"{where} output '{o['name']}' is type 'field' but has no field/field_ref/field_id"
             )
         out["field"] = {"id": field_uuid}
     elif ot == "variable":
@@ -2665,7 +2748,7 @@ def _code_output(
         )
         if not name:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'variable' but has no variable_name"
+                f"{where} output '{o['name']}' is type 'variable' but has no variable_name"
             )
         out["variable"] = {"name": name}
     elif ot == "related_field":
@@ -2676,7 +2759,7 @@ def _code_output(
         fld_id = _unwrap_id(fld) or o.get("field_id")
         if not fld_id:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'related_field' but "
+                f"{where} output '{o['name']}' is type 'related_field' but "
                 "has no `field` (the relationship field on the automation's object)"
             )
         out["field"] = {"id": fld_id}
@@ -2684,7 +2767,7 @@ def _code_output(
         rf_id = _unwrap_id(rf)
         if not rf_id:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'related_field' but "
+                f"{where} output '{o['name']}' is type 'related_field' but "
                 "has no `related_field` (the field on the related object)"
             )
         out["related_field"] = {"id": rf_id}
@@ -2708,6 +2791,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "goal": _step_goal,
     "stop_execution": _step_stop_execution,
     "code_step": _step_code_step,
+    "plugin_code_step": _step_plugin_code_step,
     "archive_record": _step_archive_record,
     "go_to_automation_step": _step_go_to_automation_step,
     "start_automation": _step_start_automation,
@@ -2766,7 +2850,7 @@ assert set(KNOWN_ENUM_CHOICES_TRIGGERS) <= set(_TRIGGER_BUILDERS), (
 
 # block key (the wire dict key a step/trigger's config rides under, e.g.
 # "action_create_related_entity", "trigger_on_or_around_date" — the exact
-# mapping `_block_field_for()` / `trigger_{type}` already use when building a
+# mapping `_block_field_for()` / `trigger_config_field()` already use when building a
 # payload) -> (step_or_trigger_type, its KnownChoices table).
 _KNOWN_CHOICES_BLOCK_TABLES: dict[str, tuple[str, dict[str, KnownChoices]]] = {
     **{
@@ -2774,7 +2858,7 @@ _KNOWN_CHOICES_BLOCK_TABLES: dict[str, tuple[str, dict[str, KnownChoices]]] = {
         for step_type, table in KNOWN_ENUM_CHOICES.items()
     },
     **{
-        f"trigger_{trigger_type}": (trigger_type, table)
+        trigger_config_field(trigger_type): (trigger_type, table)
         for trigger_type, table in KNOWN_ENUM_CHOICES_TRIGGERS.items()
     },
 }

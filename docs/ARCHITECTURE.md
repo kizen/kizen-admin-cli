@@ -196,7 +196,8 @@ A new kind of Kizen entity touches every layer:
 2. `models/spec/` — Pydantic models for its spec shape.
 3. `tools/planners/<surface>.py` — `plan_*` functions returning `Plan`s.
 4. `tools/plans.py` — add its op kinds to the `Kind` literal and a dispatch
-   branch in `_execute`.
+   branch in `_execute`, and a row in `tests/test_execute_dispatch.py`. A
+   meta-test fails without it.
 5. `tools/<surface>.py` — read/show tools, if it has any.
 6. `cli/<surface>.py` — Typer commands, routed through `_run_mutation` for
    mutations, with an `epilog` pointing at its docs topic. Add it to the import
