@@ -1896,6 +1896,61 @@ def test_steps_edit_condition_without_rules_rejected(patch_live_lookups):
         normalize_step_patch(patch, "check", "condition", _LIVE_PAYLOAD, "patients")
 
 
+_GENDERS_DECLARED = {
+    **_LIVE_PAYLOAD,
+    "steps": [
+        {
+            "key": "declare",
+            "type": "initialize_variable",
+            "action_initialize_variable": {
+                "sources": [],
+                "variable": {
+                    "name": "genders",
+                    "data_type": "string",
+                    "is_array": True,
+                },
+            },
+        }
+    ],
+}
+_GENDERS_RULE = {
+    "type": "custom_filter",
+    "filter_config": {
+        "all": [{"field": "gender", "op": "is_any_of", "variable": "genders"}]
+    },
+}
+
+
+def _steps_add(payload):
+    from kizen_builder.tools.automations import build_wire_step
+
+    step = {"key": "check", "step_type": "condition", "step_condition": _GENDERS_RULE}
+    return build_wire_step(step, payload, "patients")["step_condition"]
+
+
+def _steps_edit(payload):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {"step_condition": _GENDERS_RULE}
+    return normalize_step_patch(patch, "check", "condition", payload, "patients")[
+        "step_condition"
+    ]
+
+
+@pytest.mark.parametrize("patch_step", [_steps_add, _steps_edit])
+def test_steps_add_and_edit_see_the_live_variable_declarations(
+    patch_live_lookups, patients_filter_schema, patch_step
+):
+    (clause,) = patch_step(_GENDERS_DECLARED)["filter_config"]["query"][0]["filters"]
+    assert clause["value"] == "genders"
+    with pytest.raises(PlanError) as e:
+        patch_step(_LIVE_PAYLOAD)
+    assert str(e.value) == (
+        "step 'check': variable 'genders' isn't declared in this automation "
+        "(declared arrays: none)"
+    )
+
+
 def test_steps_edit_without_condition_block_not_checked(patch_live_lookups):
     """A live automation that already carries an empty condition can still be
     edited, e.g. to rename the step, without the patch tripping the check."""
