@@ -72,7 +72,7 @@ Three related surfaces:
 
 - **`/api/role`** — a Role bundles `permissions` (app-level string flags),
   `permission_groups` (a list of group UUIDs), and `default_for_new_users`.
-  Roles are what team members are assigned.
+  Roles are what team members are assigned — assign with `kizen team update`.
 - **`/api/permission-group`** — a named bundle of per-entity access levels:
   custom objects + their fields, contacts, and ~20 feature "sections"
   (homepages, dashboards, settings, …).

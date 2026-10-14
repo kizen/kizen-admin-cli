@@ -29,7 +29,7 @@
 │ layouts           Read and update record layouts for a custom object.                            │
 │ records           Read individual records from a custom object.                                  │
 │ filters           Look up valid --filter operators (no live env needed).                         │
-│ team              Look up team members.                                                          │
+│ team              Look up team members and change their roles.                                   │
 │ roles             Read and manage roles.                                                         │
 │ permissions       Read and manage permission groups + the permissions catalog.                   │
 │ automations       Read, create, update, and run automations.                                     │
@@ -4214,7 +4214,7 @@
                                                                                                     
  Usage: team [OPTIONS] COMMAND [ARGS]...                                                            
                                                                                                     
- Look up team members.                                                                              
+ Look up team members and change their roles.                                                       
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -4222,6 +4222,7 @@
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
 │ search  Search team members by name or email.                                                    │
 │ get     Show one team member, including the role(s) they hold.                                   │
+│ update  Change a team member's roles. --role replaces the whole set.                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: team get [OPTIONS] {member}                                                                 
@@ -4256,6 +4257,29 @@
 │ --json                   Alias for --output json.                                                │
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: team update [OPTIONS] {member}                                                              
+                                                                                                    
+ Change a team member's roles. --role replaces the whole set.                                       
+                                                                                                    
+ With --add-role/--remove-role, roles you don't name are left alone.                                
+ Removing the business's last Admin is refused.                                                     
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    member      <str>  Team member id, name, or email. [required]                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --role                 <str>  Replace the member's roles with these (name or UUID, repeatable).  │
+│ --add-role             <str>  Role to add (name or UUID, repeatable).                            │
+│ --remove-role          <str>  Role to remove (name or UUID, repeatable).                         │
+│ --dry-run                     Show the plan without applying.                                    │
+│ --yes          -y             Skip the y/N confirmation prompt.                                  │
+│ --json                        Emit JSON (plan with --dry-run, results otherwise).                │
+│ --help                        Show this message and exit.                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and the last-Admin guard: see `kizen docs show team`                             
+                                                                                                    
                                                                                                     
  Usage: upgrade [OPTIONS]                                                                           
                                                                                                     
@@ -4962,6 +4986,9 @@
 
 
 ===== team search =====
+
+
+===== team update =====
 
 
 ===== upgrade =====

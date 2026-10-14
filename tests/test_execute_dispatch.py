@@ -36,6 +36,8 @@ TARGET_IDS = [
     "00000000-0000-4000-8000-0000000000b3",
     "00000000-0000-4000-8000-0000000000b4",
 ]
+ROLE_ADDED = "00000000-0000-4000-8000-0000000000b5"
+ROLE_REMOVED = "00000000-0000-4000-8000-0000000000b6"
 SERVER_ID = "00000000-0000-4000-8000-0000000000ff"
 
 BODY = {"name": "Thing", "api_name": "thing"}
@@ -380,6 +382,29 @@ ROWS = [
     *_form_like("form", "/api/forms"),
     *_form_like("survey", "/api/surveys"),
     *_crud("role", "/api/role", f"/api/role/{E}", parent=False),
+    _row(
+        "team_member",
+        "update",
+        {
+            "existing_uuid": E,
+            "payload": {
+                "team_member_ids": [E],
+                "role_ids_to_add": [ROLE_ADDED],
+                "role_ids_to_remove": [ROLE_REMOVED],
+            },
+        },
+        [
+            (
+                "POST",
+                "/api/team/change-roles",
+                {
+                    "team_member_ids": [E],
+                    "role_ids_to_add": [ROLE_ADDED],
+                    "role_ids_to_remove": [ROLE_REMOVED],
+                },
+            )
+        ],
+    ),
     *_crud(
         "permission_group",
         "/api/permission-group",
