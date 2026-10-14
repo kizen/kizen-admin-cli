@@ -182,6 +182,13 @@ called out explicitly under **Changed** or **Removed**.
   with an optional `trigger_email_received_from_contact: {receiving_inbox,
   selected_integrated_inboxes}`. `receiving_inbox` defaults to `any`;
   `selected_integrated_inboxes` takes inbox UUIDs. Contact automations only.
+- **Automation specs can author `plugin_code_step` steps**, and automations
+  that contain them update, diff and round-trip. Name the plugin by its
+  installed api_name. There's no plugin app id. Inputs and outputs take the
+  `code_step` shapes, and an input can also be `business_plugin_config`
+  (the plugin's install config, per Kizen's 2026-10-13 release; run-time
+  delivery not confirmed live). `show`, `roundtrip` and `steps`
+  now print a live plugin step in the same shape a spec takes.
 - **Automation specs can build branch groups, parallel branches and skipped
   conditions.** Two new step types, `branch` and `merge_branches`, and three
   step fields: `is_branch_group_initiator`, `continue_with_branch` and
