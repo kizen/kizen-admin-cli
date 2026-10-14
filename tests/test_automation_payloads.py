@@ -12,6 +12,7 @@ import json
 import pytest
 
 from kizen_builder.models.spec import AutomationDef
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools.planners.automations import (
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
@@ -1197,6 +1198,101 @@ def test_trigger_schedule(patch_live_lookups):
         "rrule": "DTSTART:20260801T120000Z\nRRULE:FREQ=DAILY;INTERVAL=1",
         "is_advanced": False,
     }
+
+
+def _email_received_spec(block: dict | None) -> dict:
+    trigger: dict = {"trigger_type": "email_received", "order": 1}
+    goal_trigger: dict = {"trigger_type": "email_received"}
+    if block is not None:
+        trigger["trigger_email_received_from_contact"] = block
+        goal_trigger["trigger_email_received_from_contact"] = block
+    return {
+        "api_name": "email_received_test",
+        "name": "Email Received Test",
+        "type": "record_based",
+        "target_object": "client_client",
+        "triggers": [trigger],
+        "steps": [
+            {
+                "key": "g0",
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {"wait_type": "never", "triggers": [goal_trigger]},
+            }
+        ],
+    }
+
+
+def _email_received_blocks(payload: dict) -> tuple[dict, dict]:
+    top = next(t for t in payload["triggers"] if t["type"] == "email_received")
+    (goal,) = payload["steps"][0]["step_goal"]["triggers"]
+    assert "trigger_email_received" not in top
+    assert "trigger_email_received" not in goal
+    return (
+        top["trigger_email_received_from_contact"],
+        goal["trigger_email_received_from_contact"],
+    )
+
+
+@pytest.mark.parametrize(
+    "block, wire",
+    [
+        # Omitted entirely: the server requires receiving_inbox, and `any` is
+        # the UI default.
+        (None, {"receiving_inbox": "any"}),
+        ({}, {"receiving_inbox": "any"}),
+        ({"receiving_inbox": "any"}, {"receiving_inbox": "any"}),
+        (
+            {
+                "receiving_inbox": "selected_integrated_inboxes",
+                "selected_integrated_inboxes": ["1cf296ff-d456-413b-80bd-dda8576ead55"],
+            },
+            {
+                "receiving_inbox": "selected_integrated_inboxes",
+                "selected_integrated_inboxes": ["1cf296ff-d456-413b-80bd-dda8576ead55"],
+            },
+        ),
+    ],
+)
+def test_trigger_email_received(patch_live_lookups, block, wire):
+    """email_received: the config rides under
+    `trigger_email_received_from_contact`, at the top level and in a goal.
+    The wire matches what saved live (2026-10-14)."""
+    assert _email_received_blocks(_build(_email_received_spec(block))) == (wire, wire)
+
+
+@pytest.mark.parametrize("where", ["trigger", "goal"])
+def test_trigger_email_received_selected_needs_an_inbox(patch_live_lookups, where):
+    empty = {
+        "receiving_inbox": "selected_integrated_inboxes",
+        "selected_integrated_inboxes": [],
+    }
+    spec = _email_received_spec(None)
+    if where == "trigger":
+        spec["triggers"][0]["trigger_email_received_from_contact"] = empty
+    else:
+        spec["steps"][0]["step_goal"]["triggers"][0][
+            "trigger_email_received_from_contact"
+        ] = empty
+    with pytest.raises(PlanError, match="needs at least one inbox UUID"):
+        _build(spec)
+
+
+def test_goal_trigger_without_a_type_is_a_plan_error(patch_live_lookups):
+    spec = _email_received_spec(None)
+    del spec["steps"][0]["step_goal"]["triggers"][0]["trigger_type"]
+    with pytest.raises(PlanError, match="goal trigger 0 has no trigger_type"):
+        _build(spec)
+
+
+def test_trigger_email_received_from_contact_is_not_a_type():
+    """The config key's spelling is not a trigger type; the server says
+    "No such trigger_type" (confirmed live 2026-10-14)."""
+    spec = _email_received_spec(None)
+    spec["triggers"][0]["trigger_type"] = "email_received_from_contact"
+    with pytest.raises(ValueError, match="unknown trigger_type.*'email_received'"):
+        AutomationDef.model_validate(spec)
 
 
 def test_unsupported_step_type_raises_with_supported_list(patch_live_lookups):
@@ -2533,7 +2629,7 @@ def test_builder_output_passes_the_check():
         for t in payload["triggers"]:
             builder = _TRIGGER_BUILDERS.get(t["type"])
             if builder is not None:
-                block = t.get(f"trigger_{t['type']}") or {}
+                block = t.get(trigger_config_field(t["type"])) or {}
                 _reject_unhonoured_keys(builder, block, f"{path.name} {t['key']}")
     declared = {t for t, b in _STEP_BUILDERS.items() if b.honoured_keys is not None}
     assert declared - checked == _UNCAPTURED

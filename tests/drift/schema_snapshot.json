@@ -2,7 +2,7 @@
   "_meta": {
     "base_url": "https://app.go.kizen.com",
     "captured": "2026-10-14",
-    "contracts_tracked": 66,
+    "contracts_tracked": 67,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
       "title": "Kizen API",
@@ -1319,6 +1319,19 @@
       },
       "required": [
         "activity_type_id"
+      ],
+      "surface": "automations",
+      "type": "object"
+    },
+    "schema:WriteTriggerRequest.trigger_email_received_from_contact": {
+      "label": "trigger config: email_received",
+      "present": true,
+      "properties": {
+        "receiving_inbox": "ReceivingInboxEnum{any,selected_integrated_inboxes}",
+        "selected_integrated_inboxes": "array[string<uuid>]?"
+      },
+      "required": [
+        "receiving_inbox"
       ],
       "surface": "automations",
       "type": "object"

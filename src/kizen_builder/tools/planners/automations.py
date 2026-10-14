@@ -54,6 +54,7 @@ from kizen_builder.models.spec import (
     AutomationStepDef,
     AutomationTriggerDef,
 )
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
@@ -843,11 +844,14 @@ def _build_trigger_payload(t: AutomationTriggerDef, ctx: LiveContext) -> dict[st
             f"trigger type '{t.trigger_type}' not yet supported. "
             f"Supported: {sorted(_TRIGGER_BUILDERS)}"
         )
-    cfg_field = f"trigger_{t.trigger_type}"
+    cfg_field = trigger_config_field(t.trigger_type)
     spec_block = getattr(t, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
     p[cfg_field] = builder(block_dict, ctx)
+    problem = _inbox_selection_problem([p])
+    if problem:
+        raise PlanError(problem)
     return p
 
 
@@ -989,6 +993,20 @@ def _trigger_scheduled_activity_overdue(
     return out
 
 
+@honours("receiving_inbox", "selected_integrated_inboxes")
+def _trigger_email_received(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
+    # Contact automations only: a custom object gets 400 "only client custom
+    # object is allowed" (confirmed live 2026-10-14). Reads expand each
+    # selected inbox to {id, email}; the wire takes bare UUIDs. An empty
+    # selection passes through; only specs reject it (_inbox_selection_problem).
+    receiving_inbox = block.get("receiving_inbox") or "any"
+    inboxes = [_unwrap_id(i) for i in block.get("selected_integrated_inboxes") or []]
+    out: dict[str, Any] = {"receiving_inbox": receiving_inbox}
+    if inboxes or receiving_inbox == "selected_integrated_inboxes":
+        out["selected_integrated_inboxes"] = inboxes
+    return out
+
+
 _TRIGGER_BUILDERS: dict[str, Any] = {
     "manual": _trigger_manual,
     "new_entity_created": _trigger_new_entity_created,
@@ -1000,6 +1018,7 @@ _TRIGGER_BUILDERS: dict[str, Any] = {
     "scheduled_activity_overdue": _trigger_scheduled_activity_overdue,
     "form_submitted": _trigger_form_submitted,
     "survey_submitted": _trigger_survey_submitted,
+    "email_received": _trigger_email_received,
 }
 
 
@@ -1036,6 +1055,12 @@ class KnownChoices:
 # session) — do not also write the list into `automation.md` prose (check
 # the registry, not the prose).
 KNOWN_ENUM_CHOICES_TRIGGERS: dict[str, dict[str, KnownChoices]] = {
+    "email_received": {
+        "receiving_inbox": KnownChoices(
+            values=("any", "selected_integrated_inboxes"),
+            source="tests/fixtures/automations/email_received.raw.json",
+        ),
+    },
     "on_or_around_date": {
         "date_offset": KnownChoices(
             values=("on_day", "on_day_and_time", "days_before", "days_after"),
@@ -1150,10 +1175,13 @@ def _build_step_payload(
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
     wire_block = builder(block_dict, auto, ctx)
+    problem = None
     if step.step_type == "condition":
         problem = _condition_rules_problem(step.key, wire_block)
-        if problem:
-            raise PlanError(problem)
+    elif step.step_type == "goal":
+        problem = _inbox_selection_problem(wire_block["triggers"])
+    if problem:
+        raise PlanError(problem)
     p[cfg_field] = wire_block
     return p
 
@@ -1239,6 +1267,26 @@ def _condition_rules_problem(key: str, block: dict[str, Any]) -> str | None:
     return None
 
 
+def _inbox_selection_problem(triggers: list[dict[str, Any]]) -> str | None:
+    """Why an email_received trigger can never fire, or None.
+
+    The server saves "selected inboxes" with an empty list (200, 2026-10-14).
+    Checked on spec and patch paths only, so live reads still re-PUT it.
+    """
+    for t in triggers:
+        if t.get("type") != "email_received":
+            continue
+        block = t.get("trigger_email_received_from_contact") or {}
+        selected = block.get("receiving_inbox") == "selected_integrated_inboxes"
+        if selected and not block.get("selected_integrated_inboxes"):
+            return (
+                f"trigger '{t.get('key')}' (email_received): receiving_inbox "
+                "'selected_integrated_inboxes' needs at least one inbox UUID "
+                "in selected_integrated_inboxes"
+            )
+    return None
+
+
 def _render_filter_config(
     fc: dict[str, Any], object_api_name: str | None
 ) -> dict[str, Any]:
@@ -1302,6 +1350,8 @@ def _step_goal(
     triggers = []
     for i, t in enumerate(block.get("triggers") or []):
         trigger_type = t.get("trigger_type") or t.get("type")
+        if not trigger_type:
+            raise PlanError(f"goal trigger {i} has no trigger_type")
         p: dict[str, Any] = {
             "key": t.get("key") or f"goal_trigger_{i}",
             "type": trigger_type,
@@ -1314,7 +1364,7 @@ def _step_goal(
             p["id"] = t["id"]
         if t.get("description"):
             p["description"] = t["description"]
-        cfg_field = f"trigger_{trigger_type}"
+        cfg_field = trigger_config_field(trigger_type)
         nested = dict(t.get(cfg_field) or {})
         builder = _TRIGGER_BUILDERS.get(trigger_type)
         p[cfg_field] = builder(nested, ctx) if builder else _strip(nested)
@@ -2728,7 +2778,7 @@ assert set(KNOWN_ENUM_CHOICES_TRIGGERS) <= set(_TRIGGER_BUILDERS), (
 
 # block key (the wire dict key a step/trigger's config rides under, e.g.
 # "action_create_related_entity", "trigger_on_or_around_date" — the exact
-# mapping `_block_field_for()` / `trigger_{type}` already use when building a
+# mapping `_block_field_for()` / `trigger_config_field()` already use when building a
 # payload) -> (step_or_trigger_type, its KnownChoices table).
 _KNOWN_CHOICES_BLOCK_TABLES: dict[str, tuple[str, dict[str, KnownChoices]]] = {
     **{
@@ -2736,7 +2786,7 @@ _KNOWN_CHOICES_BLOCK_TABLES: dict[str, tuple[str, dict[str, KnownChoices]]] = {
         for step_type, table in KNOWN_ENUM_CHOICES.items()
     },
     **{
-        f"trigger_{trigger_type}": (trigger_type, table)
+        trigger_config_field(trigger_type): (trigger_type, table)
         for trigger_type, table in KNOWN_ENUM_CHOICES_TRIGGERS.items()
     },
 }

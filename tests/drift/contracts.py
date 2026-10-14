@@ -264,6 +264,7 @@ def automation_block_contracts() -> tuple[Contract, ...]:
     name is the CLI's own — importing the registries here is what keeps the
     drift scope in step with ``_STEP_BUILDERS``.
     """
+    from kizen_builder.models.spec.automations_triggers import trigger_config_field
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         _TRIGGER_BUILDERS,
@@ -284,7 +285,7 @@ def automation_block_contracts() -> tuple[Contract, ...]:
             Contract(
                 "automations",
                 f"trigger config: {trigger_type}",
-                schema_name=f"WriteTriggerRequest.trigger_{trigger_type}",
+                schema_name=f"WriteTriggerRequest.{trigger_config_field(trigger_type)}",
             )
         )
     return tuple(out)

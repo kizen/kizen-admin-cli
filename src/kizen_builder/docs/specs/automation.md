@@ -134,14 +134,21 @@ sets a step's own severity. Omitted, the step inherits. Confirmed live
 
 ---
 
-## Wired trigger types (10)
+## Wired trigger types (11)
 
 `manual`, `new_entity_created`, `activity_logged`, `on_or_around_date`,
 `webhook`, `field_updated`, `schedule`, `scheduled_activity_overdue`,
-`form_submitted`, `survey_submitted`.
+`form_submitted`, `survey_submitted`, `email_received`.
 
 Each requiring config sets a `trigger_<name>` block matching `trigger_type`
 (e.g. `field_updated` → `trigger_field_updated: { field_ref, fire_on_create, … }`).
+The one exception is `email_received`, whose block is
+`trigger_email_received_from_contact: {receiving_inbox, selected_integrated_inboxes}`.
+`receiving_inbox` is `any` (the default when omitted) or
+`selected_integrated_inboxes`, which needs a list of integrated inbox UUIDs;
+reads expand each to `{id, email}`. It works on Contact automations only: a
+custom object gets 400 "only client custom object is allowed". Confirmed live
+2026-10-14.
 `manual` is an empty `trigger_manual: {}`. `schedule` → `trigger_schedule:
 {rrule, is_advanced}` — a recurring trigger (works on global automations too,
 where it's the only "time-based" option since `on_or_around_date` needs a
@@ -150,6 +157,11 @@ a full RFC 5545 string including `DTSTART`). Other trigger types exist in
 Kizen (e.g. `email_interaction`, `email_link_clicked`,
 `contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
 you try to spec them.
+
+A `goal` step's `step_goal.triggers` are wait-until triggers with the same
+`trigger_type` names and config blocks as the top level, e.g. `email_received`
+to wait for a reply. Its `wait_type` is `never`, `delay` or
+`specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
 
 ## Wired step types (26)
 

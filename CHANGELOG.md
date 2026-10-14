@@ -177,6 +177,11 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Specs can author the `email_received` trigger and goal trigger.** Set
+  `trigger_type: email_received` at the top level or in a goal's `triggers`,
+  with an optional `trigger_email_received_from_contact: {receiving_inbox,
+  selected_integrated_inboxes}`. `receiving_inbox` defaults to `any`;
+  `selected_integrated_inboxes` takes inbox UUIDs. Contact automations only.
 - **Automation specs can build branch groups, parallel branches and skipped
   conditions.** Two new step types, `branch` and `merge_branches`, and three
   step fields: `is_branch_group_initiator`, `continue_with_branch` and
@@ -356,6 +361,11 @@ called out explicitly under **Changed** or **Removed**.
   `docs/specs/permission-group.md`.
 
 ### Fixed
+
+- **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
+  longer fail with HTTP 400 on automations with an Email Received trigger or
+  goal.** They sent the trigger's config under the wrong key, so the
+  automation could only be edited in the UI.
 
 - **`smart-connectors seeds add` and `seeds remove` keep a seed's fields when
   they re-save it.** Adding a seed for an object the connector already seeds,

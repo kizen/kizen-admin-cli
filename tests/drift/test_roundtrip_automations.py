@@ -37,6 +37,7 @@ from typing import Any
 
 import pytest
 
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools.planners.automations import (
     _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
@@ -112,7 +113,7 @@ COVERED_STEP_TYPES = (
     | ACTIVITY_STEPS
 )
 
-#: Nine of the ten wired trigger types ride on one record-based automation.
+#: Nine of the eleven wired trigger types ride on one record-based automation.
 RECORD_TRIGGER_TYPES = frozenset(
     {
         "manual",
@@ -130,7 +131,12 @@ RECORD_TRIGGER_TYPES = frozenset(
 #: `schedule` is global-only, so it needs an automation of its own.
 GLOBAL_TRIGGER_TYPES = frozenset({"manual", "schedule"})
 
-COVERED_TRIGGER_TYPES = RECORD_TRIGGER_TYPES | GLOBAL_TRIGGER_TYPES
+#: `email_received` is Contact-only, so it needs one too.
+CONTACT_TRIGGER_TYPES = frozenset({"manual", "email_received"})
+
+COVERED_TRIGGER_TYPES = (
+    RECORD_TRIGGER_TYPES | GLOBAL_TRIGGER_TYPES | CONTACT_TRIGGER_TYPES
+)
 
 
 # ---------------------------------------------------------------------------
@@ -483,7 +489,7 @@ def drift_triggers(
     drift_form,
     drift_survey,
 ) -> dict[str, Any]:
-    """One automation carrying nine of the ten wired trigger types.
+    """One automation carrying nine of the eleven wired trigger types.
 
     Directly analogous to the offline ``kitchen_sink_triggers.raw.json``
     capture, which is the evidence that many triggers on one automation is a
@@ -492,10 +498,11 @@ def drift_triggers(
     ``test_automation_read_shape_keys_the_planner_depends_on``), so the
     ordering stays under this spec's control.
 
-    ``schedule`` is the one that can't ride along: a record-based automation
-    rejects it outright (*"Trigger type 'schedule' is only available for
-    global agentic workflows"*, confirmed live 2026-08-06), so it gets its
-    own global automation in :func:`drift_schedule_trigger`.
+    ``schedule`` can't ride along: a record-based automation rejects it
+    outright (*"Trigger type 'schedule' is only available for global agentic
+    workflows"*, confirmed live 2026-08-06), so it gets its own global
+    automation in :func:`drift_schedule_trigger`. ``email_received`` is
+    Contact-only, so it gets :func:`drift_email_received_trigger`.
     """
     activity_id = drift_activity_type["id"]
     spec = _base_spec("trigs", drift_object)
@@ -616,7 +623,46 @@ def drift_schedule_trigger(drift_client, scratch) -> dict[str, Any]:
     return _create_automation(drift_client, scratch, spec)
 
 
-def test_every_wired_trigger_type_is_accepted(drift_triggers, drift_schedule_trigger):
+@pytest.fixture(scope="session")
+def drift_email_received_trigger(drift_client, scratch) -> dict[str, Any]:
+    """`email_received`, as a trigger and as a goal's wait-until trigger.
+
+    A custom-object automation rejects it ("only client custom object is
+    allowed", confirmed live 2026-10-14), so it runs on Contact.
+    """
+    spec = {
+        "api_name": debris_api_name("email"),
+        "name": debris_name("automation email"),
+        "type": "record_based",
+        "target_object": "client_client",
+        "active": False,
+        "triggers": [
+            {"trigger_type": "manual", "order": 0, "trigger_manual": {}},
+            {
+                "trigger_type": "email_received",
+                "order": 1,
+                "trigger_email_received_from_contact": {"receiving_inbox": "any"},
+            },
+        ],
+        "steps": [
+            {
+                "key": "goal",
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {
+                    "wait_type": "never",
+                    "triggers": [{"trigger_type": "email_received"}],
+                },
+            }
+        ],
+    }
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_every_wired_trigger_type_is_accepted(
+    drift_triggers, drift_schedule_trigger, drift_email_received_trigger
+):
     """The write half: every wired type goes out and the POST succeeds."""
     sent = {t["type"] for t in drift_triggers["sent"]["triggers"]}
     assert sent == set(RECORD_TRIGGER_TYPES), sorted(
@@ -628,7 +674,9 @@ def test_every_wired_trigger_type_is_accepted(drift_triggers, drift_schedule_tri
 
     scheduled = {t["type"] for t in drift_schedule_trigger["sent"]["triggers"]}
     assert scheduled == set(GLOBAL_TRIGGER_TYPES)
-    assert sent | scheduled == set(COVERED_TRIGGER_TYPES)
+    contact = {t["type"] for t in drift_email_received_trigger["sent"]["triggers"]}
+    assert contact == set(CONTACT_TRIGGER_TYPES)
+    assert sent | scheduled | contact == set(COVERED_TRIGGER_TYPES)
 
 
 def test_schedule_trigger_is_flat_in_both_dialects(drift_schedule_trigger):
@@ -650,6 +698,43 @@ def test_schedule_trigger_is_flat_in_both_dialects(drift_schedule_trigger):
     assert live["is_advanced"] is False
 
 
+def test_email_received_reads_back_as_sent(drift_email_received_trigger):
+    """The config key is `trigger_email_received_from_contact` in both
+    dialects, and reads add an empty `selected_integrated_inboxes`."""
+    record = drift_email_received_trigger
+    sent = next(t for t in record["sent"]["triggers"] if t["type"] == "email_received")
+    live = next(
+        t for t in record["live"]["triggers"] if t["trigger_type"] == "email_received"
+    )
+    expected = {"receiving_inbox": "any", "selected_integrated_inboxes": []}
+    assert sent["trigger_email_received_from_contact"] == {"receiving_inbox": "any"}
+    assert live["trigger_email_received_from_contact"] == expected
+
+    (goal,) = _live_steps_by_type(record)["goal"]
+    (nested,) = goal["step_goal"]["triggers"]
+    assert nested["trigger_type"] == "email_received"
+    assert nested["trigger_email_received_from_contact"] == expected
+
+
+def test_email_received_puts_back_unchanged(drift_client, drift_email_received_trigger):
+    """What every re-PUT verb (`activate`, `steps edit`, `roundtrip
+    --execute`) does to the trigger and the goal: translate, PUT, re-read."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.translate import live_to_payload, semantic_diff, validate_payload
+
+    before = drift_email_received_trigger["live"]
+    payload = live_to_payload(before)
+    assert validate_payload(payload) == []
+    auto_api.update_automation(
+        drift_client,
+        drift_email_received_trigger["uuid"],
+        payload,
+        last_revision=payload.get("last_revision"),
+    )
+    after = auto_api.get_automation(drift_client, drift_email_received_trigger["uuid"])
+    assert list(semantic_diff(before, after)) == []
+
+
 def test_every_wired_trigger_type_survives_the_roundtrip(drift_triggers):
     """The read half: same set comes back, keyed the way ``LiveContext`` and
     the read→write translator expect (``trigger_type``, plus a
@@ -662,8 +747,8 @@ def test_every_wired_trigger_type_survives_the_roundtrip(drift_triggers):
             # No config block: the manual trigger carries no configuration at
             # all (recorded in KNOWN_UNDOCUMENTED_BLOCKS for the same reason).
             continue
-        assert f"trigger_{ttype}" in trigger, (
-            f"live read of a '{ttype}' trigger has no trigger_{ttype} block; "
+        assert trigger_config_field(ttype) in trigger, (
+            f"live read of a '{ttype}' trigger has no {trigger_config_field(ttype)} block; "
             "the planner's read→write translation keys off exactly that name"
         )
 
