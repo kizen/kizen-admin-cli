@@ -205,7 +205,8 @@ wire dialect, and the quirks that bite — lives in
 - Condition `filter_config` uses the shared filter DSL — the same one
   `records list --filter` and saved views take. `kizen docs show filters` has
   both layers (the friendly DSL and the wire form it resolves to), the per-type
-  operator rules, and the variable-comparison clause the DSL doesn't cover.
+  operator rules, and the clause for a variable compared to a static value,
+  which the DSL doesn't cover.
 
 ### Secrets in code steps are env-specific
 

@@ -426,7 +426,7 @@ def build_wire_step(
     authored by copying an existing step's ``steps get`` output must not
     carry that step's id along and hijack its identity.
     """
-    from kizen_builder.models.spec import AutomationDef, AutomationStepDef
+    from kizen_builder.models.spec import AutomationStepDef
     from kizen_builder.tools.planners.automations import (
         LiveContext,
         _build_step_payload,
@@ -439,13 +439,24 @@ def build_wire_step(
     spec["order"] = 0  # placeholder; insert_step assigns real placement
     spec.setdefault("key", synthesize_key(payload, spec["step_type"]))
     step_def = AutomationStepDef.model_validate(spec)
+    return _build_step_payload(
+        step_def, _payload_auto(payload, target_object), LiveContext()
+    )
+
+
+def _payload_auto(payload: dict[str, Any], target_object: str | None) -> Any:
+    """The AutomationDef a step builder sees in `steps add`/`edit`. Its steps
+    are the live payload's wire steps, unvalidated: builders read them only
+    for variable declarations (a condition comparing a field to a variable)."""
+    from kizen_builder.models.spec import AutomationDef
+
     auto = AutomationDef(
         name=payload["name"],
         api_name=payload["api_name"],
         type=payload["type"],
         target_object=target_object,
     )
-    return _build_step_payload(step_def, auto, LiveContext())
+    return auto.model_copy(update={"steps": payload["steps"]})
 
 
 def normalize_step_patch(
@@ -464,7 +475,7 @@ def normalize_step_patch(
     email_received trigger set to selected inboxes must name one: the same
     checks `automations create`/`update` and `steps add` apply.
     """
-    from kizen_builder.models.spec import AutomationDef
+    from kizen_builder.filtering import VariableReferenceError
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         LiveContext,
@@ -477,13 +488,11 @@ def normalize_step_patch(
     cfg_key = _block_field_for(step_type)
     builder = _STEP_BUILDERS.get(step_type)
     if cfg_key in patch and builder is not None and isinstance(patch[cfg_key], dict):
-        auto = AutomationDef(
-            name=payload["name"],
-            api_name=payload["api_name"],
-            type=payload["type"],
-            target_object=target_object,
-        )
-        patch[cfg_key] = builder(dict(patch[cfg_key]), auto, LiveContext())
+        auto = _payload_auto(payload, target_object)
+        try:
+            patch[cfg_key] = builder(dict(patch[cfg_key]), auto, LiveContext())
+        except VariableReferenceError as e:
+            raise PlanError(f"step '{key}': {e}") from e
         problem = None
         if step_type == "condition":
             problem = _condition_rules_problem(key, patch[cfg_key])

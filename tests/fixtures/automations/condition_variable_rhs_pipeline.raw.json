@@ -1,0 +1,507 @@
+{
+  "id": "878749f1-1d83-42d2-b5c7-d16bed4512c7",
+  "name": "Condition Variable RHS Pipeline",
+  "api_name": "condition_variable_rhs_pipeline",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+    "name": "object_with_workflow",
+    "description": null,
+    "entity_name": "object with workflow",
+    "object_name": "object with workflow",
+    "object_class": "custom_objects",
+    "object_type": "pipeline",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "9d6cb3f6-aa6e-49e2-b317-d9ae1b1d7686",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    },
+    {
+      "id": "7eb97da2-5af2-41c7-a30d-2d68087372f1",
+      "order": 1,
+      "description": "\u2018updates_13_oct\u2019 Received",
+      "user_description": "",
+      "trigger_type": "webhook",
+      "trigger_webhook": {
+        "id": "bcdecef3-0693-4a91-985b-76fc434d9fe1",
+        "name": "updates_13_oct",
+        "http_method": "POST",
+        "content_type": "application/json",
+        "sample_post_body": "",
+        "extract_raw_body_content": false,
+        "extract_url_query_string": true,
+        "auth_type": "kizen_api",
+        "auth_header_name": "",
+        "auth_header_value": "",
+        "html_auth_header_value": null,
+        "webhook_url": "https://app.go.kizen.com/api/automations/updates_13_oct/webhook/updates_13_oct",
+        "extractors": []
+      },
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "2d63dcaa-9fb2-40b6-acf9-3f3004798d7d",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "branches = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "0b373866-55f4-450a-8e58-2474b54cb308",
+          "name": "branches",
+          "data_type": "entity",
+          "data_subtype": {
+            "id": "95ca0064-bcf7-44bb-9e5c-b350a3847278",
+            "name": "branches",
+            "description": null,
+            "entity_name": "Branch",
+            "object_name": "Branches",
+            "object_class": "custom_objects",
+            "object_type": "standard",
+            "default_on_activities": true,
+            "deleted": false
+          },
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-14T13:36:22.085907Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "c61242e9-c903-4b28-b960-37ec4c04bd81",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "sdf = <i>empty</i>",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "2d63dcaa-9fb2-40b6-acf9-3f3004798d7d",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "9af7e348-a753-4931-9b69-472c44fa82b7",
+          "name": "sdf",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-14T13:39:16.389156Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "c412a7d9-f5c6-4c11-8973-b44189260364",
+      "step_type": "condition",
+      "order": 2,
+      "description": "object with workflow Fields 'Related Branch Records' Is Any Of Variable 'branches'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": "c61242e9-c903-4b28-b960-37ec4c04bd81",
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": false,
+          "query": [
+            {
+              "id": "query-0",
+              "and": false,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::558e8df0-eab1-4501-92c3-d5229404219c",
+                  "value": "branches",
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "value_type": "variable",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "8c3f0149-6915-4370-940f-2e61848d6842"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/fields/558e8df0-eab1-4501-92c3-d5229404219c",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "related_branch_records",
+                          "relation": {
+                            "fetch_url": "standard",
+                            "related_object": "95ca0064-bcf7-44bb-9e5c-b350a3847278"
+                          },
+                          "field_type": "relationship"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value_type",
+                      "variable"
+                    ],
+                    [
+                      "variable",
+                      {
+                        "name": "branches",
+                        "is_array": true,
+                        "data_type": "entity",
+                        "data_subtype": {
+                          "id": "95ca0064-bcf7-44bb-9e5c-b350a3847278",
+                          "name": "branches",
+                          "deleted": false,
+                          "description": "Branches",
+                          "entity_name": "Branch",
+                          "object_name": "Branches",
+                          "object_type": "standard"
+                        }
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Related Branch Records' Is Any Of Variable 'branches'"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [
+          {
+            "id": "9ee5fdac-fd12-440c-ad82-5ef51a211c81"
+          }
+        ],
+        "no_steps": [
+          {
+            "id": "651d2d54-ac1d-4433-82f9-24c66725847d"
+          }
+        ],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "651d2d54-ac1d-4433-82f9-24c66725847d",
+      "step_type": "plugin_code_step",
+      "order": 3,
+      "description": "AgenticOS - Gather Context",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "c412a7d9-f5c6-4c11-8973-b44189260364",
+      "parent_condition": "no",
+      "action_plugin_code_step": {
+        "plugin_app_api_name": "agentic_os",
+        "action_step_api_name": "gather_context",
+        "notify_plugin_developer_on_failure": false,
+        "secrets": [],
+        "inputs": [
+          {
+            "input_type": "static_value",
+            "name": "heading",
+            "static_value": {
+              "value": "asdf",
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "related_field",
+            "name": "object",
+            "field": {
+              "id": "d63685a1-1f2f-4028-aab7-06dac762fe19",
+              "name": "primary_cd_activity_record",
+              "display_name": "Primary CD Activity Record",
+              "deleted": false
+            },
+            "related_field": {
+              "id": "e201f601-48ce-477b-a484-f577df25ffa9",
+              "name": "activity_date",
+              "display_name": "Activity Date",
+              "deleted": false
+            },
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "business_plugin_config",
+            "name": "fields",
+            "variable": null,
+            "field": null,
+            "related_field": null,
+            "static_value": null,
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "static_value",
+            "name": "filter",
+            "static_value": {
+              "value": "asdf",
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "static_value",
+            "name": "limit",
+            "static_value": {
+              "value": "1",
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "number",
+            "is_list": false
+          }
+        ],
+        "outputs": [
+          {
+            "output_type": "field",
+            "name": "context",
+            "field": {
+              "id": "dd7e1f05-351d-4b34-9953-478a3be82b79",
+              "name": "stage",
+              "display_name": "Stage",
+              "deleted": false
+            },
+            "conflict_resolution": "update_if_blank",
+            "create_missing_option": false,
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "output_type": "related_field",
+            "name": "record_count",
+            "field": {
+              "id": "0129127c-6691-4c76-90ac-3a5315eb7eb2",
+              "name": "primary_contact_record",
+              "display_name": "Primary Contact Record",
+              "deleted": false
+            },
+            "related_field": {
+              "id": "321de730-826e-46fc-b507-533fb5386701",
+              "name": "first_name",
+              "display_name": "First Name",
+              "deleted": false
+            },
+            "conflict_resolution": "overwrite",
+            "create_missing_option": false,
+            "data_type": "number",
+            "is_list": false
+          },
+          {
+            "output_type": "variable",
+            "name": "records_json",
+            "variable": {
+              "name": "sdf",
+              "deleted": false
+            },
+            "conflict_resolution": "overwrite",
+            "create_missing_option": false,
+            "data_type": "string",
+            "is_list": false
+          }
+        ]
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "9ee5fdac-fd12-440c-ad82-5ef51a211c81",
+      "step_type": "delay",
+      "order": 4,
+      "description": "Delay execution by 1 Minute",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "c412a7d9-f5c6-4c11-8973-b44189260364",
+      "parent_condition": "yes",
+      "step_delay": {
+        "minutes": 1,
+        "hours": 0,
+        "days": 0,
+        "weeks": 0,
+        "months": 0,
+        "years": 0,
+        "time": null,
+        "skip_non_working_days": false,
+        "value_origin": "static",
+        "duration_unit": "minutes",
+        "variable": null
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "2e27b558-8cdf-47e8-8c60-84834a4f9fdc",
+      "step_type": "merge_branches",
+      "order": 5,
+      "description": "Merge Branch",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "c412a7d9-f5c6-4c11-8973-b44189260364",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "0b373866-55f4-450a-8e58-2474b54cb308",
+      "name": "branches",
+      "data_type": "entity",
+      "data_subtype": {
+        "id": "95ca0064-bcf7-44bb-9e5c-b350a3847278",
+        "name": "branches",
+        "description": null,
+        "entity_name": "Branch",
+        "object_name": "Branches",
+        "object_class": "custom_objects",
+        "object_type": "standard",
+        "default_on_activities": true,
+        "deleted": false
+      },
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-14T13:36:22.085907Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "9af7e348-a753-4931-9b69-472c44fa82b7",
+      "name": "sdf",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-14T13:39:16.389156Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    }
+  ],
+  "revision": 4,
+  "error_notification_email": null,
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-14T08:31:11.917703-05:00",
+  "updated": "2026-10-14T08:39:16.269444-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

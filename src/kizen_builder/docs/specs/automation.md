@@ -535,6 +535,26 @@ an **automation variable** to a static value is a different clause shape,
   **`client_tag_field_id`** (`257bb114-1b86-4761-99bd-95292de23f46`) is a
   constant that appears fixed across envs.
 
+### Field compared to an array variable
+
+To test a record field against a variable's values, put `"variable"` in
+place of `"value"` in the condition's filter spec. The variable must be
+declared in the same automation, as an array (a team-member field also takes
+a single `employee` variable). For a dropdown the array holds option names or
+option UUIDs; a test run matched with each. Not on Contacts automations.
+
+```json
+{ "key": "allowed", "parent_key": null, "step_type": "initialize_variable",
+  "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
+    "variable": { "name": "allowed_statuses", "data_type": "string", "is_array": true } } },
+{ "key": "check", "parent_key": "allowed", "step_type": "condition",
+  "step_condition": { "type": "custom_filter", "filter_config": { "all": [
+    { "field": "status", "op": "is_any_of", "variable": "allowed_statuses" } ] } } }
+```
+
+The field types, ops and variable kinds this takes are in
+`kizen docs show filters`.
+
 ### Reading a related record's field into a variable
 
 `initialize_variable`/`update_variable` sources support pulling a value
@@ -673,8 +693,10 @@ as a real custom object's own api_name, and its span gets
   Fields are **bare api_names**; **ops are per field type** (e.g. dropdown uses
   `is_any_of`/`not_any_of`, numbers use `>=`/`between` — *not* `in`/`gte`). Run
   `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
-  dict for clause types the DSL doesn't cover (variable comparisons — see
-  "Variable-comparison condition step" above). **A condition needs at least one
+  dict for clause types the DSL doesn't cover (a variable compared to a static
+  value — see "Variable-comparison condition step" above). A field compared to
+  an array variable is in the DSL ("Field compared to an array variable"
+  above). **A condition needs at least one
   rule.** An empty `query`, a group with no `filters`, or an `in_group`/
   `not_in_group` with no `group_ids` is rejected at plan time. The API accepts
   an empty filter, but the UI then shows an error on the step (reported

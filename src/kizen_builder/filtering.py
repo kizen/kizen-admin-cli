@@ -211,6 +211,23 @@ _STAGE_CONDITIONS = {
 }
 
 
+# Comparing a field to an automation variable (condition steps only). The
+# field types the Kizen UI offers "Variable" on, and the variable kinds
+# (data_type, is_array) its picker lists for each, as captured from the UI
+# 2026-10-14. An entity array must hold the relationship's related object.
+_VARIABLE_KINDS = {
+    "dropdown": {("string", True), ("uuid", True)},
+    "checkboxes": {("string", True), ("uuid", True)},
+    "team_selector": {("string", True), ("uuid", True), ("employee", False)},
+    "relationship": {("string", True), ("uuid", True), ("entity", True)},
+}
+
+
+class VariableReferenceError(ValueError):
+    """A filter spec's "variable" doesn't fit its field or the declarations.
+    The automation planner prefixes the step's key."""
+
+
 def _check_ui_supported(field, condition):
     field_type = field["field_type"]
     if field["is_default"] and field["name"] == "stage":
@@ -229,11 +246,14 @@ def _check_ui_supported(field, condition):
 
 
 class FilterCondition:
-    def __init__(self, field, condition, value, extra=None):
+    def __init__(self, field, condition, value, extra=None, variable=None):
         self.field = field
         self.condition = condition
         self.value = value
         self.extra = extra
+        # {name, data_type, is_array[, data_subtype]}: compare to this
+        # automation variable instead of `value`.
+        self.variable = variable
 
     def as_dict(self, parent=None):
         client = get_cx_client()
@@ -245,6 +265,9 @@ class FilterCondition:
                 f"Unknown field {self.field!r} on object {obj_id!r}. "
                 f"Use the field's api name (or its uuid)."
             )
+
+        if self.variable is not None:
+            return self._variable_clause(field, client, obj_id)
 
         _check_ui_supported(field, self.condition)
 
@@ -374,6 +397,119 @@ class FilterCondition:
             "condition": condition,
             "value": value,
             **extra,
+        }
+
+    def _variable_clause(self, field, client, obj_id):
+        """The clause the UI writes for "<field> <op> Variable '<name>'".
+
+        The UI won't open the step without the full ``view_model``: with none
+        it errors, and with a partial one the rule shows empty (checked
+        2026-10-14). Its ``filter_type`` vars name the target object and the
+        Contacts ``tags`` field.
+        """
+        obj = client.custom_object(obj_id)
+        if obj.get("fetch_url") == "client":
+            # The field URL in the view_model differs by object family, and no
+            # Contacts rule has been captured to show it.
+            raise VariableReferenceError(
+                "comparing a field to a variable isn't supported on Contacts "
+                "automations yet; build the rule in the Kizen UI"
+            )
+        field_type = field["field_type"]
+        var = self.variable
+        name, data_type = var["name"], var["data_type"]
+        is_array = bool(var.get("is_array"))
+        kinds = _VARIABLE_KINDS.get(field_type)
+        if kinds is None or (field["is_default"] and field["name"] == "stage"):
+            raise VariableReferenceError(
+                f"field '{self.field}' ({field_type}) can't be compared to a "
+                f"variable. Field types that can: {', '.join(sorted(_VARIABLE_KINDS))}"
+            )
+        relation = field.get("relation") or {}
+        subtype = None
+        if data_type == "entity" and var.get("data_subtype"):
+            subtype = client.custom_object(var["data_subtype"])
+        if (data_type, is_array) not in kinds or (
+            data_type == "entity"
+            and (subtype is None or subtype["id"] != relation.get("related_object"))
+        ):
+            if not is_array:
+                raise VariableReferenceError(
+                    f"variable '{name}' isn't an array — comparing a field to a "
+                    "variable needs an array variable"
+                )
+            kind = f"entity ({subtype['name']})" if subtype else data_type
+            article = "an" if data_type == "entity" else "a"
+            raise VariableReferenceError(
+                f"field '{self.field}' ({field_type}) can't be compared to "
+                f"{article} {kind} array variable"
+            )
+
+        condition = self.condition
+        if field_type in _MULTI_OPTION_TYPES:
+            condition = _HAS_CONDITION_MAP.get(condition, condition)
+        if field["is_default"]:
+            clause = {"type": "fields", "subtype": "non_custom", "field": self.field}
+        else:
+            clause = {
+                "type": "fields_v2",
+                "subtype": "custom",
+                "field": f'"custom"::{field["id"]}',
+            }
+
+        tags = client.get_field("client_client", "tags")
+        prefix = "pipelines" if obj.get("fetch_url") == "pipeline" else "custom-objects"
+        var_vm = {"name": name, "is_array": is_array, "data_type": data_type}
+        if subtype is not None:
+            var_vm["data_subtype"] = {
+                "id": subtype["id"],
+                "name": subtype["name"],
+                "deleted": False,
+                "description": subtype.get("description") or subtype.get("object_name"),
+                "entity_name": subtype.get("entity_name"),
+                "object_name": subtype.get("object_name"),
+                "object_type": subtype.get("object_type"),
+            }
+        view_model = [
+            [
+                "filter_type",
+                {
+                    "vars": [
+                        ["fields_settings_search", True],
+                        ["custom_object_id", obj_id],
+                        ["object_type", obj.get("object_type")],
+                        ["client_tag_field_id", tags["id"] if tags else None],
+                    ],
+                    "filter_type": "fields",
+                },
+            ],
+            [
+                "field_id",
+                {
+                    "url": f"/{prefix}/{obj_id}/fields/{field['id']}",
+                    "method": "GET",
+                    "error_message": {"404": "The field has been deleted"},
+                    "error_response": {
+                        "name": field["name"],
+                        "relation": {
+                            k: relation[k]
+                            for k in ("fetch_url", "related_object")
+                            if k in relation
+                        },
+                        "field_type": field_type,
+                    },
+                },
+            ],
+            ["condition", condition],
+            ["value_type", "variable"],
+            ["variable", var_vm],
+        ]
+        return {
+            **clause,
+            "condition": condition,
+            "value": name,
+            "value_type": "variable",
+            "view_model": view_model,
         }
 
 
@@ -1379,10 +1515,13 @@ def as_custom_filters(expr):
 #
 #   {"all": [<spec>, ...]}   AND group          {"any": [...]}   OR group
 #   {"field": "<api_name or uuid>", "op": "<op>", "value": <v>}
+#   {"field": "<api_name or uuid>", "op": "<op>", "variable": "<name>"}
 #
 # Field names, option labels, and tag names resolve to UUIDs exactly as in
 # the DSL (the spec compiles TO the DSL). Ops with no value (is_blank,
 # is_me, ...) omit "value"; list ops (is_any_of, between, ...) take a list.
+# "variable" (condition steps only) compares the field to an automation
+# variable instead of a literal, with the two ops in _VARIABLE_OPS.
 # ---------------------------------------------------------------------------
 
 _NO_VALUE_OPS = {
@@ -1419,6 +1558,8 @@ _LIST_OPS = {
 }
 
 VALID_SPEC_OPS = sorted({*_NO_VALUE_OPS, *_SCALAR_OPS, *_LIST_OPS})
+
+_VARIABLE_OPS = {"is_any_of": "is_any_of", "not_any_of": "is_none_of"}
 
 
 def _spec_op_condition_map():
@@ -1483,10 +1624,14 @@ def field_type_ops(field_type=None):
     }
 
 
-def from_spec(spec):
+def from_spec(spec, variables=None):
     """Compile a JSON filter spec (see module comment above) to a DSL
     expression. Raises ValueError on malformed specs; UUID resolution and
-    UI-supportability checks happen later, at serialization time."""
+    UI-supportability checks happen later, at serialization time.
+
+    ``variables`` maps the automation's declared variable names to their
+    ``{data_type, is_array[, data_subtype]}``. Only a condition step passes
+    it; without it a ``"variable"`` key is rejected."""
     if not isinstance(spec, dict):
         raise ValueError(
             f"filter spec must be a JSON object, got {type(spec).__name__}"
@@ -1499,12 +1644,14 @@ def from_spec(spec):
         if not isinstance(children, list) or not children:
             raise ValueError(f'"{kind}" must be a non-empty list of specs')
         group_cls = All if kind == "all" else Any
-        return group_cls(*[from_spec(c) for c in children])
+        return group_cls(*[from_spec(c, variables) for c in children])
 
     if "field" in spec:
-        unknown = set(spec) - {"field", "op", "value"}
+        unknown = set(spec) - {"field", "op", "value", "variable"}
         if unknown:
             raise ValueError(f"unknown keys in condition: {sorted(unknown)}")
+        if "variable" in spec:
+            return _variable_condition(spec, variables)
         op = spec.get("op")
         field = Field(spec["field"])
         if op in _NO_VALUE_OPS:
@@ -1523,6 +1670,37 @@ def from_spec(spec):
 
     raise ValueError(
         f'filter spec must contain "all", "any", or "field" (got keys: {sorted(spec)})'
+    )
+
+
+def _variable_condition(spec, variables):
+    if variables is None:
+        raise ValueError(
+            '"variable" compares to an automation variable and only works in a '
+            "condition step's filter_config"
+        )
+    if "value" in spec:
+        raise ValueError('a condition takes "value" or "variable", not both')
+    op = spec.get("op")
+    if op not in _VARIABLE_OPS:
+        raise ValueError(
+            f'op {op!r} can\'t compare to a "variable". Use one of: '
+            f"{', '.join(_VARIABLE_OPS)}"
+        )
+    name = spec["variable"]
+    if not isinstance(name, str) or not name:
+        raise ValueError('"variable" must be a variable name')
+    if name not in variables:
+        arrays = sorted(n for n, v in variables.items() if v.get("is_array"))
+        raise VariableReferenceError(
+            f"variable '{name}' isn't declared in this automation "
+            f"(declared arrays: {', '.join(arrays) or 'none'})"
+        )
+    return FilterCondition(
+        spec["field"],
+        _VARIABLE_OPS[op],
+        None,
+        variable={"name": name, **variables[name]},
     )
 
 

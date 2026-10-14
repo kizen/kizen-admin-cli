@@ -9,7 +9,7 @@ filter bugs:
 
 | layer | what it is | where you write it |
 |---|---|---|
-| **The DSL** | `{"all"\|"any": [{field, op, value}]}` — friendly, field api_names, option *labels* | `--filter` / `--filter-file`, and `filter_config` in a spec file |
+| **The DSL** | `{"all"\|"any": [{field, op, value}]}` (or `variable` in place of `value`, below) — friendly, field api_names, option *labels* | `--filter` / `--filter-file`, and `filter_config` in a spec file |
 | **The wire** | `{"and", "query": [...], "invalid"}` — query groups, `"custom"::<uuid>` field refs, option UUIDs | what Kizen stores; what you get back from a read |
 
 The CLI resolves the DSL to the wire form against live schema at plan time.
@@ -48,8 +48,10 @@ re-run through the DSL.
 - **A single condition must still be wrapped** in `{"all": [...]}`. A bare
   `{"field": ...}` is not accepted anywhere — not in `--filter`, not in a
   condition step.
-- For clause types the DSL doesn't cover (variable comparisons, below), pass a
-  raw wire dict instead.
+- A variable compared to a static value is a clause type the DSL doesn't
+  cover (below): pass a raw wire dict. A **field compared to an array
+  variable** is in the DSL: give `"variable"` instead of `"value"`, in a
+  condition step only (below).
 
 ## The wire format
 
@@ -163,13 +165,52 @@ For a blank check **on a variable**, `condition` is `is_blank` or
 (`257bb114-1b86-4761-99bd-95292de23f46`) appears to be a constant across
 environments. `custom_object_id` is the automation's target object.
 
+## Comparing a field to an array variable (condition steps only)
+
+The UI's "Variable" option on a rule compares a record field to an
+automation variable instead of a literal. In the DSL, name the variable:
+
+```json
+{ "all": [
+    { "field": "status", "op": "is_any_of", "variable": "allowed_statuses" }
+] }
+```
+
+- `variable` replaces `value`; give one or the other.
+- Ops: `is_any_of` or `not_any_of`. Labels vary by field type: checkboxes
+  and relationship fields say "Contains Any Of" / "Contains None Of".
+- The variable must be declared in the same automation, by an
+  `initialize_variable` step or as a `search_records` destination (an entity
+  array of the searched object). The planner checks its kind against the
+  field. The CLI writes the UI's full `view_model`; without it the UI can't
+  open the step.
+- For a dropdown, the array can hold option names or option UUIDs: a test
+  run on 2026-10-14 matched with each. The other field types were not run.
+- Not on Contacts automations yet: no UI-built Contacts rule has been
+  captured. Every other filter surface rejects `"variable"`,
+  `search_records` included.
+
+Which variables the UI offers for each field type (confirmed live
+2026-10-14):
+
+| field type | variable kinds |
+|---|---|
+| `dropdown` | string array, UUID array |
+| `checkboxes` | string array, UUID array |
+| `team_selector` | string array, UUID array, a single `employee` variable |
+| `relationship` | string array, UUID array, entity array of the related object |
+
+The wire clause is the field's usual clause with the variable's name as
+`value` and `"value_type": "variable"`. The `condition` token is the same one
+a literal list would get (checkboxes `not_any_of` is `!has_any`).
+
 ## Writing a condition step's filter, start to finish
 
 1. `kizen objects get <object>` — field UUIDs are shown inline for every field,
    and every choice/status/yesnomaybe field's `options` array carries
    `{id, name, code}`. **No separate API call is needed for option UUIDs.**
 2. Build the filter. Prefer the DSL and let the CLI resolve it; drop to the
-   wire form only for variable clauses.
+   wire form only to compare a variable to a static value.
 3. The planner sets `action_on_failure: notify_pause` for you — a condition
    step is rejected with 400 without it.
 4. Wire the branches: each child step sets `parent_key` to the condition's key

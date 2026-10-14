@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from kizen_builder.config import load_env_config
+from kizen_builder.filtering import VariableReferenceError
 from kizen_builder.models.spec import (
     AutomationDef,
     AutomationStepDef,
@@ -1176,7 +1177,7 @@ def _build_step_payload(
     _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
     try:
         wire_block = builder(block_dict, auto, ctx)
-    except PlanError as e:
+    except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
     problem = None
     if step.step_type == "condition":
@@ -1237,7 +1238,7 @@ def _step_condition(
     }
     if block.get("filter_config") is not None:
         out["filter_config"] = _render_filter_config(
-            block["filter_config"], auto.target_object
+            block["filter_config"], auto.target_object, _declared_variables(auto.steps)
         )
     # in_group conditions: reads expand to `groups: [{id, name, …}]`;
     # writes take `group_ids: [uuid]`.
@@ -1247,6 +1248,34 @@ def _step_condition(
         out["group_ids"] = [_unwrap_id(g) for g in block["groups"] if _unwrap_id(g)]
     # NEVER set yes_step_ids / no_step_ids — server crashes.
     return out
+
+
+def _declared_variables(steps: Any) -> dict[str, dict[str, Any]]:
+    """The variable declarations by name, for a filter spec's ``"variable"``:
+    ``initialize_variable`` steps, then the ``search_records`` destinations
+    they don't declare (entity arrays of the searched object). ``steps`` are
+    spec steps, or a translated payload's wire steps (`steps add`/`edit`)."""
+    steps = [_to_dict(s) for s in steps]
+    declared: dict[str, dict[str, Any]] = {}
+    for s in steps:
+        var = _to_dict(s.get("action_initialize_variable")).get("variable")
+        if isinstance(var, dict) and var.get("name"):
+            declared[var["name"]] = {
+                "data_type": var.get("data_type"),
+                "is_array": bool(var.get("is_array")),
+                "data_subtype": _unwrap_id(var.get("data_subtype")),
+            }
+    for s in steps:
+        block = _to_dict(s.get("action_search_records"))
+        name = _unwrap_variable_name(block.get("destination_variable"))
+        if name and name not in declared:
+            obj = block.get("custom_object")
+            declared[name] = {
+                "data_type": "entity",
+                "is_array": True,
+                "data_subtype": _api_name_of(obj) or _unwrap_id(obj),
+            }
+    return declared
 
 
 def _condition_rules_problem(key: str, block: dict[str, Any]) -> str | None:
@@ -1291,13 +1320,18 @@ def _inbox_selection_problem(triggers: list[dict[str, Any]]) -> str | None:
 
 
 def _render_filter_config(
-    fc: dict[str, Any], object_api_name: str | None
+    fc: dict[str, Any],
+    object_api_name: str | None,
+    variables: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Accept either a JSON filter spec ({"all"|"any": [...]} — compiled via
     the filtering DSL with field names resolved against ``object_api_name``)
     or a raw filter_config dict (normalized: group ids assigned, null clause
     values rejected). Raw is the only form for clause types the DSL doesn't
-    cover (e.g. automation-variable comparisons).
+    cover (e.g. a variable compared to a static value).
+
+    ``variables`` (condition steps only) are the automation's declared
+    variables, which a spec condition's ``"variable"`` may name.
 
     ``object_api_name`` is the condition/search step's own target object —
     the automation's ``target_object`` for a condition step, but a
@@ -1315,7 +1349,9 @@ def _render_filter_config(
             )
         try:
             with filtering.filter_context(object_api_name):
-                return filtering.as_filter_config(filtering.from_spec(fc))
+                return filtering.as_filter_config(filtering.from_spec(fc, variables))
+        except filtering.VariableReferenceError:
+            raise
         except (ValueError, LookupError) as e:
             raise PlanError(f"invalid filter spec: {e}") from e
     try:
