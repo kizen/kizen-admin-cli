@@ -388,6 +388,32 @@ def test_call_llm_preserves_explicit_html_prompt(patch_live_lookups):
     assert action["html_prompt"] == "<p>custom <b>markup</b></p>"
 
 
+def test_call_llm_rejects_data_type(patch_live_lookups):
+    """Kizen accepts `data_type` on call_llm and drops it (confirmed live
+    2026-10-14), so the planner refuses it rather than forwarding a no-op."""
+    spec = {
+        "api_name": "call_llm_data_type_test",
+        "name": "Call LLM Data Type Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "llm",
+                "step_type": "call_llm",
+                "order": 0,
+                "parent_key": None,
+                "action_call_llm": {
+                    "model_name": "gemini/gemini-2.5-flash",
+                    "prompt": "plain",
+                    "data_type": "text",
+                },
+            }
+        ],
+    }
+    with pytest.raises(PlanError, match="data_type"):
+        _build(spec)
+
+
 def test_call_llm_destinations_resolve_field_ref(patch_live_lookups):
     """call_llm previously ran destinations through plain _normalize_destinations
     (no field_ref resolution) while file_content_extraction used the

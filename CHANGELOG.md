@@ -172,6 +172,8 @@ called out explicitly under **Changed** or **Removed**.
   the step in the UI, and a group condition with no groups has nothing to
   test. Reading and editing a live automation that already carries one
   still works, so `steps edit` can fix it.
+- **A `call_llm` step that sets `data_type` is now rejected at plan time.**
+  Kizen accepted the key and discarded it, so the step was saved without it.
 
 ### Added
 

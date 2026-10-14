@@ -79,7 +79,6 @@ class ActionLlmCallConfig(BaseModel):
     html_prompt: str | None = None
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = False
-    data_type: str | None = None
     business_plugin_app_id: str | None = Field(
         default=None,
         description=(
