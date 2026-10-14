@@ -141,7 +141,7 @@ src/kizen_builder/
         status.py                #       plan/apply set-status
         variables.py             #       suggest_execution_variables()
     steps.py                     #   step-graph surgery (find/edit/insert/remove, validation)
-    team.py                      #   search_team()
+    team.py                      #   search, get, resolve a member
     planners/                    #   plan_* tools — produce Plans, never mutate
       activities.py              #     plan_create/update/delete activity types + fields
       automations.py             #     plan_create_automation, plan_update_automation
