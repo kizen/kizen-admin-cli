@@ -2540,3 +2540,134 @@ def test_uncaptured_builder_output_replans_unchanged(
     cfg = _block_field_for(step_type)
     wire = _build(_one_step_spec(step_type, block))["steps"][0][cfg]
     assert _build(_one_step_spec(step_type, wire))["steps"][0][cfg] == wire
+
+
+# ---------------------------------------------------------------------------
+# update_variable value_resolution (confirmed live 2026-10-14)
+# ---------------------------------------------------------------------------
+
+
+def _array_update_block(**extra: object) -> dict:
+    return {
+        "variable": {"name": "tags", "data_type": "string"},
+        "sources": [
+            {
+                "source_type": "static",
+                "source_subtype": "string",
+                "value": ["b"],
+                "array_separator": "comma",
+            }
+        ],
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": False,
+        **extra,
+    }
+
+
+@pytest.mark.parametrize("value", ["add_only", "overwrite", "overwrite_except_null"])
+def test_update_variable_forwards_value_resolution(patch_live_lookups, value):
+    spec = _one_step_spec(
+        "update_variable", _array_update_block(value_resolution=value)
+    )
+    block = _build(spec)["steps"][0]["action_update_variable"]
+    assert block["value_resolution"] == value
+    assert block["array_aggregation_mode"] == "add_all"
+    assert block["deduplicate_array"] is False
+
+
+@pytest.mark.parametrize("extra", [{}, {"value_resolution": None}])
+def test_update_variable_omits_null_value_resolution(patch_live_lookups, extra):
+    spec = _one_step_spec("update_variable", _array_update_block(**extra))
+    assert "value_resolution" not in _build(spec)["steps"][0]["action_update_variable"]
+
+
+@pytest.mark.parametrize(
+    "key, value, allowed",
+    [
+        (
+            "value_resolution",
+            "append",
+            "'add_only', 'overwrite' or 'overwrite_except_null'",
+        ),
+        ("array_aggregation_mode", "all", "'add_first_non_blank' or 'add_all'"),
+    ],
+)
+def test_update_variable_rejects_unknown_option(key, value, allowed):
+    spec = _one_step_spec("update_variable", _array_update_block(**{key: value}))
+    with pytest.raises(ValueError, match=allowed):
+        AutomationDef.model_validate(spec)
+
+
+def test_initialize_variable_rejects_value_resolution(patch_live_lookups):
+    block = _array_update_block(value_resolution="add_only")
+    block["variable"]["is_array"] = True
+    with pytest.raises(PlanError, match="only update_variable does"):
+        _build(_one_step_spec("initialize_variable", block))
+
+
+def test_live_update_variable_with_null_value_resolution_replans_unchanged(
+    patch_live_lookups,
+):
+    """Post-2026-10-13 reads carry `value_resolution: null` on every
+    update_variable. A spec copied from that read plans to the same wire
+    block the translator produces, with no value_resolution key."""
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/update_variable_goto_branching.raw.json")
+    step = next(s for s in raw["steps"] if s["step_type"] == "update_variable")
+    step["action_update_variable"]["value_resolution"] = None
+    live = next(s for s in live_to_payload(raw)["steps"] if s["id"] == step["id"])
+
+    spec = _one_step_spec("update_variable", step["action_update_variable"])
+    planned = _build(spec)["steps"][0]["action_update_variable"]
+    assert "value_resolution" not in planned
+    assert planned == live["action_update_variable"]
+
+
+def _init_then_update_spec(*, is_array: bool | None, defined_as: str = "tags") -> dict:
+    variable: dict = {"name": defined_as, "data_type": "string"}
+    if is_array is not None:
+        variable["is_array"] = is_array
+    spec = _one_step_spec("initialize_variable", {"variable": variable, "sources": []})
+    spec["steps"][0]["key"] = "init"
+    spec["steps"].append(
+        {
+            "key": "bump",
+            "step_type": "update_variable",
+            "order": 1,
+            "parent_key": "init",
+            "action_update_variable": _array_update_block(value_resolution="add_only"),
+        }
+    )
+    return spec
+
+
+@pytest.mark.parametrize("is_array", [False, None])
+def test_update_variable_rejects_value_resolution_on_scalar(
+    patch_live_lookups, is_array
+):
+    with pytest.raises(PlanError, match="'bump' sets value_resolution on 'tags'"):
+        _build(_init_then_update_spec(is_array=is_array))
+
+
+def test_update_variable_value_resolution_on_array_plans(patch_live_lookups):
+    steps = _build(_init_then_update_spec(is_array=True))["steps"]
+    assert steps[1]["action_update_variable"]["value_resolution"] == "add_only"
+
+
+def test_update_variable_value_resolution_on_undefined_variable_passes(
+    patch_live_lookups,
+):
+    """No definition to check against: the server decides."""
+    steps = _build(_init_then_update_spec(is_array=False, defined_as="other"))["steps"]
+    assert steps[1]["action_update_variable"]["value_resolution"] == "add_only"
+
+
+def test_translate_keeps_value_resolution_on_scalar_variable():
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/update_variable_goto_branching.raw.json")
+    step = next(s for s in raw["steps"] if s["step_type"] == "update_variable")
+    step["action_update_variable"]["value_resolution"] = "add_only"
+    live = next(s for s in live_to_payload(raw)["steps"] if s["id"] == step["id"])
+    assert live["action_update_variable"]["value_resolution"] == "add_only"

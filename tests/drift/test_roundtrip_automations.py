@@ -1272,6 +1272,59 @@ def test_variable_references_are_names_on_write_and_definitions_on_read(
     }
 
 
+@pytest.fixture(scope="session")
+def drift_array_variable_steps(drift_client, scratch, drift_object) -> dict[str, Any]:
+    """Its own automation because `value_resolution` 400s on a scalar
+    variable, and the data-steps automation's variable is a number."""
+    source = {
+        "source_type": "static",
+        "source_subtype": "string",
+        "value": ["a"],
+        "array_separator": "comma",
+    }
+    spec = _base_spec("arrayvar", drift_object)
+    spec["steps"] = [
+        {
+            "key": "init_tags",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "parent_key": None,
+            "action_initialize_variable": {
+                "variable": {
+                    "name": "drift_tags",
+                    "data_type": "string",
+                    "is_array": True,
+                },
+                "sources": [source],
+                "array_aggregation_mode": "add_all",
+                "deduplicate_array": False,
+            },
+        },
+        {
+            "key": "append_tags",
+            "step_type": "update_variable",
+            "order": 1,
+            "parent_key": "init_tags",
+            "action_update_variable": {
+                "variable": {"name": "drift_tags", "data_type": "string"},
+                "sources": [{**source, "value": ["b"]}],
+                "array_aggregation_mode": "add_all",
+                "deduplicate_array": True,
+                "value_resolution": "add_only",
+            },
+        },
+    ]
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_update_variable_value_resolution_reads_back(drift_array_variable_steps):
+    (live,) = _live_steps_by_type(drift_array_variable_steps)["update_variable"]
+    block = live["action_update_variable"]
+    assert block["value_resolution"] == "add_only"
+    assert block["array_aggregation_mode"] == "add_all"
+    assert block["deduplicate_array"] is True
+
+
 def test_archive_record_uses_the_id_suffixed_write_keys(drift_data_steps):
     """`relationship_fields` (read) is silently ignored on write; the planner
     always emits `relationship_field_ids`."""

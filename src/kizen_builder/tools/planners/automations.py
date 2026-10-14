@@ -1154,6 +1154,10 @@ def _build_step_payload(
         problem = _condition_rules_problem(step.key, wire_block)
         if problem:
             raise PlanError(problem)
+    elif step.step_type == "update_variable":
+        problem = _scalar_value_resolution_problem(step.key, wire_block, auto)
+        if problem:
+            raise PlanError(problem)
     p[cfg_field] = wire_block
     return p
 
@@ -1237,6 +1241,35 @@ def _condition_rules_problem(key: str, block: dict[str, Any]) -> str | None:
             if not group.get("filters"):
                 return f"condition step '{key}' has an empty rule group (query[{i}])"
     return None
+
+
+def _scalar_value_resolution_problem(
+    key: str, block: dict[str, Any], auto: AutomationDef
+) -> str | None:
+    """Why a built ``action_update_variable`` sets value_resolution on a
+    scalar variable, or None.
+
+    The server 400s it (confirmed live 2026-10-14). Only a variable the spec
+    defines exactly once is checked; anything else is left to the server.
+    Spec path only, like ``_condition_rules_problem``.
+    """
+    name = block.get("variable")
+    if block.get("value_resolution") is None or not isinstance(name, str):
+        return None
+    defs = [
+        s.action_initialize_variable.variable
+        for s in auto.steps
+        if s.step_type == "initialize_variable"
+        and s.action_initialize_variable is not None
+        and s.action_initialize_variable.variable.name == name
+    ]
+    if len(defs) != 1 or getattr(defs[0], "is_array", False):
+        return None
+    return (
+        f"update_variable step '{key}' sets value_resolution on '{name}', "
+        "which isn't an array variable. The server takes it on array "
+        "variables only."
+    )
 
 
 def _render_filter_config(
@@ -1897,7 +1930,8 @@ def _variable_step_extras(block: dict[str, Any]) -> dict[str, Any]:
 
     ``array_aggregation_mode`` is REQUIRED (non-null) when the variable is an
     array; other keys (e.g. deduplication) pass through when set. Null values
-    are dropped — reads include them, writes reject them.
+    are dropped: reads include them, and an explicit null would reset a
+    stored ``value_resolution``.
     """
     handled = {"sources", "variable", "is_required"}
     return {k: v for k, v in block.items() if k not in handled and v is not None}
@@ -1907,6 +1941,11 @@ def _variable_step_extras(block: dict[str, Any]) -> dict[str, Any]:
 def _step_initialize_variable(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
+    # The server accepts it here and silently drops it (confirmed live 2026-10-14).
+    if block.get("value_resolution") is not None:
+        raise PlanError(
+            "initialize_variable doesn't take value_resolution — only update_variable does."
+        )
     return {
         **_variable_step_extras(block),
         "sources": _normalize_variable_sources(block.get("sources") or []),
