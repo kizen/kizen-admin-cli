@@ -1656,21 +1656,18 @@ def test_ai_steps_are_accepted(drift_ai_steps):
     assert set(_live_steps_by_type(drift_ai_steps)) == set(AI_STEPS)
 
 
-def test_call_llm_uses_the_action_call_llm_block_not_the_schemas_spelling(
-    drift_ai_steps,
-):
-    """``GET /api/docs/schema`` declares the property as ``action_llm_call``;
-    the API accepts — and the read returns — ``action_call_llm``. Recorded in
-    ``KNOWN_UNDOCUMENTED_BLOCKS``; this is the behavioural half of that claim,
-    so the entry cannot rot into a stale note."""
+def test_call_llm_block_is_action_call_llm(drift_ai_steps):
+    """The API accepts, and the read returns, ``action_call_llm``. Until
+    Kizen's 2026-10-13 release ``GET /api/docs/schema`` spelled the property
+    ``action_llm_call``, so this pins the spelling the CLI sends."""
     sent = next(s for s in drift_ai_steps["sent"]["steps"] if s["type"] == "call_llm")
     assert "action_call_llm" in sent
     assert "action_llm_call" not in sent
     (live,) = _live_steps_by_type(drift_ai_steps)["call_llm"]
     assert "action_call_llm" in live, (
-        "the read response no longer uses `action_call_llm` — if it now uses "
-        "the schema's `action_llm_call`, the divergence has closed and the "
-        "KNOWN_UNDOCUMENTED_BLOCKS entry should go"
+        "the read response no longer uses `action_call_llm`; the schema "
+        "spelled it `action_llm_call` until the 2026-10-13 release, so check "
+        "which spelling the write and read now use"
     )
 
 
