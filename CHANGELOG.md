@@ -172,6 +172,8 @@ called out explicitly under **Changed** or **Removed**.
   the step in the UI, and a group condition with no groups has nothing to
   test. Reading and editing a live automation that already carries one
   still works, so `steps edit` can fix it.
+- **A step's plan error from an automation spec now starts with `step
+  '<key>': `**, e.g. `step 'run_script': code_step input …`.
 
 ### Added
 

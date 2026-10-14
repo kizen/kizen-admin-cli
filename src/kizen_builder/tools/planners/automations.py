@@ -1149,7 +1149,10 @@ def _build_step_payload(
     spec_block = getattr(step, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
-    wire_block = builder(block_dict, auto, ctx)
+    try:
+        wire_block = builder(block_dict, auto, ctx)
+    except PlanError as e:
+        raise PlanError(f"step '{step.key}': {e}") from e
     if step.step_type == "condition":
         problem = _condition_rules_problem(step.key, wire_block)
         if problem:
