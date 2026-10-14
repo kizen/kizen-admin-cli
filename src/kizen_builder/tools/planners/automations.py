@@ -1959,7 +1959,6 @@ def _normalize_variable(v: Any) -> Any:
     "business_plugin_app",
     "destinations",
     "is_advanced",
-    "data_type",
     "merge_field_validation",
 )
 def _step_call_llm(
@@ -1993,8 +1992,6 @@ def _step_call_llm(
         )
     if block.get("is_advanced") is not None:
         out["is_advanced"] = block["is_advanced"]
-    if block.get("data_type"):
-        out["data_type"] = block["data_type"]
     if block.get("merge_field_validation"):
         out["merge_field_validation"] = block["merge_field_validation"]
     return {k: v for k, v in out.items() if v is not None}
