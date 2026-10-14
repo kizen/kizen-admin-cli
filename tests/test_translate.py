@@ -33,13 +33,18 @@ ALL_FIXTURES = [
     "automations/archive_record.raw.json",
     "automations/branching_test.raw.json",
     "automations/condition_code_step.raw.json",
+    "automations/condition_variable_rhs.raw.json",
+    "automations/condition_variable_rhs_pipeline.raw.json",
     "automations/create_and_modify_related.raw.json",
+    "automations/email_received.raw.json",
+    "automations/extraction_input_sources.raw.json",
     "automations/form_submission.raw.json",
     "automations/kitchen_sink_triggers.raw.json",
     "automations/llm_comparison.raw.json",
     "automations/merged_condition.raw.json",
     "automations/merged_condition_skipped.raw.json",
     "automations/on_or_around_date_goto.raw.json",
+    "automations/plugin_code_steps.raw.json",
     "automations/schedule_trigger.raw.json",
     "automations/sets_variable_overrides.raw.json",
     "automations/two_code_steps.raw.json",
@@ -156,6 +161,48 @@ def test_no_variable_ids_survive_translation(path: str) -> None:
         iv = s.get("action_initialize_variable")
         if iv and isinstance(iv.get("variable"), dict):
             assert "id" not in iv["variable"]
+
+
+def test_email_received_rides_under_its_from_contact_key() -> None:
+    """The one trigger type whose config key isn't `trigger_<type>`. Sending
+    `trigger_email_received` is a 400 on every re-PUT, at the top level and
+    in a goal (confirmed live 2026-10-14)."""
+    payload = live_to_payload(load_fixture("automations/email_received.raw.json"))
+    (trigger,) = [t for t in payload["triggers"] if t["type"] == "email_received"]
+    assert trigger["trigger_email_received_from_contact"] == {"receiving_inbox": "any"}
+
+    (goal,) = _steps_by_type(payload, "goal")
+    (nested,) = goal["step_goal"]["triggers"]
+    # Reads expand each selected inbox to {id, email}; the wire takes the id.
+    assert nested["trigger_email_received_from_contact"] == {
+        "receiving_inbox": "selected_integrated_inboxes",
+        "selected_integrated_inboxes": ["1cf296ff-d456-413b-80bd-dda8576ead55"],
+    }
+    assert "trigger_email_received" not in json.dumps(payload).replace(
+        "trigger_email_received_from_contact", ""
+    )
+
+
+def test_email_received_empty_selection_still_translates() -> None:
+    """The server saves "selected inboxes" with an empty list (200,
+    2026-10-14), so a read of one must re-PUT as is. Specs still reject it."""
+    raw = load_fixture("automations/email_received.raw.json")
+    empty = {
+        "receiving_inbox": "selected_integrated_inboxes",
+        "selected_integrated_inboxes": [],
+    }
+    (trigger,) = [t for t in raw["triggers"] if t["trigger_type"] == "email_received"]
+    trigger["trigger_email_received_from_contact"] = empty
+    (goal,) = [s for s in raw["steps"] if s["step_type"] == "goal"]
+    goal["step_goal"]["triggers"][0]["trigger_email_received_from_contact"] = empty
+
+    payload = live_to_payload(raw)
+    (trigger,) = [t for t in payload["triggers"] if t["type"] == "email_received"]
+    (goal,) = _steps_by_type(payload, "goal")
+    assert trigger["trigger_email_received_from_contact"] == empty
+    assert (
+        goal["step_goal"]["triggers"][0]["trigger_email_received_from_contact"] == empty
+    )
 
 
 @pytest.mark.parametrize("path", ALL_FIXTURES)
@@ -276,6 +323,138 @@ def test_extraction_destination_related_object_field_is_bare_uuid(
     assert rel and all(isinstance(d["related_object_field"], str) for d in rel)
 
 
+# extraction_input_sources.raw.json: one step per probed input_value_source
+# type, plus an input_field-only step whose read carries the mirrored
+# context_entity_field source. Captured live 2026-10-14.
+_POLICY_HOP = "62bb1252-acf9-4bca-914e-91e9f4ab952b"
+_POLICY_DOCUMENT = "ee4cecb6-10a9-435f-b82c-4798a64808de"
+_CLAIM_ATTACHMENT = "a32c92f6-60d2-4dfe-83c3-66a85b7b7107"
+
+
+@pytest.fixture(scope="module")
+def extraction_sources() -> dict:
+    raw = load_fixture("automations/extraction_input_sources.raw.json")
+    return live_to_payload(raw)
+
+
+def test_related_record_source_is_written_as_input_value_source(
+    extraction_sources: dict,
+) -> None:
+    related = {
+        "type": "related_object_field",
+        "field": _POLICY_DOCUMENT,
+        "relationship_field": _POLICY_HOP,
+    }
+    extract = _step_block(extraction_sources, "file_content_extraction", 0)
+    transcribe = _step_block(extraction_sources, "audio_transcription")
+    for blk in (extract, transcribe):
+        assert blk["input_value_source"] == related
+        assert "input_field" not in blk
+
+
+def test_variable_source_is_written_by_name(extraction_sources: dict) -> None:
+    blk = _step_block(extraction_sources, "file_content_extraction", 1)
+    assert blk["input_value_source"] == {
+        "type": "automation_variable",
+        "variable": "claim_file",
+    }
+    assert "input_field" not in blk
+
+
+def test_mirrored_context_source_collapses_to_input_field(
+    extraction_sources: dict,
+) -> None:
+    """Every read mirrors input_field into a context_entity_field source, and
+    Kizen 400s when a write carries both."""
+    raw = load_fixture("automations/extraction_input_sources.raw.json")
+    read = raw["steps"][4]["action_file_content_extraction"]
+    assert read["input_value_source"]["type"] == "context_entity_field"
+    blk = _step_block(extraction_sources, "file_content_extraction", 2)
+    assert blk["input_field"] == _CLAIM_ATTACHMENT
+    assert "input_value_source" not in blk
+
+
+def _extraction_step(block: dict):
+    from kizen_builder.models.spec import AutomationDef, AutomationStepDef
+
+    step = AutomationStepDef.model_validate(
+        {
+            "key": "extract",
+            "step_type": "file_content_extraction",
+            "order": 0,
+            "action_file_content_extraction": {"model_name": "kizen/lite", **block},
+        }
+    )
+    auto = AutomationDef(
+        name="t", api_name="t", type="record_based", target_object="claims"
+    )
+    return step, auto
+
+
+class _RefContext:
+    def field_uuid(self, obj: str, fld: str) -> str:
+        return {
+            ("claims", "policy"): _POLICY_HOP,
+            ("policies", "policy_document"): _POLICY_DOCUMENT,
+        }[(obj, fld)]
+
+
+def test_source_dotted_refs_resolve_to_bare_uuids() -> None:
+    from kizen_builder.tools.planners.automations import _build_step_payload
+
+    step, auto = _extraction_step(
+        {
+            "input_value_source": {
+                "type": "related_object_field",
+                "relationship_field": "claims.policy",
+                "field": "policies.policy_document",
+            }
+        }
+    )
+    blk = _build_step_payload(step, auto, _RefContext())[
+        "action_file_content_extraction"
+    ]
+    assert blk["input_value_source"] == {
+        "type": "related_object_field",
+        "relationship_field": _POLICY_HOP,
+        "field": _POLICY_DOCUMENT,
+    }
+    assert "input_field" not in blk
+
+
+def test_input_field_and_a_different_source_is_refused() -> None:
+    from kizen_builder.tools.planners.automations import _build_step_payload
+
+    step, auto = _extraction_step(
+        {
+            "input_field_id": _CLAIM_ATTACHMENT,
+            "input_value_source": {
+                "type": "automation_variable",
+                "variable": "claim_file",
+            },
+        }
+    )
+    with pytest.raises(PlanError) as e:
+        _build_step_payload(step, auto, _RefContext())
+    assert str(e.value) == (
+        "step 'extract': set input_field_ref or input_value_source, not both "
+        "— Kizen accepts only one."
+    )
+
+
+def test_extraction_without_an_input_is_refused() -> None:
+    from kizen_builder.tools.planners.automations import _build_step_payload
+
+    step, auto = _extraction_step({"prompt": "Summarize."})
+    with pytest.raises(PlanError) as e:
+        _build_step_payload(step, auto, _RefContext())
+    assert str(e.value) == (
+        "step 'extract': needs an input — set input_field_ref (a file field "
+        "on the target record) or input_value_source (a related record's "
+        "field, or a variable)."
+    )
+
+
 def test_modify_related_entities_tags_are_bare_uuids(kitchen: dict) -> None:
     """Both tag lists take bare UUID strings; even the {id, name} shape the
     OpenAPI spec documents is an HTTP 500."""
@@ -353,6 +532,27 @@ def test_diff_wire_payloads_ignores_key_resynthesis() -> None:
     live = live_to_payload(raw)
     spec = _rekey(live_to_payload(raw), "authored_")
     assert diff_wire_payloads(live, spec) == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "automations/condition_variable_rhs.raw.json",
+        "automations/condition_variable_rhs_pipeline.raw.json",
+    ],
+)
+def test_ui_built_variable_comparison_survives_translation(path: str) -> None:
+    """A field compared to a variable carries `value_type: "variable"` and the
+    variable's name as `value`; the raw filter_config passes through intact."""
+    raw = load_fixture(path)
+    (live_cond,) = [s for s in raw["steps"] if s["step_type"] == "condition"]
+    live = live_to_payload(raw)
+    (cond,) = _steps_by_type(live, "condition")
+    assert (
+        cond["step_condition"]["filter_config"]
+        == live_cond["step_condition"]["filter_config"]
+    )
+    assert diff_wire_payloads(live, _rekey(live_to_payload(raw), "authored_")) == []
 
 
 def test_diff_wire_payloads_ignores_go_to_key_resynthesis() -> None:
@@ -660,6 +860,86 @@ def test_field_value_mappings_stay_bare_uuids(form: dict) -> None:
     for m in mappings:
         assert all(isinstance(v, str) for v in m["source_values"])
         assert all(isinstance(v, str) for v in m["target_values"])
+
+
+# ---------------------------------------------------------------------------
+# Plugin steps
+# ---------------------------------------------------------------------------
+
+
+def test_plugin_steps_translate_to_the_write_dialect() -> None:
+    """Reads expand fields to {id, name, display_name, deleted}, variables
+    to {name, deleted} and secrets to {id, name, deleted}; the write
+    carries bare {id} fields and {name} variables and secrets."""
+    payload = live_to_payload(load_fixture("automations/plugin_code_steps.raw.json"))
+    with_fields = _step_block(payload, "plugin_code_step", 0)
+    with_variable = _step_block(payload, "plugin_code_step", 1)
+    assert with_fields == {
+        "plugin_app_api_name": "example_plugin",
+        "action_step_api_name": "summarize_records",
+        "notify_plugin_developer_on_failure": False,
+        "secrets": [],
+        "inputs": [
+            {
+                "name": "heading",
+                "input_type": "field",
+                "field": {"id": "321de730-826e-46fc-b507-533fb5386701"},
+                "data_type": "string",
+                "is_list": False,
+            },
+            {
+                "name": "object",
+                "input_type": "static_value",
+                "static_value": {
+                    "value": "client_client",
+                    "entity_record": None,
+                    "employee": None,
+                },
+                "data_type": "string",
+                "is_list": False,
+            },
+        ],
+        "outputs": [
+            {
+                "name": "context",
+                "output_type": "field",
+                "field": {"id": "27d03bf6-ac68-4e68-a0d1-9b0858dc19f9"},
+                "conflict_resolution": "update_if_blank",
+                "create_missing_option": False,
+                "data_type": "string",
+                "is_list": False,
+            }
+        ],
+    }
+    assert with_variable["secrets"] == [{"name": "business_id"}]
+    assert with_variable["inputs"][1]["variable"] == {"name": "context_text"}
+    assert with_variable["outputs"][0]["variable"] == {"name": "context_text"}
+
+
+def test_plugin_step_install_config_input_reads_back_bare() -> None:
+    """A UI-built `business_plugin_config` input reads with every other
+    source key null (seen live 2026-10-14); none of them is written back."""
+    raw = copy.deepcopy(load_fixture("automations/plugin_code_steps.raw.json"))
+    step = next(s for s in raw["steps"] if s["step_type"] == "plugin_code_step")
+    step["action_plugin_code_step"]["inputs"] = [
+        {
+            "input_type": "business_plugin_config",
+            "name": "settings",
+            "variable": None,
+            "field": None,
+            "related_field": None,
+            "static_value": None,
+            "data_type": "string",
+            "is_list": False,
+        }
+    ]
+    (inp,) = _step_block(live_to_payload(raw), "plugin_code_step")["inputs"]
+    assert inp == {
+        "name": "settings",
+        "input_type": "business_plugin_config",
+        "data_type": "string",
+        "is_list": False,
+    }
 
 
 # ---------------------------------------------------------------------------

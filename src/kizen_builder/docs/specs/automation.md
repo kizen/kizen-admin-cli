@@ -134,14 +134,21 @@ sets a step's own severity. Omitted, the step inherits. Confirmed live
 
 ---
 
-## Wired trigger types (10)
+## Wired trigger types (11)
 
 `manual`, `new_entity_created`, `activity_logged`, `on_or_around_date`,
 `webhook`, `field_updated`, `schedule`, `scheduled_activity_overdue`,
-`form_submitted`, `survey_submitted`.
+`form_submitted`, `survey_submitted`, `email_received`.
 
 Each requiring config sets a `trigger_<name>` block matching `trigger_type`
 (e.g. `field_updated` → `trigger_field_updated: { field_ref, fire_on_create, … }`).
+The one exception is `email_received`, whose block is
+`trigger_email_received_from_contact: {receiving_inbox, selected_integrated_inboxes}`.
+`receiving_inbox` is `any` (the default when omitted) or
+`selected_integrated_inboxes`, which needs a list of integrated inbox UUIDs;
+reads expand each to `{id, email}`. It works on Contact automations only: a
+custom object gets 400 "only client custom object is allowed". Confirmed live
+2026-10-14.
 `manual` is an empty `trigger_manual: {}`. `schedule` → `trigger_schedule:
 {rrule, is_advanced}` — a recurring trigger (works on global automations too,
 where it's the only "time-based" option since `on_or_around_date` needs a
@@ -151,7 +158,12 @@ Kizen (e.g. `email_interaction`, `email_link_clicked`,
 `contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
 you try to spec them.
 
-## Wired step types (26)
+A `goal` step's `step_goal.triggers` are wait-until triggers with the same
+`trigger_type` names and config blocks as the top level, e.g. `email_received`
+to wait for a reply. Its `wait_type` is `never`, `delay` or
+`specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
+
+## Wired step types (27)
 
 | step_type | config block | purpose |
 |-----------|--------------|---------|
@@ -161,9 +173,10 @@ you try to spec them.
 | `stop_execution` | `action_stop_execution` | end this branch — the "Action Options" choice below is required in the UI |
 | `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
+| `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
 | `call_llm` | `action_call_llm` | prompt an LLM, write to `destinations` |
-| `file_content_extraction` | `action_file_content_extraction` | extract from a file field |
-| `audio_transcription` | `action_audio_transcription` | transcribe an audio field |
+| `file_content_extraction` | `action_file_content_extraction` | extract from a file field on the record, a related record, or in a variable (`input_value_source`) |
+| `audio_transcription` | `action_audio_transcription` | transcribe an audio field on the record, a related record, or in a variable (`input_value_source`) |
 | `change_field_value` | `action_change_field_value` | set/clear a field |
 | `archive_record` | `action_archive_record` | archive the record |
 | `create_related_entity` | `action_create_related_entity` | create a related record |
@@ -198,7 +211,7 @@ quirks (custom_object/filter_groups/destination_variable are each
 scalars).
 
 Other step types exist in Kizen (`send_email`, `change_tags`,
-`http_request`, `plugin_code_step`, `update_pipeline_status`,
+`http_request`, `update_pipeline_status`,
 `modify_automation`, `request_info_via_text`, `delete_scheduled_activity`,
 `modify_related_entities_automation` — not to be confused with the wired
 `modify_related_entities`) but aren't wired here and raise `PlanError` if you
@@ -225,6 +238,51 @@ explicitly rather than inferring it from the bound field.
 For the Python side — the `inputs.` / `outputs.` / `secrets[…]` / `kizen.api`
 namespace, how each `data_type` arrives inside the script, and unit-testing a
 script before wiring it in — see `kizen docs show code-steps`.
+
+### `plugin_code_step`
+
+Runs a step from an installed plugin's manifest. The block has six keys:
+
+```json
+{ "step_type": "plugin_code_step", "key": "summarize", "parent_key": null,
+  "action_plugin_code_step": {
+    "plugin_app_api_name": "example_plugin",
+    "action_step_api_name": "summarize_records",
+    "notify_plugin_developer_on_failure": false,
+    "inputs":  [ { "name": "heading", "input_type": "field",
+                   "field_ref": "client_client.first_name" },
+                 { "name": "settings", "input_type": "business_plugin_config" } ],
+    "outputs": [ { "name": "records_json", "output_type": "variable",
+                   "variable_name": "context_text" } ],
+    "secrets": ["api_key"] } }
+```
+
+- `plugin_app_api_name` is the **installed** plugin's api_name, as
+  `business-plugin-apps` lists it. A preview install is
+  `<api_name>_preview_<branch>` (confirmed live 2026-10-05).
+  `action_step_api_name` names the step in that plugin's manifest. `GET
+  /external-integrations/bootstrap` lists each install's steps under
+  `automation_action_configs` (confirmed live 2026-10-14).
+- There's **no plugin-app id**, unlike the LLM steps. `business_plugin_app_id`
+  in this block is a plan error.
+- The server checks the names: an api_name with no install, including a
+  catalog plugin that isn't installed, and an `action_step_api_name` the
+  plugin doesn't ship are each a 400 naming the key. It also checks the
+  bindings against the manifest, and a required input or output that's
+  missing is a 400 naming it (all confirmed live 2026-10-14).
+- `inputs` and `outputs` take the `code_step` shapes above. `inputs` also
+  takes `input_type: business_plugin_config`, for plugin steps only. On the
+  wire it's `{name, input_type, data_type?, is_list?}` with no source key. A
+  UI-built step reads back in that shape (seen 2026-10-14), bound to a
+  parameter the manifest declares `static_value`. Kizen's 2026-10-13 release
+  notes say the step receives the install config as a JSON string and that
+  the manifest declares the parameter with `input_source:
+  business_plugin_config`. Neither is **confirmed live**, and neither is
+  writing one from the CLI.
+- `secrets` takes names, as for `code_step`, and is sent as `[{name}]`.
+- Step `id`s carry over as for any step. `activate`, `deactivate`, `steps`
+  edits to other steps and `roundtrip --execute` keep a plugin step's inputs,
+  outputs and secrets intact (confirmed live 2026-10-14).
 
 ### `modify_related_entities` — field shape
 
@@ -275,6 +333,43 @@ one or more relationship-field hops.
   "target_values": [<uuid>], "order": 0}, ...]`. Each entry maps one source
   option UUID (on the field being read) to one target option UUID (on
   `field_to_modify`); `order` controls evaluation order for multiple rules.
+
+### Extraction input
+
+`file_content_extraction` and `audio_transcription` read their file from one
+of two keys, and Kizen accepts **exactly one**. Both, even when they agree, or
+neither, is a 400: `Only one of input_field or input_value_source should be
+set`. The planner refuses either case with a `PlanError` first.
+
+```json
+{ "input_field_ref": "claims.claim_attachment" }
+{ "input_value_source": { "type": "related_object_field",
+                          "relationship_field": "claims.policy",
+                          "field": "policies.policy_document" } }
+{ "input_value_source": { "type": "automation_variable", "variable": "claim_file" } }
+{ "input_value_source": { "type": "context_entity_field", "field": "claims.claim_attachment" } }
+```
+
+- `input_field_ref` (or `input_field` / `input_field_id`) is a file field on
+  the automation's own record.
+- `related_object_field` reads a file field on a related record:
+  `relationship_field` is the hop on `target_object`, `field` the file field
+  on the related object. **The hop must be single-valued** — a to-many hop
+  400s `Relationship field must be single-valued`.
+- `automation_variable` reads the file from a variable, named by `variable`.
+- `field` and `relationship_field` take a UUID or a dotted `"object.field"`
+  ref. The wire takes bare UUIDs, and `variable` as the name.
+- Every read mirrors `input_field` into a `context_entity_field` source as
+  well, and nulls `input_field` for the other source types. The planner
+  collapses the mirror back to `input_field`, so `steps get` output re-applies
+  as it is.
+
+Confirmed live 2026-10-14. The type enum also lists `specific_value`,
+`automation_entity_variable_field` and `blank`; those are unprobed as file
+inputs and pass through with the same unwrapping. The builder UI offers only
+fields on the record as a source, and an automation with a related-record or
+variable source does not open in the UI editor — it returns to the
+automation list.
 
 ### LLM & extraction destinations
 
@@ -439,6 +534,26 @@ an **automation variable** to a static value is a different clause shape,
 - **`custom_object_id`** is the automation's target object UUID;
   **`client_tag_field_id`** (`257bb114-1b86-4761-99bd-95292de23f46`) is a
   constant that appears fixed across envs.
+
+### Field compared to an array variable
+
+To test a record field against a variable's values, put `"variable"` in
+place of `"value"` in the condition's filter spec. The variable must be
+declared in the same automation, as an array (a team-member field also takes
+a single `employee` variable). For a dropdown the array holds option names or
+option UUIDs; a test run matched with each. Not on Contacts automations.
+
+```json
+{ "key": "allowed", "parent_key": null, "step_type": "initialize_variable",
+  "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
+    "variable": { "name": "allowed_statuses", "data_type": "string", "is_array": true } } },
+{ "key": "check", "parent_key": "allowed", "step_type": "condition",
+  "step_condition": { "type": "custom_filter", "filter_config": { "all": [
+    { "field": "status", "op": "is_any_of", "variable": "allowed_statuses" } ] } } }
+```
+
+The field types, ops and variable kinds this takes are in
+`kizen docs show filters`.
 
 ### Reading a related record's field into a variable
 
@@ -606,8 +721,10 @@ as a real custom object's own api_name, and its span gets
   Fields are **bare api_names**; **ops are per field type** (e.g. dropdown uses
   `is_any_of`/`not_any_of`, numbers use `>=`/`between` — *not* `in`/`gte`). Run
   `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
-  dict for clause types the DSL doesn't cover (variable comparisons — see
-  "Variable-comparison condition step" above). **A condition needs at least one
+  dict for clause types the DSL doesn't cover (a variable compared to a static
+  value — see "Variable-comparison condition step" above). A field compared to
+  an array variable is in the DSL ("Field compared to an array variable"
+  above). **A condition needs at least one
   rule.** An empty `query`, a group with no `filters`, or an `in_group`/
   `not_in_group` with no `group_ids` is rejected at plan time. The API accepts
   an empty filter, but the UI then shows an error on the step (reported
@@ -650,7 +767,8 @@ Why a translator is mandatory rather than nice-to-have:
   `--dry-run --json`, with a `plan error:` naming the key and every key that
   block does read. Two limits: keys *inside* nested items
   (`change_field_value.actions[]`, `code_step.inputs`/`outputs`,
-  `schedule_activity.schedule`) aren't checked, and neither is `steps edit`.
+  `plugin_code_step.inputs`/`outputs`, `schedule_activity.schedule`) aren't
+  checked, and neither is `steps edit`.
   Types whose builder forwards the whole block to Kizen (`delay`, `goal`,
   `stop_execution`, `initialize_variable`, `update_variable`,
   `send_related_contact_text`, and every trigger except `manual`,
@@ -706,6 +824,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
+| Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
 
 `automation_variable_overrides` items carry a fixed key set on read, most null
 per entry — `value_source` says which one is live: `context_entity_field`,
@@ -752,7 +871,7 @@ Beyond the step/trigger tables above:
 | `on_or_around_date` trigger | `field_id` |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}` |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
-| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves |
+| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see [Extraction input](#extraction-input) |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string |
 | `start_automation` | `automation_ids`, `relationship_field_ids` |

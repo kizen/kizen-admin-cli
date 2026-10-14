@@ -104,7 +104,7 @@ src/kizen_builder/
     saved_views.py               #   filter groups / quick filters / column templates
     schema.py                    #   schema lookups backing the filtering DSL
     smart_connectors.py          #   smart-connector CRUD, scripts, executions
-    team.py                      #   team-member reads
+    team.py                      #   team-member reads + role changes
   tools/                         # Tool functions. What the CLI mostly calls.
     activities.py                #   list/get activity types + logged/scheduled reads
     automations.py               #   get/list/show/roundtrip/start, executions, step patching
@@ -141,7 +141,7 @@ src/kizen_builder/
         status.py                #       plan/apply set-status
         variables.py             #       suggest_execution_variables()
     steps.py                     #   step-graph surgery (find/edit/insert/remove, validation)
-    team.py                      #   search_team()
+    team.py                      #   search, get, resolve a member
     planners/                    #   plan_* tools — produce Plans, never mutate
       activities.py              #     plan_create/update/delete activity types + fields
       automations.py             #     plan_create_automation, plan_update_automation
@@ -155,6 +155,7 @@ src/kizen_builder/
       pipeline_stages.py         #     plan_create/update/remove stages, record stage-move
       records.py                 #     plan_create/update/delete records (data, not schema)
       saved_views.py             #     plan_create/update/delete the three saved-view kinds
+      team.py                    #     plan_update_team_member_roles
   filtering.py                   # Filter DSL (Field, All/Any, search/filter-config rendering).
   translate.py                   # Automation GET → PUT wire translation.
   models/spec/                   # Pydantic shapes for desired state (spec inputs);
@@ -378,11 +379,10 @@ Fixtures shared by more than one round-trip module (`drift_object`,
 fixture defined in a test module is invisible to every other module.
 
 You need both halves. `GET /api/docs/schema` returns a real OpenAPI 3.0
-document (~557 paths, ~1,300 component schemas), but it doesn't match the live
+document (~576 paths, ~1,400 component schemas), but it doesn't match the live
 API: it declares `PermissionGroupRequest` as having exactly one field
 while the live endpoint takes a ~35 KB body, documents the automation step
-envelope in the read dialect rather than the write one, names one step block
-`action_llm_call` where live uses `action_call_llm`, and leaves `pipeline`
+envelope in the read dialect rather than the write one, and leaves `pipeline`
 optional on an endpoint that rejects a pipeline object without it. Those
 divergences are recorded with evidence and a `confirmed live` date in
 `KNOWN_SCHEMA_OMISSIONS` and `KNOWN_UNDOCUMENTED_BLOCKS` in

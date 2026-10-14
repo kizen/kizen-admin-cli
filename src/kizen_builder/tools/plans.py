@@ -37,6 +37,7 @@ from kizen_builder.api import permissions as perm_api
 from kizen_builder.api import pipelines as pipelines_api
 from kizen_builder.api import records as records_api
 from kizen_builder.api import saved_views as sv_api
+from kizen_builder.api import team as team_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import EnvConfig, load_env_config
 from kizen_builder.tools.bulk_actions import wait_for_bulk_action
@@ -75,6 +76,7 @@ Kind = Literal[
     "survey_field",
     "survey_field_option",
     "role",
+    "team_member",
     "permission_group",
     "permission_setting",
     "filter_group",
@@ -942,6 +944,15 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             perm_api.delete_role(client, op.existing_uuid)
             return {}
         return perm_api.update_role(client, op.existing_uuid, op.payload)
+
+    if op.kind == "team_member":
+        team_api.change_team_member_roles(
+            client,
+            op.payload["team_member_ids"],
+            op.payload["role_ids_to_add"],
+            op.payload["role_ids_to_remove"],
+        )
+        return {}
 
     if op.kind == "permission_group":
         if op.action == "create":

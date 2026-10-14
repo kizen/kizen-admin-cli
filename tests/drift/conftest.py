@@ -138,7 +138,7 @@ def drift_client(drift_config):
 
 @pytest.fixture(scope="session")
 def openapi_schema(drift_client) -> dict[str, Any]:
-    """``GET /api/docs/schema`` — fetched once per session (~1.5 MB)."""
+    """``GET /api/docs/schema`` — fetched once per session (~1.6 MB)."""
     from kizen_builder.api.client import KizenAPIError
 
     try:

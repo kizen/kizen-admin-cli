@@ -430,6 +430,35 @@ def test_apply_permission_setting_ok_when_level_matches():
     assert result.all_ok
 
 
+@respx.mock
+def test_apply_team_member_posts_change_roles_payload_verbatim():
+    # The live endpoint answers 200 with an empty body.
+    route = respx.post(f"{FAKE_BASE_URL}/api/team/change-roles").mock(
+        return_value=httpx.Response(200)
+    )
+    payload = {
+        "team_member_ids": ["member-uuid"],
+        "role_ids_to_add": ["role-a"],
+        "role_ids_to_remove": ["role-b"],
+    }
+    op = PlanOperation(
+        action="update",
+        kind="team_member",
+        key="Alex Example",
+        payload=payload,
+        existing_uuid="member-uuid",
+    )
+
+    result = plan_tools.apply_plan(
+        Plan.build(env="testenv", summary="t", operations=[op])
+    )
+
+    assert route.call_count == 1
+    assert json.loads(route.calls[0].request.content) == payload
+    (r,) = result.results
+    assert r.status == "ok"
+
+
 # ---------------------------------------------------------------------------
 # apply binds to the business the plan was built for
 # ---------------------------------------------------------------------------

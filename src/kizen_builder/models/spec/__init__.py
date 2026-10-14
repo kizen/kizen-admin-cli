@@ -54,6 +54,7 @@ from kizen_builder.models.spec.automations_shared import (
     LlmDestinationConfig,
     CodeStepInputConfig,
     CodeStepOutputConfig,
+    PluginCodeStepInputConfig,
 )
 from kizen_builder.models.spec.automations_triggers import (
     TriggerFieldUpdatedConfig,
@@ -245,6 +246,7 @@ __all__ = [
     "LlmDestinationConfig",
     "CodeStepInputConfig",
     "CodeStepOutputConfig",
+    "PluginCodeStepInputConfig",
     "TriggerFieldUpdatedConfig",
     "TriggerContactTagAddedRemovedConfig",
     "TriggerActivityLoggedConfig",

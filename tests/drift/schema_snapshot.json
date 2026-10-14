@@ -1,8 +1,8 @@
 {
   "_meta": {
     "base_url": "https://app.go.kizen.com",
-    "captured": "2026-09-29",
-    "contracts_tracked": 66,
+    "captured": "2026-10-14",
+    "contracts_tracked": 68,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
       "title": "Kizen API",
@@ -13,7 +13,6 @@
   "contracts": {
     "DELETE /api/automation2/automations/{automation_identifier}": {
       "label": "delete automation",
-      "operation_id": "automation2_automations_destroy",
       "present": true,
       "query_params": [
         "ordering"
@@ -27,7 +26,6 @@
     },
     "DELETE /api/custom-objects/{object_identifier}": {
       "label": "delete custom object",
-      "operation_id": "custom_objects_destroy",
       "present": true,
       "query_params": [
         "ordering"
@@ -41,7 +39,6 @@
     },
     "DELETE /api/custom-objects/{object_identifier}/fields/{id}": {
       "label": "delete field",
-      "operation_id": "custom_objects_fields_destroy",
       "present": true,
       "query_params": [
         "ordering"
@@ -55,7 +52,6 @@
     },
     "DELETE /api/permission-group/{id}": {
       "label": "delete permission group",
-      "operation_id": "permission_group_destroy",
       "present": true,
       "query_params": [
         "ordering"
@@ -69,7 +65,6 @@
     },
     "DELETE /api/records/{object_identifier}/{entity_id}": {
       "label": "delete record",
-      "operation_id": "records_destroy",
       "present": true,
       "query_params": [],
       "request_schema": null,
@@ -81,7 +76,6 @@
     },
     "DELETE /api/role/{id}": {
       "label": "delete role",
-      "operation_id": "role_destroy",
       "present": true,
       "query_params": [
         "ordering"
@@ -95,7 +89,6 @@
     },
     "PATCH /api/custom-objects/{object_identifier}": {
       "label": "update custom object",
-      "operation_id": "custom_objects_partial_update",
       "present": true,
       "query_params": [
         "ordering"
@@ -144,7 +137,6 @@
     },
     "PATCH /api/custom-objects/{object_identifier}/fields/{id}": {
       "label": "update field",
-      "operation_id": "custom_objects_fields_partial_update",
       "present": true,
       "query_params": [
         "ordering"
@@ -188,7 +180,6 @@
     },
     "PATCH /api/permission-group/{id}": {
       "label": "update permission group sections",
-      "operation_id": "permission_group_partial_update",
       "present": true,
       "query_params": [
         "ordering"
@@ -202,7 +193,6 @@
     },
     "PATCH /api/permission-group/{permission_group_id}/object-update": {
       "label": "set one object/field access level",
-      "operation_id": "permission_group_object_update_partial_update",
       "present": true,
       "query_params": [],
       "request_body": {
@@ -226,7 +216,6 @@
     },
     "PATCH /api/records/{object_identifier}/{entity_id}": {
       "label": "update record",
-      "operation_id": "records_partial_update",
       "present": true,
       "query_params": [
         "return_all_fields"
@@ -251,7 +240,6 @@
     },
     "PATCH /api/records/{object_identifier}/{entity_id}/unarchive": {
       "label": "unarchive record",
-      "operation_id": "records_unarchive_partial_update",
       "present": true,
       "query_params": [],
       "request_schema": null,
@@ -264,7 +252,6 @@
     },
     "PATCH /api/role/{id}": {
       "label": "update role",
-      "operation_id": "role_partial_update",
       "present": true,
       "query_params": [
         "ordering"
@@ -290,7 +277,6 @@
     },
     "POST /api/automation2/automations": {
       "label": "create automation",
-      "operation_id": "automation2_automations_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -331,7 +317,6 @@
     },
     "POST /api/custom-objects": {
       "label": "create custom object",
-      "operation_id": "custom_objects_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -385,7 +370,6 @@
     },
     "POST /api/custom-objects/{object_identifier}/fields": {
       "label": "create field",
-      "operation_id": "custom_objects_fields_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -433,7 +417,6 @@
     },
     "POST /api/custom-objects/{object_identifier}/fields/{field_identifier}/options": {
       "label": "add field option",
-      "operation_id": "custom_objects_fields_options_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -460,7 +443,6 @@
     },
     "POST /api/custom-objects/{object_identifier}/fields/{field_identifier}/options/{id}/replace": {
       "label": "replace field option",
-      "operation_id": "custom_objects_fields_options_replace_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -491,7 +473,6 @@
     },
     "POST /api/custom-objects/{object_pk}/bulk-archive-entity-record": {
       "label": "archive record",
-      "operation_id": "custom_objects_bulk_archive_entity_record_create",
       "present": true,
       "query_params": [],
       "request_body": {
@@ -516,7 +497,6 @@
     },
     "POST /api/custom-objects/{object_pk}/bulk-change-field-value": {
       "label": "bulk change field value",
-      "operation_id": "custom_objects_bulk_change_field_value_create",
       "present": true,
       "query_params": [],
       "request_body": {
@@ -548,7 +528,6 @@
     },
     "POST /api/custom-objects/{object_pk}/categories": {
       "label": "create field category",
-      "operation_id": "custom_objects_categories_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -575,7 +554,6 @@
     },
     "POST /api/custom-objects/{object_pk}/filter-groups": {
       "label": "create filter group",
-      "operation_id": "custom_objects_filter_groups_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -606,7 +584,6 @@
     },
     "POST /api/custom-objects/{object_pk}/quick-filters": {
       "label": "create quick filter",
-      "operation_id": "custom_objects_quick_filters_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -636,7 +613,6 @@
     },
     "POST /api/permission-group": {
       "label": "create permission group",
-      "operation_id": "permission_group_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -661,7 +637,6 @@
     },
     "POST /api/pipelines/{object_pk}/stages": {
       "label": "create pipeline stage",
-      "operation_id": "pipelines_stages_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -692,7 +667,6 @@
     },
     "POST /api/records/{object_identifier}/add": {
       "label": "create record",
-      "operation_id": "records_add_create",
       "present": true,
       "query_params": [],
       "request_body": {
@@ -717,7 +691,6 @@
     },
     "POST /api/records/{object_identifier}/upsert": {
       "label": "upsert record",
-      "operation_id": "records_upsert_create",
       "present": true,
       "query_params": [
         "return_all_fields"
@@ -746,7 +719,6 @@
     },
     "POST /api/role": {
       "label": "create role",
-      "operation_id": "role_create",
       "present": true,
       "query_params": [
         "ordering"
@@ -774,7 +746,6 @@
     },
     "PUT /api/automation2/automations/{automation_identifier}": {
       "label": "replace automation",
-      "operation_id": "automation2_automations_update",
       "present": true,
       "query_params": [
         "ordering"
@@ -848,6 +819,7 @@
         "action_archive_record": "WriteActionArchiveRecordRequest?",
         "action_assign_team_member": "AssignTeamMemberWriteRequest?",
         "action_audio_transcription": "WriteActionAudioTranscriptionRequest?",
+        "action_call_llm": "WriteActionLLMCallRequest?",
         "action_change_field_value": "WriteActionChangeFieldValuesRequest?",
         "action_change_tags": "WriteActionChangeTagsRequest?",
         "action_code_step": "ActionCodeStepRequest?",
@@ -857,7 +829,6 @@
         "action_go_to_automation_step": "WriteActionGoToAutomationStepRequest?",
         "action_http_request": "WriteActionHttpRequestRequest?",
         "action_initialize_variable": "ActionInitializeVariableRequest?",
-        "action_llm_call": "WriteActionLLMCallRequest?",
         "action_math_operator": "ActionMathOperatorRequest?",
         "action_modify_automation": "WriteActionModifyAutomationRequest?",
         "action_modify_related_entities": "WriteActionModifyRelatedEntitiesRequest?",
@@ -933,6 +904,7 @@
         "destinations": "array[ActionDestinationRequest]",
         "html_prompt": "string?",
         "input_field": "string<uuid>?",
+        "input_value_source": "WriteValueSourceRequest?",
         "is_advanced": "boolean",
         "merge_field_validation": "MergeFieldValidationEnum{error_if_required,default_to_unknown,blank}",
         "model_name": "string",
@@ -948,8 +920,23 @@
     },
     "schema:WriteStepRequest.action_call_llm": {
       "label": "step config: call_llm",
-      "present": false,
-      "surface": "automations"
+      "present": true,
+      "properties": {
+        "business_plugin_app_id": "string<uuid>?",
+        "destinations": "array[ActionDestinationRequest]",
+        "html_prompt": "string?",
+        "is_advanced": "boolean",
+        "merge_field_validation": "MergeFieldValidationEnum{error_if_required,default_to_unknown,blank}",
+        "model_name": "string",
+        "prompt": "string"
+      },
+      "required": [
+        "destinations",
+        "model_name",
+        "prompt"
+      ],
+      "surface": "automations",
+      "type": "object"
     },
     "schema:WriteStepRequest.action_change_field_value": {
       "label": "step config: change_field_value",
@@ -1018,6 +1005,7 @@
         "destinations": "array[ActionDestinationRequest]",
         "html_prompt": "string?",
         "input_field": "string<uuid>?",
+        "input_value_source": "WriteValueSourceRequest?",
         "is_advanced": "boolean",
         "merge_field_validation": "MergeFieldValidationEnum{error_if_required,default_to_unknown,blank}",
         "model_name": "string",
@@ -1125,6 +1113,24 @@
       "surface": "automations",
       "type": "object"
     },
+    "schema:WriteStepRequest.action_plugin_code_step": {
+      "label": "step config: plugin_code_step",
+      "present": true,
+      "properties": {
+        "action_step_api_name": "string",
+        "inputs": "array[PluginCodeStepInputRequest]",
+        "notify_plugin_developer_on_failure": "boolean",
+        "outputs": "array[PluginCodeStepOutputRequest]",
+        "plugin_app_api_name": "string",
+        "secrets": "array[PluginCodeStepSecretRequest]"
+      },
+      "required": [
+        "action_step_api_name",
+        "plugin_app_api_name"
+      ],
+      "surface": "automations",
+      "type": "object"
+    },
     "schema:WriteStepRequest.action_schedule_activity": {
       "label": "step config: schedule_activity",
       "present": true,
@@ -1221,6 +1227,7 @@
         "deduplicate_array": "boolean",
         "is_required": "boolean",
         "sources": "array[VariableSourceRequest]",
+        "value_resolution": "oneOf(ValueResolutionEnum{add_only,overwrite,overwrite_except_null},NullEnum)",
         "variable": "string"
       },
       "required": [
@@ -1334,6 +1341,19 @@
       "surface": "automations",
       "type": "object"
     },
+    "schema:WriteTriggerRequest.trigger_email_received_from_contact": {
+      "label": "trigger config: email_received",
+      "present": true,
+      "properties": {
+        "receiving_inbox": "ReceivingInboxEnum{any,selected_integrated_inboxes}",
+        "selected_integrated_inboxes": "array[string<uuid>]?"
+      },
+      "required": [
+        "receiving_inbox"
+      ],
+      "surface": "automations",
+      "type": "object"
+    },
     "schema:WriteTriggerRequest.trigger_field_updated": {
       "label": "trigger config: field_updated",
       "present": true,
@@ -1442,10 +1462,14 @@
       "label": "trigger config: webhook",
       "present": true,
       "properties": {
+        "auth_header_name": "string",
+        "auth_header_value": "string",
+        "auth_type": "AuthTypeEnum{kizen_api,http_header,basic_auth,none}",
         "content_type": "oneOf(ContentTypeEnum{application/javascript,application/xml,application/xhtml+xml,application/json,application/x-www-form-urlencoded,text/plain,text/html,text/xml,text/csv},NullEnum)",
         "extract_raw_body_content": "boolean",
         "extract_url_query_string": "boolean",
         "extractors": "array[JSONValueExtractorRequest] (writeOnly)",
+        "html_auth_header_value": "string?",
         "http_method": "HttpMethodEnum{GET,POST}",
         "name": "string",
         "sample_post_body": "string?"

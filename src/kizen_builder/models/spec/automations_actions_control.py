@@ -62,9 +62,7 @@ class StepGoalConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    wait_type: str = Field(
-        description="One of: wait_forever, wait_until_date, wait_duration, etc."
-    )
+    wait_type: str = Field(description="One of: never, delay, specific_datetime.")
     delay_type: str | None = None
     delay_amount: int | None = Field(default=None, ge=0)
     specific_datetime: str | None = Field(

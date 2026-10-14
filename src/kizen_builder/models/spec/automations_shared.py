@@ -155,6 +155,19 @@ class CodeStepInputConfig(BaseModel):
     )
 
 
+class PluginCodeStepInputConfig(CodeStepInputConfig):
+    """An input binding for a plugin step (PluginCodeStepInputRequest).
+
+    Same as a code step input, plus ``business_plugin_config``, which binds
+    the plugin's install config. Run-time delivery is not confirmed live.
+    """
+
+    # Widens the base's choices, which mypy reports as an override.
+    input_type: Literal[
+        "field", "variable", "related_field", "static_value", "business_plugin_config"
+    ] = "field"  # type: ignore[assignment]
+
+
 class CodeStepOutputConfig(BaseModel):
     """An output binding for a code step (CodeStepOutputRequest)."""
 
