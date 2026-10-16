@@ -15,7 +15,7 @@ import pytest
 import respx
 from httpx import Response
 
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.tools import forms as form_tools
 from tests.conftest import FAKE_BASE_URL
 
@@ -161,6 +161,21 @@ def test_resolve_form_id_raises_lookup_error_when_nowhere_found(client):
     )
     with pytest.raises(LookupError, match="'nope' not found under /api/forms"):
         form_tools.resolve_form_id(client, "/api/forms", "nope")
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 500])
+def test_resolve_form_id_does_not_report_other_errors_as_not_found(client, status):
+    respx.get(f"{FAKE_BASE_URL}/api/forms/contact_us").mock(
+        return_value=Response(status, json={"detail": "boom"})
+    )
+    list_route = respx.get(f"{FAKE_BASE_URL}/api/forms").mock(
+        return_value=Response(200, json={"results": [], "next": None})
+    )
+    with pytest.raises(KizenAPIError) as exc:
+        form_tools.resolve_form_id(client, "/api/forms", "contact_us")
+    assert exc.value.status_code == status
+    assert list_route.call_count == 0
 
 
 # ---------------------------------------------------------------------------

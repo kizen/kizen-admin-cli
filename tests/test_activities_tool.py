@@ -13,7 +13,7 @@ import httpx
 import pytest
 import respx
 
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.activities import (
     _employee_label,
@@ -164,6 +164,22 @@ def test_resolve_activity_id_raises_lookup_error_when_unresolvable():
         resolve_activity_id(client, "nope")
 
 
+@respx.mock
+@pytest.mark.parametrize("status", [401, 500])
+def test_resolve_activity_id_does_not_report_other_errors_as_not_found(status):
+    respx.get(f"{FAKE_BASE_URL}/api/activities/site_visit").mock(
+        return_value=httpx.Response(status, json={"detail": "boom"})
+    )
+    list_route = _mock_activity_list()
+    with (
+        KizenClient(load_env_config()) as client,
+        pytest.raises(KizenAPIError) as exc,
+    ):
+        resolve_activity_id(client, "site_visit")
+    assert exc.value.status_code == status
+    assert list_route.call_count == 0
+
+
 # ---------------------------------------------------------------------------
 # _linked_field_label / _normalize_field
 # ---------------------------------------------------------------------------
@@ -190,6 +206,11 @@ def test_normalize_field_projects_and_labels_options():
     assert normalized["display_name"] == "Outcome"
     assert normalized["options"] == [{"id": "opt-1", "name": "Yes", "code": "yes"}]
     assert normalized["linked_field"] is None
+
+
+def test_normalize_field_carries_description():
+    field = dict(ACTIVITY_FIELDS[0], description="Why the visit ended")
+    assert _normalize_field(field)["description"] == "Why the visit ended"
 
 
 def test_normalize_field_options_none_when_empty():

@@ -184,7 +184,7 @@ def test_unknown_member_id_is_a_plan_error():
         return_value=httpx.Response(404, json={"detail": "Not found."})
     )
 
-    with pytest.raises(PlanError, match=f"team member with id '{MEMBER_ID}' not found"):
+    with pytest.raises(PlanError, match=f"team member '{MEMBER_ID}' not found"):
         plan_update_team_member_roles(MEMBER_ID, add=[SUPPORT])
 
 

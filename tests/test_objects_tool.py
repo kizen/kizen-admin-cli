@@ -10,8 +10,10 @@ the API expects a real UUID there.
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 
+from kizen_builder.api.client import KizenAPIError
 from kizen_builder.tools.objects import get_object, list_objects
 from tests.conftest import FAKE_BASE_URL
 
@@ -265,3 +267,39 @@ def test_get_object_unknown_identifier_falls_back_to_literal_string():
 
     obj = get_object("nope")
     assert obj["id"] == "nope"
+
+
+@respx.mock
+def test_get_object_field_carries_description():
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        return_value=httpx.Response(200, json=OBJECT_LIST)
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects/{OBJ_ID}/categories").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects/{OBJ_ID}/fields").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": "f1", "name": "total", "field_type": "money", "description": "d"}
+            ],
+        )
+    )
+
+    (field,) = get_object("policies_policy")["fields"]
+    assert field["description"] == "d"
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 500])
+def test_get_object_direct_fetch_error_other_than_404_propagates(status):
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects").mock(
+        return_value=httpx.Response(200, json=OBJECT_LIST)
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/custom-objects/nope").mock(
+        return_value=httpx.Response(status, json={"detail": "boom"})
+    )
+
+    with pytest.raises(KizenAPIError) as exc:
+        get_object("nope")
+    assert exc.value.status_code == status

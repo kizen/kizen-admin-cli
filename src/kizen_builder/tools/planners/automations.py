@@ -633,7 +633,7 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
         triggers = [manual] + [
             t.model_copy(update={"order": i + 1}) for i, t in enumerate(triggers)
         ]
-    payload["triggers"] = [_build_trigger_payload(t, ctx) for t in triggers]
+    payload["triggers"] = [_build_trigger_payload(t, auto, ctx) for t in triggers]
     _validate_trigger_orders(payload["triggers"])
     payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
 
@@ -703,22 +703,26 @@ def _unwrap_variable_name(value: Any) -> str | None:
     return None
 
 
-def _resolve_field_ref(ref: str, auto: AutomationDef, ctx: LiveContext) -> str:
-    """Resolve a 'object.field' reference to a field UUID.
+def _split_field_ref(ref: str, auto: AutomationDef) -> tuple[str, str]:
+    """Split an 'object.field' reference into (object, field).
 
     A bare ``ref`` (no dot) is interpreted against the automation's
     ``target_object``.
     """
     if "." in ref:
         obj_api, fld_api = ref.split(".", 1)
-    else:
-        if not auto.target_object:
-            raise PlanError(
-                f"field_ref '{ref}' is unqualified and the automation has no "
-                "target_object to default to."
-            )
-        obj_api, fld_api = auto.target_object, ref
-    return ctx.field_uuid(obj_api, fld_api)
+        return obj_api, fld_api
+    if not auto.target_object:
+        raise PlanError(
+            f"field_ref '{ref}' is unqualified and the automation has no "
+            "target_object to default to."
+        )
+    return auto.target_object, ref
+
+
+def _resolve_field_ref(ref: str, auto: AutomationDef, ctx: LiveContext) -> str:
+    """Resolve a 'object.field' (or bare) reference to a field UUID."""
+    return ctx.field_uuid(*_split_field_ref(ref, auto))
 
 
 def _resolve_field(value: Any, auto: AutomationDef, ctx: LiveContext) -> str | None:
@@ -823,7 +827,26 @@ def _trigger_spec_key(t: AutomationTriggerDef) -> str:
     return f"trigger.{t.trigger_type}.{order}"
 
 
-def _build_trigger_payload(t: AutomationTriggerDef, ctx: LiveContext) -> dict[str, Any]:
+# Their builders resolve only 'object.field', so a bare name is qualified with
+# target_object before dispatch.
+_FIELD_REF_TRIGGERS = frozenset({"field_updated", "on_or_around_date"})
+
+
+def _qualify_trigger_field_ref(
+    trigger_type: str, block: dict[str, Any], auto: AutomationDef
+) -> dict[str, Any]:
+    ref = block.get("field_ref")
+    if trigger_type not in _FIELD_REF_TRIGGERS or not isinstance(ref, str) or not ref:
+        return block
+    if is_uuid(ref):
+        rest = {k: v for k, v in block.items() if k != "field_ref"}
+        return {**rest, "field_id": block.get("field_id") or ref}
+    return {**block, "field_ref": ".".join(_split_field_ref(ref, auto))}
+
+
+def _build_trigger_payload(
+    t: AutomationTriggerDef, auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
     p: dict[str, Any] = {
         "key": _trigger_spec_key(t),
         "type": t.trigger_type,
@@ -849,6 +872,7 @@ def _build_trigger_payload(t: AutomationTriggerDef, ctx: LiveContext) -> dict[st
     spec_block = getattr(t, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
+    block_dict = _qualify_trigger_field_ref(t.trigger_type, block_dict, auto)
     p[cfg_field] = builder(block_dict, ctx)
     problem = _inbox_selection_problem([p])
     if problem:
@@ -1409,7 +1433,7 @@ def _step_delay(
 
 @honours_all
 def _step_goal(
-    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     """Goal steps embed a list of TRIGGERS (wait-until conditions) whose
     blocks read in the same expanded shape as top-level triggers — reuse the
@@ -1437,7 +1461,9 @@ def _step_goal(
         if t.get("description"):
             p["description"] = t["description"]
         cfg_field = trigger_config_field(trigger_type)
-        nested = dict(t.get(cfg_field) or {})
+        nested = _qualify_trigger_field_ref(
+            trigger_type, dict(t.get(cfg_field) or {}), auto
+        )
         builder = _TRIGGER_BUILDERS.get(trigger_type)
         p[cfg_field] = builder(nested, ctx) if builder else _strip(nested)
         triggers.append(p)
@@ -1475,7 +1501,7 @@ def _step_archive_record(
         "record_source": block.get("record_source", "this_record"),
     }
     rels = block.get("relationship_field_ids") or block.get("relationship_fields") or []
-    ids = [_resolve_field(r, auto, ctx) or _unwrap_id(r) for r in rels if r]
+    ids = [_resolve_field(r, auto, ctx) for r in rels if r]
     out["relationship_field_ids"] = [r for r in ids if r]
     var = block.get("automation_variable_name") or block.get("automation_variable")
     if var:
@@ -1559,7 +1585,7 @@ def _step_go_to_automation_step(
     "automation_variable_overrides",
 )
 def _step_start_automation(
-    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     """Write dialect differs from read: automation_ids / relationship_field_ids /
     automation_variable_name (bare UUIDs and names). Read-dialect keys
@@ -1571,7 +1597,8 @@ def _step_start_automation(
         "resume_paused_automations": block.get("resume_paused_automations") or False,
     }
     rels = block.get("relationship_field_ids") or block.get("relationship_fields") or []
-    out["relationship_field_ids"] = [_unwrap_id(r) for r in rels if r]
+    ids = [_resolve_field(r, auto, ctx) for r in rels if r]
+    out["relationship_field_ids"] = [r for r in ids if r]
     var = block.get("automation_variable_name") or block.get("automation_variable")
     if var:
         out["automation_variable_name"] = (
@@ -1777,13 +1804,13 @@ def _change_field_value_action(
         # a valid UUID") instead of resolving.
         out["context_entity_field"] = _resolve_field(
             a["context_entity_field"], auto, ctx
-        ) or _unwrap_id(a["context_entity_field"])
+        )
 
     # Optional reference fields
     if a.get("automation_target_relationship_field") is not None:
         out["automation_target_relationship_field"] = _resolve_field(
             a["automation_target_relationship_field"], auto, ctx
-        ) or _unwrap_id(a["automation_target_relationship_field"])
+        )
     if a.get("related_object") is not None:
         out["related_object"] = _resolve_object(a["related_object"], ctx)
     if a.get("related_object_field") is not None:
@@ -1822,11 +1849,7 @@ def _step_modify_related_entities(
     out: dict[str, Any] = {
         "object_to_modify": _resolve_object(block.get("object_to_modify"), ctx),
         "automation_target_relationship_fields": [
-            r
-            for r in (
-                _resolve_field(r, auto, ctx) or _unwrap_id(r) for r in rel_fields_in
-            )
-            if r
+            r for r in (_resolve_field(r, auto, ctx) for r in rel_fields_in) if r
         ],
         "fields_to_modify": [
             _change_field_value_action(f, auto, ctx)
@@ -1857,7 +1880,7 @@ def _step_modify_related_entities(
     "field_values",
 )
 def _step_create_related_entity(
-    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "new_entity_name": block.get("new_entity_name"),
@@ -1872,7 +1895,9 @@ def _step_create_related_entity(
         "new_entity_owner_employees": [
             _unwrap_id(e) for e in (block.get("new_entity_owner_employees") or []) if e
         ],
-        "context_entity_field": _unwrap_id(block.get("context_entity_field")),
+        "context_entity_field": _resolve_field(
+            block.get("context_entity_field"), auto, ctx
+        ),
         "target_custom_object": _resolve_object(
             block.get("target_custom_object") or block.get("target_object"), ctx
         ),
@@ -2294,9 +2319,7 @@ def _resolve_llm_destinations(
             # destination. Resolve whichever of relationship_field_ref/
             # field_ref/field the caller gave; fall back to auto-detection.
             hop = hop_ref or ref or d.get("field")
-            hop_uuid = (
-                (_resolve_field(hop, auto, ctx) or _unwrap_id(hop)) if hop else None
-            )
+            hop_uuid = _resolve_field(hop, auto, ctx) if hop else None
             if not hop_uuid and dest_obj_api and auto.target_object:
                 hop_uuid = ctx.find_relationship_field(auto.target_object, dest_obj_api)
             if not hop_uuid:

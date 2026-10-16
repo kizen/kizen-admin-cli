@@ -867,15 +867,15 @@ Beyond the step/trigger tables above:
 
 | where | the key |
 |---|---|
-| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref: "object.field"` resolves to it. **`from_value`/`to_value` write as bare UUIDs** — an expanded dict is silently stored as null |
-| `on_or_around_date` trigger | `field_id` |
+| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. **`from_value`/`to_value` write as bare UUIDs** — an expanded dict is silently stored as null |
+| `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object` |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}` |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
 | `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see [Extraction input](#extraction-input) |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string |
-| `start_automation` | `automation_ids`, `relationship_field_ids` |
-| `archive_record` | `relationship_field_ids`, `automation_variable_name` |
+| `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record` |
+| `archive_record` | `relationship_field_ids` (entries accept `"object.field"` refs), `automation_variable_name` |
 | `assign_team_member` | the `*_id` dialect: `role_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum — see below |
 | `go_to_automation_step` | `step_key`, pointing at a synthesized key |
 

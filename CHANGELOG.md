@@ -406,6 +406,27 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Automation field refs that were sent as literal strings or dropped now
+  resolve to the field's UUID.** `create_related_entity`'s
+  `context_entity_field` and `start_automation`'s `relationship_field_ids`
+  sent an `"object.field"` ref to Kizen as-is, which it rejected. A bare
+  field name in a `field_updated` or `on_or_around_date` trigger's
+  `field_ref`, top-level or in a goal, was dropped without an error, so the
+  trigger saved with no field. A bare name now resolves against the
+  automation's `target_object`, and is a plan error when there is none.
+- **`fields update` can no longer match a deleted field.** A deleted field
+  that shared the api_name could be picked over the live one, and deleted
+  fields were listed under `Available:`.
+- **Updating a custom-object or activity field's description to its current
+  value plans as `skip`, not `update`.** The CLI never read the live
+  description, so any description counted as a change. Forms and surveys
+  still always update it: their field reads carry no description.
+- **Auth and server errors are no longer reported as "not found".** Forms,
+  surveys, activities and object lookups turned any API error, such as a 401
+  or a 500, into "not found"; only a 404 does that now, and anything else
+  shows as itself. Role and permission-group updates and deletes now report
+  a 404 as `role '<id>' not found` instead of a raw HTTP error.
+
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or
   goal.** They sent the trigger's config under the wrong key, so the

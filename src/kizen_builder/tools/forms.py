@@ -61,6 +61,8 @@ def resolve_form_id(
         detail = forms_api.get_form(client, base_path, identifier)
         return detail["id"], detail.get("name") or identifier
     except KizenAPIError as e:
+        if e.status_code != 404:
+            raise
         # Fall back to a name/api_name scan of the list endpoint.
         for f in forms_api.list_forms(client, base_path):
             if identifier in (f.get("id"), f.get("api_name"), f.get("name")):

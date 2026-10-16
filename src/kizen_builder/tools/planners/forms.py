@@ -14,12 +14,17 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from kizen_builder.api.client import KizenAPIError
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FormDef, FormFieldDef
 from kizen_builder.tools.forms import FORMS_BASE_PATH, get_form, list_forms
 from kizen_builder.tools.objects import get_object
-from kizen_builder.tools.plans import Kind, Plan, PlanError, PlanOperation
+from kizen_builder.tools.plans import (
+    Kind,
+    Plan,
+    PlanError,
+    PlanOperation,
+    fetch_existing,
+)
 
 _OPTION_FIELD_TYPES = {
     "dropdown",
@@ -168,10 +173,7 @@ def plan_update_form(
     """Plan a PATCH to one form/survey. Only keys present in ``changes`` are sent."""
     obj_kind, _, _ = _kinds(kind)
     env = load_env_config().name
-    try:
-        current = get_form(identifier, base_path=base_path, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"{kind} '{identifier}' not found: {e}") from e
+    current = _load_form(identifier, base_path, kind, include_fields=False)
 
     raw = current.get("raw") or {}
     payload: dict[str, Any] = {}
@@ -216,10 +218,7 @@ def plan_delete_form(
     """Plan deletion of one form/survey."""
     obj_kind, _, _ = _kinds(kind)
     env = load_env_config().name
-    try:
-        current = get_form(identifier, base_path=base_path, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"{kind} '{identifier}' not found: {e}") from e
+    current = _load_form(identifier, base_path, kind, include_fields=False)
 
     op = PlanOperation(
         action="delete",
@@ -249,10 +248,7 @@ def plan_duplicate_form(
     """Plan duplication of one form/survey."""
     obj_kind, _, _ = _kinds(kind)
     env = load_env_config().name
-    try:
-        current = get_form(identifier, base_path=base_path, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"{kind} '{identifier}' not found: {e}") from e
+    current = _load_form(identifier, base_path, kind, include_fields=False)
 
     payload: dict[str, Any] = {}
     if name:
@@ -282,13 +278,16 @@ def plan_duplicate_form(
 # ---------------------------------------------------------------------------
 
 
-def _load_form_with_fields(
-    identifier: str, base_path: str, kind: FormKind
+def _load_form(
+    identifier: str, base_path: str, kind: FormKind, *, include_fields: bool = True
 ) -> dict[str, Any]:
-    try:
-        return get_form(identifier, base_path=base_path, include_fields=True)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"{kind} '{identifier}' not found: {e}") from e
+    return fetch_existing(
+        kind,
+        identifier,
+        lambda: get_form(
+            identifier, base_path=base_path, include_fields=include_fields
+        ),
+    )
 
 
 def _find_form_field(
@@ -318,7 +317,7 @@ def plan_create_form_fields(
         raise PlanError("no fields provided to create")
     _, field_kind, _ = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     form_id = form["id"]
 
     have = {f.get("api_name") for f in form["fields"] if f.get("api_name")}
@@ -374,7 +373,7 @@ def plan_update_form_field(
     """Plan an update to one field on a form/survey."""
     _, field_kind, _ = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
 
     payload: dict[str, Any] = {}
@@ -382,6 +381,8 @@ def plan_update_form_field(
     if "name" in changes and changes["name"] != existing.get("display_name"):
         payload["display_name"] = changes["name"]
         diff["display_name"] = (existing.get("display_name"), changes["name"])
+    # Form and survey field reads carry no `description` (confirmed live
+    # 2026-10-01, docs/specs/form.md), so there's nothing to diff: send it.
     if "description" in changes:
         payload["description"] = changes["description"]
         diff["description"] = (existing.get("description"), changes["description"])
@@ -431,7 +432,7 @@ def plan_delete_form_field(
     """Plan deletion of one field from a form/survey."""
     _, field_kind, _ = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
 
     op = PlanOperation(
@@ -467,7 +468,7 @@ def plan_add_form_field_options(
         raise PlanError("no options provided to add")
     _, _, option_kind = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
     if existing.get("field_type") not in _OPTION_FIELD_TYPES:
         raise PlanError(
@@ -514,7 +515,7 @@ def plan_remove_form_field_option(
     """Plan removal of one option from a select-type field on a form/survey."""
     _, _, option_kind = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
     opts = existing.get("options") or []
 

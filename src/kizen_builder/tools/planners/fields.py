@@ -207,13 +207,7 @@ def plan_update_field(
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
 
-    existing = next((f for f in obj["fields"] if f["api_name"] == field_api_name), None)
-    if existing is None:
-        available = [f["api_name"] for f in obj["fields"]]
-        raise PlanError(
-            f"field '{field_api_name}' not found on '{object_api_name}'. "
-            f"Available: {available}"
-        )
+    existing = _find_field(obj, field_api_name)
 
     payload: dict[str, Any] = {}
     diff: dict[str, Any] = {}

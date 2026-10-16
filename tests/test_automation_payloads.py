@@ -3287,3 +3287,144 @@ def test_translate_keeps_value_resolution_on_scalar_variable():
     step["action_update_variable"]["value_resolution"] = "add_only"
     live = next(s for s in live_to_payload(raw)["steps"] if s["id"] == step["id"])
     assert live["action_update_variable"]["value_resolution"] == "add_only"
+
+
+def _patient_field_id(api_name: str) -> str:
+    patients = load_fixture("objects/patients.json")
+    return next(f["id"] for f in patients["fields"] if f["api_name"] == api_name)
+
+
+@pytest.mark.parametrize(
+    "ref", ["mrn", "patients.mrn", "db489b3e-a880-41f7-90b9-312b8cfdd02b"]
+)
+def test_create_related_entity_context_entity_field_resolves(patch_live_lookups, ref):
+    spec = _one_step_spec(
+        "create_related_entity",
+        {
+            "target_object": "encounters",
+            "new_entity_name": "Follow-up",
+            "context_entity_field": ref,
+        },
+    )
+    action = _build(spec)["steps"][0]["action_create_related_entity"]
+    assert action["context_entity_field"] == _patient_field_id("mrn")
+
+
+def _field_ref_trigger_spec(
+    trigger_type: str, block: dict, *, goal: bool, target: str | None = "patients"
+) -> dict:
+    trigger = {"trigger_type": trigger_type, f"trigger_{trigger_type}": block}
+    spec: dict = {
+        "api_name": "field_ref_trigger_test",
+        "name": "Field Ref Trigger Test",
+        "type": "record_based" if target else "global",
+        "target_object": target,
+        "steps": [],
+    }
+    if goal:
+        spec["steps"] = [
+            {
+                "key": "g0",
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {"wait_type": "never", "triggers": [trigger]},
+            }
+        ]
+    else:
+        spec["triggers"] = [{**trigger, "order": 1}]
+    return spec
+
+
+def _field_ref_trigger_block(payload: dict, trigger_type: str, goal: bool) -> dict:
+    if goal:
+        (t,) = payload["steps"][0]["step_goal"]["triggers"]
+    else:
+        t = next(t for t in payload["triggers"] if t["type"] == trigger_type)
+    return t[f"trigger_{trigger_type}"]
+
+
+_FIELD_REF_TRIGGER_CASES = [
+    ("field_updated", "mrn", {"fire_on_create": True}),
+    ("on_or_around_date", "date_of_birth", {"date_offset": "on_day_and_time"}),
+]
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+@pytest.mark.parametrize("trigger_type, field, extra", _FIELD_REF_TRIGGER_CASES)
+@pytest.mark.parametrize("qualified", [False, True], ids=["bare", "dotted"])
+def test_trigger_field_ref_resolves(
+    patch_live_lookups, trigger_type, field, extra, goal, qualified
+):
+    ref = f"patients.{field}" if qualified else field
+    spec = _field_ref_trigger_spec(trigger_type, {"field_ref": ref, **extra}, goal=goal)
+    block = _field_ref_trigger_block(_build(spec), trigger_type, goal)
+    assert block["field_id"] == _patient_field_id(field)
+    assert "field_ref" not in block
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+@pytest.mark.parametrize("trigger_type, field, extra", _FIELD_REF_TRIGGER_CASES)
+def test_trigger_field_ref_uuid_passes_through(
+    patch_live_lookups, trigger_type, field, extra, goal
+):
+    uuid = _patient_field_id(field)
+    spec = _field_ref_trigger_spec(
+        trigger_type, {"field_ref": uuid, **extra}, goal=goal
+    )
+    assert (
+        _field_ref_trigger_block(_build(spec), trigger_type, goal)["field_id"] == uuid
+    )
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+@pytest.mark.parametrize("trigger_type, field, extra", _FIELD_REF_TRIGGER_CASES)
+def test_trigger_bare_field_ref_needs_a_target_object(
+    patch_live_lookups, trigger_type, field, extra, goal
+):
+    spec = _field_ref_trigger_spec(
+        trigger_type, {"field_ref": field, **extra}, goal=goal, target=None
+    )
+    with pytest.raises(PlanError, match="unqualified and the automation has no"):
+        _build(spec)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "encounters",
+        "patients.encounters",
+        {"id": "b69f1a9c-3f3b-4c4d-9989-60a83373c0e8"},
+    ],
+)
+def test_start_automation_relationship_field_ids_resolve(patch_live_lookups, ref):
+    spec = _one_step_spec(
+        "start_automation",
+        {
+            "record_source": "related_record",
+            "relationship_field_ids": [ref],
+            "automation_ids": ["00000000-0000-4000-8000-000000000001"],
+        },
+    )
+    action = _build(spec)["steps"][0]["action_start_automation"]
+    assert action["relationship_field_ids"] == [_patient_field_id("encounters")]
+
+
+def test_stop_execution_maps_to_its_config_block():
+    from kizen_builder.models.spec.automations import _STEP_TYPE_TO_CONFIG_FIELD
+
+    assert _STEP_TYPE_TO_CONFIG_FIELD["stop_execution"] == "action_stop_execution"
+    spec = _one_step_spec("stop_execution", {})
+    del spec["steps"][0]["action_stop_execution"]
+    AutomationDef.model_validate(spec)
+
+
+@pytest.mark.parametrize("step_type", ["branch", "merge_branches"])
+def test_configless_step_with_stop_execution_block_rejected(step_type):
+    spec = _merged_condition_spec()
+    merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")
+    merge.update(
+        step_type=step_type, action_stop_execution={"action": "stop_and_complete"}
+    )
+    with pytest.raises(ValueError, match=f"'{step_type}' takes no config block"):
+        AutomationDef.model_validate(spec)

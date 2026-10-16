@@ -265,6 +265,46 @@ def test_update_unknown_field_lists_available(patch_live_lookups):
         plan_update_field(PATIENTS, "nope", {"name": "X"})
 
 
+def _patients_with(monkeypatch, patch_live_lookups, *extra_fields, **mrn_changes):
+    import kizen_builder.tools.planners.fields as mf
+
+    obj = patch_live_lookups(PATIENTS)
+    obj["fields"] = [
+        {**f, **mrn_changes} if f["api_name"] == "mrn" else f for f in obj["fields"]
+    ]
+    obj["fields"] = [*extra_fields, *obj["fields"]]
+    monkeypatch.setattr(mf, "get_object", lambda _api_name: obj)
+    return obj
+
+
+def test_update_ignores_a_deleted_field_with_the_same_api_name(
+    monkeypatch, patch_live_lookups
+):
+    deleted_mrn = {"id": "deleted-mrn", "api_name": "mrn", "deleted": True}
+    deleted_other = {"id": "deleted-x", "api_name": "old_notes", "deleted": True}
+    obj = _patients_with(monkeypatch, patch_live_lookups, deleted_mrn, deleted_other)
+    live_mrn = next(
+        f for f in obj["fields"] if f["api_name"] == "mrn" and not f.get("deleted")
+    )
+
+    (op,) = plan_update_field(PATIENTS, "mrn", {"name": "Medical Record #"}).operations
+    assert op.existing_uuid == live_mrn["id"]
+
+    with pytest.raises(PlanError, match="Available:") as exc:
+        plan_update_field(PATIENTS, "old_notes", {"name": "X"})
+    assert "old_notes" not in str(exc.value).split("Available:")[1]
+
+
+@pytest.mark.parametrize("existing, given", [("same", "same"), (None, "")])
+def test_update_unchanged_description_is_skip(
+    monkeypatch, patch_live_lookups, existing, given
+):
+    _patients_with(monkeypatch, patch_live_lookups, description=existing)
+    (op,) = plan_update_field(PATIENTS, "mrn", {"description": given}).operations
+    assert op.action == "skip"
+    assert op.payload == {}
+
+
 # One row per input key; each value differs from the `mrn` fixture's.
 @pytest.mark.parametrize(
     "changes, category, expected",

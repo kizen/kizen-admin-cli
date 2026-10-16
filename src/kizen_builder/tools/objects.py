@@ -89,7 +89,9 @@ def get_object(api_name: str) -> dict[str, Any]:
             # anywhere the caller uses `id`, e.g. as a relation target).
             try:
                 match = co_api.get_object(client, api_name)
-            except KizenAPIError:
+            except KizenAPIError as exc:
+                if exc.status_code != 404:
+                    raise
                 match = None
         obj_id = match["id"] if match else api_name
         categories = co_api.list_categories(client, obj_id)
@@ -129,6 +131,7 @@ def get_object(api_name: str) -> dict[str, Any]:
                 "id": f["id"],
                 "api_name": f.get("name"),
                 "display_name": f.get("display_name"),
+                "description": f.get("description"),
                 "field_type": f.get("field_type"),
                 "category_id": f.get("category"),
                 "is_required": f.get("is_required"),

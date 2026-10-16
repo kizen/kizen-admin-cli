@@ -21,6 +21,7 @@ import hashlib
 import io
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -46,6 +47,24 @@ from kizen_builder.tools.permissions import LEVELS
 
 class PlanError(ValueError):
     """Raised when planning fails because the input doesn't match live state."""
+
+
+def is_not_found(exc: Exception) -> bool:
+    """A failed lookup or an HTTP 404. A 401 or a 5xx is not a miss."""
+    return isinstance(exc, LookupError) or (
+        isinstance(exc, KizenAPIError) and exc.status_code == 404
+    )
+
+
+def fetch_existing[T](kind: str, ident: str, fetch: Callable[[], T]) -> T:
+    """Read the thing a plan changes. A miss becomes a ``PlanError``; any other
+    API error propagates as itself."""
+    try:
+        return fetch()
+    except (LookupError, KizenAPIError) as e:
+        if not is_not_found(e):
+            raise
+        raise PlanError(f"{kind} '{ident}' not found: {e}") from e
 
 
 Action = Literal["create", "update", "delete", "duplicate", "upsert", "apply", "skip"]

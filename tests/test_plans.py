@@ -8,9 +8,10 @@ import httpx
 import pytest
 import respx
 
+from kizen_builder.api.client import KizenAPIError
 from kizen_builder.cli._mutations import _enrich_known_choice_failures
 from kizen_builder.tools import plans as plan_tools
-from kizen_builder.tools.plans import Plan, PlanOperation
+from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 from tests.conftest import FAKE_BASE_URL, FAKE_BUSINESS_ID, OTHER_BUSINESS_ID
 
 
@@ -510,3 +511,29 @@ def test_apply_legacy_plan_with_another_profile_name_raises():
     plan = _legacy(_skip_plan(env="elsewhere"))
     with pytest.raises(plan_tools.PlanError, match="elsewhere"):
         plan_tools.apply_plan(plan)
+
+
+@pytest.mark.parametrize(
+    "exc", [LookupError("no match"), KizenAPIError(404, "not found")]
+)
+def test_fetch_existing_turns_a_miss_into_plan_error(exc):
+    def fetch():
+        raise exc
+
+    with pytest.raises(PlanError, match="role 'r1' not found") as info:
+        plan_tools.fetch_existing("role", "r1", fetch)
+    assert info.value.__cause__ is exc
+
+
+@pytest.mark.parametrize("status", [401, 500])
+def test_fetch_existing_propagates_other_api_errors(status):
+    def fetch():
+        raise KizenAPIError(status, "nope")
+
+    with pytest.raises(KizenAPIError) as info:
+        plan_tools.fetch_existing("role", "r1", fetch)
+    assert info.value.status_code == status
+
+
+def test_fetch_existing_returns_the_fetch_result():
+    assert plan_tools.fetch_existing("role", "r1", lambda: {"id": "r1"}) == {"id": "r1"}

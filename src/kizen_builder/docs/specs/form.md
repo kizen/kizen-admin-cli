@@ -118,7 +118,7 @@ POST                  .../fields/{fid}/options/{oid}/replace
 ```
 
 Field shape ≈ custom-object / activity fields, ordered by `order` in one flat
-list with no categories. **Two divergences that bite:**
+list with no categories. **Three divergences that bite:**
 
 - **`wysiwyg` IS a valid `field_type` here**, per the live
   `FormFieldFieldTypeEnum`. Do **not** apply the `wysiwyg` → `longtext` +
@@ -131,6 +131,10 @@ list with no categories. **Two divergences that bite:**
   spec builds `{"name": o, "code": o}` from one string, so pass lowercase
   values; there's no way to get an uppercase display label without extending the
   model.
+- **Field reads carry no `description`**, on forms or surveys, so a field
+  update that passes `description` always plans as `update`, even when the
+  value hasn't changed. Custom-object and activity field reads do carry it,
+  and diff it. `confirmed live 2026-10-01`
 
 The field type enum also includes `custom_object_field` (a linked-field type
 mirroring an existing custom-object field, like activities'
