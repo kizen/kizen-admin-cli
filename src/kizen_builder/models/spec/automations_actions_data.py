@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kizen_builder.models.spec._base import ApiName
 from kizen_builder.models.spec.automations_shared import (
@@ -53,14 +53,28 @@ class ActionCreateRelatedEntityConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    target_object: ApiName = Field(
+    target_custom_object: str | dict[str, Any] | None = Field(
+        default=None,
         description=(
-            "api_name of the target custom object. Resolved to UUID from state "
-            "at apply time and sent as `target_custom_object`, which a block "
-            "may also set directly (it wins when both are given)."
-        )
+            "Object the new record is created on — api_name, UUID, or an "
+            "{id}/{name} dict. Resolved to UUID at apply time."
+        ),
     )
-    field_values: list[dict[str, Any]] = Field(default_factory=list)
+    target_object: ApiName | None = Field(
+        default=None,
+        description=(
+            "Alias for `target_custom_object`, which wins when both are given."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _require_target(self) -> Self:
+        if not (self.target_custom_object or self.target_object):
+            raise ValueError(
+                "create_related_entity requires 'target_custom_object' "
+                "(or its alias 'target_object')"
+            )
+        return self
 
 
 class ActionModifyRelatedEntitiesConfig(BaseModel):

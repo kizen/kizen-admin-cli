@@ -2886,7 +2886,6 @@ def _branching_test_spec() -> dict:
                "new_entity_name_html": "<p>thing 1</p>",
                "new_entity_owner_type": "newly_assigned_owner",
                "new_entity_owner_sub_type": "round_robin_any_role",
-               "target_object": create_obj["name"],
                "target_custom_object": create_obj["id"],
            }),
     ]  # fmt: skip
@@ -3040,6 +3039,44 @@ def test_create_related_entity_reads_target_object_as_target_custom_object(
     )
     action = _build(spec)["steps"][0]["action_create_related_entity"]
     assert action["target_custom_object"] == patients["id"]
+
+
+def test_create_related_entity_field_values_is_a_plan_error(patch_live_lookups):
+    """Kizen accepts `field_values` and stores nothing (confirmed live
+    2026-10-05), so it is an unread key like any other."""
+    from kizen_builder.tools.automations import build_wire_step
+
+    block = {
+        "target_custom_object": "patients",
+        "new_entity_name": "Follow-up",
+        "field_values": [{"field": "status", "value": "open"}],
+    }
+    spec = _one_step_spec("create_related_entity", block)
+    with pytest.raises(PlanError, match="field_values would be silently dropped"):
+        _build(spec)
+    with pytest.raises(PlanError, match="field_values would be silently dropped"):
+        build_wire_step(spec["steps"][0], _LIVE_PAYLOAD, "patients")
+
+
+def test_create_related_entity_needs_only_target_custom_object(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step
+
+    patients = load_fixture("objects/patients.json")
+    spec = _one_step_spec(
+        "create_related_entity",
+        {"target_custom_object": "patients", "new_entity_name": "Follow-up"},
+    )
+    action = _build(spec)["steps"][0]["action_create_related_entity"]
+    assert action["target_custom_object"] == patients["id"]
+    step = build_wire_step(spec["steps"][0], _LIVE_PAYLOAD, "patients")
+    action = step["action_create_related_entity"]
+    assert action["target_custom_object"] == patients["id"]
+
+
+def test_create_related_entity_without_a_target_names_both_keys():
+    spec = _one_step_spec("create_related_entity", {"new_entity_name": "Follow-up"})
+    with pytest.raises(ValueError, match="'target_custom_object'.*'target_object'"):
+        AutomationDef.model_validate(spec)
 
 
 def test_every_wired_builder_declares_its_keys():

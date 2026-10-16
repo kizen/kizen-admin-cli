@@ -364,13 +364,6 @@ KNOWN_SCHEMA_OMISSIONS: dict[str, dict[str, str]] = {
             "(confirmed live 2026-08-05)"
         ),
     },
-    "schema:WriteStepRequest.action_create_related_entity": {
-        "field_values": (
-            "a silent no-op: the create returns 200 and the read-back has no "
-            "`field_values` key (confirmed live 2026-10-05). The builder's "
-            "pass-through should go"
-        ),
-    },
     "schema:WriteStepRequest.action_go_to_automation_step": {
         "type": (
             "the builder always sends the fixed value `go_to_automation_step`; "

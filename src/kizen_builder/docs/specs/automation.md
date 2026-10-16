@@ -179,7 +179,7 @@ to wait for a reply. Its `wait_type` is `never`, `delay` or
 | `audio_transcription` | `action_audio_transcription` | transcribe an audio field on the record, a related record, or in a variable (`input_value_source`) |
 | `change_field_value` | `action_change_field_value` | set/clear a field |
 | `archive_record` | `action_archive_record` | archive the record |
-| `create_related_entity` | `action_create_related_entity` | create a related record |
+| `create_related_entity` | `action_create_related_entity` | create a related record — see [`create_related_entity`](#create_related_entity) |
 | `modify_related_entities` | `action_modify_related_entities` | update related records |
 | `start_automation` | `action_start_automation` | start another automation |
 | `assign_team_member` | `action_assign_team_member` | assign owner (round-robin, role, field, …) |
@@ -283,6 +283,48 @@ Runs a step from an installed plugin's manifest. The block has six keys:
 - Step `id`s carry over as for any step. `activate`, `deactivate`, `steps`
   edits to other steps and `roundtrip --execute` keep a plugin step's inputs,
   outputs and secrets intact (confirmed live 2026-10-14).
+
+### `create_related_entity`
+
+Creates one record on another object and links it to the triggering record.
+
+```json
+{ "step_type": "create_related_entity", "key": "create_followup",
+  "parent_key": null,
+  "action_create_related_entity": {
+    "target_custom_object": "service_tickets",
+    "new_entity_name": "Follow-up for {{ entity_record.name }}",
+    "new_entity_name_html": "<p>Follow-up for {{ entity_record.name }}</p>",
+    "new_entity_owner_type": "assign_from_context_record",
+    "context_entity_field": "accounts.followup_ticket"
+  } }
+```
+
+- **`target_custom_object`** is the object the record is created on: an
+  api_name, a UUID, or an `{id}`/`{name}` dict. **`target_object`** is an
+  alias for it. Give one; `target_custom_object` wins when both are set.
+- **`new_entity_name`**, **`new_entity_name_html`** and
+  **`new_entity_owner_type`** (`assign_from_context_record` or
+  `newly_assigned_owner`) are required by the write schema. The owner can be
+  narrowed with `new_entity_owner_sub_type`, `new_entity_owner_role`,
+  `new_entity_owner_variable` or `new_entity_owner_employees`.
+- **`context_entity_field`** is a field on the automation's own
+  `target_object` that is set to point at the new record: after the step
+  runs, it holds the new record's id (confirmed live 2026-08-13). A bare or
+  `"object.field"` ref resolves at plan time. **`target_variable`** names a
+  variable that receives the new record.
+- The other keys it reads are `new_entity_stage`, `automations_to_start`,
+  `variable_field_resolution` and `context_entity_field_resolution`
+  (default `overwrite`), `existing_record_found_action` (default
+  `error_do_not_create`) and `archived_record_found_action` (default
+  `overwrite`). Any other key is a plan error on `automations create`/`update`
+  and `steps add`; `steps edit` doesn't check it yet.
+- **Field values can't be set at creation.** The step has no key for them:
+  `field_values` used to be forwarded, and Kizen accepted it and stored
+  nothing (confirmed live 2026-10-05). Create the record empty, then set its
+  values in a following
+  [`modify_related_entities`](#modify_related_entities--field-shape) step
+  whose hop is the same `context_entity_field`.
 
 ### `modify_related_entities` — field shape
 

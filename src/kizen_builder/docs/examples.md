@@ -306,23 +306,19 @@ Two placeholder tokens, both filled in from the previous two sections:
   field's `id` from `objects get service_tickets`. This is
   `create_related_entity`'s `context_entity_field`: the field on **this
   automation's own `target_object`** that gets set to point at the record
-  this step creates. `automation.md` already documents `context_entity_field`
-  for `modify_related_entities` with the same "lives on `target_object`" rule
-  — but not this write-destination usage on `create_related_entity`, which is
-  what the working example captures, `confirmed live 2026-08-13`: after the
-  step runs, `context_entity_field` holds the new record's id. The ref
+  this step creates (see `automation.md`'s `create_related_entity`
+  section). The ref
   `"service_tickets.escalation_ticket"` (or bare `"escalation_ticket"`)
   resolves to the same UUID at plan time.
 - `<site_visit_activity_type_uuid>` — the `Site Visit` activity type's `id`
   from `activities get <site_visit_api_name>`, used by `schedule_activity`'s
   `activity_type_id`.
 
-**`create_related_entity` names its target with `target_object`**, which
-resolves to the object's UUID at plan time and goes on the wire as
-`target_custom_object`. A spec that sets only `target_object` applies,
-`confirmed live 2026-10-05`. A block may also set `target_custom_object`
-(a block copied from `steps get` carries it), and that wins when both are
-given, but `target_object` is still required.
+**`create_related_entity` names its target with `target_object`**, an
+alias for the wire key `target_custom_object`. A spec that sets only
+`target_object` applies, `confirmed live 2026-10-05`. Either key alone is
+enough; see `automation.md`'s `create_related_entity` section for the rest
+of the step's keys.
 
 `condition.filter_config` uses the bare field api_name and an option
 **label** (`"High"`), not a UUID — `kizen docs show filters` resolves it at
