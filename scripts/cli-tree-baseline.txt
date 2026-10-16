@@ -3198,18 +3198,16 @@
 │      record_id            <str>  One or more record UUIDs to update.                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --field               <str>  Field api_name to set. [required]                                │
-│ *  --value               <str>  New value (resolved against the field's type, same coercion as   │
-│                                 `records create`).                                               │
-│                                 [required]                                                       │
-│    --resolution          <str>  overwrite | add_only | remove_only | update_if_blank |           │
-│                                 overwrite_except_null (add_only/remove_only apply to             │
-│                                 multi-select fields).                                            │
-│                                 [default: overwrite]                                             │
-│    --dry-run                    Show the plan without applying.                                  │
-│    --yes         -y             Skip the y/N confirmation prompt.                                │
-│    --json                       Emit JSON (plan with --dry-run, results otherwise).              │
-│    --help                       Show this message and exit.                                      │
+│ --field       -f      <str>  The field to set: --field api_name=value (exactly one; value        │
+│                              coerced as in `records update`).                                    │
+│ --resolution          <str>  overwrite | add_only | remove_only | update_if_blank |              │
+│                              overwrite_except_null (add_only/remove_only apply to multi-select   │
+│                              fields).                                                            │
+│                              [default: overwrite]                                                │
+│ --dry-run                    Show the plan without applying.                                     │
+│ --yes         -y             Skip the y/N confirmation prompt.                                   │
+│ --json                       Emit JSON (plan with --dry-run, results otherwise).                 │
+│ --help                       Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: records unarchive [OPTIONS] {object_api_name} [record_id]...                                
