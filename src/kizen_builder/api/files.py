@@ -53,31 +53,26 @@ def download_file(
 ) -> tuple[bytes, str | None]:
     """Download a stored file as raw bytes.
 
-    Hits ``/api/files/{file_id}/download`` with the env's auth headers and
-    returns ``(content, filename)`` where filename is parsed from the
-    Content-Disposition header when present. Kept off ``KizenClient``, whose
-    verbs only ever return parsed JSON — this is one of two places the CLI needs
-    a raw response body.
+    Hits ``/api/files/{file_id}/download`` through
+    :meth:`KizenClient.get_bytes` and returns ``(content, filename)`` where
+    filename is parsed from the Content-Disposition header when present.
     """
-    headers = {**config.auth_headers(), "Accept": "*/*"}
     try:
-        with httpx.Client(
-            base_url=config.base_url, headers=headers, timeout=timeout
-        ) as c:
-            resp = c.get(f"/api/files/{file_id}/download")
-    except httpx.HTTPError as exc:
+        with KizenClient(config) as client:
+            content, headers = client.get_bytes(
+                f"/api/files/{file_id}/download", timeout=timeout
+            )
+    except KizenAPIError as exc:
         raise KizenAPIError(
-            0, f"network error downloading file {file_id}: {exc}"
+            exc.status_code, f"downloading file {file_id}: {exc.message}", exc.body
         ) from exc
-    if not resp.is_success:
-        raise KizenAPIError(resp.status_code, f"failed to download file {file_id}")
 
     filename: str | None = None
-    disp = resp.headers.get("content-disposition", "")
+    disp = headers.get("content-disposition", "")
     if "filename=" in disp:
         value = disp.split("filename=", 1)[1].split(";", 1)[0]
         filename = value.strip().strip('"') or None
-    return resp.content, filename
+    return content, filename
 
 
 def upload_file(

@@ -273,7 +273,7 @@ def test_wait_for_execution_survives_a_transient_poll_error(monkeypatch):
     route = respx.get(f"{EXEC_BASE}/{EXEC_ID}").mock(
         side_effect=[
             httpx.Response(200, json=_execution("active")),
-            httpx.Response(503, json={"detail": "temporarily unavailable"}),
+            httpx.Response(500, json={"detail": "temporarily unavailable"}),
             httpx.Response(200, json=_execution("completed")),
         ]
     )
@@ -291,10 +291,10 @@ def test_wait_for_execution_gives_up_after_too_many_consecutive_errors(monkeypat
     respx.get(f"{EXEC_BASE}/{EXEC_ID}").mock(
         side_effect=[
             httpx.Response(200, json=_execution("active")),
-            httpx.Response(503, json={"detail": "down"}),
-            httpx.Response(503, json={"detail": "down"}),
-            httpx.Response(503, json={"detail": "down"}),
-            httpx.Response(503, json={"detail": "down"}),
+            httpx.Response(500, json={"detail": "down"}),
+            httpx.Response(500, json={"detail": "down"}),
+            httpx.Response(500, json={"detail": "down"}),
+            httpx.Response(500, json={"detail": "down"}),
         ]
     )
 

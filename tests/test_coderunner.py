@@ -174,9 +174,12 @@ def test_run_code_step_posts_payload_and_normalizes_response():
         inputs=[{"name": "n", "code": "number", "value": "21"}],
         outputs=[{"name": "doubled", "code": "number"}],
     )
-    body = json.loads(route.calls[-1].request.content)
+    request = route.calls[-1].request
+    body = json.loads(request.content)
     assert body["inputs"] == {"n": {"t": "n", "v": "21"}}
     assert body["output_types"] == {"doubled": "n"}
+    # The server holds the request open for the whole run.
+    assert request.extensions["timeout"]["read"] == 120.0
     assert result["values"] == {"doubled": {"t": "n", "v": "42.0"}}
     assert result["duration_ms"] == 42
     assert result["error"] is None

@@ -2398,7 +2398,7 @@ class FakeConnector:
     variable drops every stored rule that pointed at its old uuid.
 
     ``fail_on`` / ``timeout_on`` / ``down_on`` pick the nth PATCH: it 400s, it
-    lands but the response never arrives, or it and every later GET 503.
+    lands but the response never arrives, or it 503s and every later GET 500s.
     ``null_exposures`` makes a created step's exposed variable come back null.
     """
 
@@ -2431,7 +2431,7 @@ class FakeConnector:
 
     def get(self, request):
         if self._down():
-            return httpx.Response(503, json={"detail": "unavailable"})
+            return httpx.Response(500, json={"detail": "unavailable"})
         return httpx.Response(200, json=self.state)
 
     def patch(self, request):
@@ -2935,7 +2935,7 @@ def test_partial_report_states_come_from_the_re_read():
     with pytest.raises(sct.PartialSaveError) as err:
         sct.apply_configure_flow(sct.plan_configure_flow(MULTI_SPEC))
     report = err.value.report
-    assert "HTTP 503" in report["reread_error"]
+    assert "HTTP 500" in report["reread_error"]
     assert report["status"] is None
     assert {r["state"] for r in report["loads"]} == {"unknown"}
     assert {str(r["now"]) for r in report["loads"]} == {"None"}

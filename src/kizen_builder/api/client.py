@@ -1,14 +1,26 @@
-"""Thin httpx wrapper that injects the three Kizen auth headers on every call
-and normalizes errors into a single exception type.
+"""Thin httpx wrapper that injects the three Kizen auth headers on every call,
+retries reads, and normalizes errors into a single exception type.
+
+A GET is retried on a transport error or a 429/502/503/504. Any method is
+retried when the connection was never made. A write is never retried once it
+may have reached the server; its error says so instead.
 """
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import httpx
 
 from kizen_builder.config import EnvConfig
+
+_MAX_ATTEMPTS = 3
+_RETRY_STATUSES = frozenset({429, 502, 503, 504})
+_BACKOFF_S = (1.0, 2.0)
+_RETRY_AFTER_CAP_S = 10.0
+# Raised before the request left the machine, so retrying can't double a write.
+_NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 
 
 class KizenAPIError(Exception):
@@ -52,8 +64,12 @@ class KizenClient:
     def get(self, path: str, **kwargs: Any) -> Any:
         return self._request("GET", path, **kwargs)
 
-    def post(self, path: str, json: Any = None, **kwargs: Any) -> Any:
-        return self._request("POST", path, json=json, **kwargs)
+    def post(
+        self, path: str, json: Any = None, *, read_only: bool = False, **kwargs: Any
+    ) -> Any:
+        """``read_only`` marks a search sent as POST, so a lost response isn't
+        reported as a write that may have applied. It is still not retried."""
+        return self._request("POST", path, json=json, read_only=read_only, **kwargs)
 
     def patch(self, path: str, json: Any = None, **kwargs: Any) -> Any:
         return self._request("PATCH", path, json=json, **kwargs)
@@ -64,22 +80,60 @@ class KizenClient:
     def delete(self, path: str, **kwargs: Any) -> Any:
         return self._request("DELETE", path, **kwargs)
 
+    def get_bytes(
+        self, path: str, *, timeout: float | None = None
+    ) -> tuple[bytes, httpx.Headers]:
+        """GET a raw body (a file download) with the same retry and errors."""
+        kwargs: dict[str, Any] = {} if timeout is None else {"timeout": timeout}
+        resp = self._send("GET", path, headers={"Accept": "*/*"}, **kwargs)
+        return resp.content, resp.headers
+
     # --- core -----------------------------------------------------------
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+    def _request(
+        self, method: str, path: str, *, read_only: bool = False, **kwargs: Any
+    ) -> Any:
+        resp = self._send(method, path, read_only=read_only, **kwargs)
+        if not resp.content:
+            return None
         try:
-            resp = self._client.request(method, path, **kwargs)
-        except httpx.HTTPError as exc:
-            raise KizenAPIError(0, f"network error: {exc}") from exc
+            return resp.json()
+        except ValueError:
+            return resp.text
 
-        if resp.is_success:
-            if not resp.content:
-                return None
+    def _send(
+        self, method: str, path: str, *, read_only: bool = False, **kwargs: Any
+    ) -> httpx.Response:
+        write = method != "GET" and not read_only
+        attempt = 0
+        while True:
+            attempt += 1
+            retries_left = attempt < _MAX_ATTEMPTS
             try:
-                return resp.json()
-            except ValueError:
-                return resp.text
+                resp = self._client.request(method, path, **kwargs)
+            except httpx.HTTPError as exc:
+                not_sent = isinstance(exc, _NOT_SENT)
+                retryable = not_sent or (
+                    method == "GET" and isinstance(exc, httpx.TransportError)
+                )
+                if retryable and retries_left:
+                    time.sleep(_backoff(attempt))
+                    continue
+                message = f"network error: {exc}"
+                if write and not not_sent:
+                    message = _may_have_applied(message, method)
+                raise KizenAPIError(0, message) from exc
 
+            if resp.is_success:
+                return resp
+            if method == "GET" and resp.status_code in _RETRY_STATUSES and retries_left:
+                time.sleep(_retry_delay(resp, attempt))
+                continue
+            raise self._error(method, path, resp, write=write)
+
+    def _error(
+        self, method: str, path: str, resp: httpx.Response, *, write: bool
+    ) -> KizenAPIError:
         body: Any
         try:
             body = resp.json()
@@ -94,7 +148,27 @@ class KizenClient:
                 f"{message} — credentials for '{label}' may be invalid or "
                 f"revoked. Run `kizen init --env {label}` to re-enter them."
             )
-        raise KizenAPIError(resp.status_code, message, body=body)
+        if write and resp.status_code in (502, 503, 504):
+            message = _may_have_applied(message, method)
+        return KizenAPIError(resp.status_code, message, body=body)
+
+
+def _may_have_applied(message: str, method: str) -> str:
+    return (
+        f"{message} — the server may have applied this {method}; "
+        "read live state before retrying."
+    )
+
+
+def _retry_delay(resp: httpx.Response, attempt: int) -> float:
+    retry_after = resp.headers.get("retry-after", "").strip()
+    if retry_after.isdigit():
+        return min(float(retry_after), _RETRY_AFTER_CAP_S)
+    return _backoff(attempt)
+
+
+def _backoff(attempt: int) -> float:
+    return _BACKOFF_S[min(attempt, len(_BACKOFF_S)) - 1]
 
 
 def _extract_error_message(body: Any) -> str | None:
