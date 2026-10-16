@@ -188,24 +188,13 @@ above has been created and read back:
   object field via a bare field UUID (CLI: `--linked-field
   service_tickets.priority`), not an object-qualified `field_ref`.
 
-**Sending `selected_object_ids` on `activities create --spec-file` 400s —
-`confirmed live 2026-08-13`.** The error is `associated_objects: This field
-cannot be empty when association mode is set to 'selected_objects_associated'`.
-This is the create-time edge of a gotcha `activity.md` already documents for
-*updates* ("you must send `associated_objects`... NOT the documented
-`selected_object_ids`/`custom_object_ids`, which are ignored... The CLI's
-`--object <api_name>` flag builds this shape") — but `activities create` has
-no `--object` flag at all, only `activities update` does, so there is no
-single-step way to create an activity type with its object association via
-`--spec-file`. Worth its own follow-up item (an `--object`/association flag
-on `activities create`); not fixed here. The working sequence is
-create-without-association, then update:
+The type, its fields and its object association apply in one plan. The CLI
+sends `selected_object_ids` as the `associated_objects` list Kizen reads
+(`activity.md`), `confirmed live 2026-10-16`:
 
 ```bash
-kizen activities create --spec-file activity.json --dry-run     # fields only; drop selected_object_ids first
+kizen activities create --spec-file activity.json --dry-run
 kizen activities create --spec-file activity.json --yes
-kizen activities update <site_visit_api_name> --object service_tickets --dry-run
-kizen activities update <site_visit_api_name> --object service_tickets --yes
 ```
 
 **`<site_visit_api_name>` is a placeholder you fill from the `create` output

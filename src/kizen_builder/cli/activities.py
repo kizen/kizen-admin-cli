@@ -73,15 +73,6 @@ def _resolve_linked_field(spec: str) -> tuple[str, str]:
     return match["id"], match.get("display_name") or field_api
 
 
-def _resolve_associated_objects(object_api_names: list[str]) -> list[dict[str, Any]]:
-    """Resolve custom-object api_names to the `associated_objects` wire shape.
-
-    Kizen expects `[{"custom_object": {"id": <uuid>}}, …]` for an activity's
-    `selected_objects_associated` mode. Accepts api_names or raw UUIDs.
-    """
-    return [{"custom_object": {"id": _resolve_object_id(t)}} for t in object_api_names]
-
-
 activities_app = typer.Typer(
     help=(
         "Read and edit activity types (loggable definitions), their fields, and "
@@ -249,6 +240,13 @@ def activities_create(
         "--association-mode",
         help="all_objects_associated | selected_objects_associated | no_objects_associated.",
     ),
+    obj: list[str] = typer.Option(
+        [],
+        "--object",
+        help="Custom-object api_name or UUID to associate (repeatable). Sets "
+        "association mode to selected_objects_associated unless "
+        "--association-mode is given.",
+    ),
     editable: bool | None = typer.Option(
         None,
         "--editable/--not-editable",
@@ -272,8 +270,8 @@ def activities_create(
 ) -> None:
     """Create one activity type from flags, or a JSON ActivityDef (--spec-file/stdin).
 
-    Flag mode covers the common metadata; use a spec for inline fields,
-    visibility rules, or object associations.
+    Flag mode covers the common metadata and object associations; use a spec
+    for inline fields or visibility rules.
     """
     if spec_file and name:
         err_console.print(
@@ -305,6 +303,8 @@ def activities_create(
         spec_dict["description"] = description
     if association_mode:
         spec_dict["association_mode"] = association_mode
+    if obj:
+        spec_dict["selected_object_ids"] = [_resolve_object_id(t) for t in obj]
     if editable is not None:
         spec_dict["is_editable"] = editable
 
@@ -330,8 +330,10 @@ def activities_update(
     obj: list[str] = typer.Option(
         [],
         "--object",
-        help="Custom-object api_name to associate (repeatable). Sets association "
-        "mode to selected_objects_associated unless --association-mode is given.",
+        help="Custom-object api_name or UUID to associate (repeatable). The list "
+        "replaces the current set; objects already in it keep their Required "
+        "and Read-only flags. Sets association mode to "
+        "selected_objects_associated unless --association-mode is given.",
     ),
     editable: bool | None = typer.Option(
         None, "--editable/--not-editable", help="Set the editable flag."
@@ -367,8 +369,7 @@ def activities_update(
     if association_mode:
         changes["association_mode"] = association_mode
     if obj:
-        changes["associated_objects"] = _resolve_associated_objects(obj)
-        changes.setdefault("association_mode", "selected_objects_associated")
+        changes["selected_object_ids"] = [_resolve_object_id(t) for t in obj]
     if editable is not None:
         changes["is_editable"] = editable
     if visibility_rules_file:

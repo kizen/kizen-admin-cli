@@ -210,7 +210,7 @@ kizen filter-groups delete <object> <uuid|name>
 kizen quick-filters delete <object> <uuid|name>
 kizen columns delete <object> <uuid|name>
 # activities (activity types / loggable definitions) — logging/scheduling stays in the UI
-kizen activities create --name X [--api-name Y] [--association-mode ...] [--editable] [--spec-file f]
+kizen activities create --name X [--api-name Y] [--association-mode ...] [--object <api_name> ...] [--editable] [--spec-file f]
 kizen activities update <activity> [--name] [--description] [--object <api_name> ...] \
     [--association-mode ...] [--visibility-rules-file f] [--spec-file f]
 kizen activities delete <activity>

@@ -147,13 +147,14 @@ class ActivityDef(BaseModel):
     webhook_url: str | None = None
     redirect_url: str | None = None
     calendar_sync_enabled: bool | None = None
-    custom_object_ids: list[str] | None = Field(
-        default=None,
-        description="UUIDs of custom objects this activity can be logged against.",
-    )
     selected_object_ids: list[str] | None = Field(
         default=None,
-        description="UUIDs of objects for `selected_objects_associated` mode.",
+        description="UUIDs of objects for `selected_objects_associated` mode. "
+        "Sent as `associated_objects`.",
+    )
+    associated_objects: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="The wire/read shape, sent verbatim. Use it to set `is_required`.",
     )
     loggable_sharing_settings: dict[str, Any] | None = None
 
@@ -161,3 +162,23 @@ class ActivityDef(BaseModel):
         default=None,
         description="Optional fields to create on the type in the same plan.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _check_association_keys(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            check_association_keys(data)
+        return data
+
+
+def check_association_keys(spec: dict[str, Any]) -> None:
+    """Reject the association keys an activity create or update can't send."""
+    if "custom_object_ids" in spec:
+        raise ValueError(
+            "'custom_object_ids' is not sent to Kizen; use 'selected_object_ids'"
+        )
+    if (
+        spec.get("associated_objects") is not None
+        and spec.get("selected_object_ids") is not None
+    ):
+        raise ValueError("set 'associated_objects' or 'selected_object_ids', not both")

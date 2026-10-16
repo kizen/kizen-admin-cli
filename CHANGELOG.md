@@ -176,6 +176,11 @@ called out explicitly under **Changed** or **Removed**.
   Kizen accepted the key and discarded it, so the step was saved without it.
 - **A step's plan error from an automation spec now starts with `step
   '<key>': `**, e.g. `step 'run_script': code_step input …`.
+- **A spec with `custom_object_ids` is a plan error on `activities create`
+  and `update`; use `selected_object_ids`.** The key was never sent to
+  anything that honoured it. `activities get --json` shows the server's
+  `associated_objects` (with each object's `is_required`) in place of a
+  `selected_objects` key that was always empty.
 
 ### Added
 
@@ -403,6 +408,9 @@ called out explicitly under **Changed** or **Removed**.
   it — while a mismatch on a control that had **no entry at all** at plan
   time (the fresh-insert case above) still surfaces as `failed`. See
   `docs/specs/permission-group.md`.
+- **`activities create --object`** associates the new type with objects by
+  api_name or UUID (repeatable), as `activities update --object` already
+  did.
 
 ### Fixed
 
@@ -667,6 +675,14 @@ called out explicitly under **Changed** or **Removed**.
   associating an activity type with Contacts via `activities update --object
   client_client` previously failed with `object 'client_client' not found`,
   since both resolve through the same `list_objects()` call.
+- **Activity types associate with the objects their spec names.**
+  `activities create` with `selected_object_ids` 400'd, and `activities
+  update --spec-file` with `selected_object_ids` returned success and
+  changed nothing. Both now send the ids as `associated_objects`, and set
+  `association_mode: selected_objects_associated` when the spec doesn't; a
+  hand-written `associated_objects` list gets the same default instead of
+  being stored as `all_objects_associated`. `activities update --object`
+  keeps the Required and Read-only flags of objects already associated.
 
 ### Added
 
