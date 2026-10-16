@@ -7,10 +7,16 @@ from collections.abc import Callable
 from typing import Any
 
 import typer
+from pydantic import ValidationError
 from rich.markup import escape
 
 from kizen_builder.cli._mutations import _confirm_or_abort, _read_spec
-from kizen_builder.cli._shared import cli_errors, console, err_console
+from kizen_builder.cli._shared import (
+    cli_errors,
+    console,
+    err_console,
+    exit_spec_errors,
+)
 from kizen_builder.cli.automations import autos_app
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
@@ -73,8 +79,15 @@ def _run_step_patch(
     live state (plans are ephemeral); last_revision makes a concurrent edit
     between preview and apply fail loudly instead of clobbering.
     """
-    with cli_errors(LookupError, PlanError):
-        preview = auto_tools.patch_steps(api_name, mutate, execute=False)
+
+    def patch(execute: bool) -> dict[str, Any]:
+        try:
+            with cli_errors(LookupError, PlanError):
+                return auto_tools.patch_steps(api_name, mutate, execute=execute)
+        except ValidationError as e:
+            exit_spec_errors(e)
+
+    preview = patch(execute=False)
 
     if not json_out:
         console.print(
@@ -110,8 +123,7 @@ def _run_step_patch(
         stdin_consumed=stdin_consumed,
     )
 
-    with cli_errors(LookupError, PlanError):
-        result = auto_tools.patch_steps(api_name, mutate, execute=True)
+    result = patch(execute=True)
 
     if json_out:
         typer.echo(json.dumps(result, indent=2, default=list))

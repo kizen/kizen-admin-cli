@@ -473,11 +473,16 @@ def normalize_step_patch(
     idempotent on wire shapes (enforced by
     `test_builders_rebuild_wire_blocks_unchanged`). A block key the builder
     doesn't read is refused, a condition patch that carries `step_condition`
-    must also have at least one rule, and a goal's email_received trigger set
-    to selected inboxes must name one: the same checks `automations
+    must also have at least one rule, a goal's email_received trigger set to
+    selected inboxes must name one, and an initialize_variable's `variable`
+    must pass `AutomationVariableConfig`: the same checks `automations
     create`/`update` and `steps add` apply.
     """
+    from pydantic import ValidationError
+    from pydantic_core import InitErrorDetails
+
     from kizen_builder.filtering import VariableReferenceError
+    from kizen_builder.models.spec import AutomationVariableConfig
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         LiveContext,
@@ -494,6 +499,22 @@ def normalize_step_patch(
         # Strict, not live: `steps get` prints translated blocks, so an
         # unsent_on_read key here is one the author set and the edit would drop.
         _reject_unhonoured_keys(builder, patch[cfg_key], f"step '{key}' {cfg_key}")
+        variable = patch[cfg_key].get("variable")
+        if step_type == "initialize_variable" and isinstance(variable, dict):
+            try:
+                AutomationVariableConfig.model_validate(variable)
+            except ValidationError as e:
+                # Re-rooted at the step so the loc reads as `steps add`'s does.
+                rerooted = [
+                    InitErrorDetails(
+                        type=err["type"],
+                        loc=(cfg_key, "variable", *err["loc"]),
+                        input=err["input"],
+                        ctx=err.get("ctx", {}),
+                    )
+                    for err in e.errors()
+                ]
+                raise ValidationError.from_exception_data(e.title, rerooted) from e
         auto = _payload_auto(payload, target_object)
         try:
             patch[cfg_key] = builder(dict(patch[cfg_key]), auto, LiveContext())

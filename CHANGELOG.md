@@ -33,6 +33,13 @@ called out explicitly under **Changed** or **Removed**.
   has, and warns when Kizen will add a random suffix. The result line (and
   `--json`'s `message`) shows the api_name Kizen stored. An object spec's
   `api_name` is optional too.
+- **Breaking: an automation variable's `data_type` must be one Kizen
+  accepts.** `string`, `number`, `boolean`, `date`, `datetime`,
+  `phone_number`, `email`, `uuid`, `employee` or `entity`. Anything else,
+  such as `text`, `list` or `object`, is now a spec error at `--dry-run`.
+  Before, the plan passed and Kizen answered the create with an HTTP 500.
+  `steps add` and `steps edit` check it too. Unknown keys in a variable are
+  rejected as well: `isArray` used to save a scalar variable.
 - **Breaking: `automations start`, `roundtrip --execute`, `code test` and
   every `automations runs` verb except `pause` now y/N-confirm. Scripts must
   pass `--yes` or they exit 2.** Each of them runs live and can't be undone;
@@ -534,6 +541,9 @@ called out explicitly under **Changed** or **Removed**.
 - **`automations runs view`, `runs logs` and `automations start --show-logs`
   now show every step of a long run.** Before, they read only the first page
   of its history, so a run with more than 100 history rows lost the rest.
+- **`steps add` prints a bad step spec as `spec error:` lines** instead of
+  `error: internal: ValidationError` and a debug hint. A spec key containing
+  `[` no longer crashes the `spec error:` line either.
 
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or
