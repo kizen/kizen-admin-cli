@@ -544,6 +544,9 @@ called out explicitly under **Changed** or **Removed**.
 - **`steps add` prints a bad step spec as `spec error:` lines** instead of
   `error: internal: ValidationError` and a debug hint. A spec key containing
   `[` no longer crashes the `spec error:` line either.
+- **The README's setup instructions match the CLI.** Scripted `kizen init`
+  needs `--base-url`; the `connectors` install line no longer assumes a clone;
+  a stale warning that step ids rotate on every update is gone.
 
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or
