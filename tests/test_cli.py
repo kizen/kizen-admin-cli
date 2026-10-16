@@ -2100,7 +2100,7 @@ def test_objects_create_defaults_to_standard(monkeypatch):
             "objects",
             "create",
             "--api-name",
-            "invoice",
+            "invoices",
             "--name",
             "Invoices",
             "--dry-run",
@@ -2118,7 +2118,7 @@ def test_objects_create_pipeline_flag(monkeypatch):
             "objects",
             "create",
             "--api-name",
-            "deal",
+            "deals",
             "--name",
             "Deals",
             "--pipeline",
@@ -2137,7 +2137,7 @@ def test_objects_create_object_type_flag(monkeypatch):
             "objects",
             "create",
             "--api-name",
-            "deal",
+            "deals",
             "--name",
             "Deals",
             "--object-type",
@@ -2167,6 +2167,47 @@ def test_objects_create_rejects_bad_object_type(monkeypatch):
     )
     assert result.exit_code == 2
     assert "object-type" in result.stderr
+
+
+def test_objects_create_api_name_is_optional_and_never_forwarded(monkeypatch):
+    seen = _capture_object_planner(monkeypatch)
+    result = runner.invoke(
+        cli.app, ["objects", "create", "--name", "Invoices", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "api_name" not in seen["obj"]
+
+
+@pytest.mark.parametrize(
+    "api_name, exit_code, says",
+    [
+        ("invoice", 2, "'Invoices' becomes 'invoices', not 'invoice'"),
+        # A stored collision suffix no display name derives.
+        ("invoices_AHpZedMd", 1, "'invoices_AHpZedMd' already exists"),
+    ],
+)
+def test_objects_create_checks_api_name_against_live_then_derivation(
+    monkeypatch, api_name, exit_code, says
+):
+    monkeypatch.setattr(
+        object_planners,
+        "list_objects",
+        lambda: [{"id": "x", "api_name": "invoices_AHpZedMd", "display_name": "Bills"}],
+    )
+    result = runner.invoke(
+        cli.app,
+        [
+            "objects",
+            "create",
+            "--api-name",
+            api_name,
+            "--name",
+            "Invoices",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == exit_code, result.output
+    assert says in result.stderr
 
 
 # ---------------------------------------------------------------------------

@@ -24,6 +24,15 @@ called out explicitly under **Changed** or **Removed**.
   `error:` naming the automation, the step or trigger and the setting, and
   nothing is written. Such an automation can't be edited through the CLI
   until the setting is supported.
+- **Breaking: `objects create --api-name` is now optional, and a value Kizen
+  won't produce exits 2.** Kizen derives an object's api_name from `--name`
+  and refuses a supplied one, so the old flag was silently ignored and
+  `--api-name invoice --name Invoices` built `invoices`. The error names the
+  derived value and a `--name` that gives the one you wanted. The plan now
+  shows `api_name (derived)`, refuses a display name a live object already
+  has, and warns when Kizen will add a random suffix. The result line (and
+  `--json`'s `message`) shows the api_name Kizen stored. An object spec's
+  `api_name` is optional too.
 - **Breaking: `automations start`, `roundtrip --execute`, `code test` and
   every `automations runs` verb except `pause` now y/N-confirm. Scripts must
   pass `--yes` or they exit 2.** Each of them runs live and can't be undone;

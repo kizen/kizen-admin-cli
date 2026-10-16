@@ -60,10 +60,12 @@ schema marks optional is required in practice, or where a documented shape
 returns a 500. Where a surface doc says **confirmed live `<date>`**, that beat
 the schema.
 
-### Kizen rewrites api_names
+### Kizen derives object api_names
 
-Create with `api_name: invoice` and Kizen may store `invoices`. **Always read
-back after writing** and reference the stored name from then on.
+An object's api_name is a slug of its display name, and a supplied one is
+refused (`kizen docs show objects`). An explicit activity-type api_name is kept
+as given (`kizen docs show activity`). Anywhere else, read back after writing
+and reference the stored name from then on.
 
 ### Contacts are `client_client`
 

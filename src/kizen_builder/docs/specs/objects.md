@@ -4,7 +4,7 @@ Objects and categories are **flag-driven** — there is no spec file. Build an
 object with fields in three steps:
 
 ```bash
-kizen objects create --api-name … --name … --object-type …   # then --help for the rest
+kizen objects create --name … --object-type …   # then --help for the rest
 kizen categories create <object> --name …
 kizen fields create <object> --spec-file fields.json         # kizen docs show field
 ```
@@ -29,12 +29,26 @@ One thing it does **not** cover:
 returns their field schema and option UUIDs in the same format as any custom
 object.
 
-## Kizen rewrites api_names
+## Kizen derives the object api_name from the display name
 
-Create an object with `api_name: invoice` and Kizen may store `invoices`
-(pluralization). Same for field api_names. **Always read back after writing**
-(`kizen objects get <object>`) and reference the server's stored name from then
-on — a spec that assumes its own api_name survived will resolve against nothing.
+An object's api_name can't be chosen. Kizen slugs `--name` (the plural
+`object_name`, not `--entity-name`): it folds accents to ASCII, lowercases,
+drops apostrophes, and collapses every other run of non-alphanumerics to one
+`_`. `Service Tickets` becomes `service_tickets`, and `Señor's  Policy &
+Claims` becomes `senors_policy_claims`. A supplied api_name (`name`
+in the request body) is refused with a 403 "You do not have permission to
+change name.", on create and on update alike, and renaming the display name
+later doesn't move it. `confirmed live 2026-10-14`.
+
+- `objects create --api-name` is an assertion, not a request. If a live
+  object already has it, the plan says so; otherwise a value that differs
+  from the derived one exits 2 and names the value `--name` would give.
+- Two live objects can't share a display name (400 "Custom Object names must
+  be unique."), and the plan refuses one up front. A deleted object's name is
+  reusable.
+- If a live object already holds the derived slug, Kizen adds a random
+  8-character suffix (`control_things_AHpZedMd`). The plan warns,
+  and the result line shows the api_name Kizen actually stored.
 
 ## Pipeline stages
 

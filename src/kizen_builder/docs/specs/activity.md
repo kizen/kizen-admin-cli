@@ -38,7 +38,7 @@
 | Key | Type | Notes |
 |-----|------|-------|
 | `name` | string | **Required.** Display name. |
-| `api_name` | string | Optional (2–255). Kizen may rewrite it on create — read back. |
+| `api_name` | string | Optional (2–255). Kept as given; omit it and Kizen derives one from `name`. |
 | `description` | string (≤500) | Optional. |
 | `is_editable` | bool | Whether logged instances can be edited after submission. |
 | `association_mode` | enum | `all_objects_associated`, `selected_objects_associated` (needs `selected_object_ids`), or `no_objects_associated`. |
@@ -66,7 +66,11 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
 - **`object_ids` are UUIDs**, not api_names — get them from `kizen objects get`.
   (The CLI's `activities create|update --object <api_name>` resolves names for
   you; the spec file wants UUIDs.)
-- **api_name may be rewritten** on create — read back with `kizen activities get`.
+- **An explicit `api_name` is kept as given**, including after the same name
+  was deleted, and a live duplicate gets a 400 ("Activity 'api name' must be
+  unique."). Only a derived name can come back with a random suffix
+  (`site_visit_sk6iwzxh`), so pin `api_name` when other commands will refer to
+  the type. `confirmed live 2026-10-14`.
 
 ---
 

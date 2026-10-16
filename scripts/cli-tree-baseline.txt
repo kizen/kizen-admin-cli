@@ -2555,6 +2555,9 @@
                                                                                                     
  Create one custom object (no fields/categories yet).                                               
                                                                                                     
+ The plan shows the api_name Kizen will derive from `--name`, and the                               
+ result shows the one it stored.                                                                    
+                                                                                                    
  `--pipeline` (or `--object-type pipeline`) creates a stage-based                                   
  pipeline object; the default is a standard object. Kizen requires at                               
  least one stage to create a pipeline object, so this seeds a single                                
@@ -2562,8 +2565,11 @@
  the real ones afterward.                                                                           
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --api-name             <str>  Object api_name (e.g. 'invoice'). [required]                    │
-│ *  --name                 <str>  Display name (plural, e.g. 'Invoices'). [required]              │
+│    --api-name             <str>  Optional check. Kizen derives the api_name from --name and it   │
+│                                  can't be set or changed; if given, it must equal that value.    │
+│ *  --name                 <str>  Display name (plural, e.g. 'Invoices' gives api_name            │
+│                                  'invoices').                                                    │
+│                                  [required]                                                      │
 │    --entity-name          <str>  Singular form (e.g. 'Invoice'). Defaults to display name.       │
 │    --description          <str>  Object description.                                             │
 │    --object-type          <str>  Object type: 'standard' (default) or 'pipeline' (stage-based    │
