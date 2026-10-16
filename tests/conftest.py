@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import respx
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -29,11 +30,31 @@ FAKE_BUSINESS_ID = "00000000-0000-4000-8000-00000000b1d0"
 OTHER_BUSINESS_ID = "00000000-0000-4000-8000-00000000b2d0"
 FAKE_USER_ID = "00000000-0000-4000-8000-0000000005e7"
 FAKE_BASE_URL = "https://kizen.test"
+AUTOMATIONS_URL = f"{FAKE_BASE_URL}/api/automation2/automations"
 
 
 def load_fixture(rel_path: str) -> Any:
     """Load a JSON fixture by path relative to tests/fixtures/."""
     return json.loads((FIXTURES / rel_path).read_text())
+
+
+def mock_automation_lookup(
+    raw: dict[str, Any], router: respx.MockRouter = respx.mock
+) -> respx.Route:
+    """Serve ``raw`` from the list and detail GETs an api_name lookup makes.
+
+    Returns the detail route. Pass ``router`` from inside ``respx.mock(...)``.
+    """
+    router.get(AUTOMATIONS_URL).respond(
+        json={"results": [{"id": raw["id"], "api_name": raw["api_name"]}], "next": None}
+    )
+    return router.get(f"{AUTOMATIONS_URL}/{raw['id']}").respond(json=raw)
+
+
+def request_json(route: respx.Route) -> Any:
+    """The JSON body of the route's only call."""
+    assert route.call_count == 1
+    return json.loads(route.calls.last.request.content)
 
 
 @pytest.fixture(autouse=True)
