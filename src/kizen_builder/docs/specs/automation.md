@@ -959,7 +959,7 @@ Beyond the step/trigger tables above:
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string |
 | `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record` |
 | `archive_record` | `relationship_field_ids` (entries accept `"object.field"` refs), `automation_variable_name` |
-| `assign_team_member` | the `*_id` dialect: `role_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum — see below |
+| `assign_team_member` | the `*_id` dialect: `role_id`, `employee_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum — see below |
 | `go_to_automation_step` | `step_key`, pointing at a synthesized key |
 
 The `manual` trigger is prepended to every spec automatically if absent.
@@ -1043,11 +1043,51 @@ and not the `team_member` selector's set on notify/send steps. Confirmed live
 | `round_robin_role` | `role_id` |
 | `round_robin_team_members` | `employee_ids` |
 | `round_robin_all` | — |
-| `team_selector_field` | `field_id` |
-| `related_team_selector_field` | `related_field_id` |
+| `team_selector_field` | `field_id`: a team-selector field on the automation's own object |
+| `related_team_selector_field` | **Both required**: `related_field_id` is a single-value relationship field on the automation's own object (the hop); `field_id` is the team-selector field on the object it points to |
 
 `owner`, `last_active`, `last_active_role` and `employees` are all valid on
 *other* selectors and all 400 here with *"… is not a valid choice"*.
+
+The planner checks these keys per `type` and fails the plan if one is missing.
+The read spellings (`employee`, `role`, `field`, `related_field`, `employees`)
+count too. For `related_team_selector_field` it also checks that the hop is a
+single-value relationship field on `target_object`, so the far object's
+selector passed as the hop fails the plan. It skips that check on a global
+automation, or when `target_object` can't be read. The server
+enforces the same rules (confirmed live 2026-10-16, on create and on PUT):
+
+- a missing key 400s with *"This field is required for "<type>" type."*
+- the far object's selector passed as `related_field_id`, or a many-to-many
+  hop, 400s with *"Custom object has no single value relationship field with id
+  "<uuid>""*. The message names the field you passed, not the field it wanted.
+
+**A complete selector only means the keys are right.** It doesn't mean a run
+assigns anyone:
+
+- **The step writes only this record's `owner`.** It never writes to a related
+  record. `field_id` and `related_field_id` name the source the owner is copied
+  from (confirmed live 2026-08-13).
+- **`team_member` reports `completed` and leaves `owner` unchanged.** `updated`
+  still bumps. This was reproduced on two objects, on never-touched records
+  (confirmed live 2026-08-13). It is platform behaviour, and no spec change
+  fixes it. The `round_robin_*` types weren't tested.
+- **The selector types work on a record's first run.**
+  `related_team_selector_field` copied the far record's selector into this
+  record's `owner` (confirmed live 2026-08-13). Whether `field_id` may name a
+  team-selector field other than the far object's `owner` is unconfirmed.
+- **A re-run on a record the automation already processed silently no-ops**,
+  even when the source changed (confirmed live 2026-08-13). It looks like a
+  per-(automation, record) guard. Test against a fresh record each time.
+- **An empty source fails the step, not the run.** The step's
+  `detailed_log.reasons` says *"No employee found for team_selector_field:
+  <uuid>"*, or *"No value set for related_field_id: <uuid>"* when the hop is
+  empty. The run still reports `completed` (confirmed live 2026-10-16).
+- **`updated` bumps on every run, assigned or not**, so it is no evidence
+  either way. Read `owner` back.
+
+The reliable way to set an owner today is `kizen records update <object> <id>
+-f owner=<uuid>`, or a `change_field_value` step on `owner`.
 
 ### `move_to_folder` / `automations move`
 
