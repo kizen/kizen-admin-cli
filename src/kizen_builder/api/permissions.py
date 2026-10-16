@@ -24,9 +24,6 @@ from typing import Any
 
 from kizen_builder.api.client import KizenClient
 
-# The shared next-link loop until KizenClient grows a paginate helper.
-from kizen_builder.api.smart_connectors import _paginate
-
 # --- roles --------------------------------------------------------------
 
 
@@ -35,7 +32,7 @@ def list_roles(client: KizenClient, search: str | None = None) -> list[dict[str,
     params: dict[str, Any] = {"page_size": 200}
     if search:
         params["search"] = search
-    return _paginate(client, "/api/role", params)
+    return client.paginate("/api/role", params)
 
 
 def get_role(client: KizenClient, role_id: str) -> dict[str, Any]:
@@ -70,7 +67,7 @@ def list_permission_groups(
     params: dict[str, Any] = {"page_size": 200}
     if search:
         params["search"] = search
-    return _paginate(client, "/api/permission-group", params)
+    return client.paginate("/api/permission-group", params)
 
 
 def get_permission_group(client: KizenClient, group_id: str) -> dict[str, Any]:

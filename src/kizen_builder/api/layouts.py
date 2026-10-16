@@ -21,17 +21,12 @@ from kizen_builder.api.client import KizenClient
 
 
 def list_layouts(client: KizenClient, object_id: str) -> list[dict[str, Any]]:
-    """GET /api/custom-objects/{object_id}/layouts.
+    """GET /api/custom-objects/{object_id}/layouts, every page.
 
     Normalizes the response envelope (DRF ``results`` or a bare list) to a
     plain list of layout dicts.
     """
-    resp = client.get(f"/api/custom-objects/{object_id}/layouts")
-    if isinstance(resp, dict) and "results" in resp:
-        return list(resp["results"])
-    if isinstance(resp, list):
-        return resp
-    return []
+    return client.paginate(f"/api/custom-objects/{object_id}/layouts")
 
 
 def update_layout(

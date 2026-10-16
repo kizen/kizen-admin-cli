@@ -165,6 +165,30 @@ def test_get_execution_history_maps_row_id():
     ]
 
 
+@respx.mock
+def test_get_execution_history_reads_every_page():
+    """`/history` pages (confirmed live 2026-10-06); a long run's later steps
+    were dropped when only the first page was read."""
+    rows = load_fixture("executions/history_form_submission.json")["results"]
+    route = respx.get(f"{EXEC_BASE}/{EXEC_ID}/history").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": rows[:2],
+                    "next": f"{EXEC_BASE}/{EXEC_ID}/history?page=2",
+                },
+            ),
+            httpx.Response(200, json={"results": rows[2:], "next": None}),
+        ]
+    )
+
+    history = get_execution_history(EXEC_ID)
+
+    assert route.call_count == 2
+    assert [r["id"] for r in history] == [r["id"] for r in rows]
+
+
 # ---------------------------------------------------------------------------
 # wait_for_execution — the sample.py-shaped poll loop.
 # ---------------------------------------------------------------------------

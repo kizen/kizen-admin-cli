@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -87,6 +88,37 @@ class KizenClient:
         kwargs: dict[str, Any] = {} if timeout is None else {"timeout": timeout}
         resp = self._send("GET", path, headers={"Accept": "*/*"}, **kwargs)
         return resp.content, resp.headers
+
+    def paginate(
+        self, path: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        """Follow DRF ``next`` links, returning the flat list of result dicts.
+
+        ``params`` is applied to the first request only; the ``next`` URL
+        already carries the query string forward, so we splice it into the
+        path. A bare-list response is returned as is; any other shape stops
+        the walk and keeps what was read so far.
+        """
+        items: list[dict[str, Any]] = []
+        nxt: str | None = path
+        first = True
+        while nxt:
+            resp = self.get(nxt, params=params if first else None)
+            first = False
+            if isinstance(resp, dict) and "results" in resp:
+                items.extend(resp["results"])
+                following = resp.get("next")
+                if following:
+                    parts = urlsplit(following)
+                    nxt = parts.path + (f"?{parts.query}" if parts.query else "")
+                else:
+                    nxt = None
+            elif isinstance(resp, list):
+                items.extend(resp)
+                nxt = None
+            else:
+                nxt = None
+        return items
 
     # --- core -----------------------------------------------------------
 
