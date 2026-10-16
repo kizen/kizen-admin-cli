@@ -16,6 +16,14 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Breaking: a step setting the CLI doesn't model now stops every verb that
+  reads an automation back, instead of being dropped.** `activate`,
+  `deactivate`, `move`, `steps add|edit|remove` and `roundtrip --execute`
+  used to write the automation back without it; `show`, `steps get` and
+  `diff` printed the automation without it. Each now fails with an
+  `error:` naming the automation, the step or trigger and the setting, and
+  nothing is written. Such an automation can't be edited through the CLI
+  until the setting is supported.
 - **Breaking: `automations start`, `roundtrip --execute`, `code test` and
   every `automations runs` verb except `pause` now y/N-confirm. Scripts must
   pass `--yes` or they exit 2.** Each of them runs live and can't be undone;
@@ -44,8 +52,8 @@ called out explicitly under **Changed** or **Removed**.
   `target_object` as the target object, so `target_custom_object` no longer
   needs to repeat it.
 - **Breaking: `create_related_entity`'s `field_values` is now a plan error
-  on `automations create`/`update` and `steps add` (`steps edit` doesn't
-  check it yet), and `target_object` is no longer required.** Kizen accepted `field_values`
+  on `automations create`/`update`, `steps add` and `steps edit`, and
+  `target_object` is no longer required.** Kizen accepted `field_values`
   and stored nothing, so a spec that set it created the record without the
   values and reported success. To create a related record with values,
   create it empty and set them in a following `modify_related_entities`
@@ -472,6 +480,9 @@ called out explicitly under **Changed** or **Removed**.
   HTTP 400 on a Modify Related Records step that reads its records from a
   variable.** Each of them re-saves the whole automation, and the re-save
   dropped both settings.
+- **`automations steps edit` refuses a config-block key the step type doesn't
+  read, as `steps add` already did.** It used to drop the key and report
+  success.
 - **`automations steps edit` and `steps add` no longer fail with HTTP 400 on a
   Schedule Activity step copied from `steps get`.** The re-save sent each
   associated object as `null`. An `association_configs` entry in a spec can

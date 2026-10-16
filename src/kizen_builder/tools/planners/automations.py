@@ -773,7 +773,9 @@ def _resolve_object(value: Any, ctx: LiveContext) -> str | None:
 _Builder = Callable[..., dict[str, Any]]
 
 
-def honours(*keys: str) -> Callable[[_Builder], _Builder]:
+def honours(
+    *keys: str, unsent_on_read: tuple[str, ...] = ()
+) -> Callable[[_Builder], _Builder]:
     """Declare the config-block keys a step/trigger builder reads.
 
     Any other key in a spec block is a plan-time error: the builder would
@@ -781,10 +783,15 @@ def honours(*keys: str) -> Callable[[_Builder], _Builder]:
     builder, so the list moves with the code it describes;
     ``tests/test_automation_payloads.py`` checks it against the builder's
     real ``block.get(...)`` calls.
+
+    ``unsent_on_read`` names keys a live read carries that must not be sent
+    back (derived linkage, read-side mirrors), so `translate` lets them
+    through rather than refusing the read.
     """
 
     def mark(builder: _Builder) -> _Builder:
         builder.honoured_keys = frozenset(keys)  # type: ignore[attr-defined]
+        builder.unsent_on_read = frozenset(unsent_on_read)  # type: ignore[attr-defined]
         return builder
 
     return mark
@@ -799,19 +806,51 @@ def honours_all(builder: _Builder) -> _Builder:
     return builder
 
 
+def _unclassified_read_keys(
+    builder: _Builder, block: dict[str, Any], *, skip_empty: bool
+) -> set[str]:
+    """Keys of a live-read block that the builder neither reads nor declares
+    unsent and that aren't read-only. ``skip_empty`` ignores keys whose value
+    has nothing to lose; the completeness tests pass False to catch a key
+    while it is still null."""
+    honoured: frozenset[str] | None = builder.honoured_keys  # type: ignore[attr-defined]
+    if honoured is None:
+        return set()
+    unsent: frozenset[str] = builder.unsent_on_read  # type: ignore[attr-defined]
+    unknown = set(block) - honoured - _READ_ONLY_KEYS - unsent
+    if skip_empty:
+        unknown = {k for k in unknown if block[k] not in (None, [], {}, "")}
+    return unknown
+
+
 def _reject_unhonoured_keys(
-    builder: _Builder, block: dict[str, Any], where: str
+    builder: _Builder, block: dict[str, Any], where: str, *, live: bool = False
 ) -> None:
+    """Refuse a block key the builder would drop. ``live`` checks a GET
+    block instead of a spec one (see `_unclassified_read_keys`)."""
     honoured: frozenset[str] | None = builder.honoured_keys  # type: ignore[attr-defined]
     if honoured is None:
         return
-    unknown = sorted(set(block) - honoured)
-    if unknown:
+    if live:
+        unknown = _unclassified_read_keys(builder, block, skip_empty=True)
+    else:
+        unknown = set(block) - honoured
+    if not unknown:
+        return
+    keys = ", ".join(sorted(unknown))
+    one = len(unknown) == 1
+    if live:
         raise PlanError(
-            f"{where}: {', '.join(unknown)} would be silently dropped — the "
-            f"planner doesn't read {'that key' if len(unknown) == 1 else 'those keys'}. "
-            f"Keys it reads: {', '.join(sorted(honoured)) or '(none)'}"
+            f"{where}: {keys} would be lost on PUT — the CLI doesn't model "
+            f"{'that setting' if one else 'those settings'}, so it stopped "
+            "before writing anything. Change this step in the Kizen UI until "
+            "the CLI supports it."
         )
+    raise PlanError(
+        f"{where}: {keys} would be silently dropped — the "
+        f"planner doesn't read {'that key' if one else 'those keys'}. "
+        f"Keys it reads: {', '.join(sorted(honoured)) or '(none)'}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1254,7 +1293,16 @@ def _normalize_llm_decision(ld: Any) -> Any:
     return out
 
 
-@honours("type", "llm_decision", "filter_config", "group_ids", "groups")
+# `yes_steps`/`no_steps` mirror the linkage that `parent_key`/`parent_yes_no`
+# carry on write.
+@honours(
+    "type",
+    "llm_decision",
+    "filter_config",
+    "group_ids",
+    "groups",
+    unsent_on_read=("yes_steps", "no_steps"),
+)
 def _step_condition(
     block: dict[str, Any], auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1636,13 +1684,13 @@ def _step_start_automation(
 # Every value-carrying key an override entry can hold, and how the write
 # dialect wants it narrowed. Keyed by the payload key rather than by
 # `value_source`, deliberately: which key holds the value is observable on
-# any entry, whereas the `value_source` string that selects each one is only
-# knowable from a capture that exercises it. Driving off the key means an
-# override whose `value_source` we have never seen still round-trips.
+# any entry, and the published `ValueSourceEnum` /
+# `WriteAutomationVariableOverrideRequest` pair each key with a source (two
+# sources use two keys each). Driving off the key means an override whose
+# `value_source` we have never captured still round-trips.
 #
-# The two unwrap rules are this module's existing conventions, not new
-# guesses: automation-variable references resolve by name, field references
-# by UUID. `specific_value` is a bare scalar already.
+# The unwraps follow the schema's types: automation-variable references are
+# names, field references UUIDs. `specific_value` is a bare scalar already.
 _OVERRIDE_VALUE_KEYS: dict[str, Callable[[Any], Any] | None] = {
     "context_entity_field": _unwrap_id,
     "automation_variable": _unwrap_variable_name,
@@ -1833,6 +1881,9 @@ def _change_field_value_action(
     "fields_to_modify",
     "record_source",
     "record_source_variables",
+    # The config row's own id, and the expanded mirror of
+    # `record_source_variables`.
+    unsent_on_read=("id", "automation_variables"),
 )
 def _step_modify_related_entities(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -2540,12 +2591,28 @@ def _step_send_related_contact_text(
     return out
 
 
+# A read flattens the message resource that `id` points at into the block.
+# The write carries only the `id`, and the message keeps its own content.
 @honours(
     "team_member",
     "cc_team_member",
     "id",
     "email_template_id",
     "email_template",
+    unsent_on_read=(
+        "created",
+        "name",
+        "subject",
+        "content",
+        "craft_json",
+        "base_message_id",
+        "from_name_type",
+        "custom_from_name",
+        "sender_type",
+        "sender_role",
+        "sender_team_member",
+        "external_account",
+    ),
 )
 def _step_notify_member_via_email(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
@@ -2621,12 +2688,15 @@ def _merge_field_resolvers(
     return resolve_label, resolve_objectname
 
 
+# `id`, `name` and `created` describe the message resource the server
+# keeps for the step; the write sends its content inline instead.
 @honours(
     "team_member",
     "content",
     "html_content",
     "base_message_id",
     "message_template_id",
+    unsent_on_read=("id", "name", "created"),
 )
 def _step_notify_member_via_text(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext

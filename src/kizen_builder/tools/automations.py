@@ -471,10 +471,11 @@ def normalize_step_patch(
     Lets `steps edit` accept the same authoring shapes as create specs
     (field_refs, api_names) as well as raw wire dicts — builders are
     idempotent on wire shapes (enforced by
-    `test_builders_rebuild_wire_blocks_unchanged`). A condition patch that carries
-    `step_condition` must also have at least one rule, and a goal's
-    email_received trigger set to selected inboxes must name one: the same
-    checks `automations create`/`update` and `steps add` apply.
+    `test_builders_rebuild_wire_blocks_unchanged`). A block key the builder
+    doesn't read is refused, a condition patch that carries `step_condition`
+    must also have at least one rule, and a goal's email_received trigger set
+    to selected inboxes must name one: the same checks `automations
+    create`/`update` and `steps add` apply.
     """
     from kizen_builder.filtering import VariableReferenceError
     from kizen_builder.tools.planners.automations import (
@@ -483,12 +484,16 @@ def normalize_step_patch(
         _block_field_for,
         _condition_rules_problem,
         _inbox_selection_problem,
+        _reject_unhonoured_keys,
     )
     from kizen_builder.tools.plans import PlanError
 
     cfg_key = _block_field_for(step_type)
     builder = _STEP_BUILDERS.get(step_type)
     if cfg_key in patch and builder is not None and isinstance(patch[cfg_key], dict):
+        # Strict, not live: `steps get` prints translated blocks, so an
+        # unsent_on_read key here is one the author set and the edit would drop.
+        _reject_unhonoured_keys(builder, patch[cfg_key], f"step '{key}' {cfg_key}")
         auto = _payload_auto(payload, target_object)
         try:
             patch[cfg_key] = builder(dict(patch[cfg_key]), auto, LiveContext())

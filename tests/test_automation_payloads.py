@@ -2407,6 +2407,32 @@ def test_steps_add_and_edit_see_the_live_variable_declarations(
     )
 
 
+@pytest.mark.parametrize(
+    "step_type, block, key",
+    [
+        (
+            "create_related_entity",
+            {"new_entity_name": "x", "new_setting": 1},
+            "new_setting",
+        ),
+        # Exempt on a live read, but a patch that sets it would change nothing.
+        (
+            "modify_related_entities",
+            {"automation_variables": ["v"]},
+            "automation_variables",
+        ),
+    ],
+)
+def test_steps_edit_refuses_a_key_the_builder_does_not_read(step_type, block, key):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {_block_field_for(step_type): block}
+    with pytest.raises(
+        PlanError, match=rf"^step 'edited' \S+: {key} would be silently dropped"
+    ):
+        normalize_step_patch(patch, "edited", step_type, _LIVE_PAYLOAD, "patients")
+
+
 def test_steps_edit_without_condition_block_not_checked(patch_live_lookups):
     """A live automation that already carries an empty condition can still be
     edited, e.g. to rename the step, without the patch tripping the check."""
@@ -3222,6 +3248,18 @@ def test_declared_keys_match_what_the_builder_reads(builder):
     """A key read but not declared is rejected although it works; a key
     declared but no longer read slips through and is dropped."""
     assert set(builder.honoured_keys) == builder_keys.declarable(builder.__name__)
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted((FIXTURES / "automations").glob("*.raw.json")),
+    ids=lambda p: p.name.removesuffix(".raw.json"),
+)
+def test_every_captured_read_key_is_classified(path):
+    """A read key that is null in every capture today would make `translate`
+    refuse the automation the day it is set. Declare it: honoured if the
+    builder should carry it, `unsent_on_read` if it must not be sent."""
+    assert builder_keys.unclassified_read_keys(json.loads(path.read_text())) == set()
 
 
 # No captured fixture has these; test_uncaptured_builder_output_replans_unchanged
