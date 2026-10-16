@@ -87,6 +87,25 @@ class ActionModifyRelatedEntitiesConfig(BaseModel):
         description="'object.field' for the relationship field. Resolved to UUID at apply time.",
     )
     relationship_field_id: str | None = None
+    record_source: Literal["related_object_field", "automation_variable"] | None = (
+        Field(
+            default=None,
+            description=(
+                "Where the records to modify come from. Omitted, the server uses "
+                "'related_object_field', which needs a hop in "
+                "`automation_target_relationship_fields`. 'automation_variable' "
+                "reads them from `record_source_variables` instead, with "
+                "`automation_target_relationship_fields: []`."
+            ),
+        )
+    )
+    record_source_variables: list[str] | None = Field(
+        default=None,
+        description=(
+            "Names of the non-array entity variables holding the records, for "
+            "`record_source: automation_variable`. An array variable 400s."
+        ),
+    )
 
 
 class ActionModifyRelatedEntitiesAutomationConfig(BaseModel):

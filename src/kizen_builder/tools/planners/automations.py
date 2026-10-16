@@ -1831,6 +1831,8 @@ def _change_field_value_action(
     "relationship_field_id",
     "object_to_modify",
     "fields_to_modify",
+    "record_source",
+    "record_source_variables",
 )
 def _step_modify_related_entities(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -1856,6 +1858,12 @@ def _step_modify_related_entities(
             for f in (block.get("fields_to_modify") or [])
         ],
     }
+    if block.get("record_source") is not None:
+        out["record_source"] = block["record_source"]
+    if block.get("record_source_variables") is not None:
+        out["record_source_variables"] = [
+            _unwrap_variable_name(v) for v in block["record_source_variables"]
+        ]
     return out
 
 
@@ -2362,6 +2370,7 @@ def _resolve_llm_destinations(
     "assigned_to",
     "association_configs",
     "note",
+    "html_note",
 )
 def _step_schedule_activity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -2385,8 +2394,9 @@ def _step_schedule_activity(
             _normalize_association_config(a, auto, ctx, n)
             for n, a in enumerate(block["association_configs"], 1)
         ]
-    if block.get("note") is not None:
-        out["note"] = block["note"]
+    for key in ("note", "html_note"):
+        if block.get(key) is not None:
+            out[key] = block[key]
     return out
 
 

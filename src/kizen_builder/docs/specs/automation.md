@@ -352,6 +352,14 @@ one or more relationship-field hops.
   `relationship_field_ref` (or `relationship_field_id`), is also accepted
   and folded into this list — but the list is the real wire key; don't
   confuse this with `object_to_modify` (a plain object reference).
+- **`record_source`** says where the records come from:
+  `related_object_field` (the hop chain above) or `automation_variable`. For
+  `automation_variable`, set `record_source_variables` to the names of
+  **non-array** entity variables (an array variable 400s) and
+  `automation_target_relationship_fields: []`. Omitted, the server uses
+  `related_object_field`, which 400s without a hop:
+  *"automation_target_relationship_fields should be set"*. Confirmed live
+  2026-10-06.
 - **`fields_to_modify`** items use the *same* per-item shape as
   `change_field_value`'s flat form (`field_to_modify`/`field_ref`,
   `specific_field_value`, `related_object`, `related_object_field`,
@@ -942,6 +950,12 @@ bare strings 500s.**
 `filter_config` (only for `filter_type: custom_filter`) resolves against the
 step's **own** `custom_object`, not the automation's `target_object` — which a
 global automation doesn't have at all.
+
+### `schedule_activity.note` and `html_note`
+
+Kizen stores the two separately, and a PUT without `html_note` clears it
+while `note` survives. Set both when you want the note in both forms.
+Confirmed live 2026-10-06.
 
 ### `schedule_activity.association_configs`
 

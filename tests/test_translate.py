@@ -465,6 +465,63 @@ def test_modify_related_entities_tags_are_bare_uuids(kitchen: dict) -> None:
     assert all(isinstance(t, str) for t in sfv["tags_to_remove"])
 
 
+def _modify_from_variable_read() -> dict:
+    """create_and_modify_related with its modify step reading its records
+    from a variable, in the shape a live read returns (2026-10-06)."""
+    raw = load_fixture("automations/create_and_modify_related.raw.json")
+    (step,) = [s for s in raw["steps"] if s["step_type"] == "modify_related_entities"]
+    step["action_modify_related_entities"].update(
+        record_source="automation_variable",
+        record_source_variables=["visit_record"],
+        automation_variables=[
+            {
+                "name": "visit_record",
+                "deleted": False,
+                "data_type": "entity",
+                "data_subtype": "custom_object",
+            }
+        ],
+        automation_target_relationship_fields=[],
+    )
+    return raw
+
+
+def test_modify_related_entities_keeps_its_record_source() -> None:
+    """Dropping `record_source` made the server default to
+    `related_object_field` and 400 for want of a hop, so the automation could
+    not be re-saved at all (confirmed live 2026-10-06)."""
+    blk = _step_block(
+        live_to_payload(_modify_from_variable_read()), "modify_related_entities"
+    )
+    assert blk["record_source"] == "automation_variable"
+    assert blk["record_source_variables"] == ["visit_record"]
+    assert blk["automation_target_relationship_fields"] == []
+    # The expanded mirror and the config-row id are read-only.
+    assert "automation_variables" not in blk
+    assert "id" not in blk
+
+
+def test_modify_related_entities_record_source_variables_accept_definitions() -> None:
+    raw = _modify_from_variable_read()
+    (step,) = [s for s in raw["steps"] if s["step_type"] == "modify_related_entities"]
+    step["action_modify_related_entities"]["record_source_variables"] = [
+        {"name": "visit_record"}
+    ]
+    blk = _step_block(live_to_payload(raw), "modify_related_entities")
+    assert blk["record_source_variables"] == ["visit_record"]
+
+
+def test_schedule_activity_keeps_its_html_note() -> None:
+    """A PUT without `html_note` clears it, while `note` survives (confirmed
+    live 2026-10-06)."""
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    (step,) = [s for s in raw["steps"] if s["step_type"] == "schedule_activity"]
+    step["action_schedule_activity"]["html_note"] = "<p><strong>Rich</strong> note</p>"
+    blk = _step_block(live_to_payload(raw), "schedule_activity")
+    assert blk["html_note"] == "<p><strong>Rich</strong> note</p>"
+    assert blk["note"] == step["action_schedule_activity"]["note"]
+
+
 def test_cc_team_member_normalized_to_id_dialect(kitchen: dict) -> None:
     blocks = [
         s["action_send_related_contact_email"]

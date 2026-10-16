@@ -200,6 +200,10 @@ called out explicitly under **Changed** or **Removed**.
   dashboard copy keeps the source's sharing, which Kizen would otherwise
   empty so only you could see it, and is unpublished; publish it with
   `dashboards update`.
+- **Automation specs can set `record_source` and `record_source_variables`
+  on `modify_related_entities`**, to modify the records held in entity
+  variables rather than reached through a relationship hop, **and
+  `html_note` on `schedule_activity`.**
 - **Specs can author the `email_received` trigger and goal trigger.** Set
   `trigger_type: email_received` at the top level or in a goal's `triggers`,
   with an optional `trigger_email_received_from_contact: {receiving_inbox,
@@ -463,6 +467,11 @@ called out explicitly under **Changed** or **Removed**.
   or a 500, into "not found"; only a 404 does that now, and anything else
   shows as itself. Role and permission-group updates and deletes now report
   a 404 as `role '<id>' not found` instead of a raw HTTP error.
+- **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
+  longer clear a Schedule Activity step's HTML note, and no longer fail with
+  HTTP 400 on a Modify Related Records step that reads its records from a
+  variable.** Each of them re-saves the whole automation, and the re-save
+  dropped both settings.
 - **`automations steps edit` and `steps add` no longer fail with HTTP 400 on a
   Schedule Activity step copied from `steps get`.** The re-save sent each
   associated object as `null`. An `association_configs` entry in a spec can

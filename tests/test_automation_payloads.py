@@ -328,6 +328,36 @@ def test_modify_related_entities_context_entity_field_dotted_ref_resolves(
     assert field_update["value_type"] == "context_entity_value"
 
 
+def test_modify_related_entities_record_source_from_a_variable(patch_live_lookups):
+    """Without `record_source`, the server defaults to `related_object_field`
+    and 400s for want of a hop (confirmed live 2026-10-06)."""
+    spec = {
+        "api_name": "mre_record_source_test",
+        "name": "MRE Record Source Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "modify",
+                "step_type": "modify_related_entities",
+                "order": 0,
+                "parent_key": None,
+                "action_modify_related_entities": {
+                    "object_to_modify": "encounters",
+                    "automation_target_relationship_fields": [],
+                    "record_source": "automation_variable",
+                    "record_source_variables": ["visit_record"],
+                    "fields_to_modify": [],
+                },
+            }
+        ],
+    }
+    action = _build(spec)["steps"][0]["action_modify_related_entities"]
+    assert action["record_source"] == "automation_variable"
+    assert action["record_source_variables"] == ["visit_record"]
+    assert action["automation_target_relationship_fields"] == []
+
+
 def test_call_llm_derives_html_prompt_from_plain_prompt(patch_live_lookups):
     """The Kizen builder UI keeps prompt/html_prompt in sync (same quirk as
     notify_member_via_text's content/html_content) — a plain-prompt-only
@@ -2521,6 +2551,21 @@ def _schedule_activity_spec(action_config, target_object="patients"):
             }
         ],
     }
+
+
+def test_step_schedule_activity_sends_note_and_html_note(patch_live_lookups):
+    payload = _build(
+        _schedule_activity_spec(
+            {
+                "activity_type_id": "11111111-1111-4111-8111-111111111111",
+                "note": "Plain note",
+                "html_note": "<p><strong>Rich</strong> note</p>",
+            }
+        )
+    )
+    action = payload["steps"][0]["action_schedule_activity"]
+    assert action["note"] == "Plain note"
+    assert action["html_note"] == "<p><strong>Rich</strong> note</p>"
 
 
 def test_step_schedule_activity_association_configs_author_shape(patch_live_lookups):
