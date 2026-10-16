@@ -393,8 +393,23 @@ def plan_archive_records(object_api_name: str, record_ids: list[str]) -> Plan:
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
 
+    operations = archive_operations(env, object_api_name, obj["id"], ids)
+    return Plan.build(
+        env=env,
+        summary=(
+            f"Archive {len(ids)} record(s) from {object_api_name} "
+            f"in {len(operations)} request(s)"
+        ),
+        operations=operations,
+    )
+
+
+def archive_operations(
+    env: str, object_api_name: str, object_uuid: str, ids: list[str]
+) -> list[PlanOperation]:
+    """One ``record_archive`` op per ``ARCHIVE_CHUNK`` of ``ids``, email off."""
     chunks = [ids[i : i + ARCHIVE_CHUNK] for i in range(0, len(ids), ARCHIVE_CHUNK)]
-    operations = [
+    return [
         PlanOperation(
             action="update",
             kind="record_archive",
@@ -414,19 +429,10 @@ def plan_archive_records(object_api_name: str, record_ids: list[str]) -> Plan:
                 ),
             },
             payload={"record_ids": chunk, "send_email_notification": False},
-            parent_object_uuid=obj["id"],
+            parent_object_uuid=object_uuid,
         )
         for chunk in chunks
     ]
-
-    return Plan.build(
-        env=env,
-        summary=(
-            f"Archive {len(ids)} record(s) from {object_api_name} "
-            f"in {len(chunks)} request(s)"
-        ),
-        operations=operations,
-    )
 
 
 def plan_unarchive_records(object_api_name: str, record_ids: list[str]) -> Plan:

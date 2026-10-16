@@ -375,6 +375,21 @@ def test_apply_archive_records_posts_one_batched_request(patch_live_lookups):
 
 
 @respx.mock
+def test_active_record_ids_reads_every_page_with_names_only():
+    route = respx.post(_NAME_SEARCH).mock(
+        side_effect=[
+            httpx.Response(200, json={"results": [{"id": "r1"}], "next": "p2"}),
+            httpx.Response(200, json={"results": [{"id": "r2"}], "next": None}),
+        ]
+    )
+    assert record_tools.active_record_ids(PATIENTS) == ["r1", "r2"]
+    assert route.call_count == 2
+    assert json.loads(route.calls[0].request.content)["field_names"] == ["name"]
+    assert route.calls[1].request.url.params["page"] == "2"
+    assert route.calls[1].request.url.params["page_size"] == "500"
+
+
+@respx.mock
 def test_apply_archive_failed_chunk_does_not_stop_later_chunks(patch_live_lookups):
     route = respx.post(
         f"{FAKE_BASE_URL}/api/custom-objects/{PATIENTS_ID}/bulk-archive-entity-record"

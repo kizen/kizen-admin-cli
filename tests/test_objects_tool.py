@@ -88,6 +88,7 @@ def test_get_object_resolves_custom_object_from_list():
 
     obj = get_object("policies_policy")
     assert obj["id"] == OBJ_ID
+    assert obj["is_custom"] is True
 
 
 @respx.mock
@@ -122,6 +123,7 @@ def test_get_object_resolves_real_uuid_for_client_client():
     assert obj["id"] != "client_client"
     assert obj["api_name"] == "client_client"
     assert obj["display_name"] == "Contacts"
+    assert obj["is_custom"] is False
 
 
 @respx.mock

@@ -41,7 +41,7 @@ from kizen_builder.api import saved_views as sv_api
 from kizen_builder.api import team as team_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import EnvConfig, load_env_config
-from kizen_builder.tools.bulk_actions import wait_for_bulk_action
+from kizen_builder.tools.bulk_actions import poll_until, wait_for_bulk_action
 from kizen_builder.tools.permissions import LEVELS
 
 
@@ -502,6 +502,9 @@ def _blocked_by(op: PlanOperation, failed_keys: set[str]) -> str | None:
         prefix = op.key.split(".", 1)[0]
         if prefix in failed_keys:
             return prefix
+    # An object delete waits on its own archive chunks (`<object>#<ids>`).
+    if op.kind == "object" and op.action == "delete":
+        return min((k for k in failed_keys if k.startswith(f"{op.key}#")), default=None)
     return None
 
 
@@ -547,6 +550,9 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
                 f"{op.action} object op '{op.key}' has no existing_uuid — planning bug"
             )
         if op.action == "delete":
+            timeout = op.payload.get("wait_for_archive_seconds")
+            if timeout is not None:
+                _wait_for_no_active_records(client, op.key, timeout)
             return co_api.delete_object(client, op.existing_uuid)
         return co_api.update_object(client, op.existing_uuid, op.payload)
 
@@ -1105,6 +1111,38 @@ def _patch_copy(
 
 def _with_context(e: KizenAPIError, context: str) -> KizenAPIError:
     return KizenAPIError(e.status_code, f"{e.message} — {context}", body=e.body)
+
+
+def _wait_for_no_active_records(
+    client: KizenClient, object_api_name: str, timeout: float
+) -> None:
+    """Poll the object's record count every 2 s until it reads 0.
+
+    Bulk archive is asynchronous, and Kizen refuses the object DELETE while
+    any record is still active. Raises instead of sending it after ``timeout``.
+    The count is a search POST, which the client never retries.
+    """
+    rerun = f"Re-run kizen objects delete {object_api_name}"
+    try:
+        remaining, _ = poll_until(
+            lambda: records_api.count_records(client, object_api_name),
+            lambda n: n == 0,
+            timeout=timeout,
+        )
+    except KizenAPIError as e:
+        raise KizenAPIError(
+            e.status_code,
+            f"{e.message} — while counting records after the archive; the "
+            "records are already archived, so the object was not deleted. "
+            f"{rerun} to finish",
+            body=e.body,
+        ) from e
+    if remaining != 0:
+        raise KizenAPIError(
+            0,
+            f"{remaining} record(s) still active after {timeout}s; the "
+            f"archive may still be running. {rerun}",
+        )
 
 
 def _execute_record_import(

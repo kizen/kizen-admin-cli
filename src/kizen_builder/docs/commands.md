@@ -206,7 +206,7 @@ kizen columns update <object> <uuid|name> [--name] [--config-file f] [--owner]
 kizen columns apply-to-roles/apply-to-users/apply-to-permission-groups <object> <uuid|name> --role/--user/--group <name|uuid> [...]
 
 # delete — objects, categories, records, fields (and field options)
-kizen objects delete <api_name>                                # archive an object + its data
+kizen objects delete <api_name>                                # archives its active records (no email), then the object
 kizen categories delete <object_api_name> <category_name>
 kizen filter-groups delete <object> <uuid|name>
 kizen quick-filters delete <object> <uuid|name>

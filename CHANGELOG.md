@@ -497,6 +497,10 @@ called out explicitly under **Changed** or **Removed**.
   associated object as `null`. An `association_configs` entry in a spec can
   now give `custom_object_id`, and an entry that names no object is a plan
   error.
+- **`objects delete` works on an object that still has records.** It used to
+  show a plan and then fail with a 400 from Kizen. It now archives the records
+  first, 500 per request with Kizen's email off, then deletes the object.
+  Built-in objects such as Contacts are refused before anything is planned.
 
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or

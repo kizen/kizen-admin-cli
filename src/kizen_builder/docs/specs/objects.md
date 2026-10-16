@@ -88,6 +88,22 @@ option-id-set equality against the live stages, not by field api_name — and
 refuses, rather than reporting the fake success the API hands back. Use
 `objects stages` instead.
 
+## Deleting an object
+
+`DELETE /api/custom-objects/{id}` answers 400 "This custom object still has
+active records. Archive all records first using the bulk-archive action" while
+any record is active, and `{}` once none is (confirmed live 2026-09-28). The
+object DELETE writes no bulk-action-progress row, so it sends no email.
+
+`kizen objects delete` plans both steps: it lists the active record ids,
+archives them in 500-id bulk-archive requests with
+`send_email_notification: false` (see `kizen docs show records`), then waits for search to count 0 before it
+sends the DELETE. The wait is needed: on 3 records, a count taken 0.5 s after
+the archive returned still read 3, and the next, 2 s later, read 0 (confirmed
+live 2026-10-16). A transient 5xx while counting is retried; if an archive
+request fails, the DELETE is skipped. Built-in objects such as `client_client`
+are refused at plan time, before any record is listed.
+
 ## See also
 
 - `kizen docs show field` — field spec shape, type-specific blocks, reserved

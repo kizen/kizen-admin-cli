@@ -7,8 +7,15 @@ from typing import Any
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FieldCategory, ObjectDef, PipelineStageSpec
 from kizen_builder.tools.objects import get_object, list_objects
+from kizen_builder.tools.planners.records import archive_operations
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.tools.records import active_record_ids
 from kizen_builder.utils import derived_object_api_name
+
+# Seconds `objects delete` waits for its bulk archive to clear search before
+# the object DELETE. Search reflects an archive well under 2 s later
+# (docs/specs/records.md), so this only bounds a stuck job.
+ARCHIVE_SETTLE_TIMEOUT = 300
 
 
 class ApiNameMismatch(PlanError):
@@ -128,30 +135,50 @@ def plan_create_category(
 
 
 def plan_delete_object(object_api_name: str) -> Plan:
-    """Plan deletion (archive) of one custom object and its data."""
+    """Plan deleting one custom object, archiving its active records first.
+
+    Kizen refuses to delete an object that still has active records (400,
+    confirmed live 2026-09-28), so the plan archives them in
+    ``ARCHIVE_CHUNK``-id requests with email off, then deletes the object
+    once search reads 0.
+    """
     env = load_env_config().name
 
     try:
         obj = get_object(object_api_name)
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
+    if not obj["is_custom"]:
+        raise PlanError(
+            f"'{object_api_name}' is a built-in Kizen object. objects delete "
+            "only deletes custom objects, so nothing was planned and no "
+            "records were touched"
+        )
+
+    ids = active_record_ids(object_api_name)
+    archive_ops = archive_operations(env, object_api_name, obj["id"], ids)
+    warning = (
+        "Kizen refuses to delete an object with active records, so this plan "
+        f"archives its {len(ids)} active record(s) first, with no email"
+        if ids
+        else "deletes the object; it has no active records"
+    )
 
     op = PlanOperation(
         action="delete",
         kind="object",
         key=object_api_name,
-        preview={
-            "env": env,
-            "api_name": object_api_name,
-            "warning": "archives the object and its data across all records",
-        },
+        preview={"env": env, "api_name": object_api_name, "warning": warning},
+        payload={"wait_for_archive_seconds": ARCHIVE_SETTLE_TIMEOUT} if ids else {},
         existing_uuid=obj["id"],
     )
-    return Plan.build(
-        env=env,
-        summary=f"Delete object '{object_api_name}'",
-        operations=[op],
-    )
+    summary = f"Delete object '{object_api_name}'"
+    if ids:
+        summary = (
+            f"Archive {len(ids)} record(s) from {object_api_name} in "
+            f"{len(archive_ops)} request(s), then delete object '{object_api_name}'"
+        )
+    return Plan.build(env=env, summary=summary, operations=[*archive_ops, op])
 
 
 def plan_delete_category(object_api_name: str, category_name: str) -> Plan:

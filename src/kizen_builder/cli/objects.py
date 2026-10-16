@@ -337,7 +337,7 @@ def objects_delete(
         False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
     ),
 ) -> None:
-    """Delete (archive) one custom object. Removes its data across all records."""
+    """Delete one custom object. Archives its active records first, with no email."""
     _run_mutation(
         lambda: object_planners.plan_delete_object(object_api_name),
         dry_run=dry_run,

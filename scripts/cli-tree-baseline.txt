@@ -2545,7 +2545,7 @@
 │ get     Show one object plus its categories and fields.                                          │
 │ create  Create one custom object (no fields/categories yet).                                     │
 │ update  Update one custom object. Only the flags you set are changed.                            │
-│ delete  Delete (archive) one custom object. Removes its data across all records.                 │
+│ delete  Delete one custom object. Archives its active records first, with no email.              │
 │ stages  Manage a pipeline's stages — status, chance-to-close, order. These live at a dedicated   │
 │         endpoint distinct from the object's mirrored 'stage' field; `fields options` cannot      │
 │         manage them (see `objects get` for a read-only view of the same data).                   │
@@ -2584,7 +2584,7 @@
                                                                                                     
  Usage: objects delete [OPTIONS] {object_api_name}                                                  
                                                                                                     
- Delete (archive) one custom object. Removes its data across all records.                           
+ Delete one custom object. Archives its active records first, with no email.                        
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    object_api_name      <str>  Object api_name to delete. [required]                           │
