@@ -131,7 +131,7 @@ the DSL doesn't cover it — write the raw dict:
         ["fields_settings_search", true],
         ["custom_object_id", "<object-uuid>"],
         ["object_type", "standard"],
-        ["client_tag_field_id", "257bb114-1b86-4761-99bd-95292de23f46"]
+        ["client_tag_field_id", "<client-tag-field-uuid>"]
       ], "filter_type": "variable" }],
     ["lhs_variable", { "name": "<variable_name>", "data_type": "number" }],
     ["condition", "less_than_or_equal_to"],
@@ -161,9 +161,21 @@ For a blank check **on a variable**, `condition` is `is_blank` or
 `view_model`'s `["condition", …]` entry uses that same string rather than the
 `less_than`-style mapping.
 
-`rhs_value` is always a string. `client_tag_field_id`
-(`257bb114-1b86-4761-99bd-95292de23f46`) appears to be a constant across
-environments. `custom_object_id` is the automation's target object.
+`rhs_value` is always a string. `custom_object_id` is the automation's target
+object. `client_tag_field_id` is per business, not a constant: two businesses'
+contact `tags` field ids differed (confirmed live 2026-10-05). Copy it from the
+`view_model` of an existing condition in the same business
+(`kizen automations get <api_name> --raw`). If there is none, use the contact
+`tags` field's id from `kizen objects get client_client`. That fallback is a
+best guess.
+Conditions were read in two businesses, one on 2026-10-05 and one on
+2026-10-16. Record-field clauses mostly carried the `tags` id in both. Variable
+clauses carried it in the second and a different id in the first. A condition
+with no `view_model` still executes, so a wrong value probably changes only how
+the builder UI shows the condition (not tested). A field-vs-variable rule
+written with the filter spec's `variable` key doesn't need it: the CLI resolves
+it per business (see [Comparing a field to an array
+variable](#comparing-a-field-to-an-array-variable-condition-steps-only)).
 
 ## Comparing a field to an array variable (condition steps only)
 

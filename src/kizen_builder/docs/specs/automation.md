@@ -560,7 +560,7 @@ an **automation variable** to a static value is a different clause shape,
                 ["fields_settings_search", true],
                 ["custom_object_id", "<object-uuid>"],
                 ["object_type", "standard"],
-                ["client_tag_field_id", "257bb114-1b86-4761-99bd-95292de23f46"]
+                ["client_tag_field_id", "<client-tag-field-uuid>"]
               ], "filter_type": "variable" }],
             ["lhs_variable", { "name": "score", "data_type": "number" }],
             ["condition", "less_than_or_equal_to"],
@@ -582,8 +582,19 @@ an **automation variable** to a static value is a different clause shape,
   a distinct token pair from the record-field DSL's single `is_blank`+bool
   form used elsewhere in `filter_config`.
 - **`custom_object_id`** is the automation's target object UUID;
-  **`client_tag_field_id`** (`257bb114-1b86-4761-99bd-95292de23f46`) is a
-  constant that appears fixed across envs.
+  **`client_tag_field_id`** is per business, not a constant: two businesses'
+  contact `tags` field ids differed (confirmed live 2026-10-05). Copy it from
+  the `view_model` of an existing condition in the same business
+  (`kizen automations get <api_name> --raw`). If there is none, use the
+  contact `tags` field's id from `kizen objects get client_client`. That
+  fallback is a best guess. Conditions were read in two businesses, one on 2026-10-05 and one on
+  2026-10-16. Record-field clauses mostly carried the `tags` id in both.
+  Variable clauses carried it in the second and a different id in the first. A
+  condition with no `view_model` still executes, so a wrong value probably
+  changes only how the builder UI shows the condition (not tested). A
+  field-vs-variable rule written with the filter spec's `variable` key doesn't
+  need it: the CLI resolves it per business (see [Field compared to an array
+  variable](#field-compared-to-an-array-variable)).
 
 ### Field compared to an array variable
 
