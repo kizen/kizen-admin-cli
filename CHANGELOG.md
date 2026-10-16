@@ -179,8 +179,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
-- **`activities duplicate <activity>`** copies an activity type. `--name`
-  names the copy; without it, Kizen names the copy `<name> (copy #N)`.
+- **`activities duplicate <activity>`** copies an activity type, and
+  **`dashboards duplicate <dashboard>`** copies a dashboard with its
+  dashlets. `--name` names the copy, and `dashboards duplicate` also takes
+  `--api-name`. Without them, Kizen names the copy `<name> (copy #N)`. A
+  dashboard copy keeps the source's sharing, which Kizen would otherwise
+  empty so only you could see it, and is unpublished; publish it with
+  `dashboards update`.
 - **Specs can author the `email_received` trigger and goal trigger.** Set
   `trigger_type: email_received` at the top level or in a goal's `triggers`,
   with an optional `trigger_email_received_from_contact: {receiving_inbox,

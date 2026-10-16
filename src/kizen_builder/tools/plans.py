@@ -734,7 +734,26 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             return dash_api.create_dashboard(client, op.payload)
         if op.existing_uuid is None:
             raise PlanError(
-                f"update dashboard op '{op.key}' has no existing_uuid — planning bug"
+                f"{op.action} dashboard op '{op.key}' has no existing_uuid — planning bug"
+            )
+        if op.action == "duplicate":
+
+            def patch_and_read(copy_id: str) -> dict[str, Any]:
+                dash_api.update_dashboard(client, copy_id, op.payload)
+                # The PATCH response shows empty role and member grants even
+                # when they were saved; the GET shows what was (live 2026-10-16).
+                return dash_api.get_dashboard(client, copy_id)
+
+            return _patch_copy(
+                dash_api.duplicate_dashboard(client, op.existing_uuid),
+                patch_and_read,
+                op.payload,
+                "only you can see it. Set its name and sharing with `kizen "
+                "dashboards update {id}` and a spec of its api_name {api_name}, "
+                "the source's sharing_settings (from `kizen dashboards get "
+                '<source> --raw`) and "published": false to keep it a draft. '
+                "There is no `dashboards delete` yet; to remove it, delete it "
+                "in Kizen",
             )
         return dash_api.update_dashboard(client, op.existing_uuid, op.payload)
 
@@ -1055,10 +1074,10 @@ def _patch_copy(
 ) -> dict[str, Any]:
     """PATCH a just-made duplicate with ``payload``, when it has any.
 
-    The form and activity ``/duplicate`` endpoints ignore their body
-    (confirmed live 2026-10-06), so the name goes on afterwards. A failed
-    PATCH leaves the copy behind; the error names it and gives ``recovery``,
-    formatted with the copy's ``id`` and ``api_name``.
+    The form, activity and dashboard ``/duplicate`` endpoints ignore their
+    body (confirmed live 2026-10-06), so the name and sharing go on afterwards.
+    A failed PATCH leaves the copy behind; the error names it and gives
+    ``recovery``, formatted with the copy's ``id`` and ``api_name``.
     """
     if not payload:
         return copy

@@ -1,4 +1,4 @@
-"""Plan creation/update for dashboards / homepages and their dashlets.
+"""Plan creation/update/duplication for dashboards / homepages and their dashlets.
 
 Dashboards follow the passthrough model: the dashlet ``config`` surface is wide
 and largely undocumented, so a spec carries ``config``/``layout`` opaquely
@@ -24,7 +24,13 @@ from kizen_builder.tools.dashboards import (
     list_dashboards,
     normalize_sharing_settings,
 )
-from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.tools.plans import (
+    Plan,
+    PlanError,
+    PlanOperation,
+    copy_name_preview,
+    fetch_existing,
+)
 
 # entity_type=custom_object dashlets (table_of_records/field_breakdown/
 # field_sum/pivot_table/field_range_breakdown) 400 with "Cannot create
@@ -251,4 +257,50 @@ def plan_update_dashboard(dashboard: str, spec: dict[str, Any] | DashboardDef) -
             else f"No changes to dashboard '{d.api_name or dash_id}'"
         ),
         operations=ops,
+    )
+
+
+def plan_duplicate_dashboard(
+    dashboard: str, *, name: str | None = None, api_name: str | None = None
+) -> Plan:
+    """Plan a copy of one dashboard that keeps the source's sharing.
+
+    The server's copy has empty sharing (only its creator sees it) and is
+    unpublished; the executor PATCHes the source's sharing, plus any ``name``
+    and ``api_name``, onto it. ``published`` stays false.
+    """
+    env = load_env_config().name
+    live = fetch_existing(
+        "dashboard", dashboard, lambda: get_dashboard_detail(dashboard)
+    )
+
+    payload: dict[str, Any] = {
+        "sharing_settings": normalize_sharing_settings(live["sharing_settings"])
+    }
+    if name:
+        payload["name"] = name
+    if api_name:
+        payload["api_name"] = api_name
+
+    op = PlanOperation(
+        action="duplicate",
+        kind="dashboard",
+        key=f"dashboard:{live.get('api_name') or live['id']}:duplicate",
+        preview={
+            "env": env,
+            "source": live.get("name"),
+            "new_name": copy_name_preview(live.get("name"), name),
+            "new_api_name": api_name
+            or f"server default: '{live.get('api_name')}_copy_N'",
+            "published": "false (a copy is always unpublished; publish with "
+            "dashboards update)",
+            "sharing": "copied from source",
+        },
+        payload=payload,
+        existing_uuid=live["id"],
+    )
+    return Plan.build(
+        env=env,
+        summary=f"Duplicate dashboard '{live.get('name')}'",
+        operations=[op],
     )

@@ -130,15 +130,19 @@ def _options(kind: str, field_base: str, replace_key: str | None) -> list[Any]:
     ]
 
 
-def _duplicate(kind: str, base: str) -> list[Any]:
-    """``/duplicate`` ignores its body, so the payload is PATCHed onto the copy."""
+def _duplicate(kind: str, base: str, *, read_back: bool = False) -> list[Any]:
+    """``/duplicate`` ignores its body, so the payload is PATCHed onto the copy.
+
+    ``read_back``: the copy is then read with a GET (dashboards, whose PATCH
+    response misreports sharing).
+    """
     posted = ("POST", f"{base}/{E}/duplicate", {})
+    patched = [("PATCH", f"{base}/{SERVER_ID}", BODY)]
+    if read_back:
+        patched.append(("GET", f"{base}/{SERVER_ID}", None))
     return [
         _row(
-            kind,
-            "duplicate",
-            {"existing_uuid": E, "payload": BODY},
-            [posted, ("PATCH", f"{base}/{SERVER_ID}", BODY)],
+            kind, "duplicate", {"existing_uuid": E, "payload": BODY}, [posted, *patched]
         ),
         _row(kind, "duplicate", {"existing_uuid": E}, [posted], label="no_payload"),
     ]
@@ -344,6 +348,7 @@ ROWS = [
         parent=False,
     ),
     *_crud("dashboard", "/api/dashboards", f"/api/dashboards/{E}", parent=False)[:2],
+    *_duplicate("dashboard", "/api/dashboards", read_back=True),
     *_crud(
         "dashlet",
         f"/api/dashboards/{P}/dashlet",
@@ -522,6 +527,7 @@ def test_every_kind_has_a_row():
         ("form", "/api/forms", f"`kizen forms delete {SERVER_ID}`"),
         ("survey", "/api/surveys", f"`kizen surveys delete {SERVER_ID}`"),
         ("activity", "/api/activities", f"`kizen activities delete {SERVER_ID}`"),
+        ("dashboard", "/api/dashboards", f"`kizen dashboards update {SERVER_ID}`"),
     ],
 )
 def test_failed_patch_after_duplicate_names_the_copy(kind, base, recovery):
