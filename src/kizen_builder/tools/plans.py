@@ -775,6 +775,14 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             )
         if op.action == "delete":
             return act_api.delete_activity(client, op.existing_uuid)
+        if op.action == "duplicate":
+            return _patch_copy(
+                act_api.duplicate_activity(client, op.existing_uuid),
+                lambda copy_id: act_api.update_activity(client, copy_id, op.payload),
+                op.payload,
+                "rename it with `kizen activities update {id} --name ...` or "
+                "remove it with `kizen activities delete {id}`",
+            )
         return act_api.update_activity(client, op.existing_uuid, op.payload)
 
     if op.kind == "activity_field":
@@ -1047,10 +1055,10 @@ def _patch_copy(
 ) -> dict[str, Any]:
     """PATCH a just-made duplicate with ``payload``, when it has any.
 
-    The form ``/duplicate`` endpoint ignores its body (confirmed live
-    2026-10-06), so the name goes on afterwards. A failed PATCH leaves the
-    copy behind; the error names it and gives ``recovery``, formatted with
-    the copy's ``id`` and ``api_name``.
+    The form and activity ``/duplicate`` endpoints ignore their body
+    (confirmed live 2026-10-06), so the name goes on afterwards. A failed
+    PATCH leaves the copy behind; the error names it and gives ``recovery``,
+    formatted with the copy's ``id`` and ``api_name``.
     """
     if not payload:
         return copy

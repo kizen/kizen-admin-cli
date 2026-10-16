@@ -82,6 +82,7 @@
 │ create     Create one activity type from flags, or a JSON ActivityDef (--spec-file/stdin).       │
 │ update     Update one activity type. Only the flags you set are changed.                         │
 │ delete     Delete one activity type.                                                             │
+│ duplicate  Duplicate one activity type.                                                          │
 │ fields     Manage the fields on an activity type.                                                │
 │ logged     Read logged activity instances (read-only).                                           │
 │ scheduled  Read scheduled activity instances (read-only).                                        │
@@ -128,6 +129,21 @@
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
 │ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: activities duplicate [OPTIONS] {identifier}                                                 
+                                                                                                    
+ Duplicate one activity type.                                                                       
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    identifier      <str>  Activity api_name or UUID. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
+│ --dry-run                 Show the plan without applying.                                        │
+│ --yes      -y             Skip the y/N confirmation prompt.                                      │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: activities fields [OPTIONS] COMMAND [ARGS]...                                               
@@ -4311,6 +4327,9 @@
 
 
 ===== activities delete =====
+
+
+===== activities duplicate =====
 
 
 ===== activities fields =====

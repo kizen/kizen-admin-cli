@@ -357,6 +357,7 @@ ROWS = [
         [("PUT", f"/api/custom-objects/{P}/layouts/{E}", BODY)],
     ),
     *_crud("activity", "/api/activities", f"/api/activities/{E}", parent=False),
+    *_duplicate("activity", "/api/activities"),
     *_crud(
         "activity_field",
         f"/api/activities/{P}/fields",
@@ -520,6 +521,7 @@ def test_every_kind_has_a_row():
     [
         ("form", "/api/forms", f"`kizen forms delete {SERVER_ID}`"),
         ("survey", "/api/surveys", f"`kizen surveys delete {SERVER_ID}`"),
+        ("activity", "/api/activities", f"`kizen activities delete {SERVER_ID}`"),
     ],
 )
 def test_failed_patch_after_duplicate_names_the_copy(kind, base, recovery):

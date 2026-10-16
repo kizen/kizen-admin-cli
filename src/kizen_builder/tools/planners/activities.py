@@ -1,4 +1,4 @@
-"""Plan creation/update/delete for activity types and their fields.
+"""Plan creation/update/delete/duplication for activity types and their fields.
 
 Mirrors the custom-object field planner: activity fields are structurally the
 same as custom-object fields, so the payload builder and option handling are
@@ -12,7 +12,13 @@ from typing import Any
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ActivityDef, ActivityFieldDef
 from kizen_builder.tools.activities import get_activity, list_activities
-from kizen_builder.tools.plans import Plan, PlanError, PlanOperation, fetch_existing
+from kizen_builder.tools.plans import (
+    Plan,
+    PlanError,
+    PlanOperation,
+    copy_name_preview,
+    fetch_existing,
+)
 
 _OPTION_FIELD_TYPES = {
     "dropdown",
@@ -193,6 +199,30 @@ def plan_delete_activity(identifier: str) -> Plan:
     return Plan.build(
         env=env,
         summary=f"Delete activity '{current.get('name')}'",
+        operations=[op],
+    )
+
+
+def plan_duplicate_activity(identifier: str, *, name: str | None = None) -> Plan:
+    """Plan duplication of one activity type, renaming the copy when ``name`` is given."""
+    env = load_env_config().name
+    current = _load_activity(identifier, include_fields=False)
+
+    op = PlanOperation(
+        action="duplicate",
+        kind="activity",
+        key=f"activity:{current.get('api_name') or identifier}:duplicate",
+        preview={
+            "env": env,
+            "source": current.get("name"),
+            "new_name": copy_name_preview(current.get("name"), name),
+        },
+        payload={"name": name} if name else {},
+        existing_uuid=current["id"],
+    )
+    return Plan.build(
+        env=env,
+        summary=f"Duplicate activity '{current.get('name')}'",
         operations=[op],
     )
 

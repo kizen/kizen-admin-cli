@@ -147,14 +147,14 @@ def test_delete_activity_returns_empty_dict_on_no_content():
 
 
 @respx.mock
-def test_duplicate_activity_posts_to_duplicate_endpoint():
+def test_duplicate_activity_posts_an_empty_body():
     route = respx.post(f"{FAKE_BASE_URL}/api/activities/{ACTIVITY_ID}/duplicate").mock(
         return_value=httpx.Response(201, json={"id": "new-id"})
     )
     with _client() as client:
-        result = act_api.duplicate_activity(client, ACTIVITY_ID, {"name": "Copy"})
+        result = act_api.duplicate_activity(client, ACTIVITY_ID)
     assert result == {"id": "new-id"}
-    assert json.loads(route.calls.last.request.content) == {"name": "Copy"}
+    assert json.loads(route.calls.last.request.content) == {}
 
 
 # ---------------------------------------------------------------------------

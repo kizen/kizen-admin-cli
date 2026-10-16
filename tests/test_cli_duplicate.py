@@ -1,4 +1,4 @@
-"""`forms|surveys duplicate`, end to end at the wire.
+"""`forms|surveys|activities duplicate`, end to end at the wire.
 
 Each `/duplicate` endpoint ignores its body (confirmed live 2026-10-06), so
 `--name` must reach the copy by a PATCH after the POST. These run the real
@@ -29,6 +29,7 @@ FIELD = {"id": "00000000-0000-4000-8000-0000000007f1", "name": "email"}
 CASES = [
     pytest.param(["forms"], "/api/forms", [], {"name": "X"}, id="form"),
     pytest.param(["surveys"], "/api/surveys", [], {"name": "X"}, id="survey"),
+    pytest.param(["activities"], "/api/activities", [], {"name": "X"}, id="activity"),
 ]
 
 
@@ -82,7 +83,10 @@ def test_duplicate_with_name_posts_then_patches_the_copy(group, base, extra, pat
     ]
 
 
-@pytest.mark.parametrize("group, base", [(["forms"], "/api/forms")])
+@pytest.mark.parametrize(
+    "group, base",
+    [(["forms"], "/api/forms"), (["activities"], "/api/activities")],
+)
 def test_duplicate_without_name_posts_alone(group, base):
     with respx.mock(assert_all_mocked=True, assert_all_called=False) as mock:
         _mock_source(mock, base)

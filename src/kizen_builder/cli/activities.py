@@ -410,4 +410,31 @@ def activities_delete(
     )
 
 
+@activities_app.command("duplicate")
+def activities_duplicate(
+    identifier: str = typer.Argument(..., help="Activity api_name or UUID."),
+    name: str = typer.Option(
+        "",
+        "--name",
+        help="Name for the copy. Default: the server's '<name> (copy #N)'.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Duplicate one activity type."""
+    _run_mutation(
+        lambda: act_planners.plan_duplicate_activity(identifier, name=name or None),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+    )
+
+
 # --- activity fields -------------------------------------------------------

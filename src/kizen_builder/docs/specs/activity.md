@@ -84,6 +84,9 @@ GET/PUT/PATCH/DELETE  /api/activities/{id_or_api_name}      # path accepts eithe
 POST                  /api/activities/{id}/duplicate
 ```
 
+`/duplicate` ignores `name`; the CLI renames the copy with a PATCH. Confirmed
+live 2026-10-06.
+
 `name` is the only required create field. (`GET /api/activities/loggable` also
 exists — a light id/name/api_name list of loggable-only types — but the full
 list is a strict superset with more information, so the CLI doesn't wrap it.)

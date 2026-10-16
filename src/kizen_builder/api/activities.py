@@ -95,11 +95,13 @@ def delete_activity(client: KizenClient, identifier: str) -> dict[str, Any]:
     return resp if isinstance(resp, dict) else {}
 
 
-def duplicate_activity(
-    client: KizenClient, identifier: str, payload: dict[str, Any]
-) -> dict[str, Any]:
-    """POST /api/activities/{identifier}/duplicate."""
-    return client.post(f"/api/activities/{identifier}/duplicate", json=payload)
+def duplicate_activity(client: KizenClient, identifier: str) -> dict[str, Any]:
+    """POST /api/activities/{identifier}/duplicate with an empty body.
+
+    The server ignores the body and names the copy ``<name> (copy #N)``; rename
+    it with :func:`update_activity`.
+    """
+    return client.post(f"/api/activities/{identifier}/duplicate", json={})
 
 
 # ---------------------------------------------------------------------------
