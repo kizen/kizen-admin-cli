@@ -76,6 +76,10 @@ api_name — `kizen objects get <object>` lists the category display names.
 Exactly one type-specific block may be set, and it must match `field_type` —
 mismatches are rejected at plan time.
 
+Any other key is a spec error. That includes the API's spellings that `get`
+prints (`is_required`, `is_read_only`, `is_hidden`, `display_name`,
+`phonenumber_options`), and the error names the key to write instead.
+
 ### `field_type` values (24)
 
 ```

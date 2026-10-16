@@ -59,7 +59,9 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
   a field mirrored from a related custom-object field, set via
   `custom_object_field: "<field_uuid>"` (CLI: `--linked-field object_api.field_api`).
 - Type-specific blocks (`options`, `status_options`, `money_options`, `rating`,
-  `decimal_options`, `phone_options`) behave exactly as in `field.md`.
+  `decimal_options`, `phone_options`) behave as in `field.md`, except that
+  `status_options` is optional on a `status` field.
+- Unknown keys are rejected exactly as in `field.md`.
 
 ## Gotchas
 

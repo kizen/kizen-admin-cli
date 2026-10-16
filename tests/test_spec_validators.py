@@ -8,8 +8,10 @@ import pytest
 from pydantic import ValidationError
 
 from kizen_builder.models.spec import (
+    ActivityFieldDef,
     FieldCategory,
     FieldDef,
+    FormFieldDef,
     MoneyConfig,
     ObjectDef,
     RatingConfig,
@@ -54,12 +56,6 @@ STATUS_OPTIONS = [{"name": "Open"}]
         ),
         pytest.param(
             FieldDef,
-            _field(options=["A"]),
-            "of type 'text' cannot have 'options'",
-            id="options-unexpected",
-        ),
-        pytest.param(
-            FieldDef,
             _field(field_type="relationship"),
             "of type 'relationship' requires a 'relation' block",
             id="relation-missing",
@@ -72,39 +68,9 @@ STATUS_OPTIONS = [{"name": "Open"}]
         ),
         pytest.param(
             FieldDef,
-            _field(money_options={"currency": "USD"}),
-            "of type 'text' cannot have 'money_options'",
-            id="money-unexpected",
-        ),
-        pytest.param(
-            FieldDef,
-            _field(rating={}),
-            "of type 'text' cannot have 'rating'",
-            id="rating-unexpected",
-        ),
-        pytest.param(
-            FieldDef,
-            _field(decimal_options={}),
-            "of type 'text' cannot have 'decimal_options'",
-            id="decimal-unexpected",
-        ),
-        pytest.param(
-            FieldDef,
-            _field(phone_options={}),
-            "of type 'text' cannot have 'phone_options'",
-            id="phone-unexpected",
-        ),
-        pytest.param(
-            FieldDef,
             _field(field_type="status"),
             "of type 'status' requires 'status_options'",
             id="status-missing",
-        ),
-        pytest.param(
-            FieldDef,
-            _field(status_options=STATUS_OPTIONS),
-            "of type 'text' cannot have 'status_options'",
-            id="status-unexpected",
         ),
         pytest.param(
             FieldCategory,
@@ -151,6 +117,92 @@ STATUS_OPTIONS = [{"name": "Open"}]
 def test_spec_rejects(model, data, message):
     with pytest.raises(ValidationError, match=re.escape(message)):
         model.model_validate(data)
+
+
+FIELD_MODELS = [FieldDef, ActivityFieldDef, FormFieldDef]
+
+
+@pytest.mark.parametrize("model", FIELD_MODELS)
+@pytest.mark.parametrize(
+    "key, value, message",
+    [
+        (
+            "is_required",
+            True,
+            "field 'Field': write 'required', not 'is_required' (the API's spelling)",
+        ),
+        (
+            "is_read_only",
+            True,
+            "field 'Field': write 'read_only', not 'is_read_only' (the API's spelling)",
+        ),
+        (
+            "is_hidden",
+            True,
+            "field 'Field': write 'hidden', not 'is_hidden' (the API's spelling)",
+        ),
+        (
+            "display_name",
+            "Field",
+            "field 'Field': write 'name', not 'display_name' (the API's spelling; "
+            "the API's 'name' is 'api_name' in a spec)",
+        ),
+        (
+            "phonenumber_options",
+            {},
+            "field 'Field': write 'phone_options', not 'phonenumber_options' "
+            "(the API's spelling)",
+        ),
+    ],
+)
+def test_field_spec_rejects_the_apis_spelling(model, key, value, message):
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        model.model_validate(_field(**{key: value}))
+
+
+@pytest.mark.parametrize("model", FIELD_MODELS)
+@pytest.mark.parametrize(
+    "block, value",
+    [
+        ("options", ["A"]),
+        ("money_options", {}),
+        ("rating", {}),
+        ("decimal_options", {}),
+        ("phone_options", {}),
+        ("status_options", STATUS_OPTIONS),
+    ],
+)
+def test_field_spec_rejects_a_block_for_another_type(model, block, value):
+    with pytest.raises(ValidationError, match=f"of type 'text' cannot have '{block}'"):
+        model.model_validate(_field(**{block: value}))
+
+
+@pytest.mark.parametrize("model", FIELD_MODELS)
+def test_field_spec_reports_api_spellings_and_unknown_keys_together(model):
+    data = {
+        "display_name": "Decision",
+        "field_type": "text",
+        "is_required": True,
+        "id": 7,
+        "colour": "red",
+    }
+    message = (
+        "field 'Decision': write 'name', not 'display_name' (the API's spelling; "
+        "the API's 'name' is 'api_name' in a spec); "
+        "write 'required', not 'is_required' (the API's spelling); "
+        "unknown keys: 'colour', 'id'"
+    )
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        model.model_validate(data)
+
+
+@pytest.mark.parametrize("model", FIELD_MODELS)
+def test_field_spec_rejects_an_unknown_key(model):
+    with pytest.raises(ValidationError) as e:
+        model.model_validate(_field(colour="red"))
+    (err,) = e.value.errors()
+    assert err["type"] == "extra_forbidden"
+    assert err["loc"] == ("colour",)
 
 
 def test_money_without_options_defaults_to_usd():

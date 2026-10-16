@@ -21,7 +21,9 @@ import json
 import httpx
 import pytest
 import respx
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.models.spec import FormDef, FormFieldDef
 from kizen_builder.tools.form_ui import build_form_ui, simple_form_page
@@ -507,6 +509,23 @@ def test_plan_create_form_fields_orders_after_existing_fields(base_path, kind):
     assert first.parent_object_uuid == FORM_ID
     assert first.payload["order"] == 1  # one field already exists
     assert second.payload["order"] == 2
+
+
+@pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
+@respx.mock
+def test_forms_fields_create_rejects_an_api_spelled_field_key(flags):
+    _mock_detail("/api/forms")
+    _mock_fields("/api/forms")
+    spec = [{"name": "Notes", "field_type": "text", "is_required": True}]
+    result = CliRunner().invoke(
+        cli.app,
+        ["forms", "fields", "create", "contact_us", *flags],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert "is_required" in result.stderr
+    assert "'required'" in result.stderr
 
 
 @respx.mock
