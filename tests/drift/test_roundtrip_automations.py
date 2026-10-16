@@ -2254,10 +2254,8 @@ def test_schedule_activity_auto_adds_its_own_context_record_association(
 ):
     """The server fills `association_configs` in itself, and the entry for the
     automation's own target_object comes back as `context_record` even though
-    the spec sent an empty list — which is why authoring that entry yourself
-    400s, and why it must not be counted when sizing a list you *do* author.
-    If this stops happening, automation.md's association_configs section is
-    wrong. (The activity type here is `all_objects_associated`, so the server
+    the spec sent an empty list. If this stops happening, automation.md's
+    association_configs section is wrong. (The activity type here is `all_objects_associated`, so the server
     also emits a `none` entry per other object in the business — hence
     filtering rather than comparing the whole list.)"""
     sent = next(

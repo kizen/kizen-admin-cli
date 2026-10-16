@@ -470,7 +470,8 @@ def normalize_step_patch(
 
     Lets `steps edit` accept the same authoring shapes as create specs
     (field_refs, api_names) as well as raw wire dicts — builders are
-    idempotent on wire shapes. A condition patch that carries
+    idempotent on wire shapes (enforced by
+    `test_builders_rebuild_wire_blocks_unchanged`). A condition patch that carries
     `step_condition` must also have at least one rule, and a goal's
     email_received trigger set to selected inboxes must name one: the same
     checks `automations create`/`update` and `steps add` apply.

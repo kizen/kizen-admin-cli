@@ -953,15 +953,19 @@ returns, which the server silently ignores.
 
 `association_source` is `none`/`context_record`/`related_field`/
 `record_variable`/`variable_related_field` — **not** `relationship_field`/
-`automation_variable`, which 400 with *"… is not a valid choice"*. Two more
+`automation_variable`, which 400 with *"… is not a valid choice"*. More
 confirmed rules:
 
 - **`context_record` is only valid when that entry's `custom_object_id` IS the
   automation's own `target_object`** — otherwise 400: *"context_record
-  custom_object_id must match the … workflow's custom object."* The server
-  **auto-adds this entry itself** for the automation's own object, so don't send
-  it, and don't count it when sizing the list you author — it appears as an extra
-  item in the live GET afterward.
+  custom_object_id must match the … workflow's custom object."*
+- **The server adds one entry per object the activity type is associated
+  with** — `context_record` for the automation's own object, `none` for the
+  others — so you needn't author them, and they appear in the live GET even
+  when you sent `[]`. A block copied from `steps get` already carries them and
+  re-applies unchanged through `steps edit`/`steps add`. An entry with a null
+  `custom_object_id` 400s with *"This field may not be null."*; the CLI rejects
+  an entry that names no object before sending. (Confirmed live 2026-10-14.)
 - **`related_field` requires a relationship field that exists ON THE ASSOCIATED
   OBJECT itself** — passing one from the automation's own `target_object` 400s
   with *"Relationship field … not found on source object"*. Resolution rules
