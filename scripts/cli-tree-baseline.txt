@@ -1969,7 +1969,7 @@
 │ *    identifier      <str>  Form api_name or UUID. [required]                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --name             <str>  Name for the duplicate. Defaults to 'Copy of <name>'.                  │
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -3996,7 +3996,7 @@
 │ *    identifier      <str>  Survey api_name or UUID. [required]                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --name             <str>  Name for the duplicate. Defaults to 'Copy of <name>'.                  │
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │

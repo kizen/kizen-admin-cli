@@ -406,6 +406,14 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`forms`/`surveys duplicate --name` was ignored by the server and the
+  copy kept the `(copy #N)` name; the name is now applied.** The preview
+  said the copy would get the name, and `--help` said the default was
+  `Copy of <name>`; both now match what Kizen does. Kizen deletes every
+  field not placed on a `form_ui` page whenever a form is updated, so
+  `--name` now refuses a source with an unplaced field, or with no pages,
+  and names the fields: duplicate without `--name`, place every field with
+  `set-ui`, then rename the copy with `update`.
 - **Automation field refs that were sent as literal strings or dropped now
   resolve to the field's UUID.** `create_related_entity`'s
   `context_entity_field` and `start_automation`'s `relationship_field_ids`

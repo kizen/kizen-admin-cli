@@ -130,16 +130,25 @@ def _options(kind: str, field_base: str, replace_key: str | None) -> list[Any]:
     ]
 
 
-def _form_like(kind: str, base: str) -> list[Any]:
-    item = f"{base}/{E}"
+def _duplicate(kind: str, base: str) -> list[Any]:
+    """``/duplicate`` ignores its body, so the payload is PATCHed onto the copy."""
+    posted = ("POST", f"{base}/{E}/duplicate", {})
     return [
-        *_crud(kind, base, item, parent=False),
         _row(
             kind,
             "duplicate",
             {"existing_uuid": E, "payload": BODY},
-            [("POST", f"{item}/duplicate", BODY)],
+            [posted, ("PATCH", f"{base}/{SERVER_ID}", BODY)],
         ),
+        _row(kind, "duplicate", {"existing_uuid": E}, [posted], label="no_payload"),
+    ]
+
+
+def _form_like(kind: str, base: str) -> list[Any]:
+    item = f"{base}/{E}"
+    return [
+        *_crud(kind, base, item, parent=False),
+        *_duplicate(kind, base),
         *_crud(
             f"{kind}_field", f"{base}/{P}/fields", f"{base}/{P}/fields/{E}", parent=True
         ),
@@ -504,6 +513,36 @@ def test_every_kind_has_a_row():
         "expected) to ROWS for each action _execute dispatches for it, with the "
         "(method, path, body) read from api/*.py."
     )
+
+
+@pytest.mark.parametrize(
+    "kind, base, recovery",
+    [
+        ("form", "/api/forms", f"`kizen forms delete {SERVER_ID}`"),
+        ("survey", "/api/surveys", f"`kizen surveys delete {SERVER_ID}`"),
+    ],
+)
+def test_failed_patch_after_duplicate_names_the_copy(kind, base, recovery):
+    op = PlanOperation(
+        kind=kind, action="duplicate", key="k", existing_uuid=E, payload=BODY
+    )
+    with respx.mock(assert_all_mocked=True) as mock:
+        mock.post(f"{FAKE_BASE_URL}{base}/{E}/duplicate").mock(
+            return_value=httpx.Response(
+                200, json={"id": SERVER_ID, "api_name": "thing_copy_1"}
+            )
+        )
+        mock.patch(f"{FAKE_BASE_URL}{base}/{SERVER_ID}").mock(
+            return_value=httpx.Response(400, json={"name": ["bad"]})
+        )
+        result = plan_tools.apply_plan(
+            Plan.build(env="testenv", summary="t", operations=[op])
+        )
+
+    (r,) = result.results
+    assert r.status == "failed"
+    assert SERVER_ID in r.message and "thing_copy_1" in r.message
+    assert recovery in r.message
 
 
 def test_unresolved_deferred_ref_fails_without_a_request():

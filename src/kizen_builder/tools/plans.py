@@ -67,6 +67,11 @@ def fetch_existing[T](kind: str, ident: str, fetch: Callable[[], T]) -> T:
         raise PlanError(f"{kind} '{ident}' not found: {e}") from e
 
 
+def copy_name_preview(source_name: str | None, name: str | None) -> str:
+    """The ``new_name`` a duplicate plan previews: ``name``, or the server's own."""
+    return name or f"server default: '{source_name} (copy #N)'"
+
+
 Action = Literal["create", "update", "delete", "duplicate", "upsert", "apply", "skip"]
 Kind = Literal[
     "object",
@@ -886,8 +891,14 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
         if op.action == "delete":
             return forms_api.delete_form(client, base_path, op.existing_uuid)
         if op.action == "duplicate":
-            return forms_api.duplicate_form(
-                client, base_path, op.existing_uuid, op.payload
+            return _patch_copy(
+                forms_api.duplicate_form(client, base_path, op.existing_uuid),
+                lambda copy_id: forms_api.update_form(
+                    client, base_path, copy_id, op.payload
+                ),
+                op.payload,
+                f"rename it with `kizen {op.kind}s update {{id}} --name ...` or "
+                f"remove it with `kizen {op.kind}s delete {{id}}`",
             )
         return forms_api.update_form(client, base_path, op.existing_uuid, op.payload)
 
@@ -1028,6 +1039,36 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
     raise ValueError(f"unknown operation kind: {op.kind}")
 
 
+def _patch_copy(
+    copy: dict[str, Any],
+    patch: Callable[[str], dict[str, Any]],
+    payload: dict[str, Any],
+    recovery: str,
+) -> dict[str, Any]:
+    """PATCH a just-made duplicate with ``payload``, when it has any.
+
+    The form ``/duplicate`` endpoint ignores its body (confirmed live
+    2026-10-06), so the name goes on afterwards. A failed PATCH leaves the
+    copy behind; the error names it and gives ``recovery``, formatted with
+    the copy's ``id`` and ``api_name``.
+    """
+    if not payload:
+        return copy
+    try:
+        return patch(copy["id"])
+    except KizenAPIError as e:
+        raise _with_context(
+            e,
+            f"while updating the copy {copy['id']} (api_name "
+            f"{copy.get('api_name')}), which was created; "
+            + recovery.format(id=copy["id"], api_name=copy.get("api_name")),
+        ) from e
+
+
+def _with_context(e: KizenAPIError, context: str) -> KizenAPIError:
+    return KizenAPIError(e.status_code, f"{e.message} — {context}", body=e.body)
+
+
 def _execute_record_import(
     client: KizenClient, object_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1056,11 +1097,10 @@ def _execute_record_import(
             client, object_id, {**payload["body"], "s3_object_id": file_id}
         )
     except KizenAPIError as e:
-        raise KizenAPIError(
-            e.status_code,
-            f"{e.message} — while submitting file {file_id}; the import may "
-            "have started, so check the object before retrying",
-            body=e.body,
+        raise _with_context(
+            e,
+            f"while submitting file {file_id}; the import may have started, so "
+            "check the object before retrying",
         ) from e
     status_id = submitted.get("status_id") if isinstance(submitted, dict) else None
     if not status_id:
@@ -1093,12 +1133,10 @@ def _execute_record_import(
                 )
         count_after = records_api.count_records(client, object_id)
     except KizenAPIError as e:
-        raise KizenAPIError(
-            e.status_code,
-            f"{e.message} — after submitting import job {status_id} (file "
-            f"{file_id}), which may still be running; check the object before "
-            "retrying",
-            body=e.body,
+        raise _with_context(
+            e,
+            f"after submitting import job {status_id} (file {file_id}), which "
+            "may still be running; check the object before retrying",
         ) from e
 
     return {
