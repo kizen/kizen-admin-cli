@@ -174,8 +174,14 @@ def _ask(
     "no default" sentinel is Ellipsis, not `None` or `""`, so the `default`
     kwarg is omitted rather than passed through — passing `None` would make
     Rich hand back `None` on a bare Enter, bypassing `choices` entirely.
+
+    A `password` default is never shown: Rich prints the default in the
+    prompt even when it hides the typed input, which would put a stored
+    secret in scrollback. Bare Enter still returns it.
     """
     prompt_cls = _EnvironmentPrompt if choices else Prompt
+    if password and default:
+        label = f"{label} [prompt.default](Enter keeps the stored key)[/]"
     try:
         if default is None:
             return prompt_cls.ask(
@@ -187,6 +193,7 @@ def _ask(
             password=password,
             choices=choices,
             case_sensitive=False,
+            show_default=not password,
         )
     except EOFError:
         if default:

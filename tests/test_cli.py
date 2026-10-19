@@ -2678,6 +2678,51 @@ def test_init_banner_shows_tagline_only_on_tiny_terminal(monkeypatch, tmp_path):
     assert profiles.get_profile("banner-tiny") is not None
 
 
+@pytest.mark.parametrize("stdin", ["\n\n\n\n", ""], ids=["bare-enter", "eof"])
+def test_init_reprompt_hides_stored_api_key(monkeypatch, tmp_path, stdin):
+    """Rich prints a prompt's default even with `password=True`, so re-running
+    `init` used to show the stored key in the terminal."""
+    from kizen_builder import config, profiles
+
+    config.set_profile_override(None)
+    profiles.write_profile(
+        profiles.ProfileCreds(
+            name="delta",
+            api_key="FAKEKEY123",
+            business_id="DDDD",
+            user_id="user1",
+            base_url="https://app.go.kizen.com",
+        )
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli.app, ["init", "--profile", "delta", "--skip-validation"], input=stdin
+    )
+    assert result.exit_code == 0, result.output
+    assert "FAKEKEY123" not in result.output
+    assert "Y123" not in result.output
+    assert "API_KEY (Enter keeps the stored key):" in result.output
+    assert "BUSINESS_ID (DDDD):" in result.output
+
+    stored = profiles.get_profile("delta")
+    assert stored is not None and stored.api_key == "FAKEKEY123"
+
+
+def test_init_api_key_prompt_has_no_empty_default(monkeypatch, tmp_path):
+    from kizen_builder import config
+
+    config.set_profile_override(None)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli.app,
+        ["init", "--profile", "epsilon", "--skip-validation"],
+        input="apikey\nEEEE\nuser1\ngo\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "API_KEY: " in result.output
+    assert "API_KEY ()" not in result.output
+
+
 def test_init_environment_picker_resolves_named_host(monkeypatch, tmp_path):
     from kizen_builder import config, profiles
 

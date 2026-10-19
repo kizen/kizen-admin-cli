@@ -561,6 +561,10 @@ called out explicitly under **Changed** or **Removed**.
   a stale warning that step ids rotate on every update is gone.
 - **The variable-condition docs no longer call `client_tag_field_id` a
   constant.** It varies by business. The docs say where to get it.
+- **`kizen init` no longer prints the stored API key when it re-prompts for an
+  existing profile.** The prompt showed the key as its default, so it landed in
+  scrollback, screen shares and recordings. It now reads `API_KEY (Enter keeps
+  the stored key):`, and pressing Enter still keeps it.
 
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or
