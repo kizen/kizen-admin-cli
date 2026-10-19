@@ -413,6 +413,11 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`forms`/`surveys update` and `set-ui` no longer delete fields.** Kizen
+  deletes every field that isn't placed on a page whenever a form is saved,
+  so updating a form with no layout yet emptied it, and a partial `set-ui`
+  dropped the fields it left out. Both now stop before writing and name the
+  fields; place them with `set-ui` or remove them with `fields delete`.
 - **`forms`/`surveys duplicate --name` was ignored by the server and the
   copy kept the `(copy #N)` name; the name is now applied.** The preview
   said the copy would get the name, and `--help` said the default was

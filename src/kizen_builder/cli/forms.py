@@ -309,7 +309,10 @@ def _add_write_commands(
             False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
         ),
     ) -> None:
-        """Update one form/survey. Only the flags you set are changed."""
+        """Update one form/survey. Only the flags you set are changed.
+
+        Refuses when the save would delete a field that isn't on a page.
+        """
         changes: dict[str, Any] = {}
         if spec_file:
             changes = read_json_file(spec_file, "--spec-file")
@@ -366,6 +369,8 @@ def _add_write_commands(
         craft.js blob — see `tools/forms.py::build_form_ui_from_spec` for the
         spec shape. A trailing "Thank You" page is added automatically unless
         the spec already includes a non-form page.
+
+        Refuses when the save would delete a field that isn't on a page.
         """
         spec, from_stdin = _read_spec(spec_file, what=f"{kind} UI")
 

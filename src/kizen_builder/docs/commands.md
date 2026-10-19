@@ -86,7 +86,8 @@ kizen surveys list [--search <text>]         # surveys (same shape as forms, dif
 kizen surveys get <api_name|uuid>            # one survey: metadata + fields
 # forms/surveys create/update/set-ui + fields ARE wired (see Mutate below and
 # kizen docs show form). A form needs both fields AND a form_ui page layout to
-# render/submit. Submissions/subscribers/page-view/upload are not covered yet.
+# render/submit, and every field must be on a page before `update` or `set-ui`,
+# or Kizen deletes it. Submissions/subscribers/page-view/upload are not covered yet.
 ```
 
 ### Runtime (runs live; asks first, except `runs pause`)
@@ -230,7 +231,8 @@ kizen forms update <form> [--spec-file f | < stdin]                    # FormDef
 kizen forms set-ui <form> [--spec-file f | < stdin]                    # form_ui page layout (required to render)
 kizen forms fields create <form> [--spec-file f | < stdin]             # FormFieldDef list
 kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
-# a form needs BOTH fields and a form_ui layout to render/submit.
+# a form needs BOTH fields and a form_ui layout to render/submit, and every field
+# must be on a page before `update` or `set-ui`, or Kizen deletes it.
 # submissions, subscribers, page-view, and upload endpoints are NOT covered yet — later slice
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)

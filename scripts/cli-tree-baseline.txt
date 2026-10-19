@@ -2180,6 +2180,8 @@
  spec shape. A trailing "Thank You" page is added automatically unless                              
  the spec already includes a non-form page.                                                         
                                                                                                     
+ Refuses when the save would delete a field that isn't on a page.                                   
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    identifier      <str>  Form api_name or UUID. [required]                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -2197,6 +2199,8 @@
  Usage: forms update [OPTIONS] {identifier}                                                         
                                                                                                     
  Update one form/survey. Only the flags you set are changed.                                        
+                                                                                                    
+ Refuses when the save would delete a field that isn't on a page.                                   
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    identifier      <str>  Form api_name or UUID. [required]                                    │
@@ -4207,6 +4211,8 @@
  spec shape. A trailing "Thank You" page is added automatically unless                              
  the spec already includes a non-form page.                                                         
                                                                                                     
+ Refuses when the save would delete a field that isn't on a page.                                   
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    identifier      <str>  Survey api_name or UUID. [required]                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -4224,6 +4230,8 @@
  Usage: surveys update [OPTIONS] {identifier}                                                       
                                                                                                     
  Update one form/survey. Only the flags you set are changed.                                        
+                                                                                                    
+ Refuses when the save would delete a field that isn't on a page.                                   
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    identifier      <str>  Survey api_name or UUID. [required]                                  │
