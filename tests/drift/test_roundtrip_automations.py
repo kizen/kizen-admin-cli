@@ -1522,9 +1522,6 @@ def drift_related_steps(
             "order": 0,
             "parent_key": None,
             "action_create_related_entity": {
-                # `target_object` is the spec model's own required key;
-                # `target_custom_object` is the wire key it ends up as.
-                "target_object": drift_related_object["api_name"],
                 "target_custom_object": drift_related_object["api_name"],
                 "new_entity_name": debris_name("related record"),
                 "new_entity_name_html": f"<p>{debris_name('related record')}</p>",

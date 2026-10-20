@@ -1877,7 +1877,6 @@ def _step_modify_related_entities(
     "automations_to_start",
     "existing_record_found_action",
     "archived_record_found_action",
-    "field_values",
 )
 def _step_create_related_entity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -1918,9 +1917,6 @@ def _step_create_related_entity(
             "archived_record_found_action", "overwrite"
         ),
     }
-    # Allow field_values pass-through (advanced: caller specifies field UUIDs).
-    if block.get("field_values"):
-        out["field_values"] = block["field_values"]
     return {k: v for k, v in out.items() if v is not None}
 
 

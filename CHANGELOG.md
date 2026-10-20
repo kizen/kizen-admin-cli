@@ -43,6 +43,15 @@ called out explicitly under **Changed** or **Removed**.
   `activity_logged` trigger. `create_related_entity` now reads
   `target_object` as the target object, so `target_custom_object` no longer
   needs to repeat it.
+- **Breaking: `create_related_entity`'s `field_values` is now a plan error
+  on `automations create`/`update` and `steps add` (`steps edit` doesn't
+  check it yet), and `target_object` is no longer required.** Kizen accepted `field_values`
+  and stored nothing, so a spec that set it created the record without the
+  values and reported success. To create a related record with values,
+  create it empty and set them in a following `modify_related_entities`
+  step. A block that names its object only with `target_custom_object`, as
+  one copied from `steps get` does, now validates for `automations create`
+  and `steps add`.
 - **Breaking: `records delete` is removed; `records archive` is the one way
   to remove records.** Kizen's delete was always an archive (same restorable
   state, same id), so the two commands did the same thing. `records archive`

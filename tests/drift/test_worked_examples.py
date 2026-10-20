@@ -272,9 +272,8 @@ def test_the_automation_applies(example_automation):
 def test_create_related_entity_resolved_the_context_entity_field(
     example_automation, example_fields
 ):
-    """The doc's headline finding: `target_object` (the declared spec field)
-    is dead; the builder reads `target_custom_object`. This fixture sends
-    both — this asserts the one the server actually stored came through."""
+    """The worked example names its object only with `target_object`, the
+    alias; it goes on the wire as `target_custom_object`."""
     sent = next(
         s
         for s in example_automation["sent"]["steps"]
