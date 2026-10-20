@@ -16,11 +16,18 @@ fixtures carry `raw: None`.
 
 from __future__ import annotations
 
+import json
+
+import httpx
 import pytest
+import respx
 
 from kizen_builder.models.spec import FieldCategory, ObjectDef
+from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.planners import objects as object_planners
+from kizen_builder.tools.planners.records import ARCHIVE_CHUNK
 from kizen_builder.tools.plans import PlanError
+from tests.conftest import FAKE_BASE_URL
 
 OBJ_ID = "00000000-0000-4000-8000-0000000002a0"
 CAT_ID = "00000000-0000-4000-8000-0000000002a1"
@@ -32,6 +39,7 @@ OBJECT_DETAIL = {
     "display_name": "Policies",
     "entity_name": "Policy",
     "object_type": "standard",
+    "is_custom": True,
     "categories": [
         {"id": CAT_ID, "name": "Details", "order": 0},
         {"id": CAT_ID_2, "name": "Billing", "order": 1},
@@ -50,8 +58,11 @@ OBJECT_DETAIL = {
 def live(monkeypatch):
     """Serve get_object/list_objects from a controlled in-test object."""
 
-    def _install(detail=None, listing=None):
+    def _install(detail=None, listing=None, record_ids=()):
         obj = OBJECT_DETAIL if detail is None else detail
+        monkeypatch.setattr(
+            object_planners, "active_record_ids", lambda api_name: list(record_ids)
+        )
 
         def fake_get_object(api_name):
             if api_name != obj["api_name"]:
@@ -259,20 +270,85 @@ def test_plan_update_object_not_found_raises_plan_error(live):
 # ---------------------------------------------------------------------------
 
 
-def test_plan_delete_object_warns_about_data_loss(live):
+def test_plan_delete_object_with_no_records_is_one_delete_op(live):
     live()
     plan = object_planners.plan_delete_object("policies")
     (op,) = plan.operations
     assert op.action == "delete"
     assert op.kind == "object"
     assert op.existing_uuid == OBJ_ID
-    assert "archives the object and its data" in op.preview["warning"]
+    assert op.payload == {}
+    assert plan.summary == "Delete object 'policies'"
+    assert "archives the object and its data" not in op.preview["warning"]
+    assert "no active records" in op.preview["warning"]
+
+
+def test_plan_delete_object_archives_active_records_first(live):
+    live(record_ids=["r1", "r2", "r3"])
+    plan = object_planners.plan_delete_object("policies")
+    archive, delete = plan.operations
+    assert (archive.kind, archive.action) == ("record_archive", "update")
+    assert archive.key == "policies#r1..r3"
+    assert archive.parent_object_uuid == OBJ_ID
+    assert archive.payload == {
+        "record_ids": ["r1", "r2", "r3"],
+        "send_email_notification": False,
+    }
+    assert (delete.kind, delete.action, delete.key) == ("object", "delete", "policies")
+    assert delete.payload == {
+        "wait_for_archive_seconds": object_planners.ARCHIVE_SETTLE_TIMEOUT
+    }
+    assert plan.summary == (
+        "Archive 3 record(s) from policies in 1 request(s), "
+        "then delete object 'policies'"
+    )
+    warning = delete.preview["warning"]
+    assert "refuses to delete an object with active records" in warning
+    assert "archives its 3 active record(s) first, with no email" in warning
+    assert "restore" not in warning
+
+
+def test_plan_delete_object_chunks_the_archive(live):
+    ids = [f"r{i}" for i in range(ARCHIVE_CHUNK + 1)]
+    live(record_ids=ids)
+    plan = object_planners.plan_delete_object("policies")
+    first, second, delete = plan.operations
+    assert first.payload["record_ids"] == ids[:ARCHIVE_CHUNK]
+    assert second.key == f"policies#r{ARCHIVE_CHUNK}"
+    assert all(op.payload["send_email_notification"] is False for op in (first, second))
+    assert delete.kind == "object"
+    assert plan.summary.startswith(
+        f"Archive {ARCHIVE_CHUNK + 1} record(s) from policies in 2 request(s)"
+    )
 
 
 def test_plan_delete_object_not_found_raises_plan_error(live):
     live()
     with pytest.raises(PlanError, match="object 'nope' not found"):
         object_planners.plan_delete_object("nope")
+
+
+def test_plan_delete_object_refuses_a_builtin_before_listing_records(live, monkeypatch):
+    live(detail={**OBJECT_DETAIL, "api_name": "client_client", "is_custom": False})
+
+    def never(api_name):
+        raise AssertionError("listed records of a built-in object")
+
+    monkeypatch.setattr(object_planners, "active_record_ids", never)
+    with pytest.raises(PlanError) as exc:
+        object_planners.plan_delete_object("client_client")
+    assert str(exc.value) == (
+        "'client_client' is a built-in Kizen object. objects delete only "
+        "deletes custom objects, so nothing was planned and no records were "
+        "touched"
+    )
+
+
+def test_plan_delete_object_archives_exactly_one_chunk_in_one_request(live):
+    live(record_ids=[f"r{i}" for i in range(ARCHIVE_CHUNK)])
+    archive, delete = object_planners.plan_delete_object("policies").operations
+    assert len(archive.payload["record_ids"]) == ARCHIVE_CHUNK
+    assert delete.kind == "object"
 
 
 # ---------------------------------------------------------------------------
@@ -411,3 +487,172 @@ def test_plan_delete_category_against_a_captured_object_fixture(patch_live_looku
     (op,) = plan.operations
     assert op.action == "delete"
     assert op.existing_uuid == "e523181d-9331-4328-b09f-829d8f2a367f"
+
+
+# ---------------------------------------------------------------------------
+# objects delete — apply
+# ---------------------------------------------------------------------------
+
+_ARCHIVE_URL = f"{FAKE_BASE_URL}/api/custom-objects/{OBJ_ID}/bulk-archive-entity-record"
+_SEARCH_URL = f"{FAKE_BASE_URL}/api/records/policies/search"
+_OBJECT_URL = f"{FAKE_BASE_URL}/api/custom-objects/{OBJ_ID}"
+
+
+def _count(n):
+    return httpx.Response(200, json={"count": n, "next": None, "results": []})
+
+
+@respx.mock
+def test_apply_delete_object_archives_then_waits_then_deletes(live):
+    live(record_ids=["r1", "r2", "r3"])
+    archive = respx.post(_ARCHIVE_URL).mock(
+        return_value=httpx.Response(200, json={"number_archived": 3, "async": True})
+    )
+    count = respx.post(_SEARCH_URL).mock(return_value=_count(0))
+    delete = respx.delete(_OBJECT_URL).mock(return_value=httpx.Response(200, json={}))
+
+    result = plan_tools.apply_plan(object_planners.plan_delete_object("policies"))
+
+    assert result.all_ok
+    assert json.loads(archive.calls.last.request.content) == {
+        "record_ids": ["r1", "r2", "r3"],
+        "send_email_notification": False,
+    }
+    assert [(c.request.method, c.request.url.path) for c in respx.calls] == [
+        ("POST", f"/api/custom-objects/{OBJ_ID}/bulk-archive-entity-record"),
+        ("POST", "/api/records/policies/search"),
+        ("DELETE", f"/api/custom-objects/{OBJ_ID}"),
+    ]
+    assert count.calls.last.request.url.params["page_size"] == "1"
+    assert delete.call_count == 1
+
+
+@respx.mock
+def test_apply_delete_object_polls_until_the_archive_clears(live, monkeypatch):
+    live(record_ids=["r1", "r2", "r3"])
+    sleeps = []
+    monkeypatch.setattr(plan_tools.time, "sleep", sleeps.append)
+    respx.post(_ARCHIVE_URL).mock(
+        return_value=httpx.Response(200, json={"number_archived": 3, "async": True})
+    )
+    count = respx.post(_SEARCH_URL).mock(side_effect=[_count(3), _count(0)])
+    delete = respx.delete(_OBJECT_URL).mock(return_value=httpx.Response(200, json={}))
+
+    result = plan_tools.apply_plan(object_planners.plan_delete_object("policies"))
+
+    assert result.all_ok
+    assert count.call_count == 2
+    assert sleeps == [2]
+    assert delete.call_count == 1
+
+
+@respx.mock
+def test_apply_delete_object_times_out_without_deleting(live):
+    live(record_ids=["r1", "r2", "r3"])
+    plan = object_planners.plan_delete_object("policies")
+    plan.operations[-1].payload["wait_for_archive_seconds"] = 0
+    respx.post(_ARCHIVE_URL).mock(
+        return_value=httpx.Response(200, json={"number_archived": 3, "async": True})
+    )
+    respx.post(_SEARCH_URL).mock(return_value=_count(3))
+    delete = respx.delete(_OBJECT_URL).mock(return_value=httpx.Response(200, json={}))
+
+    result = plan_tools.apply_plan(plan)
+
+    assert delete.call_count == 0
+    archived, deleted = result.results
+    assert archived.status == "ok"
+    assert deleted.status == "failed"
+    assert deleted.message == (
+        "HTTP 0: 3 record(s) still active after 0s; the archive may still be "
+        "running. Re-run kizen objects delete policies"
+    )
+
+
+@respx.mock
+def test_apply_delete_object_is_skipped_when_an_archive_chunk_fails(live):
+    live(record_ids=["r1", "r2", "r3"])
+    respx.post(_ARCHIVE_URL).mock(
+        return_value=httpx.Response(400, json={"detail": "bad"})
+    )
+    count = respx.post(_SEARCH_URL).mock(return_value=_count(0))
+    delete = respx.delete(_OBJECT_URL).mock(return_value=httpx.Response(200, json={}))
+
+    result = plan_tools.apply_plan(object_planners.plan_delete_object("policies"))
+
+    assert count.call_count == 0
+    assert delete.call_count == 0
+    archived, deleted = result.results
+    assert archived.status == "failed"
+    assert deleted.status == "skipped"
+    assert deleted.message == "blocked by failed op 'policies#r1..r3'"
+
+
+@respx.mock
+def test_apply_delete_object_is_skipped_when_a_later_chunk_fails(live):
+    live(record_ids=[f"r{i}" for i in range(ARCHIVE_CHUNK + 1)])
+    respx.post(_ARCHIVE_URL).mock(
+        side_effect=[
+            httpx.Response(200, json={"number_archived": ARCHIVE_CHUNK}),
+            httpx.Response(500),
+        ]
+    )
+    count = respx.post(_SEARCH_URL).mock(return_value=_count(0))
+    delete = respx.delete(_OBJECT_URL).mock(return_value=httpx.Response(200, json={}))
+
+    result = plan_tools.apply_plan(object_planners.plan_delete_object("policies"))
+
+    assert [r.status for r in result.results] == ["ok", "failed", "skipped"]
+    assert result.results[-1].message == (
+        f"blocked by failed op 'policies#r{ARCHIVE_CHUNK}'"
+    )
+    assert count.call_count == 0
+    assert delete.call_count == 0
+
+
+@respx.mock
+def test_apply_delete_object_rides_out_a_transient_count_error(live, monkeypatch):
+    live(record_ids=["r1"])
+    monkeypatch.setattr(plan_tools.time, "sleep", lambda _s: None)
+    respx.post(_ARCHIVE_URL).mock(return_value=httpx.Response(200, json={}))
+    respx.post(_SEARCH_URL).mock(side_effect=[httpx.Response(503), _count(0)])
+    delete = respx.delete(_OBJECT_URL).mock(return_value=httpx.Response(200, json={}))
+
+    result = plan_tools.apply_plan(object_planners.plan_delete_object("policies"))
+
+    assert result.all_ok
+    assert delete.call_count == 1
+
+
+@respx.mock
+def test_apply_delete_object_count_failure_says_how_to_finish(live, monkeypatch):
+    live(record_ids=["r1"])
+    monkeypatch.setattr(plan_tools.time, "sleep", lambda _s: None)
+    respx.post(_ARCHIVE_URL).mock(return_value=httpx.Response(200, json={}))
+    respx.post(_SEARCH_URL).mock(return_value=httpx.Response(503))
+    delete = respx.delete(_OBJECT_URL).mock(return_value=httpx.Response(200, json={}))
+
+    result = plan_tools.apply_plan(object_planners.plan_delete_object("policies"))
+
+    assert delete.call_count == 0
+    deleted = result.results[-1]
+    assert deleted.status == "failed"
+    assert deleted.message.endswith(
+        "the records are already archived, so the object was not deleted. "
+        "Re-run kizen objects delete policies to finish"
+    )
+
+
+@respx.mock
+def test_apply_delete_object_from_an_old_saved_plan_does_not_poll(live):
+    op = plan_tools.PlanOperation(
+        action="delete", kind="object", key="policies", existing_uuid=OBJ_ID
+    )
+    count = respx.post(_SEARCH_URL).mock(return_value=_count(0))
+    delete = respx.delete(_OBJECT_URL).mock(return_value=httpx.Response(200, json={}))
+
+    result = plan_tools.apply_plan(plan_tools.Plan.build("testenv", "x", [op]))
+
+    assert result.all_ok
+    assert count.call_count == 0
+    assert delete.call_count == 1

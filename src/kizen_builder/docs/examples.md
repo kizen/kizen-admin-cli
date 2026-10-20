@@ -457,15 +457,12 @@ rows — the honest state of an unused read path, not a broken one.
 Everything created in this walkthrough is disposable. Delete newest-first —
 automation, activity type, dashboard (no `dashboards delete` CLI command
 exists today, worth its own follow-up item; use `kizen automations
-delete`/`kizen activities delete` for the other two), then the ticket
-records, then the object last (`objects delete` refuses while records
-exist):
+delete`/`kizen activities delete` for the other two), then the object
+last. `objects delete` archives the remaining tickets first, with no email:
 
 ```bash
 kizen automations delete escalate_high_priority_tickets --yes
 kizen activities delete site_visit --yes
-kizen records list service_tickets --limit 100000 --output csv > tickets.csv
-kizen records archive service_tickets --spec-file tickets.csv --yes
 kizen objects delete service_tickets --yes
 ```
 

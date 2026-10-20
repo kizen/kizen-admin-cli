@@ -117,6 +117,7 @@ def get_object(api_name: str) -> dict[str, Any]:
         else api_name,
         "entity_name": match.get("entity_name") if match else None,
         "object_type": object_type,
+        "is_custom": bool(match.get("is_custom", False)) if match else False,
         "stages": stages,
         "categories": [
             {
