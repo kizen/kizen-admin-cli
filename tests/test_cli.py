@@ -2929,6 +2929,71 @@ def test_forms_duplicate_dry_run(monkeypatch):
     assert result.exit_code == 0, result.output
 
 
+_UNPLACED_FORM_ID = "00000000-0000-4000-8000-0000000010f1"
+_UNPLACED_FIELDS = [
+    {"id": f"00000000-0000-4000-8000-00000000100{i}", "name": name}
+    for i, name in enumerate(["first_name", "last_name", "email"], 1)
+]
+
+
+@pytest.mark.parametrize("dry_run", [[], ["--dry-run"]], ids=["yes", "dry-run"])
+@pytest.mark.parametrize(
+    "group, base, argv, named",
+    [
+        (
+            "forms",
+            "/api/forms",
+            ["update", _UNPLACED_FORM_ID, "--name", "X"],
+            "first_name, last_name, email",
+        ),
+        (
+            "surveys",
+            "/api/surveys",
+            ["update", _UNPLACED_FORM_ID, "--name", "X"],
+            "first_name, last_name, email",
+        ),
+        (
+            "forms",
+            "/api/forms",
+            ["set-ui", _UNPLACED_FORM_ID, "--spec-file", "SPEC"],
+            "leaves off 2 field(s): last_name, email.",
+        ),
+        (
+            "surveys",
+            "/api/surveys",
+            ["set-ui", _UNPLACED_FORM_ID, "--spec-file", "SPEC"],
+            "leaves off 2 field(s): last_name, email.",
+        ),
+    ],
+    ids=["forms-update", "surveys-update", "forms-set-ui", "surveys-set-ui"],
+)
+def test_form_writes_that_would_delete_a_field_send_nothing(
+    group, base, argv, named, dry_run, tmp_path
+):
+    """A form with no pages loses every field on its next save, and set-ui with
+    a partial layout loses the ones it leaves out, so both stop at plan time."""
+    spec = tmp_path / "ui.json"
+    spec.write_text(json.dumps({"pages": [{"simple": True, "fields": ["first_name"]}]}))
+    argv = [str(spec) if a == "SPEC" else a for a in argv]
+    with respx.mock(assert_all_mocked=True, assert_all_called=False) as mock:
+        mock.get(f"{FAKE_BASE_URL}{base}/{_UNPLACED_FORM_ID}").mock(
+            return_value=httpx.Response(
+                200,
+                json={"id": _UNPLACED_FORM_ID, "name": "New", "form_ui": {}},
+            )
+        )
+        mock.get(f"{FAKE_BASE_URL}{base}/{_UNPLACED_FORM_ID}/fields").mock(
+            return_value=httpx.Response(200, json=_UNPLACED_FIELDS)
+        )
+        result = runner.invoke(cli.app, [group, *argv, *dry_run, "--yes"])
+        writes = [c for c in mock.calls if c.request.method != "GET"]
+
+    assert result.exit_code == 1, result.output
+    assert "plan error:" in result.stderr
+    assert named in plain(result.stderr)
+    assert writes == []
+
+
 def test_perms_group_renders_resolution_warnings_on_stderr(monkeypatch):
     """`describe_group`'s name resolution is best-effort and reports what it
     couldn't resolve. Those warnings go to stderr so stdout stays pure result

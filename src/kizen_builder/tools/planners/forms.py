@@ -172,10 +172,15 @@ def plan_update_form(
     base_path: str = FORMS_BASE_PATH,
     kind: FormKind = "form",
 ) -> Plan:
-    """Plan a PATCH to one form/survey. Only keys present in ``changes`` are sent."""
+    """Plan a PATCH to one form/survey. Only keys present in ``changes`` are sent.
+
+    Kizen deletes every field not placed on a ``form_ui`` page whenever a form
+    is saved, so an update is refused while the ``form_ui`` it leaves on the
+    server (the one sent, else the live one) misses any field.
+    """
     obj_kind, _, _ = _kinds(kind)
     env = load_env_config().name
-    current = _load_form(identifier, base_path, kind, include_fields=False)
+    current = _load_form(identifier, base_path, kind)
 
     raw = current.get("raw") or {}
     payload: dict[str, Any] = {}
@@ -190,6 +195,8 @@ def plan_update_form(
             diff[wire] = (old, new)
 
     action = "update" if payload else "skip"
+    if action == "update":
+        _refuse_unplaced_fields(current, payload, kind)
     op = PlanOperation(
         action=action,  # type: ignore[arg-type]
         kind=obj_kind,
@@ -209,6 +216,30 @@ def plan_update_form(
         else f"No changes to {kind} '{current.get('name')}'"
     )
     return Plan.build(env=env, summary=summary, operations=[op])
+
+
+def _refuse_unplaced_fields(
+    current: dict[str, Any], payload: dict[str, Any], kind: FormKind
+) -> None:
+    sends_layout = "form_ui" in payload
+    form_ui = payload["form_ui"] if sends_layout else current["raw"].get("form_ui")
+    unplaced = unplaced_fields(form_ui, current["fields"])
+    if not unplaced:
+        return
+    names = ", ".join(f["api_name"] or f["id"] for f in unplaced)
+    n = len(unplaced)
+    if sends_layout:
+        raise PlanError(
+            f"this layout leaves off {n} field(s): {names}. Kizen deletes every "
+            f"field that isn't on a page when the {kind} is saved. Add them to "
+            f"the layout, or remove them first with 'kizen {kind}s fields delete'."
+        )
+    raise PlanError(
+        f"{kind} '{current.get('name')}' has {n} field(s) not placed on a page: "
+        f"{names}. Kizen deletes them on any update to the {kind}. Place them "
+        f"with 'kizen {kind}s set-ui' first, or remove them with "
+        f"'kizen {kind}s fields delete'."
+    )
 
 
 def plan_delete_form(
