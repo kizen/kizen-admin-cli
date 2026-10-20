@@ -547,6 +547,8 @@ called out explicitly under **Changed** or **Removed**.
 - **The README's setup instructions match the CLI.** Scripted `kizen init`
   needs `--base-url`; the `connectors` install line no longer assumes a clone;
   a stale warning that step ids rotate on every update is gone.
+- **The variable-condition docs no longer call `client_tag_field_id` a
+  constant.** It varies by business. The docs say where to get it.
 
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or
