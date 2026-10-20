@@ -2,7 +2,7 @@
   "_meta": {
     "base_url": "https://app.go.kizen.com",
     "captured": "2026-10-14",
-    "contracts_tracked": 68,
+    "contracts_tracked": 69,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
       "title": "Kizen API",
@@ -783,6 +783,24 @@
       ],
       "schema_path": "/api/automation2/automations/{automation_identifier}",
       "surface": "automations"
+    },
+    "schema:AutomationVariableRequest": {
+      "label": "automation variable",
+      "present": true,
+      "properties": {
+        "data_subtype": "string?",
+        "data_type": "ExecutionVariableDataTypeEnum{string,number,boolean,date,datetime,phone_number,email,uuid,employee,entity}",
+        "input_format": "string?",
+        "is_array": "boolean",
+        "name": "string",
+        "output_format": "string?"
+      },
+      "required": [
+        "data_type",
+        "name"
+      ],
+      "surface": "automations",
+      "type": "object"
     },
     "schema:WriteAutomationRequest": {
       "label": "automation write body",

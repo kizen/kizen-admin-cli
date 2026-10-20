@@ -252,6 +252,9 @@ BASE_SCHEMA_CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract("automations", "trigger envelope", schema_name="WriteTriggerRequest"),
     Contract("automations", "step envelope", schema_name="WriteStepRequest"),
+    Contract(
+        "automations", "automation variable", schema_name="AutomationVariableRequest"
+    ),
 )
 
 

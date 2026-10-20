@@ -1806,7 +1806,7 @@ def test_plan_update_strips_variable_ids(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_initialize_variable": {
-                    "variable": {"name": "org_match", "data_type": "text"},
+                    "variable": {"name": "org_match", "data_type": "string"},
                     "sources": [],
                 },
             }
@@ -3399,6 +3399,111 @@ def test_rebuild_allowed_diffs_all_occur():
     }
     stale = sorted(set(_REBUILD_ALLOWED_DIFFS) - seen)
     assert not stale, f"_REBUILD_ALLOWED_DIFFS entries match no difference: {stale}"
+
+
+# ---------------------------------------------------------------------------
+# initialize_variable variable: data_type, is_array, unknown keys
+# (confirmed live 2026-10-14: an unknown data_type is a bare HTTP 500)
+# ---------------------------------------------------------------------------
+
+
+def _variable_type_message() -> str:
+    from typing import get_args
+
+    from kizen_builder.models.spec.automations_shared import (
+        AutomationVariableDataType,
+    )
+
+    *rest, last = (f"'{t}'" for t in get_args(AutomationVariableDataType))
+    return f"Input should be {', '.join(rest)} or {last}"
+
+
+def test_variable_data_type_matches_the_schema_snapshot():
+    from typing import get_args
+
+    from kizen_builder.models.spec.automations_shared import (
+        AutomationVariableDataType,
+    )
+    from tests.drift.contracts import load_snapshot
+
+    entry = load_snapshot()["contracts"]["schema:AutomationVariableRequest"]
+    enum = entry["properties"]["data_type"]
+    assert enum.startswith("ExecutionVariableDataTypeEnum{")
+    assert set(get_args(AutomationVariableDataType)) == set(
+        enum[enum.index("{") + 1 : -1].split(",")
+    )
+
+
+def _fixture_variable() -> dict:
+    """An entity array variable as a live read carries it: all 11 keys."""
+    raw = load_fixture("automations/condition_variable_rhs_pipeline.raw.json")
+    return next(
+        s["action_initialize_variable"]["variable"]
+        for s in raw["steps"]
+        if s["step_type"] == "initialize_variable"
+        and "is_array_item_variable" in s["action_initialize_variable"]["variable"]
+    )
+
+
+def _edit_variable(variable: dict) -> dict:
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {"action_initialize_variable": {"variable": variable, "sources": []}}
+    return normalize_step_patch(
+        patch, "init", "initialize_variable", _LIVE_PAYLOAD, "patients"
+    )
+
+
+_BAD_VARIABLES = [
+    pytest.param({"name": "tags", "data_type": t}, "data_type", id=t)
+    for t in ("text", "list", "object")
+] + [
+    pytest.param(
+        {"name": "tags", "data_type": "string", "is_array": "maybe"},
+        "is_array",
+        id="is_array-maybe",
+    ),
+    pytest.param(
+        {"name": "tags", "data_type": "string", "isArray": True},
+        "isArray",
+        id="isArray-typo",
+    ),
+]
+
+_GOOD_VARIABLES = [
+    pytest.param({"name": "owner", "data_type": "employee"}, id="employee"),
+    pytest.param(
+        {"name": "branch", "data_type": "entity", "data_subtype": "obj-uuid"},
+        id="entity",
+    ),
+    pytest.param({"name": "inbox", "data_type": "email"}, id="email"),
+]
+
+
+@pytest.mark.parametrize("path", ["create", "steps edit"])
+@pytest.mark.parametrize("variable, field", _BAD_VARIABLES)
+def test_bad_variable_is_a_spec_error(patch_live_lookups, path, variable, field):
+    from pydantic import ValidationError
+
+    spec = _one_step_spec("initialize_variable", {"variable": variable})
+    with pytest.raises(ValidationError) as e:
+        if path == "create":
+            AutomationDef.model_validate(spec)
+        else:
+            _edit_variable(variable)
+    (err,) = e.value.errors()
+    assert err["loc"][-3:] == ("action_initialize_variable", "variable", field)
+    if field == "data_type":
+        assert err["msg"] == _variable_type_message()
+
+
+@pytest.mark.parametrize("variable", [*_GOOD_VARIABLES, pytest.param(None, id="read")])
+def test_good_variable_plans_on_both_paths(patch_live_lookups, variable):
+    variable = variable or _fixture_variable()
+    spec = _one_step_spec("initialize_variable", {"variable": dict(variable)})
+    built = _build(spec)["steps"][0]["action_initialize_variable"]["variable"]
+    edited = _edit_variable(dict(variable))["action_initialize_variable"]["variable"]
+    assert built["data_type"] == edited["data_type"] == variable["data_type"]
 
 
 # ---------------------------------------------------------------------------

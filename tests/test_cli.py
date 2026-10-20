@@ -2329,6 +2329,43 @@ def test_fields_create_reserved_name_gives_clean_spec_error():
     assert "Traceback" not in result.stderr
 
 
+_BAD_VARIABLE = {"name": "tags", "data_type": "text", "[/x]": 1}
+
+
+@pytest.mark.parametrize(
+    "argv, spec",
+    [
+        (
+            ["add", "a", "--root"],
+            {
+                "step_type": "initialize_variable",
+                "action_initialize_variable": {"variable": _BAD_VARIABLE},
+            },
+        ),
+        (
+            ["edit", "a", "init"],
+            {"action_initialize_variable": {"variable": _BAD_VARIABLE}},
+        ),
+    ],
+    ids=["add", "edit"],
+)
+def test_steps_bad_variable_prints_escaped_spec_errors(monkeypatch, argv, spec):
+    payload = {"steps": [{"key": "init", "type": "initialize_variable"}]}
+    monkeypatch.setattr(
+        auto_tools, "patch_steps", lambda _api, mutate, execute: mutate(payload, {})
+    )
+    result = runner.invoke(
+        cli.app,
+        ["automations", "steps", *argv, "--dry-run"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 1
+    loc = "spec error: action_initialize_variable.variable"
+    assert f"{loc}.data_type: Input should be 'string'" in result.stderr
+    assert f"{loc}.[/x]: Extra inputs are not permitted" in result.stderr
+    assert "internal:" not in result.stderr
+
+
 def test_fields_create_single_missing_flags_errors(monkeypatch):
     monkeypatch.setattr(field_planners, "plan_create_field", lambda **kw: _fake_plan())
     # No spec, no --api-name, stdin is a tty (no input) → clean usage error.

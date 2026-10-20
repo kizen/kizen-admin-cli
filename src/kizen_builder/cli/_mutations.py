@@ -21,6 +21,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    exit_spec_errors,
     parse_json,
     read_text_file,
 )
@@ -102,11 +103,7 @@ def _run_mutation(
             err_console.print(f"[red]plan error:[/red] {escape(str(e))}", emoji=False)
             raise typer.Exit(code=1) from e
         except ValidationError as e:
-            for err in e.errors():
-                loc = ".".join(str(p) for p in err.get("loc", ())) or "spec"
-                msg = err.get("msg", "invalid value")
-                err_console.print(f"[red]spec error:[/red] {loc}: {msg}")
-            raise typer.Exit(code=1) from e
+            exit_spec_errors(e)
 
     if dry_run:
         if json_out:

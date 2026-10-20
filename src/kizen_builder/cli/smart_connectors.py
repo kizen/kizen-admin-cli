@@ -27,6 +27,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    exit_spec_errors,
     warn_renamed_flag,
 )
 from kizen_builder.config import ConfigError
@@ -95,15 +96,8 @@ def _preview_and_confirm(
 def _connector_plan_error(exc: Exception) -> NoReturn:
     """Print a planning failure the way the rest of the CLI does, then exit 1."""
     if isinstance(exc, ValidationError):
-        for err in exc.errors():
-            loc = ".".join(str(p) for p in err.get("loc", ())) or "spec"
-            msg = err.get("msg", "invalid value")
-            err_console.print(
-                f"[red]spec error:[/red] {escape(loc)}: {escape(str(msg))}",
-                emoji=False,
-            )
-    else:
-        _print_error(exc)
+        exit_spec_errors(exc)
+    _print_error(exc)
     raise typer.Exit(code=1) from exc
 
 

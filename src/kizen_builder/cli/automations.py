@@ -29,6 +29,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    exit_spec_errors,
 )
 from kizen_builder.config import load_env_config
 from kizen_builder.tools import automations as auto_tools
@@ -352,11 +353,7 @@ def autos_diff(
         with cli_errors(LookupError, PlanError):
             result = auto_planners.diff_automation(spec_dict)
     except ValidationError as e:
-        for err in e.errors():
-            loc = ".".join(str(p) for p in err.get("loc", ())) or "spec"
-            msg = err.get("msg", "invalid value")
-            err_console.print(f"[red]spec error:[/red] {loc}: {msg}")
-        raise typer.Exit(code=1) from e
+        exit_spec_errors(e)
 
     if json_out:
         typer.echo(json.dumps(result, indent=2))

@@ -31,15 +31,48 @@ class TeamMemberConfig(BaseModel):
     )
 
 
+AutomationVariableDataType = Literal[
+    "string",
+    "number",
+    "boolean",
+    "date",
+    "datetime",
+    "phone_number",
+    "email",
+    "uuid",
+    "employee",
+    "entity",
+]
+"""Types an automation variable can declare: the server's
+`ExecutionVariableDataTypeEnum`. Not the connector set in `smart_connectors.py`,
+which has no `employee` or `entity`. The drift snapshot pins this list
+(`AutomationVariableRequest`).
+"""
+
+
 class AutomationVariableConfig(BaseModel):
     """Define an automation variable (name + data type)."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
-    data_type: str = Field(
-        description="One of: string, number, boolean, date, datetime, list, object, etc."
+    data_type: AutomationVariableDataType
+    is_array: bool = Field(
+        default=False,
+        description=(
+            "Array variable. Only string, uuid and entity variables can be arrays, "
+            "and an array needs array_aggregation_mode on the step."
+        ),
     )
+    data_subtype: str | dict[str, Any] | None = None
+    input_format: str | None = None
+    output_format: str | None = None
+    # Carried by live reads (`steps get`); the builder strips or ignores them.
+    id: Any = None
+    created: Any = None
+    deleted: Any = None
+    is_array_item_variable: Any = None
+    source_array_variable: Any = None
 
 
 class VariableSourceConfig(BaseModel):
@@ -48,7 +81,10 @@ class VariableSourceConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     source_type: str = Field(
-        description="One of: field_value, literal, variable, merge_field, etc."
+        description=(
+            "One of: static, field_value, variable, trigger_time, webhook_trigger, "
+            "logged_activity_trigger, activity_past_due_trigger."
+        )
     )
     field_ref: str | None = Field(
         default=None,

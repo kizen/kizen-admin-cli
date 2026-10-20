@@ -687,8 +687,15 @@ as a real custom object's own api_name, and its span gets
 - **A variable the UI creates inline** (from a step's variable picker) is an
   ordinary root-chain `initialize_variable` with `sources: []`. Spec it that
   way. Confirmed live 2026-09-28.
-- **String and UUID arrays** are a variable with `is_array: true`, plus two
-  keys on the variable step: `array_aggregation_mode` (`add_all` or
+- **`variable.data_type`** is one of `string`, `number`, `boolean`, `date`,
+  `datetime`, `phone_number`, `email`, `uuid`, `employee`, `entity`; anything
+  else is a spec error. The server answers an unknown type with a bare HTTP
+  500, confirmed live 2026-10-14. Only `string`, `uuid` and `entity`
+  variables can be arrays.
+- **Unknown keys in `variable`** are a spec error, because the server drops
+  them silently (`isArray` saved a scalar). Confirmed live 2026-10-14.
+- **String, UUID and entity arrays** are a variable with `is_array: true`,
+  plus two keys on the variable step: `array_aggregation_mode` (`add_all` or
   `add_first_non_blank`) and `deduplicate_array` (bool). A static array
   value is a `static` source with `source_subtype` (`string`/`uuid`), a list
   `value` and `array_separator`. Give `value` as a list: with a single string
