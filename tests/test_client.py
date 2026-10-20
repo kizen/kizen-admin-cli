@@ -277,3 +277,67 @@ def test_download_file_error_names_the_file(env_config):
     assert exc.value.status_code == 404
     assert exc.value.message == "downloading file f1: Not found."
     assert exc.value.body == {"detail": "Not found."}
+
+
+# ---------------------------------------------------------------------------
+# paginate — DRF `next`-link follower
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_paginate_sends_params_on_page_one_then_follows_next(client):
+    route = respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 1}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=2&page_size=1",
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 2}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=3&page_size=1",
+                },
+            ),
+            httpx.Response(200, json={"results": [{"id": 3}], "next": None}),
+        ]
+    )
+
+    items = client.paginate("/api/things", params={"page_size": 1})
+
+    assert items == [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert [str(c.request.url) for c in route.calls] == [
+        f"{FAKE_BASE_URL}/api/things?page_size=1",
+        f"{FAKE_BASE_URL}/api/things?page=2&page_size=1",
+        f"{FAKE_BASE_URL}/api/things?page=3&page_size=1",
+    ]
+
+
+@respx.mock
+def test_paginate_returns_a_bare_list_as_is(client):
+    route = respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        return_value=httpx.Response(200, json=[{"id": 1}, {"id": 2}])
+    )
+    assert client.paginate("/api/things") == [{"id": 1}, {"id": 2}]
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_paginate_stops_on_an_unrecognized_body_keeping_what_it_has(client):
+    route = respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 1}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=2",
+                },
+            ),
+            httpx.Response(200, json={"detail": "not a page"}),
+        ]
+    )
+    assert client.paginate("/api/things") == [{"id": 1}]
+    assert route.call_count == 2

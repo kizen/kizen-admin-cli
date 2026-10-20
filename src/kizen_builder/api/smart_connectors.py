@@ -33,7 +33,6 @@ shared ``connector_identifier`` — so that call needs the UUID, not an api_name
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlsplit
 
 from kizen_builder.api.client import KizenClient
 
@@ -49,37 +48,6 @@ _BASE = "/api/smart-connectors"
 def _clean_params(params: dict[str, Any]) -> dict[str, Any]:
     """Drop keys whose value is None so we only send filters the caller set."""
     return {k: v for k, v in params.items() if v is not None}
-
-
-def _paginate(
-    client: KizenClient, path: str, params: dict[str, Any] | None = None
-) -> list[dict[str, Any]]:
-    """Follow DRF ``next`` links, returning the flat list of result dicts.
-
-    ``params`` is applied to the first request only; the ``next`` URL already
-    carries the query string forward, so we splice it into the path and stop
-    passing ``params`` after the first page.
-    """
-    items: list[dict[str, Any]] = []
-    nxt: str | None = path
-    first = True
-    while nxt:
-        resp = client.get(nxt, params=params if first else None)
-        first = False
-        if isinstance(resp, dict) and "results" in resp:
-            items.extend(resp["results"])
-            following = resp.get("next")
-            if following:
-                parts = urlsplit(following)
-                nxt = parts.path + (f"?{parts.query}" if parts.query else "")
-            else:
-                nxt = None
-        elif isinstance(resp, list):
-            items.extend(resp)
-            nxt = None
-        else:
-            nxt = None
-    return items
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +76,7 @@ def list_smart_connectors(
             "ordering": ordering,
         }
     )
-    return _paginate(client, _BASE, params or None)
+    return client.paginate(_BASE, params or None)
 
 
 def get_smart_connector(client: KizenClient, connector: str) -> dict[str, Any]:
@@ -219,7 +187,7 @@ def list_executions(
             "ordering": ordering,
         }
     )
-    return _paginate(client, f"{_BASE}/{connector}/executions", params or None)
+    return client.paginate(f"{_BASE}/{connector}/executions", params or None)
 
 
 def get_execution(
@@ -263,7 +231,7 @@ def list_sql_scripts(
 ) -> list[dict[str, Any]]:
     """GET .../sql-scripts — the connector's draft/live SQL scripts."""
     params = _clean_params({"state": state, "status": status, "ordering": ordering})
-    return _paginate(client, f"{_BASE}/{connector}/sql-scripts", params or None)
+    return client.paginate(f"{_BASE}/{connector}/sql-scripts", params or None)
 
 
 def get_sql_script(
@@ -426,6 +394,6 @@ def list_events_history(
             "ordering": ordering,
         }
     )
-    return _paginate(
-        client, f"{_BASE}/{smart_connector_id}/events-history", params or None
+    return client.paginate(
+        f"{_BASE}/{smart_connector_id}/events-history", params or None
     )

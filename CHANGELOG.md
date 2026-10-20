@@ -519,6 +519,9 @@ called out explicitly under **Changed** or **Removed**.
   writes landed, so rerunning it wrote twice. The command now waits up to 2
   minutes. The server ends a run at about 55 seconds, so a long script now
   reports the server's own `Task timed out after 55.00 seconds`.
+- **`automations runs view`, `runs logs` and `automations start --show-logs`
+  now show every step of a long run.** Before, they read only the first page
+  of its history, so a run with more than 100 history rows lost the rest.
 
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or

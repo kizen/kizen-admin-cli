@@ -95,11 +95,10 @@ def get_execution(client: KizenClient, execution_id: str) -> dict[str, Any]:
 def get_execution_history(
     client: KizenClient, execution_id: str
 ) -> list[dict[str, Any]]:
-    """GET /api/automation2/automation-execution/{execution_id}/history."""
-    result = client.get(f"/api/automation2/automation-execution/{execution_id}/history")
-    if isinstance(result, list):
-        return result
-    return result.get("results", [])
+    """GET /api/automation2/automation-execution/{execution_id}/history, every page."""
+    return client.paginate(
+        f"/api/automation2/automation-execution/{execution_id}/history"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -403,11 +402,8 @@ def get_folder(client: KizenClient, folder_id: str) -> dict[str, Any]:
 
 
 def list_subfolders(client: KizenClient, folder_id: str) -> list[dict[str, Any]]:
-    """GET /api/automation2/folders/{id}/subfolders."""
-    resp = client.get(f"/api/automation2/folders/{folder_id}/subfolders")
-    if isinstance(resp, dict) and "results" in resp:
-        return resp["results"]
-    return resp if isinstance(resp, list) else []
+    """GET /api/automation2/folders/{id}/subfolders, every page."""
+    return client.paginate(f"/api/automation2/folders/{folder_id}/subfolders")
 
 
 def create_folder(client: KizenClient, payload: dict[str, Any]) -> dict[str, Any]:

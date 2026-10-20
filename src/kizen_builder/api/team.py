@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from kizen_builder.api.client import KizenClient
-from kizen_builder.api.smart_connectors import _paginate
 
 
 def search_team(
@@ -25,7 +24,7 @@ def search_team(
 
 def list_team(client: KizenClient) -> list[dict[str, Any]]:
     """GET /api/team — every member, with ``roles`` expanded to ``{id, name, ...}``."""
-    return _paginate(client, "/api/team", {"page_size": 100})
+    return client.paginate("/api/team", {"page_size": 100})
 
 
 def get_team_member(client: KizenClient, member_id: str) -> dict[str, Any]:
