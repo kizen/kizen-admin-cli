@@ -642,3 +642,39 @@ def test_field_flag_decodes_json_literals_and_keeps_bad_json_as_text(monkeypatch
     )
     assert result.exit_code == 0, result.output
     assert seen == [(PATIENTS, [{"tags": ["a", "b"], "note": "{oops"}])]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [[], ["--field", "name=x", "--field", "tags=a"]],
+    ids=["no field", "two fields"],
+)
+def test_set_field_takes_exactly_one_field(planners_must_not_run, fields):
+    result = runner.invoke(cli.app, ["records", "set-field", PATIENTS, UUID, *fields])
+    assert result.exit_code == 2, result.output
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert _stderr(result).startswith(
+        "error: pass exactly one --field api_name=value; "
+        "use `records update --spec-file` to change several fields."
+    )
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [["--field", 'tags=["A","B"]'], ["--field", "tags", "--value", '["A","B"]']],
+    ids=["field key=value", "old --value"],
+)
+def test_set_field_decodes_a_json_list_value(monkeypatch, flags):
+    seen = []
+
+    def plan_set_field(object_api_name, ids, field, value, field_resolution):
+        seen.append((object_api_name, ids, field, value, field_resolution))
+        return Plan.build(env="testenv", summary="t", operations=[])
+
+    monkeypatch.setattr(records_write.record_planners, "plan_set_field", plan_set_field)
+    result = runner.invoke(
+        cli.app,
+        ["records", "set-field", PATIENTS, UUID, *flags, "--dry-run", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen == [(PATIENTS, [UUID], "tags", ["A", "B"], "overwrite")]

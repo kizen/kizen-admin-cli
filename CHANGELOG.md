@@ -207,6 +207,10 @@ called out explicitly under **Changed** or **Removed**.
   anything that honoured it. `activities get --json` shows the server's
   `associated_objects` (with each object's `is_required`) in place of a
   `selected_objects` key that was always empty.
+- **`records set-field` takes `--field api_name=value`**, the same shape as
+  `records create|update|upsert`. The old `--field <api_name> --value <value>`
+  still works and prints a deprecation warning on stderr. Exactly one
+  `--field` is accepted; use `records update --spec-file` for several.
 
 ### Added
 
@@ -750,6 +754,12 @@ called out explicitly under **Changed** or **Removed**.
   hand-written `associated_objects` list gets the same default instead of
   being stored as `all_objects_associated`. `activities update --object`
   keeps the Required and Read-only flags of objects already associated.
+
+- **`records set-field` JSON-decodes its value the way `records update`
+  does, so a multi-select takes a list.** Before, `--value '["A","B"]'` was
+  sent as one option named by its JSON text. A value starting with `[` or `{`
+  is now decoded, so a text field set to JSON-looking text gets the decoded
+  value, as it already did in `records update`.
 
 ### Added
 
