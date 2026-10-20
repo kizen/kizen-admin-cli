@@ -53,11 +53,11 @@ def _load(name: str) -> Any:
 def example_object(drift_client, scratch) -> dict[str, Any]:
     """object.json's object + category, then a read-back for the derived name.
 
-    Kizen pluralizes the api_name on create — `examples.md`'s first live
-    finding. Every fixture downstream hardcodes the pluralized form
+    Kizen derives the api_name from the display name — `examples.md`'s first
+    live finding. Every fixture downstream hardcodes the derived form
     (`service_tickets`), so this fixture asserts that assumption rather than
-    silently trusting it: if Kizen's pluralization ever changes, this fails
-    here with a clear reason instead of a confusing 404 three stages later.
+    silently trusting it: if Kizen's derivation ever changes, this fails here
+    with a clear reason instead of a confusing 404 three stages later.
     """
     from kizen_builder.api import custom_objects as co_api
     from kizen_builder.models.spec import ObjectDef
@@ -77,12 +77,13 @@ def example_object(drift_client, scratch) -> dict[str, Any]:
     live = co_api.get_object(drift_client, created["id"])
     api_name = live["name"]
 
-    assert api_name == "service_tickets", (
-        f"object.json's api_name 'service_ticket' came back as {api_name!r}, "
-        "not the 'service_tickets' every downstream fixture hardcodes "
-        "(fields.json's self-relation, automation.json's target_object). "
-        "Kizen's pluralization rule apparently changed — examples.md and "
-        "these fixtures need to be revisited, not worked around here."
+    assert api_name == obj_def.effective_api_name == "service_tickets", (
+        f"'Service Tickets' came back as api_name {api_name!r}, not the "
+        "'service_tickets' every downstream fixture hardcodes (fields.json's "
+        "self-relation, automation.json's target_object). Kizen's derivation "
+        "rule (or a live object already holding the slug) changed it — "
+        "examples.md and these fixtures need to be revisited, not worked "
+        "around here."
     )
 
     categories = [
@@ -189,6 +190,10 @@ def example_activity(drift_client, scratch, example_object, example_fields):
 
 def test_the_activity_type_applies_with_its_fields(example_activity):
     assert set(example_activity["fields"]) >= {"outcome", "priority_snapshot"}
+
+
+def test_the_activity_keeps_its_pinned_api_name(example_activity):
+    assert example_activity["live"]["api_name"] == "site_visit"
 
 
 def test_the_activity_is_associated_to_the_object_by_uuid(

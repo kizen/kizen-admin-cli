@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 import uuid
 
 _SLUG_INVALID = re.compile(r"[^a-z0-9]+")
@@ -29,6 +30,18 @@ def slugify(text: str) -> str:
     if slug[0].isdigit():
         slug = f"x_{slug}"
     return slug
+
+
+def derived_object_api_name(object_name: str) -> str:
+    """Predict the api_name Kizen derives from a new object's display name.
+
+    "Señor's  Policy & Claims" -> "senors_policy_claims" (confirmed live
+    2026-10-14). A slug a live object already holds gets a random suffix
+    instead, which no prediction can know.
+    """
+    folded = unicodedata.normalize("NFKD", object_name).encode("ascii", "ignore")
+    lowered = folded.decode().lower().replace("'", "")
+    return _SLUG_EDGES.sub("", _SLUG_INVALID.sub("_", lowered))
 
 
 def is_uuid(value: str) -> bool:

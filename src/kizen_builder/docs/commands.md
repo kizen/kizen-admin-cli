@@ -167,7 +167,7 @@ output (the plan with `--dry-run`, apply results otherwise).
 
 ```
 # create
-kizen objects create --api-name X --name Y [--object-type standard|pipeline] [--pipeline] [...]
+kizen objects create --name Y [--api-name X] [--object-type standard|pipeline] [--pipeline] [...]   # api_name is derived from --name
 kizen categories create <object_api_name> --api-name X --name Y
 kizen fields create <object_api_name> --api-name X --type text --category Y [...]   # one field
 kizen fields create <object_api_name> [--spec-file path | < stdin]                  # many at once

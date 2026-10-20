@@ -1,5 +1,5 @@
 {
-  "api_name": "service_ticket",
+  "api_name": "service_tickets",
   "name": "Service Tickets",
   "entity_name": "Service Ticket",
   "description": "A field-service work order. The worked example's primary object.",

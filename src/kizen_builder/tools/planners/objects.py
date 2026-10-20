@@ -8,39 +8,79 @@ from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FieldCategory, ObjectDef, PipelineStageSpec
 from kizen_builder.tools.objects import get_object, list_objects
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.utils import derived_object_api_name
+
+
+class ApiNameMismatch(PlanError):
+    """An asserted object api_name that Kizen won't derive from the name."""
 
 
 def plan_create_object(obj: dict[str, Any] | ObjectDef) -> Plan:
-    """Plan the creation of one custom object (no categories or fields yet)."""
+    """Plan the creation of one custom object (no categories or fields yet).
+
+    Kizen derives the api_name from the display name and refuses a supplied
+    one (403), so ``api_name`` is only an assertion: it must equal the
+    derived value, and the plan is keyed on the derived value.
+    """
     obj_def = obj if isinstance(obj, ObjectDef) else ObjectDef.model_validate(obj)
     env = load_env_config().name
 
-    existing = next(
-        (o for o in list_objects() if o["api_name"] == obj_def.api_name),
-        None,
-    )
+    live = [o for o in list_objects() if not o.get("deleted")]
+    # Before the mismatch check: a stored name can carry a collision suffix
+    # (`employee_m7SZCzg3`) that no display name derives.
+    existing = next((o for o in live if o["api_name"] == obj_def.api_name), None)
     if existing is not None:
         raise PlanError(
             f"object '{obj_def.api_name}' already exists (uuid {existing['id']}). "
-            "Use plan_update_object instead."
+            "Use `objects update` to change it."
         )
 
-    payload = _build_object_payload(obj_def)
+    derived = derived_object_api_name(obj_def.name)
+    if obj_def.api_name is not None and obj_def.api_name != derived:
+        msg = (
+            "Kizen derives the object api_name from the display name and "
+            f"refuses a supplied one: '{obj_def.name}' becomes '{derived}', "
+            f"not '{obj_def.api_name}'."
+        )
+        # The suggestion's slug is the asked api_name, which isn't live
+        # (checked above), so Kizen won't suffix it.
+        suggestion = obj_def.api_name.replace("_", " ").title()
+        if derived_object_api_name(suggestion) == obj_def.api_name:
+            raise ApiNameMismatch(
+                f"{msg} For '{obj_def.api_name}', use --name \"{suggestion}\"."
+            )
+        raise ApiNameMismatch(f"{msg} No display name produces '{obj_def.api_name}'.")
+
+    same_name = next((o for o in live if o.get("display_name") == obj_def.name), None)
+    if same_name is not None:
+        raise PlanError(
+            f"an object named '{obj_def.name}' already exists (api_name "
+            f"'{same_name['api_name']}', uuid {same_name['id']}), and Kizen "
+            "requires unique object names. Use `objects update` to change it."
+        )
+
+    preview: dict[str, Any] = {
+        "env": env,
+        "api_name (derived)": derived,
+        "object_name": obj_def.name,
+        "entity_name": obj_def.effective_entity_name,
+    }
+    if any(o["api_name"] == derived for o in live):
+        preview["warning"] = (
+            f"an object already holds api_name '{derived}', so Kizen will add "
+            "a random suffix to this one"
+        )
+
     op = PlanOperation(
         action="create",
         kind="object",
-        key=obj_def.api_name,
-        preview={
-            "env": env,
-            "api_name": obj_def.api_name,
-            "object_name": obj_def.name,
-            "entity_name": obj_def.effective_entity_name,
-        },
-        payload=payload,
+        key=derived,
+        preview=preview,
+        payload=_build_object_payload(obj_def),
     )
     return Plan.build(
         env=env,
-        summary=f"Create object '{obj_def.api_name}'",
+        summary=f"Create object '{derived}'",
         operations=[op],
     )
 

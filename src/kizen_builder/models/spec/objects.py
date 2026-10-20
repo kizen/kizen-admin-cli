@@ -15,6 +15,7 @@ from kizen_builder.models.spec.field_configs import (
     RelationConfig,
     StatusOption,
 )
+from kizen_builder.utils import derived_object_api_name
 
 _TYPES_REQUIRING_OPTIONS = {"dropdown", "radio", "checkboxes", "choices"}
 
@@ -235,7 +236,13 @@ class ObjectDef(BaseModel):
         max_length=200,
         description="Display name (e.g. 'Customers'). Usually plural.",
     )
-    api_name: ApiName
+    api_name: ApiName | None = Field(
+        default=None,
+        description=(
+            "Optional. Kizen derives the api_name from `name` and refuses a "
+            "supplied one, so if given it must equal the derived value."
+        ),
+    )
     entity_name: str | None = Field(
         default=None,
         description="Singular form (e.g. 'Customer'). Defaults to `name` if omitted.",
@@ -275,10 +282,14 @@ class ObjectDef(BaseModel):
             for f in cat.fields:
                 if f.api_name in seen:
                     raise ValueError(
-                        f"duplicate field api_name '{f.api_name}' within object '{self.api_name}'"
+                        f"duplicate field api_name '{f.api_name}' within object '{self.effective_api_name}'"
                     )
                 seen.add(f.api_name)
         return self
+
+    @property
+    def effective_api_name(self) -> str:
+        return self.api_name or derived_object_api_name(self.name)
 
     @property
     def effective_entity_name(self) -> str:

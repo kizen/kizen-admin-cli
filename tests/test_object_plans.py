@@ -107,10 +107,72 @@ def test_plan_create_object_entity_name_defaults_to_the_display_name(live):
     assert op.preview["entity_name"] == "Policies"
 
 
-def test_plan_create_object_raises_when_the_api_name_is_taken(live):
-    live(listing=[{"id": OBJ_ID, "api_name": "policies"}])
+def test_plan_create_object_raises_when_the_display_name_is_taken(live):
+    # Kizen 400s a duplicate object_name (confirmed live 2026-10-14).
+    live(listing=[{"id": OBJ_ID, "api_name": "policies", "display_name": "Policies"}])
     with pytest.raises(PlanError, match="already exists"):
-        object_planners.plan_create_object({"name": "Policies", "api_name": "policies"})
+        object_planners.plan_create_object({"name": "Policies"})
+
+
+def test_plan_create_object_keys_on_the_derived_api_name(live):
+    live()
+    plan = object_planners.plan_create_object({"name": "Service Tickets"})
+    (op,) = plan.operations
+    assert op.key == "service_tickets"
+    assert op.preview["api_name (derived)"] == "service_tickets"
+    assert "warning" not in op.preview
+
+
+def test_plan_create_object_refuses_an_api_name_kizen_wont_derive(live):
+    live()
+    with pytest.raises(PlanError, match=r"becomes 'policies', not 'policy'") as e:
+        object_planners.plan_create_object({"name": "Policies", "api_name": "policy"})
+    assert '--name "Policy"' in str(e.value)
+
+
+@pytest.mark.parametrize(
+    "api_name, name",
+    [
+        ("employee_m7SZCzg3", "Employee"),  # suffixed, no name derives it
+        ("client_client", "Contacts"),  # "Client Client" would be suffixed
+    ],
+)
+def test_plan_create_object_reports_a_live_api_name_as_existing(live, api_name, name):
+    live(listing=[{"id": OBJ_ID, "api_name": api_name, "display_name": name}])
+    with pytest.raises(PlanError, match=f"'{api_name}' already exists") as e:
+        object_planners.plan_create_object({"name": name, "api_name": api_name})
+    assert "becomes" not in str(e.value)
+    assert "--name" not in str(e.value)
+
+
+def test_plan_create_object_mismatch_with_no_possible_name_says_so(live):
+    live()
+    with pytest.raises(PlanError, match="No display name produces 'Policy_X'"):
+        object_planners.plan_create_object({"name": "Policies", "api_name": "Policy_X"})
+
+
+def test_plan_create_object_warns_when_the_derived_slug_is_taken(live):
+    # Another object's display name slugs the same way: Kizen suffixes ours.
+    live(listing=[{"id": OBJ_ID, "api_name": "policies", "display_name": "Policies!"}])
+    plan = object_planners.plan_create_object({"name": "Policies"})
+    (op,) = plan.operations
+    assert op.key == "policies"
+    assert "random suffix" in op.preview["warning"]
+
+
+def test_plan_create_object_ignores_deleted_objects(live):
+    live(
+        listing=[
+            {
+                "id": OBJ_ID,
+                "api_name": "policies",
+                "display_name": "Policies",
+                "deleted": True,
+            }
+        ]
+    )
+    (op,) = object_planners.plan_create_object({"name": "Policies"}).operations
+    assert "warning" not in op.preview
 
 
 def test_plan_create_object_pipeline_type_carries_stages(live):

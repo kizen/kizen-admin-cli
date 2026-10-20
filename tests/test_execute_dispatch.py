@@ -575,3 +575,33 @@ def test_unresolved_deferred_ref_fails_without_a_request():
     assert failed.status == "failed"
     assert failed.message.startswith("unresolved deferred ref")
     assert sent == []
+
+
+@pytest.mark.parametrize(
+    "stored, message",
+    [
+        ("invoices", "api_name invoices"),
+        (
+            "invoices_AHpZedMd",
+            "api_name invoices_AHpZedMd (the plan predicted invoices)",
+        ),
+    ],
+)
+def test_object_create_reports_the_api_name_kizen_stored(stored, message):
+    op = PlanOperation(
+        action="create",
+        kind="object",
+        key="invoices",
+        payload={"object_name": "Invoices"},
+    )
+    with respx.mock(assert_all_mocked=True) as mock:
+        mock.post(url__startswith=FAKE_BASE_URL).mock(
+            return_value=httpx.Response(201, json={"id": SERVER_ID, "name": stored})
+        )
+        result = plan_tools.apply_plan(
+            Plan.build(env="testenv", summary="t", operations=[op])
+        )
+
+    (r,) = result.results
+    assert r.status == "ok"
+    assert r.message == message

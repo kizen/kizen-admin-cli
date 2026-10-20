@@ -11,6 +11,15 @@ from kizen_builder.models.spec import ObjectDef
 from kizen_builder.tools.planners.objects import _build_object_payload
 
 
+def test_payload_never_sends_an_api_name():
+    # Kizen 403s `name` on create and update (forbidden_field_write,
+    # confirmed live 2026-10-14) and has no `api_name` key: never "fix" this.
+    obj = ObjectDef.model_validate({"api_name": "invoices", "name": "Invoices"})
+    payload = _build_object_payload(obj)
+    assert "name" not in payload
+    assert "api_name" not in payload
+
+
 def test_standard_object_has_no_pipeline_key():
     obj = ObjectDef.model_validate({"api_name": "invoice", "name": "Invoices"})
     payload = _build_object_payload(obj)

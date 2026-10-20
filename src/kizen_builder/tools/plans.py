@@ -405,6 +405,17 @@ def apply_plan(plan: Plan) -> ApplyResult:
                 op.action == "upsert" and isinstance(resp, dict) and resp.get("action")
             ):
                 message = resp["action"]  # "created" or "updated"
+            elif (
+                op.kind == "object"
+                and op.action == "create"
+                and isinstance(resp, dict)
+                and resp.get("name")
+            ):
+                # Kizen derives the api_name; a slug collision adds a random
+                # suffix the plan couldn't predict (confirmed live 2026-10-14).
+                message = f"api_name {resp['name']}"
+                if resp["name"] != op.key:
+                    message += f" (the plan predicted {op.key})"
             elif op.kind == "record_archive" and isinstance(resp, dict):
                 # Counts ids sent, not records archived (confirmed live
                 # 2026-09-28: an already-archived id still counts).

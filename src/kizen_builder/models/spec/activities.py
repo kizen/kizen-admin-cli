@@ -129,7 +129,7 @@ class ActivityDef(BaseModel):
         default=None,
         min_length=2,
         max_length=255,
-        description="Stable identifier. Kizen may rewrite it on create.",
+        description="Kept as given; omit it and Kizen derives one from `name`.",
     )
     description: str | None = Field(default=None, max_length=500)
     is_editable: bool | None = Field(
