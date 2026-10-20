@@ -16,15 +16,15 @@ kizen docs list               # every topic
 ## Starting a session
 
 ```bash
-kizen upgrade --dry-run   # show what updating this checkout would run
-kizen upgrade             # git pull --ff-only + dependency reinstall, in one step
-uv run pytest             # confirm green before changing anything
+git pull --ff-only && uv sync --extra dev   # add --extra connectors if you use it
+uv run pytest                               # confirm green before changing anything
 ```
 
-`kizen upgrade` pulls *and* reinstalls once it detects an editable checkout. Both
-matter: a pull that adds a dependency without a reinstall surfaces later as a
-bare `ImportError` with nothing pointing at the cause. Use git directly for
-anything `--ff-only` won't do, like a rebase or a specific branch.
+Pull and sync together: a pull that adds a dependency without a sync surfaces
+later as a bare `ImportError` with nothing pointing at the cause. Not
+`kizen upgrade`: in a checkout it runs a plain `uv sync`, which prunes the
+extras. Use git directly for anything `--ff-only` won't do, like a rebase or a
+specific branch.
 
 ## Where to look
 
@@ -73,6 +73,9 @@ Step-by-step procedures for adding a command, a surface, or a step type are in
 
 ```bash
 uv run pytest                                          # offline suite — always
+uv run ruff check                                      # CI's lint job: these three
+uv run ruff format --check
+uv run mypy src
 KIZEN_DRIFT_PROFILE=<profile> uv run pytest -m drift   # after touching a mutation payload
 ```
 

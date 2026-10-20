@@ -240,7 +240,7 @@ kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--ov
 kizen smart-connectors run [--dir path] [--skip-sql]       # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
 kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
-# `run`/`add-input` need `uv sync --extra connectors` (chdb). `push` previews a SQL diff and confirms
+# `run`/`add-input` need the 'connectors' extra; `run`'s error prints the install line (see smart-connectors). `push` previews a SQL diff and confirms
 # (mutation gate) before writing; only --publish makes a live change. See kizen docs show smart-connectors.
 
 # smart connectors — building one from scratch, in order. Spec: kizen docs show smart-connector-flow

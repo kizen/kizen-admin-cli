@@ -22,9 +22,9 @@ The `dev` extra carries pytest, respx, ruff, and mypy; a plain `uv sync` prunes
 them and collection fails on the missing imports. CI syncs the same way, with
 `--locked` added.
 
-`uv sync` is the dev setup: it builds the checkout's own `.venv`. Users install
-with `uv tool install --editable .`, which puts `kizen` on `PATH` globally; see
-[README.md](README.md).
+`uv sync` is the dev setup: it builds the checkout's own `.venv`. To use the
+CLI rather than develop it, install it as the [README](README.md#install)
+describes.
 
 `uv.lock` is committed and `uv sync` respects it. CI syncs with `--locked`, so a
 dependency change that arrives without a re-lock fails there.
@@ -32,7 +32,7 @@ dependency change that arrives without a re-lock fails there.
 To work on the smart-connector local loop, add the `connectors` extra:
 
 ```bash
-uv sync --extra connectors     # adds chdb (~100 MB native wheel) + spreadsheet readers
+uv sync --extra dev --extra connectors   # adds chdb (~100 MB native wheel) + spreadsheet readers
 ```
 
 CI omits it, so `test_smart_connectors_tools.py`'s execution test `importorskip`s
@@ -48,15 +48,25 @@ has the re-vendoring procedure for when Kizen ships a new dev package.
 To bring an existing checkout up to date:
 
 ```bash
-kizen upgrade --dry-run   # show what updating this checkout would run
-kizen upgrade             # git pull --ff-only + dependency reinstall, in one step
+git pull --ff-only && uv sync --extra dev   # add --extra connectors if you use it
 ```
+
+Not `kizen upgrade`: in a checkout it runs a plain `uv sync`, which prunes the
+extras.
 
 ## Tests
 
 ```bash
 uv run pytest                  # the default suite: offline, no network, fast
 uv run pytest -m wheel         # opt-in: builds a wheel, installs it, runs the CLI
+```
+
+CI's lint job runs:
+
+```bash
+uv run ruff check
+uv run ruff format --check
+uv run mypy src
 ```
 
 Four tiers, in increasing cost:
