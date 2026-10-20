@@ -24,7 +24,7 @@ from kizen_builder.tools.permission_builder import (
     value_to_level,
 )
 from kizen_builder.tools.permissions import LEVELS, LEVELS_BY_NAME
-from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.tools.plans import Plan, PlanError, PlanOperation, fetch_existing
 
 
 def _client() -> KizenClient:
@@ -90,7 +90,7 @@ def plan_create_role(
 def plan_update_role(role_id: str, changes: dict[str, Any]) -> Plan:
     env = load_env_config().name
     with _client() as c:
-        current = perm_api.get_role(c, role_id)
+        current = fetch_existing("role", role_id, lambda: perm_api.get_role(c, role_id))
 
     payload: dict[str, Any] = {}
     diff: dict[str, Any] = {}
@@ -123,7 +123,7 @@ def plan_update_role(role_id: str, changes: dict[str, Any]) -> Plan:
 def plan_delete_role(role_id: str) -> Plan:
     env = load_env_config().name
     with _client() as c:
-        current = perm_api.get_role(c, role_id)
+        current = fetch_existing("role", role_id, lambda: perm_api.get_role(c, role_id))
     op = PlanOperation(
         action="delete",
         kind="role",
@@ -399,7 +399,11 @@ def plan_update_permission_group(group_id: str, settings: list[dict[str, Any]]) 
 
     env = load_env_config().name
     with _client() as c:
-        group = perm_api.get_permission_group(c, group_id)
+        group = fetch_existing(
+            "permission group",
+            group_id,
+            lambda: perm_api.get_permission_group(c, group_id),
+        )
         meta = perm_api.get_permissions_meta_data(c)
 
     # Object-area labels are templated ("All {0} Records") and meta carries no
@@ -433,7 +437,11 @@ def plan_update_permission_group(group_id: str, settings: list[dict[str, Any]]) 
 def plan_delete_permission_group(group_id: str) -> Plan:
     env = load_env_config().name
     with _client() as c:
-        current = perm_api.get_permission_group(c, group_id)
+        current = fetch_existing(
+            "permission group",
+            group_id,
+            lambda: perm_api.get_permission_group(c, group_id),
+        )
     op = PlanOperation(
         action="delete",
         kind="permission_group",

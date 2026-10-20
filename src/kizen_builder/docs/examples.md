@@ -310,7 +310,9 @@ Two placeholder tokens, both filled in from the previous two sections:
   for `modify_related_entities` with the same "lives on `target_object`" rule
   — but not this write-destination usage on `create_related_entity`, which is
   what the working example captures, `confirmed live 2026-08-13`: after the
-  step runs, `context_entity_field` holds the new record's id.
+  step runs, `context_entity_field` holds the new record's id. The ref
+  `"service_tickets.escalation_ticket"` (or bare `"escalation_ticket"`)
+  resolves to the same UUID at plan time.
 - `<site_visit_activity_type_uuid>` — the `Site Visit` activity type's `id`
   from `activities get <site_visit_api_name>`, used by `schedule_activity`'s
   `activity_type_id`.

@@ -26,6 +26,7 @@ from kizen_builder.cli._shared import (
 from kizen_builder.tools import activities as act_tools
 from kizen_builder.tools import objects as obj_tools
 from kizen_builder.tools.planners import activities as act_planners
+from kizen_builder.tools.plans import is_not_found
 
 
 def _resolve_object_id(token: str) -> str:
@@ -53,6 +54,8 @@ def _resolve_linked_field(spec: str) -> tuple[str, str]:
     try:
         obj = obj_tools.get_object(object_api)
     except (LookupError, KizenAPIError) as e:
+        if not is_not_found(e):
+            raise
         raise typer.BadParameter(f"object '{object_api}' not found: {e}") from e
     match = next(
         (

@@ -18,7 +18,12 @@ import pytest
 import respx
 import typer
 
-from kizen_builder.cli.activities import _resolve_associated_objects, _resolve_object_id
+from kizen_builder.api.client import KizenAPIError
+from kizen_builder.cli.activities import (
+    _resolve_associated_objects,
+    _resolve_linked_field,
+    _resolve_object_id,
+)
 from tests.conftest import FAKE_BASE_URL
 
 OBJ_ID = "7cb5ce29-bf20-4f0f-bdc9-412a8c777ff8"
@@ -77,3 +82,25 @@ def test_resolve_object_id_still_raises_for_truly_unknown_object():
 
     with pytest.raises(typer.BadParameter, match="nope"):
         _resolve_object_id("nope")
+
+
+@pytest.mark.parametrize("status", [401, 500])
+def test_resolve_linked_field_does_not_report_api_errors_as_not_found(
+    monkeypatch, status
+):
+    def get_object(_api_name):
+        raise KizenAPIError(status, "boom")
+
+    monkeypatch.setattr("kizen_builder.tools.objects.get_object", get_object)
+    with pytest.raises(KizenAPIError) as info:
+        _resolve_linked_field("policies_policy.total")
+    assert info.value.status_code == status
+
+
+def test_resolve_linked_field_reports_404_as_not_found(monkeypatch):
+    def get_object(_api_name):
+        raise KizenAPIError(404, "gone")
+
+    monkeypatch.setattr("kizen_builder.tools.objects.get_object", get_object)
+    with pytest.raises(typer.BadParameter, match="object 'policies_policy' not found"):
+        _resolve_linked_field("policies_policy.total")

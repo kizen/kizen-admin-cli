@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 
 import httpx
+import pytest
 import respx
 
 from kizen_builder.api import permissions as perm_api
@@ -845,27 +846,47 @@ def test_section_op_with_a_non_dict_value_raises_on_create_and_update():
             assert "got bool" in str(exc)
 
 
+_GROUP_SETTINGS = [
+    {"type": "object", "object_id": OBJ_ID, "key": "all_records", "level": 1}
+]
+
+_UNKNOWN_TARGET_PLANS = [
+    pytest.param(
+        "role", lambda i: plan_update_role(i, {"name": "x"}), id="update_role"
+    ),
+    pytest.param("role", plan_delete_role, id="delete_role"),
+    pytest.param(
+        "permission-group",
+        lambda i: plan_update_permission_group(i, settings=_GROUP_SETTINGS),
+        id="update_permission_group",
+    ),
+    pytest.param("permission-group", plan_delete_permission_group, id="delete_group"),
+]
+
+
 @respx.mock
-def test_plan_update_permission_group_raises_when_group_not_found():
-    respx.get(f"{FAKE_BASE_URL}/api/permission-group/{UNKNOWN_GROUP_ID}").mock(
+@pytest.mark.parametrize("path, plan", _UNKNOWN_TARGET_PLANS)
+def test_plans_raise_plan_error_when_target_not_found(path, plan):
+    respx.get(f"{FAKE_BASE_URL}/api/{path}/{UNKNOWN_GROUP_ID}").mock(
         return_value=httpx.Response(404, json={"detail": "not found"})
     )
+    kind = "role" if path == "role" else "permission group"
 
-    try:
-        plan_update_permission_group(
-            UNKNOWN_GROUP_ID,
-            settings=[
-                {
-                    "type": "object",
-                    "object_id": OBJ_ID,
-                    "key": "all_records",
-                    "level": 1,
-                }
-            ],
-        )
-        raise AssertionError("expected KizenAPIError")
-    except KizenAPIError as exc:
-        assert exc.status_code == 404
+    with pytest.raises(PlanError, match=f"{kind} '{UNKNOWN_GROUP_ID}' not found"):
+        plan(UNKNOWN_GROUP_ID)
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 500])
+@pytest.mark.parametrize("path, plan", _UNKNOWN_TARGET_PLANS)
+def test_plans_let_non_404_errors_through(path, plan, status):
+    respx.get(f"{FAKE_BASE_URL}/api/{path}/{UNKNOWN_GROUP_ID}").mock(
+        return_value=httpx.Response(status, json={"detail": "boom"})
+    )
+
+    with pytest.raises(KizenAPIError) as exc:
+        plan(UNKNOWN_GROUP_ID)
+    assert exc.value.status_code == status
 
 
 @respx.mock

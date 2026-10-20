@@ -13,8 +13,10 @@ existing_uuid/deferred refs), not the payload shape itself.
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 
+from kizen_builder.api.client import KizenAPIError
 from kizen_builder.tools.planners.activities import (
     plan_add_activity_field_options,
     plan_create_activity,
@@ -489,3 +491,36 @@ def test_plan_remove_activity_field_option_raises_when_remap_target_unknown():
         raise AssertionError("expected PlanError")
     except PlanError as exc:
         assert "bogus" in str(exc)
+
+
+@respx.mock
+@pytest.mark.parametrize("existing, given", [("same", "same"), (None, "")])
+def test_plan_update_activity_field_unchanged_description_is_skip(existing, given):
+    _mock_activity_detail()
+    _mock_activity_fields(body=[dict(TEXT_FIELD, description=existing)])
+    plan = plan_update_activity_field("site_visit", "notes", {"description": given})
+    (op,) = plan.operations
+    assert op.action == "skip"
+    assert op.payload == {}
+
+
+_ACTIVITY_PLANS = [
+    pytest.param(
+        lambda: plan_update_activity("site_visit", {"name": "X"}), id="update"
+    ),
+    pytest.param(lambda: plan_delete_activity("site_visit"), id="delete"),
+    pytest.param(
+        lambda: plan_update_activity_field("site_visit", "notes", {"required": True}),
+        id="update_field",
+    ),
+]
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 500])
+@pytest.mark.parametrize("plan", _ACTIVITY_PLANS)
+def test_activity_plans_do_not_report_other_errors_as_not_found(plan, status):
+    _mock_activity_detail(status=status, body={"detail": "boom"})
+    with pytest.raises(KizenAPIError) as exc:
+        plan()
+    assert exc.value.status_code == status

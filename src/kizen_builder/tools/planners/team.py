@@ -11,9 +11,9 @@ from collections.abc import Sequence
 
 from kizen_builder.api import permissions as perm_api
 from kizen_builder.api import team as team_api
-from kizen_builder.api.client import KizenAPIError, KizenClient
+from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
-from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.tools.plans import Plan, PlanError, PlanOperation, fetch_existing
 from kizen_builder.tools.team import resolve_team_member_id
 
 
@@ -34,14 +34,9 @@ def plan_update_team_member_roles(
             member_id = resolve_team_member_id(c, member_ref)
         except LookupError as exc:
             raise PlanError(str(exc)) from exc
-        try:
-            member = team_api.get_team_member(c, member_id)
-        except KizenAPIError as exc:
-            if exc.status_code == 404:
-                raise PlanError(
-                    f"team member with id '{member_id}' not found."
-                ) from exc
-            raise
+        member = fetch_existing(
+            "team member", member_id, lambda: team_api.get_team_member(c, member_id)
+        )
         roles = perm_api.list_roles(c)
         names = {r["id"]: r.get("name") or r["id"] for r in roles}
 

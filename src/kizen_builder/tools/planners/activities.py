@@ -9,11 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from kizen_builder.api.client import KizenAPIError
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ActivityDef, ActivityFieldDef
 from kizen_builder.tools.activities import get_activity, list_activities
-from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.tools.plans import Plan, PlanError, PlanOperation, fetch_existing
 
 _OPTION_FIELD_TYPES = {
     "dropdown",
@@ -128,10 +127,7 @@ _UPDATABLE_ACTIVITY_KEYS = {
 def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
     """Plan a PATCH to one activity type. Only keys present in ``changes`` are sent."""
     env = load_env_config().name
-    try:
-        current = get_activity(identifier, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"activity '{identifier}' not found: {e}") from e
+    current = _load_activity(identifier, include_fields=False)
 
     raw = current.get("raw") or {}
     payload: dict[str, Any] = {}
@@ -181,10 +177,7 @@ def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
 def plan_delete_activity(identifier: str) -> Plan:
     """Plan deletion of one activity type (and every logged instance's schema link)."""
     env = load_env_config().name
-    try:
-        current = get_activity(identifier, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"activity '{identifier}' not found: {e}") from e
+    current = _load_activity(identifier, include_fields=False)
 
     op = PlanOperation(
         action="delete",
@@ -209,11 +202,12 @@ def plan_delete_activity(identifier: str) -> Plan:
 # ---------------------------------------------------------------------------
 
 
-def _load_activity_with_fields(identifier: str) -> dict[str, Any]:
-    try:
-        return get_activity(identifier, include_fields=True)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"activity '{identifier}' not found: {e}") from e
+def _load_activity(identifier: str, *, include_fields: bool = True) -> dict[str, Any]:
+    return fetch_existing(
+        "activity",
+        identifier,
+        lambda: get_activity(identifier, include_fields=include_fields),
+    )
 
 
 def _find_activity_field(
@@ -238,7 +232,7 @@ def plan_create_activity_fields(
     if not fields:
         raise PlanError("no fields provided to create")
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     activity_id = activity["id"]
 
     have = {f.get("api_name") for f in activity["fields"] if f.get("api_name")}
@@ -290,7 +284,7 @@ def plan_update_activity_field(
 ) -> Plan:
     """Plan an update to one field on an activity type."""
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     existing = _find_activity_field(activity, field_api_name)
 
     payload: dict[str, Any] = {}
@@ -298,7 +292,9 @@ def plan_update_activity_field(
     if "name" in changes and changes["name"] != existing.get("display_name"):
         payload["display_name"] = changes["name"]
         diff["display_name"] = (existing.get("display_name"), changes["name"])
-    if "description" in changes:
+    if "description" in changes and changes["description"] != (
+        existing.get("description") or ""
+    ):
         payload["description"] = changes["description"]
         diff["description"] = (existing.get("description"), changes["description"])
     if "required" in changes and changes["required"] != existing.get("is_required"):
@@ -340,7 +336,7 @@ def plan_update_activity_field(
 def plan_delete_activity_field(identifier: str, field_api_name: str) -> Plan:
     """Plan deletion of one field from an activity type."""
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     existing = _find_activity_field(activity, field_api_name)
 
     op = PlanOperation(
@@ -370,7 +366,7 @@ def plan_add_activity_field_options(
     if not options:
         raise PlanError("no options provided to add")
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     existing = _find_activity_field(activity, field_api_name)
     if existing.get("field_type") not in _OPTION_FIELD_TYPES:
         raise PlanError(
@@ -410,7 +406,7 @@ def plan_remove_activity_field_option(
 ) -> Plan:
     """Plan removal of one option from a select-type field on an activity type."""
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     existing = _find_activity_field(activity, field_api_name)
     opts = existing.get("options") or []
 

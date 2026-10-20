@@ -53,6 +53,8 @@ def resolve_activity_id(client: KizenClient, identifier: str) -> tuple[str, str]
         detail = act_api.get_activity(client, identifier)
         return detail["id"], detail.get("name") or identifier
     except KizenAPIError as e:
+        if e.status_code != 404:
+            raise
         # Fall back to a name/api_name scan of the list endpoint.
         for a in act_api.list_activities(client):
             if identifier in (a.get("id"), a.get("api_name"), a.get("name")):
@@ -80,6 +82,7 @@ def _normalize_field(f: dict[str, Any]) -> dict[str, Any]:
         "id": f.get("id"),
         "api_name": f.get("name"),
         "display_name": f.get("display_name"),
+        "description": f.get("description"),
         "field_type": f.get("field_type"),
         "custom_object_field": f.get("custom_object_field"),
         "linked_field": _linked_field_label(f.get("custom_object_field")),

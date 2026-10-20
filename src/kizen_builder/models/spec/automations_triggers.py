@@ -13,7 +13,10 @@ class TriggerFieldUpdatedConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     field_ref: str = Field(
-        description="'object.field' reference, resolved to field UUID at apply time."
+        description=(
+            "'object.field', or a bare field name on target_object; resolved "
+            "to field UUID at apply time."
+        )
     )
     fire_on_create: bool = True
     from_match_mode: str | None = None
@@ -122,7 +125,10 @@ class TriggerOnOrAroundDateConfig(BaseModel):
 
     field_ref: str | None = Field(
         default=None,
-        description="'object.field' reference. Resolved to UUID at apply time.",
+        description=(
+            "'object.field', or a bare field name on target_object. Resolved "
+            "to UUID at apply time."
+        ),
     )
     field_id: str | None = Field(
         default=None,

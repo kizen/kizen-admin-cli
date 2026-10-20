@@ -20,6 +20,7 @@ import httpx
 import pytest
 import respx
 
+from kizen_builder.api.client import KizenAPIError
 from kizen_builder.models.spec import FormDef, FormFieldDef
 from kizen_builder.tools.planners.forms import (
     plan_add_form_field_options,
@@ -584,3 +585,37 @@ def test_plan_remove_form_field_option_unknown_remap_target_raises():
     _mock_fields("/api/forms")
     with pytest.raises(PlanError, match="option 'Nope' not found"):
         plan_remove_form_field_option("contact_us", "outcome", "Yes", remap_to="Nope")
+
+
+_FORM_PLANS = [
+    pytest.param(lambda: plan_update_form("contact_us", {"name": "x"}), id="update"),
+    pytest.param(lambda: plan_delete_form("contact_us"), id="delete"),
+    pytest.param(lambda: plan_duplicate_form("contact_us"), id="duplicate"),
+    pytest.param(
+        lambda: plan_update_form_field("contact_us", "outcome", {"required": True}),
+        id="update_field",
+    ),
+]
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 500])
+@pytest.mark.parametrize("plan", _FORM_PLANS)
+def test_form_plans_do_not_report_other_errors_as_not_found(plan, status):
+    respx.get(f"{FAKE_BASE_URL}/api/forms/contact_us").mock(
+        return_value=httpx.Response(status, json={"detail": "boom"})
+    )
+    with pytest.raises(KizenAPIError) as exc:
+        plan()
+    assert exc.value.status_code == status
+
+
+@respx.mock
+def test_plan_update_form_field_always_sends_description():
+    """Form field reads carry no description, so there is nothing to diff."""
+    _mock_detail("/api/forms")
+    _mock_fields("/api/forms")
+    plan = plan_update_form_field("contact_us", "outcome", {"description": ""})
+    (op,) = plan.operations
+    assert op.action == "update"
+    assert op.payload == {"description": ""}
