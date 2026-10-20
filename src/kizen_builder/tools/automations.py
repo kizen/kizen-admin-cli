@@ -472,11 +472,10 @@ def normalize_step_patch(
     (field_refs, api_names) as well as raw wire dicts — builders are
     idempotent on wire shapes (enforced by
     `test_builders_rebuild_wire_blocks_unchanged`). A block key the builder
-    doesn't read is refused, a condition patch that carries `step_condition`
-    must also have at least one rule, a goal's email_received trigger set to
-    selected inboxes must name one, and an initialize_variable's `variable`
-    must pass `AutomationVariableConfig`: the same checks `automations
-    create`/`update` and `steps add` apply.
+    doesn't read is refused, and an initialize_variable's `variable` must pass
+    `AutomationVariableConfig`. The patched block then gets the same checks
+    `automations create`/`update` and `steps add` apply
+    (`_built_block_problem`).
     """
     from pydantic import ValidationError
     from pydantic_core import InitErrorDetails
@@ -487,8 +486,7 @@ def normalize_step_patch(
         _STEP_BUILDERS,
         LiveContext,
         _block_field_for,
-        _condition_rules_problem,
-        _inbox_selection_problem,
+        _built_block_problem,
         _reject_unhonoured_keys,
     )
     from kizen_builder.tools.plans import PlanError
@@ -516,15 +514,12 @@ def normalize_step_patch(
                 ]
                 raise ValidationError.from_exception_data(e.title, rerooted) from e
         auto = _payload_auto(payload, target_object)
+        ctx = LiveContext()
         try:
-            patch[cfg_key] = builder(dict(patch[cfg_key]), auto, LiveContext())
+            patch[cfg_key] = builder(dict(patch[cfg_key]), auto, ctx)
         except VariableReferenceError as e:
             raise PlanError(f"step '{key}': {e}") from e
-        problem = None
-        if step_type == "condition":
-            problem = _condition_rules_problem(key, patch[cfg_key])
-        elif step_type == "goal":
-            problem = _inbox_selection_problem(patch[cfg_key]["triggers"])
+        problem = _built_block_problem(step_type, key, patch[cfg_key], auto, ctx)
         if problem:
             raise PlanError(problem)
     return patch

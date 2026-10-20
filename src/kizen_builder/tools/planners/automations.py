@@ -1242,13 +1242,7 @@ def _build_step_payload(
         wire_block = builder(block_dict, auto, ctx)
     except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
-    problem = None
-    if step.step_type == "condition":
-        problem = _condition_rules_problem(step.key, wire_block)
-    elif step.step_type == "goal":
-        problem = _inbox_selection_problem(wire_block["triggers"])
-    elif step.step_type == "update_variable":
-        problem = _scalar_value_resolution_problem(step.key, wire_block, auto)
+    problem = _built_block_problem(step.step_type, step.key, wire_block, auto, ctx)
     if problem:
         raise PlanError(problem)
     p[cfg_field] = wire_block
@@ -1401,7 +1395,7 @@ def _scalar_value_resolution_problem(
 
     The server 400s it (confirmed live 2026-10-14). Only a variable the spec
     defines exactly once is checked; anything else is left to the server.
-    Spec path only, like ``_condition_rules_problem``. ``auto.steps`` may be
+    Spec and patch paths, like ``_condition_rules_problem``. ``auto.steps`` may be
     typed spec steps or a live payload's raw wire dicts.
     """
     name = block.get("variable")
@@ -1422,6 +1416,29 @@ def _scalar_value_resolution_problem(
         "which isn't an array variable. The server takes it on array "
         "variables only."
     )
+
+
+def _built_block_problem(
+    step_type: str,
+    key: str,
+    block: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> str | None:
+    """Why a built step config block is wrong, or None: what the API would
+    accept anyway, or reject only at apply with a less useful message. The
+    checks `automations create`/`update`, `steps add` and `steps edit`
+    share; live reads skip them so existing automations still translate.
+    """
+    if step_type == "condition":
+        return _condition_rules_problem(key, block)
+    if step_type == "goal":
+        return _inbox_selection_problem(block["triggers"])
+    if step_type == "update_variable":
+        return _scalar_value_resolution_problem(key, block, auto)
+    if step_type == "assign_team_member":
+        return _assign_team_member_problem(key, block, auto, ctx)
+    return None
 
 
 def _render_filter_config(
@@ -1599,6 +1616,76 @@ def _step_assign_team_member(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     return _team_member_selector(block)
+
+
+# Per `type`: each key the selector needs, and what it names. Checked on the
+# built block, so the read dialect (`employee`, `field`, …) satisfies it too.
+_ASSIGN_TEAM_MEMBER_KEYS: dict[str, tuple[tuple[str, str], ...]] = {
+    "team_member": (("employee_id", "a team member's UUID"),),
+    "round_robin_role": (("role_id", "a role's UUID"),),
+    "round_robin_team_members": (("employee_ids", "team member UUIDs"),),
+    "team_selector_field": (
+        ("field_id", "a team-selector field on the automation's own object"),
+    ),
+    "related_team_selector_field": (
+        (
+            "related_field_id",
+            "a single-value relationship field on the automation's own object",
+        ),
+        ("field_id", "a team-selector field on the object related_field_id points to"),
+    ),
+}
+_SINGLE_VALUE_CARDINALITIES = ("many_to_one", "one_to_one")
+_KEYS_ARE_NOT_A_RUN = (
+    "A complete selector only means the keys are there, not that a run "
+    "assigns anyone (see `kizen docs show automation`, assign_team_member)."
+)
+
+
+def _assign_team_member_problem(
+    key: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> str | None:
+    """Why a built ``action_assign_team_member`` lacks a key its ``type``
+    needs, or names a hop that isn't a single-value relationship field on
+    ``target_object``.
+
+    The server 400s each of these at apply (confirmed live 2026-10-16); its
+    message for a wrong hop names the field passed, not the one it wanted.
+    A pass is necessary, not sufficient: correctly keyed steps still no-op
+    on the platform side (see the doc).
+    """
+    kind = block.get("type") or ""
+    for wire_key, what in _ASSIGN_TEAM_MEMBER_KEYS.get(kind, ()):
+        if not block.get(wire_key):
+            return (
+                f"assign_team_member step '{key}' (type {kind}) needs "
+                f"{wire_key}: {what}. {_KEYS_ARE_NOT_A_RUN}"
+            )
+    if kind != "related_team_selector_field" or not auto.target_object:
+        return None
+    try:
+        fields = ctx.object_data(auto.target_object)["fields"]
+    except PlanError:
+        return None  # can't read the object: leave it to the server
+    hop_id = block["related_field_id"]
+    hop = next((f for f in fields if f.get("id") == hop_id), None)
+    if hop is None:
+        return (
+            f"assign_team_member step '{key}': related_field_id {hop_id} isn't "
+            f"a field on '{auto.target_object}'. It must be the hop from this "
+            "object; field_id names the selector on the far object."
+        )
+    cardinality = (hop.get("relation") or {}).get("cardinality")
+    if cardinality not in _SINGLE_VALUE_CARDINALITIES:
+        return (
+            f"assign_team_member step '{key}': related_field_id is "
+            f"'{hop.get('api_name')}' on '{auto.target_object}', which isn't a "
+            f"single-value relationship field (field_type "
+            f"{hop.get('field_type')}, cardinality {cardinality}). It must be "
+            "the hop from this object; field_id names the selector on the far "
+            "object."
+        )
+    return None
 
 
 # `type` isn't read, but the builder always emits it with the only valid

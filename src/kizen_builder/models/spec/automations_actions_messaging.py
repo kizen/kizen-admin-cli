@@ -172,6 +172,23 @@ class ActionAssignTeamMemberConfig(BaseModel):
     employee_ids: list[str] = Field(
         default_factory=list, description="The pool for `round_robin_team_members`."
     )
+    field_id: str | None = Field(
+        default=None,
+        description=(
+            "The team-selector field the owner is copied from. Required for "
+            "`team_selector_field` (a field on the automation's own object) and "
+            "`related_team_selector_field` (a field on the object "
+            "`related_field_id` points to)."
+        ),
+    )
+    related_field_id: str | None = Field(
+        default=None,
+        description=(
+            "Required for `related_team_selector_field`, with `field_id`: a "
+            "single-value relationship field on the automation's own object "
+            "(the hop)."
+        ),
+    )
 
 
 class TagToAddConfig(BaseModel):

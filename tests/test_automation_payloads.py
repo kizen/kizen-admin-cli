@@ -17,6 +17,7 @@ from kizen_builder.tools.planners.automations import (
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
     LiveContext,
+    _assign_team_member_problem,
     _block_field_for,
     _build_automation_payload,
     _reject_unhonoured_keys,
@@ -3805,3 +3806,219 @@ def test_configless_step_with_stop_execution_block_rejected(step_type):
     )
     with pytest.raises(ValueError, match=f"'{step_type}' takes no config block"):
         AutomationDef.model_validate(spec)
+
+
+# ---------------------------------------------------------------------------
+# assign_team_member — each `type` needs its own keys. The server 400s a
+# selector without them, but its message for a wrong hop names the wrong field.
+# ---------------------------------------------------------------------------
+
+_EMPLOYEE = "33333333-3333-3333-3333-333333333333"
+_HOP = "889f65e2-dd31-42f0-a088-c3c1dd8ea484"  # encounters.patient_rel, many_to_one
+_FAR_SELECTOR = "35b02ad4-0d62-4cfb-90d4-dbe4b9dc5904"  # patients.owner
+
+
+def _assign_spec(block: dict, target_object: str | None = "encounters") -> dict:
+    return {
+        "api_name": "assign_test",
+        "name": "Assign Test",
+        "type": "record_based" if target_object else "global",
+        "target_object": target_object,
+        "steps": [
+            {
+                "key": "assign",
+                "step_type": "assign_team_member",
+                "order": 0,
+                "parent_key": None,
+                "action_assign_team_member": block,
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("block", "missing"),
+    [
+        ({"type": "team_member"}, "employee_id: a team member's UUID"),
+        ({"type": "round_robin_role"}, "role_id: a role's UUID"),
+        ({"type": "round_robin_team_members"}, "employee_ids: team member UUIDs"),
+        (
+            {"type": "team_selector_field"},
+            "field_id: a team-selector field on the automation's own object",
+        ),
+        (
+            {"type": "related_team_selector_field", "field_id": _FAR_SELECTOR},
+            "related_field_id: a single-value relationship field on the "
+            "automation's own object",
+        ),
+        (
+            {"type": "related_team_selector_field", "related_field_id": _HOP},
+            "field_id: a team-selector field on the object related_field_id points to",
+        ),
+    ],
+)
+def test_assign_team_member_missing_key_rejected(patch_live_lookups, block, missing):
+    with pytest.raises(PlanError) as e:
+        _build(_assign_spec(block))
+    msg = str(e.value)
+    assert f"'assign' (type {block['type']}) needs {missing}." in msg
+    assert "not that a run assigns anyone" in msg
+
+
+def test_assign_team_member_round_robin_all_needs_nothing(patch_live_lookups):
+    block = _build(_assign_spec({"type": "round_robin_all"}))["steps"][0]
+    assert block["action_assign_team_member"] == {"type": "round_robin_all"}
+
+
+def test_assign_team_member_read_dialect_satisfies_the_check(patch_live_lookups):
+    block = {
+        "type": "related_team_selector_field",
+        "related_field": {"id": _HOP, "name": "patient_rel"},
+        "field": {"id": _FAR_SELECTOR, "name": "owner"},
+    }
+    built = _build(_assign_spec(block))["steps"][0]["action_assign_team_member"]
+    assert built == {
+        "type": "related_team_selector_field",
+        "field_id": _FAR_SELECTOR,
+        "related_field_id": _HOP,
+    }
+    employee = {"type": "team_member", "employee": {"id": _EMPLOYEE}}
+    built = _build(_assign_spec(employee))["steps"][0]["action_assign_team_member"]
+    assert built == {"type": "team_member", "employee_id": _EMPLOYEE}
+
+
+def test_assign_team_member_related_selector_builds_both_keys(patch_live_lookups):
+    block = {
+        "type": "related_team_selector_field",
+        "related_field_id": _HOP,
+        "field_id": _FAR_SELECTOR,
+    }
+    built = _build(_assign_spec(block))["steps"][0]["action_assign_team_member"]
+    assert built == {
+        "type": "related_team_selector_field",
+        "related_field_id": _HOP,
+        "field_id": _FAR_SELECTOR,
+    }
+
+
+def test_assign_team_member_hop_must_be_single_value(patch_live_lookups):
+    block = {
+        "type": "related_team_selector_field",
+        "related_field_id": "ae78e103-ab10-47d5-9dbc-730c26ae4882",  # many_to_many
+        "field_id": _FAR_SELECTOR,
+    }
+    with pytest.raises(PlanError) as e:
+        _build(_assign_spec(block))
+    assert str(e.value) == (
+        "assign_team_member step 'assign': related_field_id is 'conditions' on "
+        "'encounters', which isn't a single-value relationship field "
+        "(field_type relationship, cardinality many_to_many). It must be the hop "
+        "from this object; field_id names the selector on the far object."
+    )
+
+
+def test_assign_team_member_hop_must_be_on_target_object(patch_live_lookups):
+    # The reported shape: the far object's selector passed as the hop.
+    block = {
+        "type": "related_team_selector_field",
+        "related_field_id": _FAR_SELECTOR,
+        "field_id": _FAR_SELECTOR,
+    }
+    with pytest.raises(PlanError) as e:
+        _build(_assign_spec(block))
+    assert str(e.value) == (
+        f"assign_team_member step 'assign': related_field_id {_FAR_SELECTOR} "
+        "isn't a field on 'encounters'. It must be the hop from this object; "
+        "field_id names the selector on the far object."
+    )
+
+
+def test_assign_team_member_hop_check_skipped_without_an_object():
+    class Unreadable:
+        def object_data(self, api_name):
+            raise PlanError(f"object '{api_name}' not found")
+
+    block = {
+        "type": "related_team_selector_field",
+        "related_field_id": _FAR_SELECTOR,
+        "field_id": _FAR_SELECTOR,
+    }
+    for target_object in ("encounters", None):
+        auto = AutomationDef.model_validate(_assign_spec(block, target_object))
+        assert _assign_team_member_problem("assign", block, auto, Unreadable()) is None
+
+
+def test_steps_add_and_edit_check_assign_team_member(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step, normalize_step_patch
+
+    block = {"type": "team_selector_field"}
+    step = {
+        "key": "assign",
+        "step_type": "assign_team_member",
+        "action_assign_team_member": block,
+    }
+    with pytest.raises(
+        PlanError, match="'assign' \\(type team_selector_field\\) needs"
+    ):
+        build_wire_step(step, _LIVE_PAYLOAD, "encounters")
+    patch = {"action_assign_team_member": dict(block)}
+    with pytest.raises(
+        PlanError, match="'assign' \\(type team_selector_field\\) needs"
+    ):
+        normalize_step_patch(
+            patch, "assign", "assign_team_member", _LIVE_PAYLOAD, "encounters"
+        )
+
+
+def test_notify_team_member_selector_not_checked(patch_live_lookups):
+    """`_team_member_selector` is shared; the assign check stays on assign."""
+    spec = _assign_spec({"type": "round_robin_all"})
+    spec["steps"][0] = {
+        "key": "notify",
+        "step_type": "notify_member_via_text",
+        "order": 0,
+        "parent_key": None,
+        "action_notify_member_via_text": {
+            "team_member": {"type": "team_member"},
+            "content": "hi",
+        },
+    }
+    action = _build(spec)["steps"][0]["action_notify_member_via_text"]
+    assert action["team_member"] == {"type": "team_member"}
+
+
+def test_translate_keeps_an_incomplete_assign_team_member():
+    """Live reads skip the check, so an existing automation still roundtrips."""
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/kitchen_sink_triggers.raw.json")
+    step = next(s for s in raw["steps"] if s["step_type"] == "assign_team_member")
+    step["action_assign_team_member"] = {"type": "team_selector_field", "field": None}
+    live = next(s for s in live_to_payload(raw)["steps"] if s["id"] == step["id"])
+    assert live["action_assign_team_member"] == {"type": "team_selector_field"}
+
+
+def test_steps_edit_checks_value_resolution_on_a_scalar_variable(patch_live_lookups):
+    """`steps edit` shares the spec path's built-block checks."""
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    payload = {
+        **_GENDERS_DECLARED,
+        "steps": [
+            {
+                **_GENDERS_DECLARED["steps"][0],
+                "action_initialize_variable": {
+                    "sources": [],
+                    "variable": {"name": "genders", "data_type": "string"},
+                },
+            }
+        ],
+    }
+    patch = {
+        "action_update_variable": {
+            "variable": "genders",
+            "value_resolution": "add_only",
+        }
+    }
+    with pytest.raises(PlanError, match="isn't an array variable"):
+        normalize_step_patch(patch, "bump", "update_variable", payload, "patients")

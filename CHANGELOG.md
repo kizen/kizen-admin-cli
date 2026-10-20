@@ -239,6 +239,17 @@ called out explicitly under **Changed** or **Removed**.
   where before it read as a plain network error. File downloads get the same
   retry, and their errors now carry the server's message and the `kizen
   init` hint on a 401.
+- **An `assign_team_member` step missing a key its `type` needs now fails at
+  `--dry-run`, naming the key and the object it lives on.** That covers
+  `automations create`/`update` specs and `steps add`/`steps edit`.
+  `related_team_selector_field` needs both `related_field_id` (the hop on
+  this object) and `field_id` (the selector on the far object). A hop that
+  isn't a single-value relationship field on `target_object`, such as the
+  far object's selector, is rejected too. Kizen 400s these at apply, and its
+  message for a wrong hop names the field you passed rather than the one it
+  wanted. A passing check doesn't
+  mean a run assigns anyone: `kizen docs show automation` lists the types
+  that report `completed` without changing `owner`.
 
 ### Added
 
@@ -298,7 +309,8 @@ called out explicitly under **Changed** or **Removed**.
   `value_resolution` on an `initialize_variable` step is now a plan error
   too: Kizen accepted it there and silently dropped it. `kizen docs show
   automation` has what each value does. It works on array variables only,
-  and setting it on a variable the spec defines as scalar is a plan error.
+  and setting it on a variable the automation defines as scalar is a plan
+  error, in a spec and in `steps add`/`steps edit`.
   The builder UI doesn't show the option yet.
 - **Automation specs can build branch groups, parallel branches and skipped
   conditions.** Two new step types, `branch` and `merge_branches`, and three
