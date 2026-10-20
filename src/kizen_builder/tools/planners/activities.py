@@ -11,6 +11,7 @@ from typing import Any
 
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ActivityDef, ActivityFieldDef
+from kizen_builder.models.spec.activities import check_association_keys
 from kizen_builder.tools.activities import get_activity, list_activities
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation, fetch_existing
 
@@ -58,6 +59,7 @@ def plan_create_activity(spec: dict[str, Any] | ActivityDef) -> Plan:
         )
 
     activity_key = f"activity:{act_def.api_name or act_def.name}"
+    payload = _build_activity_payload(act_def)
     ops: list[PlanOperation] = [
         PlanOperation(
             action="create",
@@ -67,10 +69,10 @@ def plan_create_activity(spec: dict[str, Any] | ActivityDef) -> Plan:
                 "env": env,
                 "name": act_def.name,
                 "api_name": act_def.api_name or "(server-derived)",
-                "association_mode": act_def.association_mode or "(default)",
+                "association_mode": payload.get("association_mode", "(default)"),
                 "fields": len(act_def.fields or []),
             },
-            payload=_build_activity_payload(act_def),
+            payload=payload,
         )
     ]
 
@@ -117,15 +119,22 @@ _UPDATABLE_ACTIVITY_KEYS = {
     "webhook_url": "webhook_url",
     "redirect_url": "redirect_url",
     "calendar_sync_enabled": "calendar_sync_enabled",
-    "custom_object_ids": "custom_object_ids",
-    "selected_object_ids": "selected_object_ids",
     "associated_objects": "associated_objects",
     "loggable_sharing_settings": "loggable_sharing_settings",
 }
 
 
 def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
-    """Plan a PATCH to one activity type. Only keys present in ``changes`` are sent."""
+    """Plan a PATCH to one activity type. Only keys present in ``changes`` are sent.
+
+    ``selected_object_ids`` is sent as ``associated_objects``, which replaces
+    the whole association set; objects already in it keep their flags.
+    """
+    try:
+        check_association_keys(changes)
+    except ValueError as e:
+        raise PlanError(str(e)) from e
+    changes = _with_associated_objects(changes, create=False)
     env = load_env_config().name
     current = _load_activity(identifier, include_fields=False)
 
@@ -136,15 +145,17 @@ def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
         if key not in changes:
             continue
         new = changes[key]
-        # visibility_rules / *_ids / sharing are structural — always include when
-        # explicitly passed; scalar keys skip when unchanged.
-        if key in (
-            "visibility_rules",
-            "custom_object_ids",
-            "selected_object_ids",
-            "associated_objects",
-            "loggable_sharing_settings",
-        ):
+        # visibility_rules / associations / sharing are structural — always
+        # include when explicitly passed; scalar keys skip when unchanged.
+        if key == "associated_objects":
+            stored = raw.get(wire) or []
+            payload[wire] = new
+            diff[wire] = (
+                _association_labels(stored, stored),
+                _association_labels(new, stored),
+            )
+            continue
+        if key in ("visibility_rules", "loggable_sharing_settings"):
             payload[wire] = new
             diff[wire] = ("…", "(updated)")
             continue
@@ -455,6 +466,54 @@ def plan_remove_activity_field_option(
 # ---------------------------------------------------------------------------
 
 
+def _with_associated_objects(spec: dict[str, Any], *, create: bool) -> dict[str, Any]:
+    """Swap ``selected_object_ids`` for the ``associated_objects`` they mean.
+
+    POST rejects an entry without ``is_required``/``is_readonly``. PATCH keeps
+    the stored flags of an object already in the set when its entry omits them,
+    so an update leaves them out rather than resetting them. Without an
+    ``association_mode`` the server picks ``all_objects_associated`` even when a
+    list is sent, so a non-empty list defaults it.
+    """
+    out = dict(spec)
+    ids = out.pop("selected_object_ids", None)
+    if ids is not None:
+        entries: list[dict[str, Any]] = [
+            {"custom_object": {"id": object_id}, "order": i}
+            for i, object_id in enumerate(ids)
+        ]
+        if create:
+            for entry in entries:
+                entry.update(is_required=False, is_readonly=False)
+        out["associated_objects"] = entries
+    if out.get("associated_objects") and out.get("association_mode") is None:
+        out["association_mode"] = "selected_objects_associated"
+    return out
+
+
+def _association_labels(
+    entries: list[dict[str, Any]], stored: list[dict[str, Any]]
+) -> str:
+    """``patients (required), <uuid>``: what the read will show after the PATCH."""
+    by_id = {e["custom_object"]["id"]: e for e in stored}
+    labels = []
+    for entry in entries:
+        object_id = entry["custom_object"]["id"]
+        old = by_id.get(object_id, {})
+        flags = [
+            word
+            for key, word in (("is_required", "required"), ("is_readonly", "read-only"))
+            if entry.get(key, old.get(key, False))
+        ]
+        name = (
+            old.get("custom_object", {}).get("name")
+            or entry["custom_object"].get("name")
+            or object_id
+        )
+        labels.append(f"{name} ({', '.join(flags)})" if flags else name)
+    return ", ".join(labels) or "(none)"
+
+
 def _build_activity_payload(act: ActivityDef) -> dict[str, Any]:
     payload: dict[str, Any] = {"name": act.name}
     optional = {
@@ -467,14 +526,14 @@ def _build_activity_payload(act: ActivityDef) -> dict[str, Any]:
         "webhook_url": act.webhook_url,
         "redirect_url": act.redirect_url,
         "calendar_sync_enabled": act.calendar_sync_enabled,
-        "custom_object_ids": act.custom_object_ids,
         "selected_object_ids": act.selected_object_ids,
+        "associated_objects": act.associated_objects,
         "loggable_sharing_settings": act.loggable_sharing_settings,
     }
     for key, value in optional.items():
         if value is not None:
             payload[key] = value
-    return payload
+    return _with_associated_objects(payload, create=True)
 
 
 def _build_activity_field_payload(

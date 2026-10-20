@@ -7,7 +7,8 @@
   changes whose keys map to the wire body; `--visibility-rules-file` sets the
   conditional field-visibility rules.
 
-> Simple cases use flags: `activities create --name X [--association-mode ...]`,
+> Simple cases use flags: `activities create --name X [--association-mode ...]
+> [--object <api_name> ...]`,
 > `activities fields create <activity> --name X --type text`. Reach for a spec
 > file to create a type **with its fields in one plan**, or for the advanced
 > update surface. Logging/scheduling of instances stays in the UI.
@@ -41,8 +42,8 @@
 | `description` | string (≤500) | Optional. |
 | `is_editable` | bool | Whether logged instances can be edited after submission. |
 | `association_mode` | enum | `all_objects_associated`, `selected_objects_associated` (needs `selected_object_ids`), or `no_objects_associated`. |
-| `custom_object_ids` | UUID[] | Objects this activity can be logged against. |
-| `selected_object_ids` | UUID[] | Objects for `selected_objects_associated` mode. |
+| `selected_object_ids` | UUID[] | Object UUIDs. The CLI sends them as `associated_objects`, optional, and sets the mode by default. |
+| `associated_objects` | object[] | The wire/read shape, passed through; use it to set `is_required`/`is_readonly`. Sets the mode by default too. Not with `selected_object_ids`. |
 | `visibility_rules` | object[] | Conditional field-visibility rules (opaque). |
 | `submission_action` | enum | `redirect` or `trigger_webhook` (+ `webhook_url`/`redirect_url`). |
 | `fields` | `ActivityFieldDef[]` | Optional — create fields in the same plan. |
@@ -63,8 +64,8 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
 ## Gotchas
 
 - **`object_ids` are UUIDs**, not api_names — get them from `kizen objects get`.
-  (The CLI's `activities update --object <api_name>` resolves names for you; the
-  spec file wants UUIDs.)
+  (The CLI's `activities create|update --object <api_name>` resolves names for
+  you; the spec file wants UUIDs.)
 - **api_name may be rewritten** on create — read back with `kizen activities get`.
 
 ---
@@ -107,13 +108,21 @@ every type.
 
 ## Non-obvious wire quirks
 
-- **Object associations.** To set `association_mode:
-  selected_objects_associated` you must send
-  `associated_objects: [{"custom_object": {"id": <object_uuid>}}, …]` — NOT the
-  documented `selected_object_ids`/`custom_object_ids`, which are ignored. Each
-  item's `custom_object` must be a nested dict, not a bare id string. The read
-  model returns these under `custom_objects`. The CLI's `--object <api_name>`
-  flag builds this shape.
+- **Object associations.** `associated_objects` is the only key that sets
+  them: `[{"custom_object": {"id": <object_uuid>}, "is_required": false,
+  "is_readonly": false, "order": 0}, …]`, with `custom_object` a nested dict,
+  not a bare id. POST rejects an entry missing any of the three flags. A PATCH
+  replaces the set: objects left out are removed, an object already in it
+  keeps its stored `is_required`/`is_readonly` when its entry omits them, and a
+  new object gets `false`. The read returns the same list under
+  `associated_objects` (with `custom_object` expanded), and it round-trips.
+  Without an `association_mode`, the server picks `all_objects_associated` even
+  when a list is sent, so the CLI defaults the mode whenever it sends a list.
+  `selected_object_ids` and `custom_object_ids` are ignored on the wire; the
+  CLI turns `selected_object_ids` and `--object` into `associated_objects`
+  (flags `false` on create, left out on update, so `update --object` keeps
+  the flags of objects already associated), and a spec with
+  `custom_object_ids` is a plan error. `confirmed live 2026-10-16`.
 - **Option remove-with-remap needs two calls.** The activities
   `.../options/{oid}/replace` endpoint only *reassigns records* onto the
   replacement — body key is `option_id`, which the spec mislabels `id` — and

@@ -49,7 +49,18 @@ ACTIVITY_DETAIL = {
     "visibility_rules": [],
     "calendar_sync_enabled": False,
     "custom_objects": [{"id": OBJ_ID, "name": "Patients"}],
-    "selected_objects": [],
+    "associated_objects": [
+        {
+            "custom_object": {
+                "id": OBJ_ID,
+                "name": "patients",
+                "object_name": "Patients",
+            },
+            "is_required": True,
+            "is_readonly": False,
+            "order": 0,
+        }
+    ],
     "loggable_sharing_settings": {},
     "deleted": False,
     "created": "2024-01-01T00:00:00Z",
@@ -230,6 +241,8 @@ def test_get_activity_includes_fields_by_default():
     result = get_activity("site_visit")
     assert result["id"] == ACTIVITY_ID
     assert result["custom_objects"] == [{"id": OBJ_ID, "name": "Patients"}]
+    assert result["associated_objects"] == ACTIVITY_DETAIL["associated_objects"]
+    assert "selected_objects" not in result
     assert len(result["fields"]) == 1
     assert result["fields"][0]["api_name"] == "outcome"
     assert result["raw"] == ACTIVITY_DETAIL

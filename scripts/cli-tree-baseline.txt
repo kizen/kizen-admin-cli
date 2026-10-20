@@ -91,8 +91,8 @@
                                                                                                     
  Create one activity type from flags, or a JSON ActivityDef (--spec-file/stdin).                    
                                                                                                     
- Flag mode covers the common metadata; use a spec for inline fields,                                
- visibility rules, or object associations.                                                          
+ Flag mode covers the common metadata and object associations; use a spec                           
+ for inline fields or visibility rules.                                                             
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --name                                    <str>  Display name (single-activity mode).            │
@@ -102,6 +102,10 @@
 │ --association-mode                        <str>  all_objects_associated |                        │
 │                                                  selected_objects_associated |                   │
 │                                                  no_objects_associated.                          │
+│ --object                                  <str>  Custom-object api_name or UUID to associate     │
+│                                                  (repeatable). Sets association mode to          │
+│                                                  selected_objects_associated unless              │
+│                                                  --association-mode is given.                    │
 │ --editable              --not-editable           Whether logged instances can be edited.         │
 │ --spec-file                               <str>  Bulk mode: path to a JSON ActivityDef (with     │
 │                                                  optional inline fields). Omit with stdin to     │
@@ -390,8 +394,11 @@
 │ --name                                         <str>  New display name.                          │
 │ --description                                  <str>  New description.                           │
 │ --association-mode                             <str>  New association mode.                      │
-│ --object                                       <str>  Custom-object api_name to associate        │
-│                                                       (repeatable). Sets association mode to     │
+│ --object                                       <str>  Custom-object api_name or UUID to          │
+│                                                       associate (repeatable). The list replaces  │
+│                                                       the current set; objects already in it     │
+│                                                       keep their Required and Read-only flags.   │
+│                                                       Sets association mode to                   │
 │                                                       selected_objects_associated unless         │
 │                                                       --association-mode is given.               │
 │ --editable                   --not-editable           Set the editable flag.                     │

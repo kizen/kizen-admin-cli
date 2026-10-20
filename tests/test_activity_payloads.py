@@ -45,6 +45,110 @@ def test_activity_payload_includes_only_set_keys():
     }
 
 
+OBJ_A = "00000000-0000-4000-8000-0000000000a1"
+OBJ_B = "00000000-0000-4000-8000-0000000000b2"
+
+
+def test_activity_payload_sends_selected_object_ids_as_associated_objects():
+    """The shape POST accepts, confirmed live 2026-10-06: each entry needs all
+    three flags, and without a mode the server picks all_objects_associated."""
+    act = ActivityDef.model_validate(
+        {"name": "Site Visit", "selected_object_ids": [OBJ_A, OBJ_B]}
+    )
+    assert _build_activity_payload(act) == {
+        "name": "Site Visit",
+        "association_mode": "selected_objects_associated",
+        "associated_objects": [
+            {
+                "custom_object": {"id": OBJ_A},
+                "is_required": False,
+                "is_readonly": False,
+                "order": 0,
+            },
+            {
+                "custom_object": {"id": OBJ_B},
+                "is_required": False,
+                "is_readonly": False,
+                "order": 1,
+            },
+        ],
+    }
+
+
+def test_activity_payload_keeps_an_explicit_association_mode():
+    act = ActivityDef.model_validate(
+        {
+            "name": "Site Visit",
+            "association_mode": "all_objects_associated",
+            "selected_object_ids": [OBJ_A],
+        }
+    )
+    payload = _build_activity_payload(act)
+    assert payload["association_mode"] == "all_objects_associated"
+    assert "selected_object_ids" not in payload
+
+
+def test_activity_payload_passes_associated_objects_through_verbatim():
+    """The read shape pastes back unchanged (POST accepted it, probe J)."""
+    read_shape = [
+        {
+            "custom_object": {
+                "id": OBJ_A,
+                "name": "patients",
+                "object_name": "Patients",
+            },
+            "is_required": True,
+            "is_readonly": False,
+            "order": 0,
+        }
+    ]
+    act = ActivityDef.model_validate(
+        {
+            "name": "Site Visit",
+            "association_mode": "selected_objects_associated",
+            "associated_objects": read_shape,
+        }
+    )
+    assert _build_activity_payload(act)["associated_objects"] == read_shape
+
+
+def test_activity_payload_defaults_the_mode_for_associated_objects():
+    """Without a mode the server stores all_objects_associated (probe K)."""
+    act = ActivityDef.model_validate(
+        {"name": "Site Visit", "associated_objects": [{"custom_object": {"id": OBJ_A}}]}
+    )
+    assert _build_activity_payload(act)["association_mode"] == (
+        "selected_objects_associated"
+    )
+
+
+@pytest.mark.parametrize("mode", ["all_objects_associated", "no_objects_associated"])
+def test_activity_payload_without_objects_sends_no_association_keys(mode):
+    act = ActivityDef.model_validate({"name": "Site Visit", "association_mode": mode})
+    assert _build_activity_payload(act) == {
+        "name": "Site Visit",
+        "association_mode": mode,
+    }
+
+
+def test_spec_with_custom_object_ids_is_rejected():
+    with pytest.raises(ValueError, match="'custom_object_ids'.*'selected_object_ids'"):
+        ActivityDef.model_validate({"name": "X", "custom_object_ids": [OBJ_A]})
+
+
+def test_spec_with_both_association_keys_is_rejected():
+    with pytest.raises(
+        ValueError, match="'associated_objects' or 'selected_object_ids', not both"
+    ):
+        ActivityDef.model_validate(
+            {
+                "name": "X",
+                "selected_object_ids": [OBJ_A],
+                "associated_objects": [{"custom_object": {"id": OBJ_B}}],
+            }
+        )
+
+
 # ---------------------------------------------------------------------------
 # Activity-field payload
 # ---------------------------------------------------------------------------

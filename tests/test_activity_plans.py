@@ -34,6 +34,8 @@ ACTIVITY_ID = "00000000-0000-4000-8000-000000000a01"
 FIELD_ID = "00000000-0000-4000-8000-000000000a02"
 OPTION_ID = "00000000-0000-4000-8000-000000000a03"
 OTHER_OPTION_ID = "00000000-0000-4000-8000-000000000a04"
+OBJ_ID = "00000000-0000-4000-8000-000000000a05"
+OTHER_OBJ_ID = "00000000-0000-4000-8000-000000000a06"
 
 ACTIVITY_DETAIL = {
     "id": ACTIVITY_ID,
@@ -44,7 +46,7 @@ ACTIVITY_DETAIL = {
     "association_mode": "all_objects_associated",
     "n_submissions": 3,
     "custom_objects": [],
-    "selected_objects": [],
+    "associated_objects": [],
 }
 
 DROPDOWN_FIELD = {
@@ -206,6 +208,79 @@ def test_plan_update_activity_always_includes_structural_keys_when_passed():
     plan = plan_update_activity("site_visit", {"visibility_rules": []})
     (op,) = plan.operations
     assert op.payload == {"visibility_rules": []}
+
+
+@respx.mock
+def test_plan_update_activity_keeps_the_flags_of_objects_already_associated():
+    """What `activities update --object` and an update spec's
+    `selected_object_ids` both reach. PATCH keeps an existing object's stored
+    flags when its entry omits them (confirmed live 2026-10-16), so the entries
+    carry only id and order; a new object gets the server's defaults."""
+    stored = [
+        {
+            "custom_object": {"id": OBJ_ID, "name": "patients"},
+            "is_required": True,
+            "is_readonly": False,
+            "order": 0,
+        }
+    ]
+    _mock_activity_detail(
+        body={
+            **ACTIVITY_DETAIL,
+            "association_mode": "selected_objects_associated",
+            "associated_objects": stored,
+        }
+    )
+    plan = plan_update_activity(
+        "site_visit", {"selected_object_ids": [OBJ_ID, OTHER_OBJ_ID]}
+    )
+    (op,) = plan.operations
+    assert op.payload == {
+        "associated_objects": [
+            {"custom_object": {"id": OBJ_ID}, "order": 0},
+            {"custom_object": {"id": OTHER_OBJ_ID}, "order": 1},
+        ],
+    }
+    assert op.preview["diff"] == {
+        "associated_objects": (
+            f"patients (required) → patients (required), {OTHER_OBJ_ID}"
+        )
+    }
+
+
+@respx.mock
+def test_plan_update_activity_defaults_the_mode_for_selected_object_ids():
+    _mock_activity_detail()
+    plan = plan_update_activity("site_visit", {"selected_object_ids": [OBJ_ID]})
+    (op,) = plan.operations
+    assert op.payload["association_mode"] == "selected_objects_associated"
+
+
+@respx.mock
+def test_plan_update_activity_passes_associated_objects_through_verbatim():
+    _mock_activity_detail()
+    short = [{"custom_object": {"id": OBJ_ID}}]
+    plan = plan_update_activity("site_visit", {"associated_objects": short})
+    (op,) = plan.operations
+    assert op.payload == {
+        "association_mode": "selected_objects_associated",
+        "associated_objects": short,
+    }
+
+
+@pytest.mark.parametrize(
+    ("changes", "match"),
+    [
+        ({"custom_object_ids": [OBJ_ID]}, "use 'selected_object_ids'"),
+        (
+            {"selected_object_ids": [OBJ_ID], "associated_objects": []},
+            "'associated_objects' or 'selected_object_ids', not both",
+        ),
+    ],
+)
+def test_plan_update_activity_rejects_unsendable_association_keys(changes, match):
+    with pytest.raises(PlanError, match=match):
+        plan_update_activity("site_visit", changes)
 
 
 @respx.mock

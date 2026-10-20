@@ -304,10 +304,6 @@ def drift_activity_type(drift_client, scratch, drift_object) -> dict[str, Any]:
         {
             "name": debris_name("activity"),
             "api_name": debris_api_name("activity"),
-            # `all_objects_associated` rather than the narrower
-            # `selected_objects_associated`, which additionally requires an
-            # `associated_objects` list the activity payload builder does not
-            # emit (HTTP 400 otherwise, confirmed live 2026-08-06).
             "association_mode": "all_objects_associated",
         }
     )

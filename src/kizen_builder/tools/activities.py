@@ -114,7 +114,6 @@ def get_activity(identifier: str, *, include_fields: bool = True) -> dict[str, A
             fields = act_api.list_activity_fields(client, detail["id"])
 
     custom_objects = detail.get("custom_objects") or []
-    selected_objects = detail.get("selected_objects") or []
 
     return {
         "env": config.name,
@@ -134,10 +133,7 @@ def get_activity(identifier: str, *, include_fields: bool = True) -> dict[str, A
             {"id": o.get("id"), "name": o.get("name") or o.get("object_name")}
             for o in custom_objects
         ],
-        "selected_objects": [
-            {"id": o.get("id"), "name": o.get("name") or o.get("object_name")}
-            for o in selected_objects
-        ],
+        "associated_objects": detail.get("associated_objects") or [],
         "loggable_sharing_settings": detail.get("loggable_sharing_settings"),
         "deleted": detail.get("deleted", False),
         "created": detail.get("created"),
