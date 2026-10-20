@@ -463,6 +463,11 @@ called out explicitly under **Changed** or **Removed**.
   or a 500, into "not found"; only a 404 does that now, and anything else
   shows as itself. Role and permission-group updates and deletes now report
   a 404 as `role '<id>' not found` instead of a raw HTTP error.
+- **`automations steps edit` and `steps add` no longer fail with HTTP 400 on a
+  Schedule Activity step copied from `steps get`.** The re-save sent each
+  associated object as `null`. An `association_configs` entry in a spec can
+  now give `custom_object_id`, and an entry that names no object is a plan
+  error.
 
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or

@@ -2382,8 +2382,8 @@ def _step_schedule_activity(
         out["assigned_to"] = _normalize_assigned_to(block["assigned_to"])
     if block.get("association_configs") is not None:
         out["association_configs"] = [
-            _normalize_association_config(a, auto, ctx)
-            for a in block["association_configs"]
+            _normalize_association_config(a, auto, ctx, n)
+            for n, a in enumerate(block["association_configs"], 1)
         ]
     if block.get("note") is not None:
         out["note"] = block["note"]
@@ -2391,7 +2391,7 @@ def _step_schedule_activity(
 
 
 def _normalize_association_config(
-    a: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    a: dict[str, Any], auto: AutomationDef, ctx: LiveContext, n: int
 ) -> dict[str, Any]:
     """One entry of schedule_activity's `association_configs` — per-object
     record linkage for activity types associated with more than one custom
@@ -2405,13 +2405,21 @@ def _normalize_association_config(
     `record_variable`/`variable_related_field` (not `relationship_field`/
     `automation_variable` — those 400 with "not a valid choice").
 
-    Accepts either the friendly author shape (`object`/`source`/
-    `relationship_field_ref`/`automation_variable`) or a live read's raw wire
+    Accepts three shapes: the friendly author shape (`object`/`source`/
+    `relationship_field_ref`/`automation_variable`), a live read's raw wire
     dict (`custom_object`/`association_source`/`relationship_field`/
-    `automation_variable`).
+    `automation_variable`), or the write shape `steps get` prints
+    (`custom_object_id`/`association_source`/`relationship_field_id`/
+    `automation_variable_name`). `n` is the entry's 1-based position.
     """
-    object_ref = a.get("custom_object") or a.get("object")
+    object_ref = a.get("custom_object") or a.get("object") or a.get("custom_object_id")
     object_id = _resolve_object(object_ref, ctx)
+    if not object_id:
+        raise PlanError(
+            f"schedule_activity association_configs entry {n} names no object: "
+            "set 'object' to the associated object's api_name, or "
+            "'custom_object_id' to its UUID."
+        )
     out: dict[str, Any] = {
         "custom_object_id": object_id,
         "association_source": a.get("association_source") or a.get("source") or "none",

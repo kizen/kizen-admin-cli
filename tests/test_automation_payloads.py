@@ -2586,6 +2586,76 @@ def test_step_schedule_activity_association_configs_read_shape_passthrough(
     ]
 
 
+def test_steps_edit_schedule_activity_block_from_steps_get_is_unchanged(
+    patch_live_lookups,
+):
+    """The block `steps get` prints carries `custom_object_id`; re-applying it
+    unchanged must not null it (the server 400s on a null)."""
+    import copy
+
+    from kizen_builder.tools.automations import normalize_step_patch
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    payload = live_to_payload(raw)
+    step = next(s for s in payload["steps"] if s["type"] == "schedule_activity")
+    block = step["action_schedule_activity"]
+    patch = {"action_schedule_activity": copy.deepcopy(block)}
+    out = normalize_step_patch(
+        patch, step["key"], "schedule_activity", payload, raw["custom_object"]["name"]
+    )
+    assert out["action_schedule_activity"] == block
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {
+            "custom_object_id": "8fa0a1cb-1111-4111-8111-111111111111",
+            "association_source": "related_field",
+            "relationship_field_id": "8fa0a1cb-2222-4222-8222-222222222222",
+        },
+        {
+            "custom_object_id": "8fa0a1cb-1111-4111-8111-111111111111",
+            "association_source": "record_variable",
+            "automation_variable_name": "x",
+        },
+    ],
+    ids=["related_field", "record_variable"],
+)
+def test_step_schedule_activity_association_configs_write_shape_passthrough(
+    patch_live_lookups, entry
+):
+    payload = _build(
+        _schedule_activity_spec(
+            {
+                "activity_type_id": "11111111-1111-4111-8111-111111111111",
+                "association_configs": [entry],
+            }
+        )
+    )
+    configs = payload["steps"][0]["action_schedule_activity"]["association_configs"]
+    assert configs == [entry]
+
+
+def test_step_schedule_activity_association_config_without_object_rejected(
+    patch_live_lookups,
+):
+    spec = _schedule_activity_spec(
+        {
+            "activity_type_id": "11111111-1111-4111-8111-111111111111",
+            "association_configs": [{"object": "patients"}, {"source": "none"}],
+        }
+    )
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value) == "step 's1': " + (
+        "schedule_activity association_configs entry 2 names no object: set "
+        "'object' to the associated object's api_name, or 'custom_object_id' "
+        "to its UUID."
+    )
+
+
 def test_step_schedule_activity_assigned_to_specific_role_uses_role_id(
     patch_live_lookups,
 ):
@@ -3109,32 +3179,55 @@ def test_declared_keys_match_what_the_builder_reads(builder):
     assert set(builder.honoured_keys) == builder_keys.declarable(builder.__name__)
 
 
-# No captured fixture has these; the test below re-plans their output instead.
+# No captured fixture has these; test_uncaptured_builder_output_replans_unchanged
+# re-plans their output instead.
 _UNCAPTURED = {"notify_member_via_email", "notify_member_via_text"}
+
+# Wired triggers no captured fixture has: their wire shape is unverified.
+_UNCAPTURED_TRIGGERS = {"form_submitted", "survey_submitted"}
+
+
+def _wire_blocks() -> list:
+    from kizen_builder.translate import live_to_payload
+
+    params = []
+    for path in sorted((FIXTURES / "automations").glob("*.raw.json")):
+        raw = json.loads(path.read_text())
+        payload = live_to_payload(raw)
+        target = (raw.get("custom_object") or {}).get("name")
+        name = path.name.removesuffix(".raw.json")
+        for kind, entries, builders, cfg in (
+            ("step", payload["steps"], _STEP_BUILDERS, _block_field_for),
+            ("trigger", payload["triggers"], _TRIGGER_BUILDERS, trigger_config_field),
+        ):
+            for e in entries:
+                if e["type"] in builders:
+                    block = e.get(cfg(e["type"])) or {}
+                    id_ = f"{name}-{e['key']}"
+                    params.append(
+                        pytest.param(kind, e["type"], block, payload, target, id=id_)
+                    )
+    return params
+
+
+_WIRE_BLOCKS = _wire_blocks()
+
+
+def test_wire_blocks_cover_every_wired_type():
+    steps = {p.values[1] for p in _WIRE_BLOCKS if p.values[0] == "step"}
+    triggers = {p.values[1] for p in _WIRE_BLOCKS if p.values[0] == "trigger"}
+    assert set(_STEP_BUILDERS) - steps == _UNCAPTURED
+    assert set(_TRIGGER_BUILDERS) - triggers == _UNCAPTURED_TRIGGERS
 
 
 def test_builder_output_passes_the_check():
     """Idempotence: every wire block the translator emits from a captured
     automation — what `steps get` and `automations show` print — re-plans
     without a rejected key, so a copied block can be re-applied."""
-    from kizen_builder.translate import live_to_payload
-
-    checked: set[str] = set()
-    for path in sorted((FIXTURES / "automations").glob("*.raw.json")):
-        payload = live_to_payload(json.loads(path.read_text()))
-        for s in payload["steps"]:
-            builder = _STEP_BUILDERS.get(s["type"])
-            if builder is not None:
-                block = s.get(_block_field_for(s["type"])) or {}
-                _reject_unhonoured_keys(builder, block, f"{path.name} {s['key']}")
-                checked.add(s["type"])
-        for t in payload["triggers"]:
-            builder = _TRIGGER_BUILDERS.get(t["type"])
-            if builder is not None:
-                block = t.get(trigger_config_field(t["type"])) or {}
-                _reject_unhonoured_keys(builder, block, f"{path.name} {t['key']}")
-    declared = {t for t, b in _STEP_BUILDERS.items() if b.honoured_keys is not None}
-    assert declared - checked == _UNCAPTURED
+    for p in _WIRE_BLOCKS:
+        kind, block_type, block, _, _ = p.values
+        builders = _STEP_BUILDERS if kind == "step" else _TRIGGER_BUILDERS
+        _reject_unhonoured_keys(builders[block_type], block, p.id)
 
 
 @pytest.mark.parametrize(
@@ -3164,6 +3257,65 @@ def test_uncaptured_builder_output_replans_unchanged(
     cfg = _block_field_for(step_type)
     wire = _build(_one_step_spec(step_type, block))["steps"][0][cfg]
     assert _build(_one_step_spec(step_type, wire))["steps"][0][cfg] == wire
+
+
+# Intended differences between a captured wire block and its rebuild, as
+# {(step_or_trigger_type, dotted_path): reason}. List indices read as `[]`.
+_REBUILD_ALLOWED_DIFFS: dict[tuple[str, str], str] = {}
+
+
+def _diff_paths(a: object, b: object, path: str = "") -> set[str]:
+    """Dotted paths where `a` and `b` differ; an absent key counts."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return {
+            p
+            for k in a.keys() | b.keys()
+            for p in (
+                _diff_paths(a[k], b[k], f"{path}.{k}" if path else k)
+                if k in a and k in b
+                else {f"{path}.{k}" if path else k}
+            )
+        }
+    if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+        return {
+            p for x, y in zip(a, b, strict=True) for p in _diff_paths(x, y, f"{path}[]")
+        }
+    return set() if a == b else {path}
+
+
+def _rebuild(kind, block_type, wire, payload, target):
+    """The builder call `normalize_step_patch` makes, with no live lookups."""
+    import copy
+
+    from kizen_builder.tools.automations import _payload_auto
+    from kizen_builder.translate import _SHIM_CTX
+
+    if kind == "trigger":
+        return _TRIGGER_BUILDERS[block_type](copy.deepcopy(wire), _SHIM_CTX)
+    auto = _payload_auto(payload, target)
+    return _STEP_BUILDERS[block_type](copy.deepcopy(wire), auto, _SHIM_CTX)
+
+
+@pytest.mark.parametrize("kind, block_type, wire, payload, target", _WIRE_BLOCKS)
+def test_builders_rebuild_wire_blocks_unchanged(
+    kind, block_type, wire, payload, target
+):
+    """What `steps get` prints, re-applied through `steps edit`'s builder
+    call, rebuilds value for value — so a copied block is a no-op."""
+    allowed = {p for (t, p) in _REBUILD_ALLOWED_DIFFS if t == block_type}
+    diffs = _diff_paths(wire, _rebuild(kind, block_type, wire, payload, target))
+    unexpected = sorted(diffs - allowed)
+    assert not unexpected, f"rebuild differs at {unexpected}"
+
+
+def test_rebuild_allowed_diffs_all_occur():
+    seen = {
+        (p.values[1], d)
+        for p in _WIRE_BLOCKS
+        for d in _diff_paths(p.values[2], _rebuild(*p.values))
+    }
+    stale = sorted(set(_REBUILD_ALLOWED_DIFFS) - seen)
+    assert not stale, f"_REBUILD_ALLOWED_DIFFS entries match no difference: {stale}"
 
 
 # ---------------------------------------------------------------------------
