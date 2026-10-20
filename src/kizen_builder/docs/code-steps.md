@@ -65,7 +65,11 @@ the extra call entirely; see `kizen docs show automation`.
 
 `POST /api/coderunner/run`. Runs your script in the same Lambda as a real
 `code_step`; `kizen.api` calls in it use real credentials and can write live
-data. Asks y/N first (`--yes` skips).
+data. Asks y/N first (`--yes` skips). The server holds the request open until
+the run ends, and ends any run at about 55 s with `script error: … Task timed
+out after 55.00 seconds` (observed 2026-10-16). `kizen.api` writes made before
+the cut still land, so check live state before rerunning. The command waits up
+to 2 minutes, so you see that server message rather than a network error.
 
 ```
 kizen code test --script my_step.py \

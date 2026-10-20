@@ -211,6 +211,15 @@ called out explicitly under **Changed** or **Removed**.
   `records create|update|upsert`. The old `--field <api_name> --value <value>`
   still works and prints a deprecation warning on stderr. Exactly one
   `--field` is accepted; use `records update --spec-file` for several.
+- **Reads retry on a dropped connection and on HTTP 429, 502, 503 or 504.**
+  Each GET gets up to two retries, 1 s and then 2 s apart, or the server's
+  `Retry-After` up to 10 s. A request whose connection never opened is
+  retried for every method. A write is never retried once it was sent. A
+  write that hits a timeout, a dropped connection or a 502/503/504 now says
+  the server may have applied it and to read live state before retrying,
+  where before it read as a plain network error. File downloads get the same
+  retry, and their errors now carry the server's message and the `kizen
+  init` hint on a 401.
 
 ### Added
 
@@ -505,6 +514,11 @@ called out explicitly under **Changed** or **Removed**.
   show a plan and then fail with a 400 from Kizen. It now archives the records
   first, 500 per request with Kizen's email off, then deletes the object.
   Built-in objects such as Contacts are refused before anything is planned.
+- **`code test` no longer reports a network error for a script that runs
+  longer than 30 seconds.** The script kept running and its `kizen.api`
+  writes landed, so rerunning it wrote twice. The command now waits up to 2
+  minutes. The server ends a run at about 55 seconds, so a long script now
+  reports the server's own `Task timed out after 55.00 seconds`.
 
 - **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
   longer fail with HTTP 400 on automations with an Email Received trigger or

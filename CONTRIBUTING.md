@@ -87,7 +87,7 @@ have a line here.
 ```
 src/kizen_builder/
   api/                           # Thin httpx wrappers around Kizen REST endpoints.
-    client.py                    #   the shared httpx client + auth headers
+    client.py                    #   the shared httpx client + auth headers + GET retry
     activities.py                #   activity-type (loggable definition) CRUD
     automations.py               #   automation CRUD (automation2 namespace)
     coderunner.py                #   POST /api/coderunner/run — code_step sandbox runner

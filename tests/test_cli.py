@@ -826,7 +826,7 @@ def test_start_wait_survives_a_transient_history_fetch_error(monkeypatch):
     respx.get(f"{exec_base}/{exec_id}/history").mock(
         side_effect=[
             httpx.Response(200, json=[]),
-            httpx.Response(503, json={"detail": "temporarily unavailable"}),
+            httpx.Response(500, json={"detail": "temporarily unavailable"}),
             httpx.Response(200, json=[trigger_row]),
         ]
     )

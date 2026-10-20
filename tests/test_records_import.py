@@ -90,9 +90,9 @@ def test_wait_times_out_on_a_job_that_never_finishes(client):
 def test_wait_tolerates_transient_5xx_and_network_errors(client):
     respx.get(PROGRESS_URL).mock(
         side_effect=[
-            httpx.Response(503),
+            httpx.Response(500),
             httpx.ConnectError("dropped"),
-            httpx.Response(502),
+            httpx.Response(500),
             httpx.Response(200, json={"id": PROGRESS_ID, "status": "completed"}),
         ]
     )
