@@ -22,6 +22,7 @@ import respx
 
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.models.spec import FormDef, FormFieldDef
+from kizen_builder.tools.form_ui import build_form_ui, simple_form_page
 from kizen_builder.tools.planners.forms import (
     plan_add_form_field_options,
     plan_create_form,
@@ -316,23 +317,56 @@ def test_plan_delete_form_not_found_raises_plan_error():
 
 
 @respx.mock
-def test_plan_duplicate_form_defaults_new_name_to_copy_of_source():
+def test_plan_duplicate_form_previews_the_server_default_name():
     _mock_detail("/api/forms")
     plan = plan_duplicate_form("contact_us")
     (op,) = plan.operations
     assert op.action == "duplicate"
     assert op.key == "form:contact_us:duplicate"
     assert op.payload == {}
-    assert op.preview["new_name"] == "Copy of Contact Us"
+    assert op.preview["new_name"] == "server default: 'Contact Us (copy #N)'"
 
 
+def _with_pages(*placed: dict) -> dict:
+    return {**FORM_DETAIL, "form_ui": build_form_ui([simple_form_page(list(placed))])}
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
 @respx.mock
-def test_plan_duplicate_form_explicit_name_goes_in_the_payload():
-    _mock_detail("/api/forms")
-    plan = plan_duplicate_form("contact_us", name="Second Copy")
+def test_plan_duplicate_form_name_goes_in_the_payload_when_every_field_is_placed(
+    base_path, kind
+):
+    _mock_detail(base_path, body=_with_pages(DROPDOWN_FIELD))
+    _mock_fields(base_path)
+    plan = plan_duplicate_form(
+        "contact_us", name="Second Copy", base_path=base_path, kind=kind
+    )
     (op,) = plan.operations
     assert op.payload == {"name": "Second Copy"}
     assert op.preview["new_name"] == "Second Copy"
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
+@respx.mock
+def test_plan_duplicate_form_refuses_a_rename_that_would_delete_an_unplaced_field(
+    base_path, kind
+):
+    _mock_detail(base_path, body=_with_pages(DROPDOWN_FIELD))
+    _mock_fields(base_path, body=[DROPDOWN_FIELD, {"id": OBJ_ID, "name": "extra"}])
+    with pytest.raises(PlanError) as exc:
+        plan_duplicate_form("contact_us", name="X", base_path=base_path, kind=kind)
+    msg = str(exc.value)
+    assert "Not on a page: extra." in msg and "outcome" not in msg
+    assert f"`kizen {kind}s duplicate {FORM_ID}` without --name" in msg
+    assert f"`kizen {kind}s update <copy id> --name 'X'`" in msg
+
+
+@respx.mock
+def test_plan_duplicate_form_refuses_a_rename_of_a_form_with_no_pages():
+    _mock_detail("/api/forms", body={**FORM_DETAIL, "form_ui": {}})
+    _mock_fields("/api/forms")
+    with pytest.raises(PlanError, match="Not on a page: outcome"):
+        plan_duplicate_form("contact_us", name="X")
 
 
 @respx.mock

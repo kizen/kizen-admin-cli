@@ -94,10 +94,14 @@ def delete_form(client: KizenClient, base_path: str, identifier: str) -> dict[st
 
 
 def duplicate_form(
-    client: KizenClient, base_path: str, identifier: str, payload: dict[str, Any]
+    client: KizenClient, base_path: str, identifier: str
 ) -> dict[str, Any]:
-    """POST {base_path}/{identifier}/duplicate."""
-    return client.post(f"{base_path}/{identifier}/duplicate", json=payload)
+    """POST {base_path}/{identifier}/duplicate with an empty body.
+
+    The server ignores the body and names the copy ``<name> (copy #N)``; rename
+    it with :func:`update_form`.
+    """
+    return client.post(f"{base_path}/{identifier}/duplicate", json={})
 
 
 # ---------------------------------------------------------------------------

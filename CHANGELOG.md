@@ -193,6 +193,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **`activities duplicate <activity>`** copies an activity type, and
+  **`dashboards duplicate <dashboard>`** copies a dashboard with its
+  dashlets. `--name` names the copy, and `dashboards duplicate` also takes
+  `--api-name`. Without them, Kizen names the copy `<name> (copy #N)`. A
+  dashboard copy keeps the source's sharing, which Kizen would otherwise
+  empty so only you could see it, and is unpublished; publish it with
+  `dashboards update`.
 - **Specs can author the `email_received` trigger and goal trigger.** Set
   `trigger_type: email_received` at the top level or in a goal's `triggers`,
   with an optional `trigger_email_received_from_contact: {receiving_inbox,
@@ -423,6 +430,14 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`forms`/`surveys duplicate --name` was ignored by the server and the
+  copy kept the `(copy #N)` name; the name is now applied.** The preview
+  said the copy would get the name, and `--help` said the default was
+  `Copy of <name>`; both now match what Kizen does. Kizen deletes every
+  field not placed on a `form_ui` page whenever a form is updated, so
+  `--name` now refuses a source with an unplaced field, or with no pages,
+  and names the fields: duplicate without `--name`, place every field with
+  `set-ui`, then rename the copy with `update`.
 - **Automation field refs that were sent as literal strings or dropped now
   resolve to the field's UUID.** `create_related_entity`'s
   `context_entity_field` and `start_automation`'s `relationship_field_ids`

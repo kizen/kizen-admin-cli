@@ -1,5 +1,5 @@
-"""The eight activity planner entry points: activity-type and activity-field
-create/update/delete, plus field-option add/remove.
+"""The nine activity planner entry points: activity-type and activity-field
+create/update/delete, activity-type duplicate, plus field-option add/remove.
 
 None of these build a `KizenClient` directly — they call `get_activity` /
 `list_activities` from `tools/activities.py`, which do — so the seam is the
@@ -23,6 +23,7 @@ from kizen_builder.tools.planners.activities import (
     plan_create_activity_fields,
     plan_delete_activity,
     plan_delete_activity_field,
+    plan_duplicate_activity,
     plan_remove_activity_field_option,
     plan_update_activity,
     plan_update_activity_field,
@@ -317,6 +318,41 @@ def test_plan_delete_activity_raises_when_not_found():
         raise AssertionError("expected PlanError")
     except PlanError as exc:
         assert "nope" in str(exc)
+
+
+# ---------------------------------------------------------------------------
+# plan_duplicate_activity
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_plan_duplicate_activity_previews_the_server_default_name():
+    _mock_activity_detail()
+    plan = plan_duplicate_activity("site_visit")
+    (op,) = plan.operations
+    assert op.action == "duplicate"
+    assert op.kind == "activity"
+    assert op.key == "activity:site_visit:duplicate"
+    assert op.existing_uuid == ACTIVITY_ID
+    assert op.payload == {}
+    assert op.preview["source"] == "Site Visit"
+    assert op.preview["new_name"] == "server default: 'Site Visit (copy #N)'"
+
+
+@respx.mock
+def test_plan_duplicate_activity_name_goes_in_the_payload():
+    _mock_activity_detail()
+    plan = plan_duplicate_activity("site_visit", name="Second Visit")
+    (op,) = plan.operations
+    assert op.payload == {"name": "Second Visit"}
+    assert op.preview["new_name"] == "Second Visit"
+
+
+@respx.mock
+def test_plan_duplicate_activity_not_found_raises_plan_error():
+    _mock_activity_detail(identifier="nope", status=404)
+    with pytest.raises(PlanError, match="activity 'nope' not found"):
+        plan_duplicate_activity("nope")
 
 
 # ---------------------------------------------------------------------------

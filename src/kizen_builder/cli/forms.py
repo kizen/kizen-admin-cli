@@ -411,7 +411,9 @@ def _add_write_commands(
     def _duplicate(
         identifier: str = typer.Argument(..., help=f"{Title} api_name or UUID."),
         name: str = typer.Option(
-            "", "--name", help="Name for the duplicate. Defaults to 'Copy of <name>'."
+            "",
+            "--name",
+            help="Name for the copy. Default: the server's '<name> (copy #N)'.",
         ),
         dry_run: bool = typer.Option(
             False, "--dry-run", help="Show the plan without applying."

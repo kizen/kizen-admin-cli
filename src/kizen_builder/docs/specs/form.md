@@ -76,6 +76,18 @@ GET/PUT/PATCH/DELETE  {base_path}/{id_or_api_name}       # path accepts either
 POST                  {base_path}/{id}/duplicate
 ```
 
+`/duplicate` ignores `name`; the CLI renames the copy with a PATCH. Confirmed
+live 2026-10-06.
+
+**Any update to a form deletes every field not placed on one of its `form_ui`
+pages**, default and CLI-created alike, whatever the update sets: a PATCH of
+`name`, `description` or `enabled`, a full PUT, and `set-ui` (a `form_ui`
+PATCH) all do it. A form with no pages loses all of its fields. So
+`duplicate --name` refuses unless the source places every field; duplicate
+without it, place every field on the copy with `set-ui`, then rename it with
+`update`. `update` itself does not check yet. Confirmed live 2026-10-16 on
+forms and surveys.
+
 The API supports a full PUT, but `update` only ever sends a PATCH with the flags
 that changed — matching every other `update` verb in this CLI rather than mixing
 update semantics.

@@ -185,6 +185,11 @@ GET/POST  /api/dashboards/{id}/dashlet
 GET/PATCH/DELETE /api/dashboards/{id}/dashlet/{dashlet_id}
 ```
 
+`/duplicate` ignores its body. The copy is named `<name> (copy #N)` with
+api_name `<api_name>_copy_N`, is unpublished, and has empty sharing.
+`dashboards duplicate` PATCHes the name and the source's sharing back on.
+Confirmed live 2026-10-06.
+
 **Listing is `GET /api/dashboards/mine`, not `GET /api/dashboards`** — the bare
 collection path is POST-only and a GET returns **HTTP 405**.
 

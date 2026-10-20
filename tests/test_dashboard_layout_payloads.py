@@ -174,6 +174,67 @@ def test_update_dashboard_no_metadata_change_is_skip(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# dashboard duplicate
+# ---------------------------------------------------------------------------
+
+
+def _fake_source() -> dict:
+    return {
+        "id": DASH_ID,
+        "name": "Ops Board",
+        "api_name": "ops_board",
+        "sharing_settings": {
+            "private": False,
+            "all_team_members": 1,
+            "roles": {
+                "view": [],
+                "edit": [],
+                "admin": [{"id": ADMIN_ID, "display_name": "Admin"}],
+            },
+            "team_members": {"view": [], "edit": [], "admin": []},
+        },
+    }
+
+
+def test_duplicate_dashboard_carries_the_source_sharing(monkeypatch):
+    monkeypatch.setattr(dash_planners, "get_dashboard_detail", lambda d: _fake_source())
+    plan = dash_planners.plan_duplicate_dashboard("ops_board")
+    (op,) = plan.operations
+
+    assert op.action == "duplicate" and op.kind == "dashboard"
+    assert op.existing_uuid == DASH_ID
+    assert op.payload == {"sharing_settings": _default_sharing()}
+    assert op.preview["new_name"] == "server default: 'Ops Board (copy #N)'"
+    assert op.preview["new_api_name"] == "server default: 'ops_board_copy_N'"
+    assert op.preview["published"].startswith("false")
+    assert op.preview["sharing"] == "copied from source"
+
+
+def test_duplicate_dashboard_name_and_api_name_go_in_the_payload(monkeypatch):
+    monkeypatch.setattr(dash_planners, "get_dashboard_detail", lambda d: _fake_source())
+    plan = dash_planners.plan_duplicate_dashboard(
+        DASH_ID, name="Ops Board 2", api_name="ops_board_2"
+    )
+    (op,) = plan.operations
+    assert op.payload == {
+        "sharing_settings": _default_sharing(),
+        "name": "Ops Board 2",
+        "api_name": "ops_board_2",
+    }
+    assert op.preview["new_name"] == "Ops Board 2"
+    assert op.preview["new_api_name"] == "ops_board_2"
+
+
+def test_duplicate_dashboard_unknown_source_is_a_plan_error(monkeypatch):
+    def missing(d):
+        raise LookupError(f"no dashboard with api_name '{d}'")
+
+    monkeypatch.setattr(dash_planners, "get_dashboard_detail", missing)
+    with pytest.raises(PlanError, match="dashboard 'nope' not found"):
+        dash_planners.plan_duplicate_dashboard("nope")
+
+
+# ---------------------------------------------------------------------------
 # layout update
 # ---------------------------------------------------------------------------
 

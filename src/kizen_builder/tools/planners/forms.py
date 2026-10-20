@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FormDef, FormFieldDef
+from kizen_builder.tools.form_ui import unplaced_fields
 from kizen_builder.tools.forms import FORMS_BASE_PATH, get_form, list_forms
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import (
@@ -23,6 +24,7 @@ from kizen_builder.tools.plans import (
     Plan,
     PlanError,
     PlanOperation,
+    copy_name_preview,
     fetch_existing,
 )
 
@@ -245,14 +247,31 @@ def plan_duplicate_form(
     base_path: str = FORMS_BASE_PATH,
     kind: FormKind = "form",
 ) -> Plan:
-    """Plan duplication of one form/survey."""
+    """Plan duplication of one form/survey.
+
+    Renaming the copy is an update, which deletes every field not placed on a
+    ``form_ui`` page, so ``name`` is refused unless the source places them all.
+    """
     obj_kind, _, _ = _kinds(kind)
     env = load_env_config().name
-    current = _load_form(identifier, base_path, kind, include_fields=False)
+    current = _load_form(identifier, base_path, kind, include_fields=bool(name))
 
-    payload: dict[str, Any] = {}
     if name:
-        payload["name"] = name
+        form_ui = current["raw"].get("form_ui")
+        unplaced = unplaced_fields(form_ui, current["fields"])
+        if unplaced or not (form_ui or {}).get("pages"):
+            missing = ", ".join(f["api_name"] or f["id"] for f in unplaced)
+            group = f"{kind}s"
+            raise PlanError(
+                f"can't rename a copy of {kind} '{current.get('name')}': the "
+                "rename is an update, and Kizen deletes every field an update "
+                "finds on no page. "
+                + (f"Not on a page: {missing}. " if unplaced else "It has no pages. ")
+                + f"To copy it safely, run `kizen {group} duplicate "
+                f"{current['id']}` without --name, place every field on the copy "
+                f"with `kizen {group} set-ui <copy id>`, then `kizen {group} "
+                f"update <copy id> --name {name!r}`."
+            )
 
     op = PlanOperation(
         action="duplicate",
@@ -261,9 +280,9 @@ def plan_duplicate_form(
         preview={
             "env": env,
             "source": current.get("name"),
-            "new_name": name or f"Copy of {current.get('name')}",
+            "new_name": copy_name_preview(current.get("name"), name),
         },
-        payload=payload,
+        payload={"name": name} if name else {},
         existing_uuid=current["id"],
     )
     return Plan.build(

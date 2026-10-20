@@ -82,6 +82,7 @@
 │ create     Create one activity type from flags, or a JSON ActivityDef (--spec-file/stdin).       │
 │ update     Update one activity type. Only the flags you set are changed.                         │
 │ delete     Delete one activity type.                                                             │
+│ duplicate  Duplicate one activity type.                                                          │
 │ fields     Manage the fields on an activity type.                                                │
 │ logged     Read logged activity instances (read-only).                                           │
 │ scheduled  Read scheduled activity instances (read-only).                                        │
@@ -132,6 +133,21 @@
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
 │ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: activities duplicate [OPTIONS] {identifier}                                                 
+                                                                                                    
+ Duplicate one activity type.                                                                       
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    identifier      <str>  Activity api_name or UUID. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
+│ --dry-run                 Show the plan without applying.                                        │
+│ --yes      -y             Skip the y/N confirmation prompt.                                      │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: activities fields [OPTIONS] COMMAND [ARGS]...                                               
@@ -1454,6 +1470,7 @@
 │ get             Show one dashboard/homepage plus a summary of its dashlets.                      │
 │ create          Create a dashboard/homepage and its dashlets from a JSON DashboardDef.           │
 │ update          Update a dashboard's metadata and/or dashlets from a JSON DashboardDef.          │
+│ duplicate       Copy a dashboard, its dashlets and its sharing.                                  │
 │ dashlet-config  Print a valid dashlet `config` for a named type, ready to edit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1504,6 +1521,24 @@
                                                                                                     
  Then drop the config into a DashboardDef — see `kizen docs show dashboard`                         
                                                                                                     
+                                                                                                    
+ Usage: dashboards duplicate [OPTIONS] {dashboard}                                                  
+                                                                                                    
+ Copy a dashboard, its dashlets and its sharing.                                                    
+                                                                                                    
+ The copy is unpublished; publish it with `dashboards update`.                                      
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    dashboard      <str>  Dashboard UUID or api_name. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --name              <str>  Name for the copy. Default: the server's '<name> (copy #N)'.          │
+│ --api-name          <str>  api_name for the copy. Default: the server's '<api_name>_copy_N'.     │
+│ --dry-run                  Show the plan without applying.                                       │
+│ --yes       -y             Skip the y/N confirmation prompt.                                     │
+│ --json                     Emit JSON (plan with --dry-run, results otherwise).                   │
+│ --help                     Show this message and exit.                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: dashboards get [OPTIONS] {dashboard}                                                        
                                                                                                     
@@ -1976,7 +2011,7 @@
 │ *    identifier      <str>  Form api_name or UUID. [required]                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --name             <str>  Name for the duplicate. Defaults to 'Copy of <name>'.                  │
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -4003,7 +4038,7 @@
 │ *    identifier      <str>  Survey api_name or UUID. [required]                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --name             <str>  Name for the duplicate. Defaults to 'Copy of <name>'.                  │
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -4320,6 +4355,9 @@
 ===== activities delete =====
 
 
+===== activities duplicate =====
+
+
 ===== activities fields =====
 
 
@@ -4543,6 +4581,9 @@
 
 
 ===== dashboards dashlet-config =====
+
+
+===== dashboards duplicate =====
 
 
 ===== dashboards get =====

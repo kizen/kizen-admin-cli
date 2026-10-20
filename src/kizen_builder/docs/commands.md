@@ -182,6 +182,7 @@ kizen categories update <object_api_name> <current_name> --name <new>
 kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [...]
 kizen automations update [--spec-file path | < stdin]
 kizen dashboards update <uuid|api_name> [--spec-file | < stdin]   # metadata + dashlets (diff by id)
+kizen dashboards duplicate <uuid|api_name> [--name X] [--api-name Y]   # unpublished copy, source's sharing
 kizen records update <object> <uuid> --field api_name=value [...]    # one record
 kizen records update <object> [--spec-file f.csv|f.json | < stdin]   # bulk update (each row needs an 'id')
 kizen records upsert <object> <lookup_value> --field api_name=value [...]  # create-or-update by lookup_value
@@ -214,6 +215,7 @@ kizen activities create --name X [--api-name Y] [--association-mode ...] [--obje
 kizen activities update <activity> [--name] [--description] [--object <api_name> ...] \
     [--association-mode ...] [--visibility-rules-file f] [--spec-file f]
 kizen activities delete <activity>
+kizen activities duplicate <activity> [--name X]
 kizen activities fields create <activity> --name X --type text [--option ...]   # native activity field
 kizen activities fields create <activity> --linked-field object_api.field_api    # surface an existing CO field
 kizen activities fields create <activity> [--spec-file f]                        # bulk (either kind)
