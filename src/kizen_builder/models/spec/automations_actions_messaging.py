@@ -288,6 +288,13 @@ class ActionScheduleActivityConfig(BaseModel):
         ),
     )
     note: str | None = None
+    html_note: str | None = Field(
+        default=None,
+        description=(
+            "HTML-formatted note. Kizen stores it separately from `note`, and "
+            "a write without it clears it (confirmed live 2026-10-06)."
+        ),
+    )
 
 
 class ActionDeleteScheduledActivityConfig(BaseModel):

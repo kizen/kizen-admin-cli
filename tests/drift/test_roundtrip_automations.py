@@ -1287,22 +1287,26 @@ def test_branch_group_linkage_survives_the_roundtrip(drift_branch_groups):
     assert sorted(delays) == sorted(expected)
 
 
-def test_branch_groups_put_back_unchanged(drift_client, drift_branch_groups):
+def _put_back_unchanged(drift_client, record: dict[str, Any]) -> None:
     """What `roundtrip --execute` does: translate the read, PUT it, re-read."""
     from kizen_builder.api import automations as auto_api
     from kizen_builder.translate import live_to_payload, semantic_diff, validate_payload
 
-    before = drift_branch_groups["live"]
+    before = auto_api.get_automation(drift_client, record["uuid"])
     payload = live_to_payload(before)
     assert validate_payload(payload) == []
     auto_api.update_automation(
         drift_client,
-        drift_branch_groups["uuid"],
+        record["uuid"],
         payload,
         last_revision=payload.get("last_revision"),
     )
-    after = auto_api.get_automation(drift_client, drift_branch_groups["uuid"])
+    after = auto_api.get_automation(drift_client, record["uuid"])
     assert list(semantic_diff(before, after)) == []
+
+
+def test_branch_groups_put_back_unchanged(drift_client, drift_branch_groups):
+    _put_back_unchanged(drift_client, drift_branch_groups)
 
 
 # ---------------------------------------------------------------------------
@@ -1570,6 +1574,12 @@ def test_modify_related_entities_hop_and_value_type_dialect(
     (item,) = sent["fields_to_modify"]
     assert item["value_type"] == "specific_value"
     assert "change_type" not in item
+
+
+def test_related_entity_steps_put_back_unchanged(drift_client, drift_related_steps):
+    """The modify step's read carries `record_source: related_object_field`
+    and `record_source_variables: []`, and the translator now sends both."""
+    _put_back_unchanged(drift_client, drift_related_steps)
 
 
 def test_create_related_entity_reduces_references_to_bare_ids(
@@ -2453,6 +2463,43 @@ def test_start_and_wait_streams_a_live_run_without_crashing(
             "unverified this run, not broken. Re-run to try again."
         )
     assert result["status"] in _TERMINAL_EXECUTION_STATUSES
+
+
+# ---------------------------------------------------------------------------
+# Read keys: every one a live read carries is classified
+# ---------------------------------------------------------------------------
+
+#: Every themed automation above; together they carry every wired type.
+THEMED_AUTOMATIONS = (
+    "drift_automation",
+    "drift_variable_condition",
+    "drift_triggers",
+    "drift_schedule_trigger",
+    "drift_email_received_trigger",
+    "drift_startable_automation",
+    "drift_code_step_automation",
+    "drift_control_flow",
+    "drift_branch_groups",
+    "drift_data_steps",
+    "drift_array_variable_steps",
+    "drift_related_steps",
+    "drift_messaging",
+    "drift_ai_steps",
+    "drift_extraction_sources",
+    "drift_plugin_steps",
+    "drift_activity_steps",
+)
+
+
+@pytest.mark.parametrize("fixture", THEMED_AUTOMATIONS)
+def test_live_read_keys_are_all_classified(request, fixture):
+    """`translate` refuses a read carrying a set key its builder doesn't
+    model, so an unclassified key here — even a null one — is an automation
+    the CLI will one day refuse to show or re-save."""
+    from tests import builder_keys
+
+    record = request.getfixturevalue(fixture)
+    assert builder_keys.unclassified_read_keys(record["live"]) == set()
 
 
 # ---------------------------------------------------------------------------

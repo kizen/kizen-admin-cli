@@ -24,9 +24,11 @@ The automations API reads and writes different dialects:
 Per-type wire knowledge lives in the planner builders
 (:mod:`kizen_builder.tools.planners.automations`); this module reuses them
 where they exist and falls back to a mechanical strip for types that don't
-have a builder yet. The empirical contract is round-trip fidelity:
-``PUT(live_to_payload(GET(x)))`` followed by a fresh GET must be a semantic
-no-op (see :func:`semantic_diff`), verified by
+have a builder yet. A non-empty key in a step or trigger block whose builder
+neither reads it nor declares it ``unsent_on_read`` raises
+:class:`PlanError`, since the PUT would drop it. The empirical contract is
+round-trip fidelity: ``PUT(live_to_payload(GET(x)))`` followed by a fresh
+GET must be a semantic no-op (see :func:`semantic_diff`), verified by
 ``kizen automations roundtrip``.
 """
 
@@ -43,6 +45,7 @@ from kizen_builder.tools.planners.automations import (
     _block_field_for,
     _merge_server_state,
     _prefix_for,
+    _reject_unhonoured_keys,
     _strip,
 )
 from kizen_builder.tools.plans import PlanError
@@ -133,12 +136,14 @@ def live_to_payload(raw: dict[str, Any]) -> dict[str, Any]:
     if raw.get("error_notification_email") is not None:
         payload["error_notification_email"] = raw["error_notification_email"]
 
+    where = f"automation '{raw['name']}'"
     payload["triggers"] = [
-        _live_trigger_to_wire(t, key=trigger_keys[t["id"]], order=i)
+        _live_trigger_to_wire(t, key=trigger_keys[t["id"]], order=i, where=where)
         for i, t in enumerate(_sorted_triggers(raw))
     ]
     payload["steps"] = [
-        _live_step_to_wire(s, step_keys, trigger_keys) for s in _sorted_steps(raw)
+        _live_step_to_wire(s, step_keys, trigger_keys, where)
+        for s in _sorted_steps(raw)
     ]
     # Carries folder/variables/throttles, injects variable ids into
     # initialize_variable steps, stamps last_revision.
@@ -149,6 +154,7 @@ def _live_step_to_wire(
     step: dict[str, Any],
     step_keys: dict[str, str],
     trigger_keys: dict[str, str],
+    where: str,
 ) -> dict[str, Any]:
     step_type = step["step_type"]
     branch = step.get("parent_condition") or ""
@@ -187,11 +193,13 @@ def _live_step_to_wire(
     cfg_key = _block_field_for(step_type)
     block = dict(step.get(cfg_key) or {})
 
+    where = f"{where} step '{p['key']}' {cfg_key}"
     if step_type == "go_to_automation_step":
-        block = _rewire_go_to(block, step_keys, trigger_keys)
+        block = _rewire_go_to(block, step_keys, trigger_keys, where)
 
     builder = _STEP_BUILDERS.get(step_type)
     if builder is not None:
+        _reject_unhonoured_keys(builder, block, where, live=True)
         p[cfg_key] = builder(block, _SHIM_AUTO, _SHIM_CTX)
     else:
         p[cfg_key] = _generic_block(block)
@@ -202,6 +210,7 @@ def _rewire_go_to(
     block: dict[str, Any],
     step_keys: dict[str, str],
     trigger_keys: dict[str, str],
+    where: str,
 ) -> dict[str, Any]:
     """Rewrite id-based go_to references to synthesized keys.
 
@@ -215,7 +224,7 @@ def _rewire_go_to(
         target_id = target["id"]
         if target_id not in step_keys:
             raise PlanError(
-                f"go_to_automation_step points at step id {target_id} which is "
+                f"{where}: points at step id {target_id}, which is "
                 "not part of this automation"
             )
         out["step_key"] = step_keys[target_id]
@@ -224,7 +233,7 @@ def _rewire_go_to(
         trig_id = trig["id"]
         if trig_id not in trigger_keys:
             raise PlanError(
-                f"go_to_automation_step points at trigger id {trig_id} which is "
+                f"{where}: points at trigger id {trig_id}, which is "
                 "not part of this automation"
             )
         out["trigger_key"] = trigger_keys[trig_id]
@@ -232,7 +241,7 @@ def _rewire_go_to(
 
 
 def _live_trigger_to_wire(
-    trigger: dict[str, Any], key: str, order: int
+    trigger: dict[str, Any], key: str, order: int, where: str
 ) -> dict[str, Any]:
     trigger_type = trigger["trigger_type"]
     p: dict[str, Any] = {
@@ -253,6 +262,9 @@ def _live_trigger_to_wire(
     block = dict(trigger.get(cfg_key) or {})
     builder = _TRIGGER_BUILDERS.get(trigger_type)
     if builder is not None:
+        _reject_unhonoured_keys(
+            builder, block, f"{where} trigger '{key}' {cfg_key}", live=True
+        )
         p[cfg_key] = builder(block, _SHIM_CTX)
     else:
         p[cfg_key] = _generic_block(block)

@@ -373,6 +373,22 @@ KNOWN_SCHEMA_OMISSIONS: dict[str, dict[str, str]] = {
     },
 }
 
+#: Write-schema properties of a declared config block that its builder
+#: neither honours nor declares ``unsent_on_read``, each with the reason the
+#: CLI never sends it. Checked by
+#: ``test_write_schema_keys_are_honoured_or_known_unsent``: a property missing
+#: from here may be a setting the CLI drops on every PUT.
+KNOWN_UNSENT_SCHEMA_KEYS: dict[str, dict[str, str]] = {
+    "schema:WriteStepRequest.step_condition": {
+        "yes_step_ids": (
+            "derived linkage: the write carries `parent_key`/`parent_yes_no` on "
+            "each child instead, and these 500 on write (the envelope note "
+            "above KNOWN_SCHEMA_OMISSIONS)"
+        ),
+        "no_step_ids": "same as yes_step_ids",
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Extraction

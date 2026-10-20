@@ -465,6 +465,209 @@ def test_modify_related_entities_tags_are_bare_uuids(kitchen: dict) -> None:
     assert all(isinstance(t, str) for t in sfv["tags_to_remove"])
 
 
+def _modify_from_variable_read() -> dict:
+    """create_and_modify_related with its modify step reading its records
+    from a variable, in the shape a live read returns (2026-10-06)."""
+    raw = load_fixture("automations/create_and_modify_related.raw.json")
+    (step,) = [s for s in raw["steps"] if s["step_type"] == "modify_related_entities"]
+    step["action_modify_related_entities"].update(
+        record_source="automation_variable",
+        record_source_variables=["visit_record"],
+        automation_variables=[
+            {
+                "name": "visit_record",
+                "deleted": False,
+                "data_type": "entity",
+                "data_subtype": "custom_object",
+            }
+        ],
+        automation_target_relationship_fields=[],
+    )
+    return raw
+
+
+def test_modify_related_entities_keeps_its_record_source() -> None:
+    """Dropping `record_source` made the server default to
+    `related_object_field` and 400 for want of a hop, so the automation could
+    not be re-saved at all (confirmed live 2026-10-06)."""
+    blk = _step_block(
+        live_to_payload(_modify_from_variable_read()), "modify_related_entities"
+    )
+    assert blk["record_source"] == "automation_variable"
+    assert blk["record_source_variables"] == ["visit_record"]
+    assert blk["automation_target_relationship_fields"] == []
+    # The expanded mirror and the config-row id are read-only.
+    assert "automation_variables" not in blk
+    assert "id" not in blk
+
+
+def test_modify_related_entities_record_source_variables_accept_definitions() -> None:
+    raw = _modify_from_variable_read()
+    (step,) = [s for s in raw["steps"] if s["step_type"] == "modify_related_entities"]
+    step["action_modify_related_entities"]["record_source_variables"] = [
+        {"name": "visit_record"}
+    ]
+    blk = _step_block(live_to_payload(raw), "modify_related_entities")
+    assert blk["record_source_variables"] == ["visit_record"]
+
+
+def test_schedule_activity_keeps_its_html_note() -> None:
+    """A PUT without `html_note` clears it, while `note` survives (confirmed
+    live 2026-10-06)."""
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    (step,) = [s for s in raw["steps"] if s["step_type"] == "schedule_activity"]
+    step["action_schedule_activity"]["html_note"] = "<p><strong>Rich</strong> note</p>"
+    blk = _step_block(live_to_payload(raw), "schedule_activity")
+    assert blk["html_note"] == "<p><strong>Rich</strong> note</p>"
+    assert blk["note"] == step["action_schedule_activity"]["note"]
+
+
+# ---------------------------------------------------------------------------
+# Read keys no builder models: refused rather than dropped on PUT
+# ---------------------------------------------------------------------------
+
+
+def _with_block_key(
+    path: str, step_type: str, key: str, value: object
+) -> tuple[dict, dict]:
+    """The fixture, with `key` set on the first `step_type` step's block."""
+    raw = load_fixture(path)
+    step = next(s for s in raw["steps"] if s["step_type"] == step_type)
+    step[_block_field(step_type)][key] = value
+    return raw, step
+
+
+def _block_field(step_type: str) -> str:
+    from kizen_builder.tools.planners.automations import _block_field_for
+
+    return _block_field_for(step_type)
+
+
+def test_unmodelled_step_key_is_refused() -> None:
+    raw, step = _with_block_key(
+        "automations/two_code_steps.raw.json", "code_step", "new_setting", "on"
+    )
+    with pytest.raises(PlanError) as e:
+        live_to_payload(raw)
+    msg = str(e.value)
+    key = synthesize_step_keys(raw)[step["id"]]
+    assert (
+        f"automation '{raw['name']}' step '{key}' action_code_step: new_setting" in msg
+    )
+    assert "would be lost on PUT" in msg
+
+
+def test_unmodelled_trigger_key_is_refused() -> None:
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    trigger = next(t for t in raw["triggers"] if t["trigger_type"] == "activity_logged")
+    trigger["trigger_activity_logged"]["new_setting"] = ["x"]
+    key = synthesize_trigger_keys(raw)[trigger["id"]]
+    with pytest.raises(
+        PlanError, match=f"trigger '{key}' trigger_activity_logged: new_setting"
+    ):
+        live_to_payload(raw)
+
+
+@pytest.mark.parametrize("value", [None, [], {}, ""])
+def test_empty_unmodelled_key_is_not_refused(value: object) -> None:
+    raw, _ = _with_block_key(
+        "automations/two_code_steps.raw.json", "code_step", "new_setting", value
+    )
+    assert "new_setting" not in json.dumps(live_to_payload(raw))
+
+
+@pytest.mark.parametrize(
+    "path, step_type",
+    [
+        # `@honours_all`: forwards its whole block.
+        ("automations/merged_condition.raw.json", "delay"),
+        # No builder: `_generic_block` strips read-only keys and forwards the rest.
+        (
+            "automations/webhook_delete_scheduled_activity.raw.json",
+            "delete_scheduled_activity",
+        ),
+    ],
+)
+def test_forwarding_types_carry_any_key(path: str, step_type: str) -> None:
+    raw, step = _with_block_key(path, step_type, "new_setting", "on")
+    (out,) = [s for s in live_to_payload(raw)["steps"] if s["id"] == step["id"]]
+    assert out[_block_field(step_type)]["new_setting"] == "on"
+
+
+def test_refused_read_sends_no_put(env_config) -> None:
+    import httpx
+    import respx
+
+    from kizen_builder.tools import automations as auto_tools
+    from tests.conftest import FAKE_BASE_URL
+
+    raw, _ = _with_block_key(
+        "automations/two_code_steps.raw.json", "code_step", "new_setting", "on"
+    )
+    base = f"{FAKE_BASE_URL}/api/automation2/automations"
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(base).mock(
+            return_value=httpx.Response(
+                200, json={"results": [{"id": raw["id"], "api_name": raw["api_name"]}]}
+            )
+        )
+        mock.get(f"{base}/{raw['id']}").mock(return_value=httpx.Response(200, json=raw))
+        put = mock.put(f"{base}/{raw['id']}").mock(
+            return_value=httpx.Response(200, json={})
+        )
+        with pytest.raises(PlanError, match="new_setting"):
+            auto_tools.set_active(raw["api_name"], True, execute=True)
+    assert not put.called
+
+
+@pytest.mark.parametrize("verb", ["activate", "show"])
+def test_refused_read_is_a_cli_error(monkeypatch, verb: str) -> None:
+    from typer.testing import CliRunner
+
+    import kizen_builder.cli as cli
+    from kizen_builder.api import automations as auto_api
+
+    raw, _ = _with_block_key(
+        "automations/two_code_steps.raw.json", "code_step", "new_setting", "on"
+    )
+    monkeypatch.setattr(
+        auto_api,
+        "list_automations",
+        lambda c: [{"api_name": raw["api_name"], "id": raw["id"]}],
+    )
+    monkeypatch.setattr(auto_api, "get_automation", lambda c, i: raw)
+    args = ["automations", verb, raw["api_name"], *(["--yes"] * (verb == "activate"))]
+    result = CliRunner().invoke(cli.app, args)
+    assert result.exit_code == 1
+    assert result.stderr.startswith("error: automation ")
+    assert "new_setting would be lost on PUT" in result.stderr
+
+
+def test_go_to_trigger_becomes_its_trigger_key() -> None:
+    raw = load_fixture("automations/update_variable_goto_branching.raw.json")
+    go_to = next(s for s in raw["steps"] if s["step_type"] == "go_to_automation_step")
+    trigger_id = raw["triggers"][0]["id"]
+    go_to["action_go_to_automation_step"]["trigger"] = {"id": trigger_id}
+    (step,) = [s for s in live_to_payload(raw)["steps"] if s["id"] == go_to["id"]]
+    block = step["action_go_to_automation_step"]
+    assert block["trigger_key"] == synthesize_trigger_keys(raw)[trigger_id]
+    assert "trigger" not in block
+
+
+def test_go_to_trigger_outside_the_automation_is_refused() -> None:
+    raw = load_fixture("automations/update_variable_goto_branching.raw.json")
+    go_to = next(s for s in raw["steps"] if s["step_type"] == "go_to_automation_step")
+    go_to["action_go_to_automation_step"]["trigger"] = {
+        "id": "00000000-0000-4000-8000-000000000999"
+    }
+    with pytest.raises(
+        PlanError,
+        match=r"step '\S+' action_go_to_automation_step: points at trigger id "
+        "00000000-0000-4000-8000-000000000999",
+    ):
+        live_to_payload(raw)
+
+
 def test_cc_team_member_normalized_to_id_dialect(kitchen: dict) -> None:
     blocks = [
         s["action_send_related_contact_email"]

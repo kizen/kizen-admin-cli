@@ -4,15 +4,18 @@ each one reads, and which keys it writes into its wire block.
 Keeps the `@honours(...)` declarations in `tools/planners/automations.py`
 honest (`tests/test_automation_payloads.py`), and finds the keys a builder
 forwards under their own name, for the drift tier to compare against the
-published schema (`tests/drift/test_schema_drift.py`).
+published schema (`tests/drift/test_schema_drift.py`). `unclassified_read_keys`
+does the same for an automation read, offline and in the drift tier.
 """
 
 from __future__ import annotations
 
 import ast
 import inspect
+from typing import Any
 
 import kizen_builder.tools.planners.automations as automations_planner
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 
 # The block reaches these helpers through a derived variable rather than as
 # a direct argument, so the scanner is told about them.
@@ -128,3 +131,37 @@ def forwarded_as_is(func_name: str) -> set[str]:
     reaches Kizen as the author spelled it, as opposed to an alias the
     builder translates (`relationship_fields` -> `relationship_field_ids`)."""
     return declarable(func_name) & keys_written(func_name)
+
+
+# `translate._rewire_go_to` turns these into `step_key`/`trigger_key` before
+# the builder runs.
+REWIRED_BEFORE_BUILD = {"go_to_automation_step": {"step", "trigger"}}
+
+
+def unclassified_read_keys(raw: dict[str, Any]) -> set[str]:
+    """`<type>.<key>` for each key of a read step or trigger block whose
+    builder neither honours it nor declares it unsent, null values included.
+    Any of these would make `translate` refuse the read once it is set."""
+    ap = automations_planner
+    found: set[str] = set()
+    blocks = [
+        (s["step_type"], ap._STEP_BUILDERS, s.get(ap._block_field_for(s["step_type"])))
+        for s in raw.get("steps") or []
+        if s["step_type"] not in ap._CONFIGLESS_STEP_TYPES
+    ] + [
+        (
+            t["trigger_type"],
+            ap._TRIGGER_BUILDERS,
+            t.get(trigger_config_field(t["trigger_type"])),
+        )
+        for t in raw.get("triggers") or []
+    ]
+    for type_, registry, block in blocks:
+        builder = registry.get(type_)
+        if builder is None:
+            continue
+        rewired = REWIRED_BEFORE_BUILD.get(type_, set())
+        built = {k: v for k, v in (block or {}).items() if k not in rewired}
+        unread = ap._unclassified_read_keys(builder, built, skip_empty=False)
+        found |= {f"{type_}.{k}" for k in unread}
+    return found

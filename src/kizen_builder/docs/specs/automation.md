@@ -317,8 +317,8 @@ Creates one record on another object and links it to the triggering record.
   `variable_field_resolution` and `context_entity_field_resolution`
   (default `overwrite`), `existing_record_found_action` (default
   `error_do_not_create`) and `archived_record_found_action` (default
-  `overwrite`). Any other key is a plan error on `automations create`/`update`
-  and `steps add`; `steps edit` doesn't check it yet.
+  `overwrite`). Any other key is a plan error on `automations create`/`update`,
+  `steps add` and `steps edit`.
 - **Field values can't be set at creation.** The step has no key for them:
   `field_values` used to be forwarded, and Kizen accepted it and stored
   nothing (confirmed live 2026-10-05). Create the record empty, then set its
@@ -352,6 +352,14 @@ one or more relationship-field hops.
   `relationship_field_ref` (or `relationship_field_id`), is also accepted
   and folded into this list — but the list is the real wire key; don't
   confuse this with `object_to_modify` (a plain object reference).
+- **`record_source`** says where the records come from:
+  `related_object_field` (the hop chain above) or `automation_variable`. For
+  `automation_variable`, set `record_source_variables` to the names of
+  **non-array** entity variables (an array variable 400s) and
+  `automation_target_relationship_fields: []`. Omitted, the server uses
+  `related_object_field`, which 400s without a hop:
+  *"automation_target_relationship_fields should be set"*. Confirmed live
+  2026-10-06.
 - **`fields_to_modify`** items use the *same* per-item shape as
   `change_field_value`'s flat form (`field_to_modify`/`field_ref`,
   `specific_field_value`, `related_object`, `related_object_field`,
@@ -805,18 +813,30 @@ Why a translator is mandatory rather than nice-to-have:
   **null**).
 - **A key the planner doesn't read is a plan-time error.** Any top-level key
   in a step or trigger config block that the type's builder doesn't read
-  fails `create`/`update`/`steps add` before the plan renders, even under
-  `--dry-run --json`, with a `plan error:` naming the key and every key that
-  block does read. Two limits: keys *inside* nested items
-  (`change_field_value.actions[]`, `code_step.inputs`/`outputs`,
-  `plugin_code_step.inputs`/`outputs`, `schedule_activity.schedule`) aren't
-  checked, and neither is `steps edit`.
+  fails `create`/`update`/`steps add`/`steps edit` before the plan renders,
+  even under `--dry-run --json`, naming the key and every key that block does
+  read (`plan error:` from `create`/`update`, `error:` from `steps`). One
+  limit: keys *inside* nested items (`change_field_value.actions[]`,
+  `code_step.inputs`/`outputs`, `plugin_code_step.inputs`/`outputs`,
+  `schedule_activity.schedule`) aren't checked.
   Types whose builder forwards the whole block to Kizen (`delay`, `goal`,
   `stop_execution`, `initialize_variable`, `update_variable`,
   `send_related_contact_text`, and every trigger except `manual`,
-  `new_entity_created` and `activity_logged`) accept any key, and Kizen may
-  still ignore one. `send_related_contact_text` is the exception within
-  them: an extra key whose value is a dict or list is dropped, not forwarded.
+  `new_entity_created`, `activity_logged` and `email_received`) accept any
+  key, and Kizen may still ignore one. `send_related_contact_text` is the
+  exception within them: an extra key whose value is a dict or list is
+  dropped, not forwarded.
+- **So is a key a live read carries that the builder doesn't model.** Every
+  verb that reads an automation back, whether to write it (`activate`,
+  `deactivate`, `move`, `steps add|edit|remove`, `roundtrip --execute`) or to
+  show or diff it (`show`, `steps get`, `diff`), stops with an error naming
+  the automation, the step or trigger and the key, before any PUT.
+  Only a non-empty value counts, and the same limits apply: keys inside
+  nested items aren't checked, and neither are the forwarding types above.
+  Derived read-only keys are expected and never sent: `yes_steps`/`no_steps`
+  on a condition, and the message fields (`subject`, `content`, `name`, …) a
+  `notify_member_via_email`/`_text` read flattens into the block (confirmed
+  live 2026-10-16).
 
 Also: **automation updates need PUT, not PATCH.** PATCH refuses step/trigger
 changes, and PUT requires the current `revision` as `last_revision`.
@@ -867,17 +887,20 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
 | Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
+| `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
 
 `automation_variable_overrides` items carry a fixed key set on read, most null
 per entry — `value_source` says which one is live: `context_entity_field`,
 `automation_variable`, `specific_value`, and `blank` are confirmed live
 2026-09-01 (`sets_variable_overrides`/`Receives Variable Overrides`, five
 overrides on one target automation, incl. one `specific_value` and one
-`blank`). Four more sibling keys are real on the wire but unconfirmed —
-null in every capture so far: `automation_entity_variable`,
-`automation_entity_variable_field`, `relationship_field`,
-`related_record_field`. The translator raises rather than guesses at their
-`value_source` names or unwrap shape.
+`blank`). The schema's `ValueSourceEnum` adds two more:
+`related_object_field`, which pairs `relationship_field` (the hop, a UUID)
+with `related_record_field` (the field on the related record, a UUID), and
+`automation_entity_variable_field`, which pairs `automation_entity_variable`
+(a variable name) with `automation_entity_variable_field` (a field UUID).
+The translator carries every non-null value key with the unwrap its schema
+type calls for. Per the published schema, 2026-10-06; not yet seen live.
 
 ### Graph rules the server enforces
 
@@ -942,6 +965,12 @@ bare strings 500s.**
 `filter_config` (only for `filter_type: custom_filter`) resolves against the
 step's **own** `custom_object`, not the automation's `target_object` — which a
 global automation doesn't have at all.
+
+### `schedule_activity.note` and `html_note`
+
+Kizen stores the two separately, and a PUT without `html_note` clears it
+while `note` survives. Set both when you want the note in both forms.
+Confirmed live 2026-10-06.
 
 ### `schedule_activity.association_configs`
 

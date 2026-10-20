@@ -312,7 +312,12 @@ exit 1 from any command, and anything else into `error: internal: …`.
    outside the declared set is a plan error, and
    `test_declared_keys_match_what_the_builder_reads` fails if the declaration
    and the builder's `block.get(...)` calls disagree. Read-dialect aliases the
-   builder accepts count as read.
+   builder accepts count as read. A key a live read carries that must never be
+   sent back (derived linkage, an expanded mirror) goes in
+   `@honours(..., unsent_on_read=("key",))`; any other unread key in a live
+   read makes `translate` refuse the automation, and
+   `test_every_captured_read_key_is_classified` fails on a fixture that has
+   one.
 6. Update the wired list in `src/kizen_builder/docs/specs/automation.md`.
 7. If the type has an enum-typed field whose valid values you've confirmed
    (live, in a fixture, or via the drift snapshot once it captures enum

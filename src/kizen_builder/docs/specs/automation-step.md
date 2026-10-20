@@ -110,6 +110,9 @@ Consequences worth knowing:
   steps (confirmed live 2026-08-10) instead of marking them deleted. Only the
   synthesized `key`s rotate — `go_to` references are re-keyed onto those, same
   as before.
+- **A step setting the CLI doesn't model stops the loop before the PUT,**
+  on any step, not only the one you're editing — see "GET and PUT are
+  different dialects" in `kizen docs show automation`.
 
 ## See also
 
