@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -14,6 +14,8 @@ from kizen_builder.models.spec.field_configs import (
     RatingConfig,
     RelationConfig,
     StatusOption,
+    check_type_blocks,
+    reject_api_spellings,
 )
 from kizen_builder.utils import derived_object_api_name
 
@@ -104,6 +106,11 @@ class FieldDef(BaseModel):
         description="For phonenumber fields.",
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_api_spellings(cls, data: Any) -> Any:
+        return reject_api_spellings(data, cls.model_fields)
+
     @model_validator(mode="after")
     def _validate_type_specific_config(self) -> Self:
         ft = self.field_type
@@ -115,15 +122,7 @@ class FieldDef(BaseModel):
                 f"(e.g. 'patient_{self.api_name}' for a Patient object)."
             )
 
-        if ft in _TYPES_REQUIRING_OPTIONS:
-            if not self.options:
-                raise ValueError(
-                    f"field '{self.api_name}' of type '{ft}' requires a non-empty 'options' list"
-                )
-        elif self.options is not None:
-            raise ValueError(
-                f"field '{self.api_name}' of type '{ft}' cannot have 'options'"
-            )
+        check_type_blocks(self, f"field '{self.api_name}'", _TYPES_REQUIRING_OPTIONS)
 
         if ft == "relationship":
             if self.relation is None:
@@ -135,39 +134,9 @@ class FieldDef(BaseModel):
                 f"field '{self.api_name}' of type '{ft}' cannot have a 'relation' block"
             )
 
-        if ft == "money" and self.money_options is None:
-            # Default to USD so the user doesn't have to spell it out every time.
-            self.money_options = MoneyConfig()
-        if ft != "money" and self.money_options is not None:
+        if ft == "status" and not self.status_options:
             raise ValueError(
-                f"field '{self.api_name}' of type '{ft}' cannot have 'money_options'"
-            )
-
-        if ft == "rating" and self.rating is None:
-            self.rating = RatingConfig()
-        if ft != "rating" and self.rating is not None:
-            raise ValueError(
-                f"field '{self.api_name}' of type '{ft}' cannot have 'rating'"
-            )
-
-        if ft != "decimal" and self.decimal_options is not None:
-            raise ValueError(
-                f"field '{self.api_name}' of type '{ft}' cannot have 'decimal_options'"
-            )
-
-        if ft != "phonenumber" and self.phone_options is not None:
-            raise ValueError(
-                f"field '{self.api_name}' of type '{ft}' cannot have 'phone_options'"
-            )
-
-        if ft == "status":
-            if not self.status_options:
-                raise ValueError(
-                    f"field '{self.api_name}' of type 'status' requires 'status_options'"
-                )
-        elif self.status_options is not None:
-            raise ValueError(
-                f"field '{self.api_name}' of type '{ft}' cannot have 'status_options'"
+                f"field '{self.api_name}' of type 'status' requires 'status_options'"
             )
 
         return self

@@ -12,10 +12,14 @@ existing_uuid/deferred refs), not the payload shape itself.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.tools.planners.activities import (
     plan_add_activity_field_options,
@@ -635,3 +639,27 @@ def test_activity_plans_do_not_report_other_errors_as_not_found(plan, status):
     with pytest.raises(KizenAPIError) as exc:
         plan()
     assert exc.value.status_code == status
+
+
+@pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
+@respx.mock
+def test_activities_create_rejects_an_api_spelled_field_key(flags):
+    """Fails on the spec, before any live read (respx would refuse one)."""
+    spec = {
+        "name": "Site Visit",
+        "fields": [
+            {
+                "name": "Decision",
+                "field_type": "dropdown",
+                "options": ["Yes", "No"],
+                "is_required": True,
+            }
+        ],
+    }
+    result = CliRunner().invoke(
+        cli.app, ["activities", "create", *flags], input=json.dumps(spec)
+    )
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert "is_required" in result.stderr
+    assert "'required'" in result.stderr

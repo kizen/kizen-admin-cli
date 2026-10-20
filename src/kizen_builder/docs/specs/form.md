@@ -55,7 +55,8 @@ and `kizen surveys …`.
 Structurally identical to `ActivityFieldDef` (see `activity.md`) **minus** the
 `activity_custom_field` linked-field concept — forms are standalone
 data-capture surfaces. Flat list ordered by `order`; `api_name` optional; same
-type-specific blocks as `field.md`.
+type-specific blocks as `field.md`. Unknown keys are rejected exactly as in
+`field.md`.
 
 ## Gotchas
 

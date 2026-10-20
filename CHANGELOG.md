@@ -69,6 +69,18 @@ called out explicitly under **Changed** or **Removed**.
   step. A block that names its object only with `target_custom_object`, as
   one copied from `steps get` does, now validates for `automations create`
   and `steps add`.
+- **Breaking: an activity, form or survey field spec key the CLI doesn't
+  read is now a spec error.** `activities create`, `activities fields
+  create`, and `forms`/`surveys` `create` and `fields create` used to drop it
+  silently, so a field written with the API's `"is_required": true` applied
+  as optional. The error names the key. For the API's spellings
+  (`is_required`, `is_read_only`, `is_hidden`, `display_name`,
+  `phonenumber_options`) it also names the key to write instead.
+  Custom-object field specs already rejected unknown keys, and now give the
+  same hint. A type block that doesn't match `field_type`, such as
+  `money_options` on a `text` field, is now rejected on these fields too. A
+  spec that applied before can fail after upgrading: rename or remove the
+  key.
 - **Breaking: `records delete` is removed; `records archive` is the one way
   to remove records.** Kizen's delete was always an archive (same restorable
   state, same id), so the two commands did the same thing. `records archive`
