@@ -253,6 +253,17 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **`kizen` can run under app-builder with no profile.**
+  When `KIZEN_AUTH_HELPER` is set, the environment comes from
+  `KIZEN_BASE_URL`, `KIZEN_BUSINESS_ID` and `KIZEN_USER_ID`, and every request
+  authenticates with a Bearer token printed by the helper command, refreshed
+  once on a 401. `~/.config/kizen/credentials.toml` isn't read, and a pinned
+  directory still refuses a different `business_id`. In this mode `kizen
+  init`, `kizen envs list` and `kizen upgrade` refuse, and `kizen upgrade
+  --check` says the installation is managed by app-builder and exits 0.
+  Profile mode is unchanged. `kizen docs show operating` has the variable
+  contract.
+
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
   dashlets. `--name` names the copy, and `dashboards duplicate` also takes
