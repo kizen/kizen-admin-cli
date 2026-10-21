@@ -233,7 +233,7 @@ sending the request is the only way to catch a typo (`kizen records list
 to one value across many records** in one call.
 
 ```bash
-kizen records set-field <object> <uuid> [<uuid> …] --field X --value Y [--resolution …]
+kizen records set-field <object> <uuid> [<uuid> …] --field api_name=value [--resolution …]
 ```
 
 - **`field_value` takes the bare wire scalar, not an object** — despite the
@@ -247,9 +247,18 @@ kizen records set-field <object> <uuid> [<uuid> …] --field X --value Y [--reso
 - `field_resolution` is one of `overwrite`, `add_only`, `remove_only`,
   `update_if_blank`, `overwrite_except_null` (`add_only`/`remove_only` apply to
   multi-select fields).
-- **Untested live:** `checkboxes`/`dynamictags` (multi-select) and
-  `relationship` fields. By the same pattern they should want a bare list of
-  ids rather than a list of `{"id": …}` dicts — confirm before relying on it.
+- The value goes through the same coercion as `records update --field`, so
+  `--field 'picks=["A","B"]'` sends a list.
+- **A `checkboxes` field takes a bare list of option UUIDs.** `add_only` with
+  `["A","B"]` and `overwrite` with `["B","C"]` each read back as exactly those
+  options on both records. An option label the CLI can't match is sent as
+  `{"name": …}`, and that 400s with
+  `field_value: {'1': ['Not a valid string.']}`; the record is left unchanged.
+  Confirmed live 2026-10-16.
+- **Untested live:** `dynamictags` and `relationship` fields. A `dynamictags`
+  value with no matching tag plans as `[{"name": "a"}, …]`, the same
+  `{"name": …}` shape that 400s on `checkboxes`, so don't expect it to create
+  new tags.
 - Id-targeted only. The request also accepts `entity_records_set_key` for
   filter-targeted bulk ops, but that needs the separate `bulk-action-summary`
   framework, which isn't wired up. `bulk-action-progress` polling is wired, but

@@ -15,13 +15,22 @@ profile, the resolved credentials' ``business_id`` must match it or we refuse.
 That checksum is the hard guarantee that a command cannot act against the wrong
 environment from a pinned directory. The canonical identity of a Kizen
 environment is its ``business_id``.
+
+**Helper mode** replaces all of the above except the pin check. When
+``$KIZEN_AUTH_HELPER`` is in the process environment, a wrapper (app-builder)
+owns authentication: the config comes from ``KIZEN_*`` variables alone, the
+credential store is never opened, and requests carry a Bearer header that the
+helper command prints (:mod:`kizen_builder.auth_helper`). The variable contract
+is documented in ``docs/operating.md``.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+import shlex
+from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -42,22 +51,62 @@ class ConfigError(Exception):
     """Raised when required env vars for the active environment are missing."""
 
 
+# Helper mode's environment contract. The first one switches the mode on.
+HELPER_ENV = "KIZEN_AUTH_HELPER"
+_HELPER_VARS = (HELPER_ENV, "KIZEN_BASE_URL", "KIZEN_BUSINESS_ID", "KIZEN_USER_ID")
+
+
+@dataclass(frozen=True)
+class ApiKeyAuth:
+    """A profile's API key, sent as ``X-API-KEY`` with the identity headers."""
+
+    api_key: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class HelperAuth:
+    """A command that prints ``{"Authorization": "Bearer <token>"}``.
+
+    ``argv`` is already split; it runs without a shell.
+    """
+
+    argv: tuple[str, ...]
+
+
+Auth = ApiKeyAuth | HelperAuth
+
+
 @dataclass(frozen=True)
 class EnvConfig:
     """Resolved credentials + base URL for one environment."""
 
     name: str  # Local label from conf file (e.g. "sandbox"). Cosmetic only.
-    api_key: str
     business_id: str  # Canonical identity — checked against the directory pin.
     user_id: str
     base_url: str
+    auth: Auth
 
-    def auth_headers(self) -> dict[str, str]:
-        return {
-            "X-API-KEY": self.api_key,
-            "X-BUSINESS-ID": self.business_id,
-            "X-USER-ID": self.user_id,
-        }
+
+def helper_mode() -> bool:
+    """Whether a wrapper supplies auth through ``$KIZEN_AUTH_HELPER``.
+
+    Read from the process environment only: :func:`load_env_config` drops the
+    variable if a ``.env`` file supplied it, so a checked-in file can't make
+    the CLI run a command.
+    """
+    return HELPER_ENV in os.environ
+
+
+def refuse_in_helper_mode(command: str, managed: str) -> None:
+    """Stop a command that manages what app-builder owns in helper mode.
+
+    ``managed`` completes "app-builder manages ...", e.g.
+    "this installation".
+    """
+    if helper_mode():
+        raise ConfigError(
+            f"`kizen {command}` is unavailable here: app-builder manages {managed}."
+        )
 
 
 def load_env_config(
@@ -70,11 +119,21 @@ def load_env_config(
     ``$KIZEN_PROFILE`` > directory pin > ``$KIZEN_ENV``), loads its credentials
     from the central store and enforces the directory pin's ``business_id``
     checksum before returning.
+
+    In helper mode (``$KIZEN_AUTH_HELPER`` set) the config comes from the
+    ``KIZEN_*`` helper variables instead, no ``.env`` is loaded and the
+    credential store is never read; the pin's ``business_id`` is still
+    enforced.
     """
+    if helper_mode():
+        return _load_helper_config(env_name)
+
     if dotenv_path is not None:
         load_dotenv(dotenv_path, override=False)
     else:
         load_dotenv(find_dotenv(usecwd=True), override=False)
+    # Helper mode comes from the real environment only (see helper_mode()).
+    os.environ.pop(HELPER_ENV, None)
 
     pin = profiles.load_pin()
 
@@ -121,8 +180,78 @@ def _load_profile(name: str) -> EnvConfig:
         )
     return EnvConfig(
         name=name.lower(),
-        api_key=creds.api_key,
         business_id=creds.business_id,
         user_id=creds.user_id,
         base_url=creds.base_url,
+        auth=ApiKeyAuth(creds.api_key),
     )
+
+
+def _load_helper_config(env_name: str | None) -> EnvConfig:
+    """Build an EnvConfig from the helper-mode variables. Never reads the
+    credential store or a ``.env`` file."""
+    selectors = [
+        label
+        for label, value in (
+            ("an explicit environment name", env_name),
+            ("--profile", _cli_profile_override),
+            ("$KIZEN_PROFILE", os.environ.get("KIZEN_PROFILE")),
+        )
+        if value
+    ]
+    if selectors:
+        raise ConfigError(
+            f"${HELPER_ENV} is set, so app-builder supplies the environment, "
+            f"but {' and '.join(selectors)} also selects a profile. "
+            "Use one or the other."
+        )
+
+    values = {var: os.environ.get(var, "").strip() for var in _HELPER_VARS}
+    missing = [var for var, value in values.items() if not value]
+    if missing:
+        raise ConfigError(
+            f"${HELPER_ENV} is set, but {', '.join(missing)} "
+            f"{'is' if len(missing) == 1 else 'are'} missing or empty. "
+            f"Running under app-builder needs all of {', '.join(_HELPER_VARS)}."
+        )
+
+    try:
+        argv = tuple(shlex.split(values[HELPER_ENV]))
+    except ValueError as exc:
+        raise ConfigError(f"${HELPER_ENV} can't be parsed: {exc}") from None
+    base_url = _helper_base_url(values["KIZEN_BASE_URL"])
+    business_id = values["KIZEN_BUSINESS_ID"]
+
+    pin = profiles.load_pin()
+    if pin and pin.business_id and business_id != pin.business_id:
+        raise ConfigError(
+            f"Directory pinned to profile '{pin.profile}' "
+            f"(business_id {pin.business_id}), but KIZEN_BUSINESS_ID is "
+            f"{business_id}. Refusing.\n"
+            f"To retarget this directory, edit {pin.path}."
+        )
+
+    return EnvConfig(
+        name=urlsplit(base_url).netloc,
+        business_id=business_id,
+        user_id=values["KIZEN_USER_ID"],
+        base_url=base_url,
+        auth=HelperAuth(argv),
+    )
+
+
+def _helper_base_url(value: str) -> str:
+    """``$KIZEN_BASE_URL`` as an https origin, like a profile's ``base_url``."""
+    parts = urlsplit(value.rstrip("/"))
+    if (
+        parts.scheme != "https"
+        or not parts.netloc
+        or parts.path
+        or parts.query
+        or parts.fragment
+    ):
+        raise ConfigError(
+            f"KIZEN_BASE_URL must be an https origin such as "
+            f"https://app.go.kizen.com, with no path; got {value!r}."
+        )
+    return f"https://{parts.netloc}"

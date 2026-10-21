@@ -81,7 +81,7 @@ _STEP_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "send_text": "action_send_text",
     "send_related_contact_text": "action_send_related_contact_text",
     "start_automation": "action_start_automation",
-    "stop_execution": None,  # no config block needed
+    "stop_execution": "action_stop_execution",
     "update_pipeline_status": "action_update_pipeline_status",
     "update_variable": "action_update_variable",
     "archive_record": "action_archive_record",

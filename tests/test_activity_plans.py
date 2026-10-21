@@ -1,5 +1,5 @@
-"""The eight activity planner entry points: activity-type and activity-field
-create/update/delete, plus field-option add/remove.
+"""The nine activity planner entry points: activity-type and activity-field
+create/update/delete, activity-type duplicate, plus field-option add/remove.
 
 None of these build a `KizenClient` directly — they call `get_activity` /
 `list_activities` from `tools/activities.py`, which do — so the seam is the
@@ -12,15 +12,22 @@ existing_uuid/deferred refs), not the payload shape itself.
 
 from __future__ import annotations
 
-import httpx
-import respx
+import json
 
+import httpx
+import pytest
+import respx
+from typer.testing import CliRunner
+
+import kizen_builder.cli as cli
+from kizen_builder.api.client import KizenAPIError
 from kizen_builder.tools.planners.activities import (
     plan_add_activity_field_options,
     plan_create_activity,
     plan_create_activity_fields,
     plan_delete_activity,
     plan_delete_activity_field,
+    plan_duplicate_activity,
     plan_remove_activity_field_option,
     plan_update_activity,
     plan_update_activity_field,
@@ -32,6 +39,8 @@ ACTIVITY_ID = "00000000-0000-4000-8000-000000000a01"
 FIELD_ID = "00000000-0000-4000-8000-000000000a02"
 OPTION_ID = "00000000-0000-4000-8000-000000000a03"
 OTHER_OPTION_ID = "00000000-0000-4000-8000-000000000a04"
+OBJ_ID = "00000000-0000-4000-8000-000000000a05"
+OTHER_OBJ_ID = "00000000-0000-4000-8000-000000000a06"
 
 ACTIVITY_DETAIL = {
     "id": ACTIVITY_ID,
@@ -42,7 +51,7 @@ ACTIVITY_DETAIL = {
     "association_mode": "all_objects_associated",
     "n_submissions": 3,
     "custom_objects": [],
-    "selected_objects": [],
+    "associated_objects": [],
 }
 
 DROPDOWN_FIELD = {
@@ -207,6 +216,79 @@ def test_plan_update_activity_always_includes_structural_keys_when_passed():
 
 
 @respx.mock
+def test_plan_update_activity_keeps_the_flags_of_objects_already_associated():
+    """What `activities update --object` and an update spec's
+    `selected_object_ids` both reach. PATCH keeps an existing object's stored
+    flags when its entry omits them (confirmed live 2026-10-16), so the entries
+    carry only id and order; a new object gets the server's defaults."""
+    stored = [
+        {
+            "custom_object": {"id": OBJ_ID, "name": "patients"},
+            "is_required": True,
+            "is_readonly": False,
+            "order": 0,
+        }
+    ]
+    _mock_activity_detail(
+        body={
+            **ACTIVITY_DETAIL,
+            "association_mode": "selected_objects_associated",
+            "associated_objects": stored,
+        }
+    )
+    plan = plan_update_activity(
+        "site_visit", {"selected_object_ids": [OBJ_ID, OTHER_OBJ_ID]}
+    )
+    (op,) = plan.operations
+    assert op.payload == {
+        "associated_objects": [
+            {"custom_object": {"id": OBJ_ID}, "order": 0},
+            {"custom_object": {"id": OTHER_OBJ_ID}, "order": 1},
+        ],
+    }
+    assert op.preview["diff"] == {
+        "associated_objects": (
+            f"patients (required) → patients (required), {OTHER_OBJ_ID}"
+        )
+    }
+
+
+@respx.mock
+def test_plan_update_activity_defaults_the_mode_for_selected_object_ids():
+    _mock_activity_detail()
+    plan = plan_update_activity("site_visit", {"selected_object_ids": [OBJ_ID]})
+    (op,) = plan.operations
+    assert op.payload["association_mode"] == "selected_objects_associated"
+
+
+@respx.mock
+def test_plan_update_activity_passes_associated_objects_through_verbatim():
+    _mock_activity_detail()
+    short = [{"custom_object": {"id": OBJ_ID}}]
+    plan = plan_update_activity("site_visit", {"associated_objects": short})
+    (op,) = plan.operations
+    assert op.payload == {
+        "association_mode": "selected_objects_associated",
+        "associated_objects": short,
+    }
+
+
+@pytest.mark.parametrize(
+    ("changes", "match"),
+    [
+        ({"custom_object_ids": [OBJ_ID]}, "use 'selected_object_ids'"),
+        (
+            {"selected_object_ids": [OBJ_ID], "associated_objects": []},
+            "'associated_objects' or 'selected_object_ids', not both",
+        ),
+    ],
+)
+def test_plan_update_activity_rejects_unsendable_association_keys(changes, match):
+    with pytest.raises(PlanError, match=match):
+        plan_update_activity("site_visit", changes)
+
+
+@respx.mock
 def test_plan_update_activity_raises_when_not_found():
     _mock_activity_detail(identifier="nope", status=404)
     try:
@@ -240,6 +322,41 @@ def test_plan_delete_activity_raises_when_not_found():
         raise AssertionError("expected PlanError")
     except PlanError as exc:
         assert "nope" in str(exc)
+
+
+# ---------------------------------------------------------------------------
+# plan_duplicate_activity
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_plan_duplicate_activity_previews_the_server_default_name():
+    _mock_activity_detail()
+    plan = plan_duplicate_activity("site_visit")
+    (op,) = plan.operations
+    assert op.action == "duplicate"
+    assert op.kind == "activity"
+    assert op.key == "activity:site_visit:duplicate"
+    assert op.existing_uuid == ACTIVITY_ID
+    assert op.payload == {}
+    assert op.preview["source"] == "Site Visit"
+    assert op.preview["new_name"] == "server default: 'Site Visit (copy #N)'"
+
+
+@respx.mock
+def test_plan_duplicate_activity_name_goes_in_the_payload():
+    _mock_activity_detail()
+    plan = plan_duplicate_activity("site_visit", name="Second Visit")
+    (op,) = plan.operations
+    assert op.payload == {"name": "Second Visit"}
+    assert op.preview["new_name"] == "Second Visit"
+
+
+@respx.mock
+def test_plan_duplicate_activity_not_found_raises_plan_error():
+    _mock_activity_detail(identifier="nope", status=404)
+    with pytest.raises(PlanError, match="activity 'nope' not found"):
+        plan_duplicate_activity("nope")
 
 
 # ---------------------------------------------------------------------------
@@ -489,3 +606,60 @@ def test_plan_remove_activity_field_option_raises_when_remap_target_unknown():
         raise AssertionError("expected PlanError")
     except PlanError as exc:
         assert "bogus" in str(exc)
+
+
+@respx.mock
+@pytest.mark.parametrize("existing, given", [("same", "same"), (None, "")])
+def test_plan_update_activity_field_unchanged_description_is_skip(existing, given):
+    _mock_activity_detail()
+    _mock_activity_fields(body=[dict(TEXT_FIELD, description=existing)])
+    plan = plan_update_activity_field("site_visit", "notes", {"description": given})
+    (op,) = plan.operations
+    assert op.action == "skip"
+    assert op.payload == {}
+
+
+_ACTIVITY_PLANS = [
+    pytest.param(
+        lambda: plan_update_activity("site_visit", {"name": "X"}), id="update"
+    ),
+    pytest.param(lambda: plan_delete_activity("site_visit"), id="delete"),
+    pytest.param(
+        lambda: plan_update_activity_field("site_visit", "notes", {"required": True}),
+        id="update_field",
+    ),
+]
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 500])
+@pytest.mark.parametrize("plan", _ACTIVITY_PLANS)
+def test_activity_plans_do_not_report_other_errors_as_not_found(plan, status):
+    _mock_activity_detail(status=status, body={"detail": "boom"})
+    with pytest.raises(KizenAPIError) as exc:
+        plan()
+    assert exc.value.status_code == status
+
+
+@pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
+@respx.mock
+def test_activities_create_rejects_an_api_spelled_field_key(flags):
+    """Fails on the spec, before any live read (respx would refuse one)."""
+    spec = {
+        "name": "Site Visit",
+        "fields": [
+            {
+                "name": "Decision",
+                "field_type": "dropdown",
+                "options": ["Yes", "No"],
+                "is_required": True,
+            }
+        ],
+    }
+    result = CliRunner().invoke(
+        cli.app, ["activities", "create", *flags], input=json.dumps(spec)
+    )
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert "is_required" in result.stderr
+    assert "'required'" in result.stderr

@@ -748,6 +748,26 @@ def build_form_ui(
     return {"pages": pages, "business_merge_fields": business_merge_fields or []}
 
 
+def unplaced_fields(
+    form_ui: dict[str, Any] | None, fields: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The ``fields`` (each with an ``id``) that no ``form_ui`` page places.
+
+    Any update to a form, ``set-ui`` included, deletes these fields
+    (confirmed live 2026-10-16). A placed field is a ``CustomField`` or
+    ``FormField`` node whose ``props.field.id`` is the field's id.
+    """
+    placed: set[Any] = set()
+    for pg in (form_ui or {}).get("pages") or []:
+        data = pg.get("page_data")
+        nodes = json.loads(data) if isinstance(data, str) else data or {}
+        for node in nodes.values():
+            field = (node.get("props") or {}).get("field")
+            if isinstance(field, dict):
+                placed.add(field.get("id"))
+    return [f for f in fields if f.get("id") not in placed]
+
+
 # ---------------------------------------------------------------------------
 # Convenience: a plain one-field-per-row form page
 # ---------------------------------------------------------------------------

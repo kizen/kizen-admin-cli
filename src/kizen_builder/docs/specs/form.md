@@ -14,6 +14,10 @@ and `kizen surveys …`.
 > and be submittable.** Creating fields alone gives valid schema but no visual
 > page — set the layout with `set-ui` (or include `form_ui`). The `form_ui`
 > shape is in the wire section below.
+>
+> Every save of a form (any update or `set-ui`) deletes the fields not placed on
+> a page, so `update` and `set-ui` refuse until each field is placed or deleted.
+> Confirmed live 2026-10-16.
 
 ---
 
@@ -51,7 +55,8 @@ and `kizen surveys …`.
 Structurally identical to `ActivityFieldDef` (see `activity.md`) **minus** the
 `activity_custom_field` linked-field concept — forms are standalone
 data-capture surfaces. Flat list ordered by `order`; `api_name` optional; same
-type-specific blocks as `field.md`.
+type-specific blocks as `field.md`. Unknown keys are rejected exactly as in
+`field.md`.
 
 ## Gotchas
 
@@ -59,6 +64,9 @@ type-specific blocks as `field.md`.
   and activity fields, where it needs none). The API 400s without it.
 - **`related_object` is mandatory** — a form with no target object won't create.
 - **Fields-without-`form_ui` renders nothing** — always pair schema with a layout.
+- **Saving a form deletes every field that isn't on a page**, so place each
+  field with `set-ui` before any `update`. See "Saving a form deletes unplaced
+  fields" below.
 
 ---
 
@@ -76,9 +84,20 @@ GET/PUT/PATCH/DELETE  {base_path}/{id_or_api_name}       # path accepts either
 POST                  {base_path}/{id}/duplicate
 ```
 
+`/duplicate` ignores `name`; the CLI renames the copy with a PATCH. Confirmed
+live 2026-10-06.
+
+Renaming the copy is an update, and an update deletes every field not placed
+on a page (see "Saving a form deletes unplaced fields" below). So
+`duplicate --name` refuses unless the source places every field; duplicate
+without it, place every field on the copy with `set-ui`, then rename it with
+`update`.
+
 The API supports a full PUT, but `update` only ever sends a PATCH with the flags
 that changed — matching every other `update` verb in this CLI rather than mixing
-update semantics.
+update semantics. Before planning it, `update` (and `set-ui`) checks that every
+field is placed on a page of the `form_ui` the form will hold afterwards, and
+refuses with the unplaced fields' names otherwise.
 
 ### `related_object_id` and `template_type` are required on create
 
@@ -118,7 +137,7 @@ POST                  .../fields/{fid}/options/{oid}/replace
 ```
 
 Field shape ≈ custom-object / activity fields, ordered by `order` in one flat
-list with no categories. **Two divergences that bite:**
+list with no categories. **Three divergences that bite:**
 
 - **`wysiwyg` IS a valid `field_type` here**, per the live
   `FormFieldFieldTypeEnum`. Do **not** apply the `wysiwyg` → `longtext` +
@@ -131,25 +150,43 @@ list with no categories. **Two divergences that bite:**
   spec builds `{"name": o, "code": o}` from one string, so pass lowercase
   values; there's no way to get an uppercase display label without extending the
   model.
+- **Field reads carry no `description`**, on forms or surveys, so a field
+  update that passes `description` always plans as `update`, even when the
+  value hasn't changed. Custom-object and activity field reads do carry it,
+  and diff it. `confirmed live 2026-10-01`
 
 The field type enum also includes `custom_object_field` (a linked-field type
 mirroring an existing custom-object field, like activities'
 `activity_custom_field`) — not wired here, since forms aren't inherently tied to
 one custom object the way activities are.
 
-## ⚠️ A bulk field-create batch with a failing op can lose already-created fields
+## ⚠️ Saving a form deletes unplaced fields
 
-Observed live: creating 21 fields in one `fields create --spec-file` batch where
-the **last** op 400s on bad option data left the prior ~19
-successfully-created fields — real server UUIDs returned — **no longer
-existing** moments later. Confirmed by direct GET 404s on those ids and an empty
-`fields list`.
+**Every write to the form object deletes each field whose id is not placed on
+one of its `form_ui` pages**, default and CLI-created fields alike. A field is
+placed when a page's `page_data` holds a `CustomField` or `FormField` node whose
+`props.field.id` is the field's id. The deleted fields' ids 404 on
+`GET …/fields/{id}` afterwards, so the loss can't be undone.
 
-A batch with no failing op does **not** lose fields (confirmed with a clean
-3-field batch, checked immediately and after a delay). Root cause unidentified,
-likely server-side transactional behavior specific to this endpoint. **Practical
-mitigation: validate a large field spec carefully before applying it**, because
-a failure deep in the batch can retroactively undo earlier successes.
+- A new form has `form_ui: {}` and 3 unplaced default fields (`first_name`,
+  `last_name`, `email`), so its first update empties it.
+- `set-ui` with a partial layout deletes the fields it leaves out.
+- A field added with `fields create` after the layout is unplaced, and the next
+  update deletes it.
+- No PATCH body avoids it: a PATCH of `name`, `description` or `enabled`, one
+  echoing the current `form_ui` back, a bare `form_ui: {}`, `{"pages": []}`,
+  and a full PUT all delete the unplaced fields.
+- Field-level writes (`PATCH …/fields/{id}`) delete nothing.
+
+So `update` and `set-ui` refuse, naming the fields, until each one is placed
+with `set-ui` or removed on purpose with `fields delete`.
+
+A failing `fields create` batch on its own loses nothing: 2 good fields followed
+by one that 400s left all 5 fields, read back at once and after 5 s. An earlier
+report of a failing batch losing the fields it had created came from a later
+save of the form, not from the batch.
+
+Confirmed live 2026-10-16 on forms and surveys.
 
 ## `form_ui` — the visual page layout
 

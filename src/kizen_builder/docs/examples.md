@@ -2,18 +2,18 @@
 
 Every other topic under `kizen docs show` covers **one** surface. The gap this
 topic closes is the connective tissue *between* surfaces: how a field's UUID
-flows into a dashlet's `config`, how an object api_name gets pluralized on
-create and has to be read back before the next command can use it, how an
-activity type's UUID differs from the custom-object UUID it's logged against.
-Every command below was run for real against a disposable Kizen business;
-every finding below carries `confirmed live 2026-08-13`.
+flows into a dashlet's `config`, how an object's api_name comes from its
+display name rather than from anything you send, how an activity type's UUID
+differs from the custom-object UUID it's logged against. Every command below
+was run for real against a disposable Kizen business; every finding below
+carries the date it was confirmed live.
 
 This is one example, not a catalog: a **field-service ticketing** domain,
 picked because it's structurally boring and carries no resemblance to any real
 customer's data. Four entities, wired together in the order you'd actually
 build them:
 
-1. a custom object (`service_ticket`) with fields
+1. a custom object (`service_tickets`) with fields
 2. an **activity type** (`Site Visit`) logged against it
 3. an automation with a branch, a merge, and a `code_step`
 4. a dashboard, generated the way `kizen docs show dashboard` recommends
@@ -39,7 +39,7 @@ what's actually run:
 <!-- fixture: examples/service_ticket/object.json -->
 ```json
 {
-  "api_name": "service_ticket",
+  "api_name": "service_tickets",
   "name": "Service Tickets",
   "entity_name": "Service Ticket",
   "description": "A field-service work order. The worked example's primary object.",
@@ -50,23 +50,22 @@ what's actually run:
 ```
 
 ```bash
-kizen objects create --api-name service_ticket --name "Service Tickets" \
+kizen objects create --api-name service_tickets --name "Service Tickets" \
   --entity-name "Service Ticket" \
   --description "A field-service work order. The worked example's primary object." \
   --dry-run
-kizen objects create --api-name service_ticket --name "Service Tickets" \
+kizen objects create --api-name service_tickets --name "Service Tickets" \
   --entity-name "Service Ticket" \
   --description "A field-service work order. The worked example's primary object." \
   --yes
 ```
 
-**Kizen pluralizes the api_name on create — `confirmed live 2026-08-13`.**
-`service_ticket` came back as `service_tickets`. This is `objects.md`'s own
-documented gotcha ("Kizen rewrites api_names... always read back after
-writing"), and it's exactly the kind of thing this example exists to make
-concrete rather than abstract: **every command from here on uses
-`service_tickets`**, read back via `kizen objects get service_tickets`, not
-the name the create command was given.
+**`service_tickets` comes from `--name "Service Tickets"`, not from
+`--api-name`.** Kizen slugs the display name and refuses a supplied api_name
+(`objects.md`), `confirmed live 2026-10-14`. `--api-name` here only checks the
+expectation: the plan shows `api_name (derived)`, a different value exits 2,
+and the result line shows the name Kizen stored. Every command from here on
+uses `service_tickets`.
 
 ```bash
 kizen categories create service_tickets --api-name ticket_details --name "Ticket Details" --yes
@@ -117,12 +116,11 @@ kizen fields create service_tickets --spec-file fields.json --yes
 
 Three findings from actually running this, none of them cosmetic:
 
-- **`escalation_ticket`'s `relation.target_object` is `service_tickets`, not
-  `service_ticket`** — the self-reference has to use the server's derived
-  name from the step above, not the name this fixture asked to create. Send
-  the pre-pluralization name here and `fields create` 404s with "No
-  CustomObject matches the given query" — a confusing error for a field that
-  otherwise looks correct, `confirmed live 2026-08-13`.
+- **`escalation_ticket`'s `relation.target_object` is `service_tickets`** —
+  the self-reference has to use the server's derived name from the step
+  above. Send any other name (the singular `service_ticket`, say) and `fields
+  create` 404s with "No CustomObject matches the given query" — a confusing
+  error for a field that otherwise looks correct, `confirmed live 2026-08-13`.
 - **`status` is a reserved field api_name and 400s on create** — `field.md`'s
   reserved-name list (`name`, `owner`, `created`, `updated`, `id`, plus
   contact-ish names) is explicitly non-exhaustive; `status` joins it,
@@ -155,6 +153,7 @@ example at all.
 ```json
 {
   "name": "Site Visit",
+  "api_name": "site_visit",
   "association_mode": "selected_objects_associated",
   "selected_object_ids": ["<service_tickets_object_uuid>"],
   "fields": [
@@ -188,47 +187,25 @@ above has been created and read back:
   object field via a bare field UUID (CLI: `--linked-field
   service_tickets.priority`), not an object-qualified `field_ref`.
 
-**Sending `selected_object_ids` on `activities create --spec-file` 400s —
-`confirmed live 2026-08-13`.** The error is `associated_objects: This field
-cannot be empty when association mode is set to 'selected_objects_associated'`.
-This is the create-time edge of a gotcha `activity.md` already documents for
-*updates* ("you must send `associated_objects`... NOT the documented
-`selected_object_ids`/`custom_object_ids`, which are ignored... The CLI's
-`--object <api_name>` flag builds this shape") — but `activities create` has
-no `--object` flag at all, only `activities update` does, so there is no
-single-step way to create an activity type with its object association via
-`--spec-file`. Worth its own follow-up item (an `--object`/association flag
-on `activities create`); not fixed here. The working sequence is
-create-without-association, then update:
+The type, its fields and its object association apply in one plan. The CLI
+sends `selected_object_ids` as the `associated_objects` list Kizen reads
+(`activity.md`), `confirmed live 2026-10-16`:
 
 ```bash
-kizen activities create --spec-file activity.json --dry-run     # fields only; drop selected_object_ids first
+kizen activities create --spec-file activity.json --dry-run
 kizen activities create --spec-file activity.json --yes
-kizen activities update <site_visit_api_name> --object service_tickets --dry-run
-kizen activities update <site_visit_api_name> --object service_tickets --yes
 ```
 
-**`<site_visit_api_name>` is a placeholder you fill from the `create` output
-above, not literally `site_visit`.** Kizen derives the api_name from the
-display name when none is given, and never reissues a name once any activity
-type (even a deleted one) has held it in a business — so a fresh `Site Visit`
-only comes back as the clean `site_visit` in a business that has never had
-one before; every later create in the same business gets a randomized suffix
-instead. `confirmed live 2026-08-13`, three separate rebuilds against the
-same `cli-testing` business produced three different values —
-`site_visit`, `site_visit_sk6iwzxh`, `site_visit_umy0j0yh` — none
-predictable ahead of time. Every `<site_visit_api_name>` below stands for
-whatever `kizen activities create`'s own output or `kizen activities list`
-actually returned for your run — read it back and substitute the real value.
-(`automation.json`'s internal step key `schedule_site_visit` is unrelated —
-that name is chosen by the fixture author, not derived by Kizen, and never
-changes.)
+**`api_name` is pinned to `site_visit`**, so every command in this example can
+name it. Kizen keeps an explicit activity api_name as given, `confirmed live
+2026-10-14` (`activity.md`). A business that already has a live `site_visit`
+type gets a 400, so delete that one or pick another api_name.
 
 Read it back to confirm all three references landed — the third is the
 dashboard leg, below:
 
 ```bash
-kizen activities get <site_visit_api_name> -o json
+kizen activities get site_visit -o json
 ```
 
 `custom_objects` shows the object association; the `Priority Snapshot`
@@ -306,21 +283,19 @@ Two placeholder tokens, both filled in from the previous two sections:
   field's `id` from `objects get service_tickets`. This is
   `create_related_entity`'s `context_entity_field`: the field on **this
   automation's own `target_object`** that gets set to point at the record
-  this step creates. `automation.md` already documents `context_entity_field`
-  for `modify_related_entities` with the same "lives on `target_object`" rule
-  — but not this write-destination usage on `create_related_entity`, which is
-  what the working example captures, `confirmed live 2026-08-13`: after the
-  step runs, `context_entity_field` holds the new record's id.
+  this step creates (see `automation.md`'s `create_related_entity`
+  section). The ref
+  `"service_tickets.escalation_ticket"` (or bare `"escalation_ticket"`)
+  resolves to the same UUID at plan time.
 - `<site_visit_activity_type_uuid>` — the `Site Visit` activity type's `id`
-  from `activities get <site_visit_api_name>`, used by `schedule_activity`'s
+  from `activities get site_visit`, used by `schedule_activity`'s
   `activity_type_id`.
 
-**`create_related_entity` names its target with `target_object`**, which
-resolves to the object's UUID at plan time and goes on the wire as
-`target_custom_object`. A spec that sets only `target_object` applies,
-`confirmed live 2026-10-05`. A block may also set `target_custom_object`
-(a block copied from `steps get` carries it), and that wins when both are
-given, but `target_object` is still required.
+**`create_related_entity` names its target with `target_object`**, an
+alias for the wire key `target_custom_object`. A spec that sets only
+`target_object` applies, `confirmed live 2026-10-05`. Either key alone is
+enough; see `automation.md`'s `create_related_entity` section for the rest
+of the step's keys.
 
 `condition.filter_config` uses the bare field api_name and an option
 **label** (`"High"`), not a UUID — `kizen docs show filters` resolves it at
@@ -399,14 +374,14 @@ this reason; see `kizen docs show dashboard`'s `⚠️` section.
 # dashlets 2 and 3: a status breakdown, and the activity leg's dashlet — added
 # via `dashboards update` rather than recreating the dashboard
 kizen dashboards dashlet-config --type field_breakdown --object service_tickets --field ticket_status
-kizen dashboards dashlet-config --type scheduled_activities --object <site_visit_api_name>
+kizen dashboards dashlet-config --type scheduled_activities --object site_visit
 kizen dashboards update service_ticket_ops --spec-file dashboard_update.json --dry-run
 kizen dashboards update service_ticket_ops --spec-file dashboard_update.json --yes
 ```
 
 **The third dashlet's `--object` is the activity *type*, not a custom
 object** — `dashboard.md`'s own warning ("`object_id` is an activity *type*
-UUID, not a custom object") made concrete: `<site_visit_api_name>` here
+UUID, not a custom object") made concrete: `site_visit` here
 resolves to the activity type's UUID, the same one `schedule_activity` used
 above, not `service_tickets`'.
 
@@ -469,7 +444,7 @@ The read side is still real: after logging one `Site Visit` instance by hand
 against a ticket in the browser,
 
 ```bash
-kizen activities logged list <site_visit_api_name>
+kizen activities logged list site_visit
 ```
 
 reads it back. Until an instance has actually been logged, this returns zero
@@ -482,22 +457,19 @@ rows — the honest state of an unused read path, not a broken one.
 Everything created in this walkthrough is disposable. Delete newest-first —
 automation, activity type, dashboard (no `dashboards delete` CLI command
 exists today, worth its own follow-up item; use `kizen automations
-delete`/`kizen activities delete` for the other two), then the ticket
-records, then the object last (`objects delete` refuses while records
-exist):
+delete`/`kizen activities delete` for the other two), then the object
+last. `objects delete` archives the remaining tickets first, with no email:
 
 ```bash
 kizen automations delete escalate_high_priority_tickets --yes
-kizen activities delete <site_visit_api_name> --yes
-kizen records list service_tickets --limit 100000 --output csv > tickets.csv
-kizen records archive service_tickets --spec-file tickets.csv --yes
+kizen activities delete site_visit --yes
 kizen objects delete service_tickets --yes
 ```
 
 ## See also
 
 - `kizen docs show objects` / `field` — object and field spec shapes, the
-  pluralization gotcha, reserved api_names.
+  derived object api_name, reserved api_names.
 - `kizen docs show activity` — `ActivityDef`/`ActivityFieldDef`, the
   UUID-vs-api_name associations gotcha, `activity_custom_field`.
 - `kizen docs show automation` / `automation-step` — the step graph rules,

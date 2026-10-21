@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from kizen_builder import output as out
@@ -19,6 +20,7 @@ from kizen_builder.cli._shared import (
 )
 from kizen_builder.tools import objects as obj_tools
 from kizen_builder.tools.planners import objects as object_planners
+from kizen_builder.tools.plans import Plan
 
 objects_app = typer.Typer(
     help="Read objects, custom and built-in; create, update, and delete custom objects.",
@@ -213,10 +215,17 @@ def objects_get(
 @objects_app.command("create")
 def objects_create(
     api_name: str = typer.Option(
-        ..., "--api-name", help="Object api_name (e.g. 'invoice')."
+        "",
+        "--api-name",
+        help=(
+            "Optional check. Kizen derives the api_name from --name and it "
+            "can't be set or changed; if given, it must equal that value."
+        ),
     ),
     name: str = typer.Option(
-        ..., "--name", help="Display name (plural, e.g. 'Invoices')."
+        ...,
+        "--name",
+        help="Display name (plural, e.g. 'Invoices' gives api_name 'invoices').",
     ),
     entity_name: str = typer.Option(
         "",
@@ -244,6 +253,9 @@ def objects_create(
 ) -> None:
     """Create one custom object (no fields/categories yet).
 
+    The plan shows the api_name Kizen will derive from `--name`, and the
+    result shows the one it stored.
+
     `--pipeline` (or `--object-type pipeline`) creates a stage-based
     pipeline object; the default is a standard object. Kizen requires at
     least one stage to create a pipeline object, so this seeds a single
@@ -257,22 +269,24 @@ def objects_create(
             f"(got {resolved_type!r})."
         )
         raise typer.Exit(code=2)
-    obj_dict: dict[str, Any] = {
-        "api_name": api_name,
-        "name": name,
-        "object_type": resolved_type,
-    }
+    obj_dict: dict[str, Any] = {"name": name, "object_type": resolved_type}
+    if api_name:
+        obj_dict["api_name"] = api_name
     if entity_name:
         obj_dict["entity_name"] = entity_name
     if description:
         obj_dict["description"] = description
 
-    _run_mutation(
-        lambda: object_planners.plan_create_object(obj_dict),
-        dry_run=dry_run,
-        yes=yes,
-        json_out=json_out,
-    )
+    def build_plan() -> Plan:
+        try:
+            return object_planners.plan_create_object(obj_dict)
+        except object_planners.ApiNameMismatch as e:
+            err_console.print(
+                f"[red]error:[/red] --api-name: {escape(str(e))}", emoji=False
+            )
+            raise typer.Exit(code=2) from e
+
+    _run_mutation(build_plan, dry_run=dry_run, yes=yes, json_out=json_out)
 
 
 @objects_app.command("update")
@@ -323,7 +337,7 @@ def objects_delete(
         False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
     ),
 ) -> None:
-    """Delete (archive) one custom object. Removes its data across all records."""
+    """Delete one custom object. Archives its active records first, with no email."""
     _run_mutation(
         lambda: object_planners.plan_delete_object(object_api_name),
         dry_run=dry_run,

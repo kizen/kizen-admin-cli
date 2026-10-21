@@ -19,32 +19,8 @@ deferred to a follow-up slice.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlsplit
 
 from kizen_builder.api.client import KizenClient
-
-
-def _paginate(client: KizenClient, path: str) -> list[dict[str, Any]]:
-    """Follow DRF ``next`` links, returning the flat list of result dicts."""
-    items: list[dict[str, Any]] = []
-    nxt: str | None = path
-    while nxt:
-        resp = client.get(nxt)
-        if isinstance(resp, dict) and "results" in resp:
-            items.extend(resp["results"])
-            following = resp.get("next")
-            if following:
-                parts = urlsplit(following)
-                nxt = parts.path + (f"?{parts.query}" if parts.query else "")
-            else:
-                nxt = None
-        elif isinstance(resp, list):
-            items.extend(resp)
-            nxt = None
-        else:
-            nxt = None
-    return items
-
 
 # ---------------------------------------------------------------------------
 # Form / survey object
@@ -60,7 +36,7 @@ def list_forms(
         from urllib.parse import quote
 
         path += f"?search={quote(search)}"
-    return _paginate(client, path)
+    return client.paginate(path)
 
 
 def get_form(client: KizenClient, base_path: str, identifier: str) -> dict[str, Any]:
@@ -94,10 +70,14 @@ def delete_form(client: KizenClient, base_path: str, identifier: str) -> dict[st
 
 
 def duplicate_form(
-    client: KizenClient, base_path: str, identifier: str, payload: dict[str, Any]
+    client: KizenClient, base_path: str, identifier: str
 ) -> dict[str, Any]:
-    """POST {base_path}/{identifier}/duplicate."""
-    return client.post(f"{base_path}/{identifier}/duplicate", json=payload)
+    """POST {base_path}/{identifier}/duplicate with an empty body.
+
+    The server ignores the body and names the copy ``<name> (copy #N)``; rename
+    it with :func:`update_form`.
+    """
+    return client.post(f"{base_path}/{identifier}/duplicate", json={})
 
 
 # ---------------------------------------------------------------------------

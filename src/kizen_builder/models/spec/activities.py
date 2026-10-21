@@ -13,6 +13,8 @@ from kizen_builder.models.spec.field_configs import (
     PhoneConfig,
     RatingConfig,
     StatusOption,
+    check_type_blocks,
+    reject_api_spellings,
 )
 from kizen_builder.models.spec.objects import _TYPES_REQUIRING_OPTIONS
 
@@ -65,7 +67,7 @@ class ActivityFieldDef(BaseModel):
     the display name when omitted.
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(
         min_length=1,
@@ -96,30 +98,25 @@ class ActivityFieldDef(BaseModel):
     decimal_options: DecimalConfig | None = Field(default=None)
     phone_options: PhoneConfig | None = Field(default=None)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_api_spellings(cls, data: Any) -> Any:
+        return reject_api_spellings(data, cls.model_fields)
+
     @model_validator(mode="after")
     def _validate_type_specific_config(self) -> Self:
-        ft = self.field_type
-        if ft in _TYPES_REQUIRING_OPTIONS and not self.options:
-            raise ValueError(
-                f"activity field '{self.name}' of type '{ft}' requires a "
-                "non-empty 'options' list"
-            )
-        if ft not in _TYPES_REQUIRING_OPTIONS and self.options is not None:
-            raise ValueError(
-                f"activity field '{self.name}' of type '{ft}' cannot have 'options'"
-            )
-        if ft == "money" and self.money_options is None:
-            self.money_options = MoneyConfig()
-        if ft == "rating" and self.rating is None:
-            self.rating = RatingConfig()
+        check_type_blocks(
+            self, f"activity field '{self.name}'", _TYPES_REQUIRING_OPTIONS
+        )
         return self
 
 
 class ActivityDef(BaseModel):
     """An activity type (loggable definition).
 
-    ``extra="allow"`` so specs authored straight from ``kizen activities get``
-    output round-trip without stripping server-only keys.
+    ``extra="allow"``, so a top-level key the CLI doesn't read is ignored.
+    ``kizen activities get`` output is not a valid spec as printed, and
+    ``fields`` entries take spec spellings, not the API's.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -129,7 +126,7 @@ class ActivityDef(BaseModel):
         default=None,
         min_length=2,
         max_length=255,
-        description="Stable identifier. Kizen may rewrite it on create.",
+        description="Kept as given; omit it and Kizen derives one from `name`.",
     )
     description: str | None = Field(default=None, max_length=500)
     is_editable: bool | None = Field(
@@ -147,13 +144,14 @@ class ActivityDef(BaseModel):
     webhook_url: str | None = None
     redirect_url: str | None = None
     calendar_sync_enabled: bool | None = None
-    custom_object_ids: list[str] | None = Field(
-        default=None,
-        description="UUIDs of custom objects this activity can be logged against.",
-    )
     selected_object_ids: list[str] | None = Field(
         default=None,
-        description="UUIDs of objects for `selected_objects_associated` mode.",
+        description="UUIDs of objects for `selected_objects_associated` mode. "
+        "Sent as `associated_objects`.",
+    )
+    associated_objects: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="The wire/read shape, sent verbatim. Use it to set `is_required`.",
     )
     loggable_sharing_settings: dict[str, Any] | None = None
 
@@ -161,3 +159,23 @@ class ActivityDef(BaseModel):
         default=None,
         description="Optional fields to create on the type in the same plan.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _check_association_keys(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            check_association_keys(data)
+        return data
+
+
+def check_association_keys(spec: dict[str, Any]) -> None:
+    """Reject the association keys an activity create or update can't send."""
+    if "custom_object_ids" in spec:
+        raise ValueError(
+            "'custom_object_ids' is not sent to Kizen; use 'selected_object_ids'"
+        )
+    if (
+        spec.get("associated_objects") is not None
+        and spec.get("selected_object_ids") is not None
+    ):
+        raise ValueError("set 'associated_objects' or 'selected_object_ids', not both")

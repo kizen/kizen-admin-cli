@@ -1,19 +1,34 @@
-"""KizenClient: auth headers, error normalization, body handling."""
+"""KizenClient: auth headers, error normalization, body handling, retry."""
 
 from __future__ import annotations
+
+import time
 
 import httpx
 import pytest
 import respx
 
 from kizen_builder.api.client import KizenAPIError, KizenClient
+from kizen_builder.api.files import download_file
 from tests.conftest import FAKE_BASE_URL, FAKE_BUSINESS_ID, FAKE_USER_ID, FIXTURES
+
+THING = f"{FAKE_BASE_URL}/api/thing"
+MAY_HAVE_APPLIED = (
+    "the server may have applied this POST; read live state before retrying."
+)
 
 
 @pytest.fixture
 def client(env_config):
     with KizenClient(env_config) as c:
         yield c
+
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    calls: list[float] = []
+    monkeypatch.setattr(time, "sleep", calls.append)
+    return calls
 
 
 @respx.mock
@@ -94,12 +109,14 @@ def test_401_message_names_env_and_fix(client):
 
 
 @respx.mock
-def test_network_error_wrapped(client):
-    respx.get(f"{FAKE_BASE_URL}/api/thing").mock(side_effect=httpx.ConnectError("boom"))
+def test_network_error_wrapped(client, sleeps):
+    route = respx.get(THING).mock(side_effect=httpx.ConnectError("boom"))
     with pytest.raises(KizenAPIError) as exc:
         client.get("/api/thing")
     assert exc.value.status_code == 0
-    assert "network error" in str(exc.value)
+    assert str(exc.value) == "HTTP 0: network error: boom"
+    assert route.call_count == 3
+    assert sleeps == [1.0, 2.0]
 
 
 @respx.mock
@@ -115,3 +132,212 @@ def test_top_level_list_error_message(client):
         "HTTP 400: Merge step's parent (s05_branch) must be a branch group "
         "initiator step."
     )
+
+
+# --- retry ---------------------------------------------------------------
+
+
+@respx.mock
+def test_get_retries_a_transient_status(client, sleeps):
+    route = respx.get(THING).mock(
+        side_effect=[httpx.Response(503), httpx.Response(200, json={"ok": True})]
+    )
+    assert client.get("/api/thing") == {"ok": True}
+    assert route.call_count == 2
+    assert sleeps == [1.0]
+
+
+@pytest.mark.parametrize(("retry_after", "slept"), [("3", 3.0), ("60", 10.0)])
+@respx.mock
+def test_get_honours_retry_after_up_to_the_cap(client, sleeps, retry_after, slept):
+    respx.get(THING).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": retry_after}),
+            httpx.Response(200, json={}),
+        ]
+    )
+    client.get("/api/thing")
+    assert sleeps == [slept]
+
+
+@respx.mock
+def test_get_500_is_not_retried(client, sleeps):
+    route = respx.get(THING).mock(return_value=httpx.Response(500))
+    with pytest.raises(KizenAPIError) as exc:
+        client.get("/api/thing")
+    assert exc.value.status_code == 500
+    assert route.call_count == 1
+    assert sleeps == []
+
+
+@respx.mock
+def test_get_gives_up_with_the_last_error_unchanged(client, sleeps):
+    route = respx.get(THING).mock(
+        return_value=httpx.Response(503, json={"detail": "unavailable"})
+    )
+    with pytest.raises(KizenAPIError) as exc:
+        client.get("/api/thing")
+    assert route.call_count == 3
+    assert str(exc.value) == "HTTP 503: unavailable"
+    assert exc.value.body == {"detail": "unavailable"}
+
+
+@respx.mock
+def test_post_503_is_not_retried_and_says_it_may_have_applied(client, sleeps):
+    route = respx.post(THING).mock(return_value=httpx.Response(503))
+    with pytest.raises(KizenAPIError) as exc:
+        client.post("/api/thing", json={})
+    assert route.call_count == 1
+    assert exc.value.status_code == 503
+    assert exc.value.message.endswith(MAY_HAVE_APPLIED)
+
+
+@respx.mock
+def test_post_400_does_not_say_it_may_have_applied(client):
+    respx.post(THING).mock(return_value=httpx.Response(400, json={"detail": "bad"}))
+    with pytest.raises(KizenAPIError) as exc:
+        client.post("/api/thing", json={})
+    assert exc.value.message == "bad"
+
+
+@pytest.mark.parametrize("error", [httpx.Response(503), httpx.ReadTimeout("timed out")])
+@respx.mock
+def test_read_only_post_is_not_retried_and_does_not_say_it_may_have_applied(
+    client, sleeps, error
+):
+    route = respx.post(THING).mock(side_effect=[error])
+    with pytest.raises(KizenAPIError) as exc:
+        client.post("/api/thing", json={}, read_only=True)
+    assert route.call_count == 1
+    assert "may have applied" not in exc.value.message
+
+
+@respx.mock
+def test_backoff_holds_its_last_wait_past_the_table(client, sleeps, monkeypatch):
+    monkeypatch.setattr("kizen_builder.api.client._MAX_ATTEMPTS", 4)
+    route = respx.get(THING).mock(return_value=httpx.Response(503))
+    with pytest.raises(KizenAPIError):
+        client.get("/api/thing")
+    assert route.call_count == 4
+    assert sleeps == [1.0, 2.0, 2.0]
+
+
+@respx.mock
+def test_post_retries_a_connect_failure(client, sleeps):
+    route = respx.post(THING).mock(
+        side_effect=[httpx.ConnectError("refused"), httpx.Response(200, json={})]
+    )
+    assert client.post("/api/thing", json={}) == {}
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_post_read_timeout_is_not_retried_and_says_it_may_have_applied(client, sleeps):
+    route = respx.post(THING).mock(side_effect=httpx.ReadTimeout("timed out"))
+    with pytest.raises(KizenAPIError) as exc:
+        client.post("/api/thing", json={})
+    assert route.call_count == 1
+    assert exc.value.status_code == 0
+    assert exc.value.message == f"network error: timed out — {MAY_HAVE_APPLIED}"
+
+
+@respx.mock
+def test_get_bytes_returns_the_raw_body_and_sends_auth(client):
+    route = respx.get(THING).mock(
+        return_value=httpx.Response(
+            200, content=b"\x00raw", headers={"content-type": "application/zip"}
+        )
+    )
+    content, headers = client.get_bytes("/api/thing")
+    assert content == b"\x00raw"
+    assert headers["content-type"] == "application/zip"
+    sent = route.calls.last.request.headers
+    assert sent["X-API-KEY"] == "test-api-key"
+    assert sent["Accept"] == "*/*"
+
+
+@respx.mock
+def test_download_file_401_names_the_fix(env_config):
+    respx.get(f"{FAKE_BASE_URL}/api/files/f1/download").mock(
+        return_value=httpx.Response(401, json={"detail": "Invalid API key"})
+    )
+    with pytest.raises(KizenAPIError) as exc:
+        download_file(env_config, "f1")
+    assert exc.value.status_code == 401
+    assert "kizen init --env testenv" in exc.value.message
+
+
+@respx.mock
+def test_download_file_error_names_the_file(env_config):
+    respx.get(f"{FAKE_BASE_URL}/api/files/f1/download").mock(
+        return_value=httpx.Response(404, json={"detail": "Not found."})
+    )
+    with pytest.raises(KizenAPIError) as exc:
+        download_file(env_config, "f1")
+    assert exc.value.status_code == 404
+    assert exc.value.message == "downloading file f1: Not found."
+    assert exc.value.body == {"detail": "Not found."}
+
+
+# ---------------------------------------------------------------------------
+# paginate — DRF `next`-link follower
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+def test_paginate_sends_params_on_page_one_then_follows_next(client):
+    route = respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 1}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=2&page_size=1",
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 2}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=3&page_size=1",
+                },
+            ),
+            httpx.Response(200, json={"results": [{"id": 3}], "next": None}),
+        ]
+    )
+
+    items = client.paginate("/api/things", params={"page_size": 1})
+
+    assert items == [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert [str(c.request.url) for c in route.calls] == [
+        f"{FAKE_BASE_URL}/api/things?page_size=1",
+        f"{FAKE_BASE_URL}/api/things?page=2&page_size=1",
+        f"{FAKE_BASE_URL}/api/things?page=3&page_size=1",
+    ]
+
+
+@respx.mock
+def test_paginate_returns_a_bare_list_as_is(client):
+    route = respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        return_value=httpx.Response(200, json=[{"id": 1}, {"id": 2}])
+    )
+    assert client.paginate("/api/things") == [{"id": 1}, {"id": 2}]
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_paginate_stops_on_an_unrecognized_body_keeping_what_it_has(client):
+    route = respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 1}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=2",
+                },
+            ),
+            httpx.Response(200, json={"detail": "not a page"}),
+        ]
+    )
+    assert client.paginate("/api/things") == [{"id": 1}]
+    assert route.call_count == 2

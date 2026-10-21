@@ -8,6 +8,7 @@ refactors can't silently break them.
 from __future__ import annotations
 
 import pytest
+import respx
 
 from kizen_builder.models.spec import FieldDef
 from kizen_builder.tools.planners.fields import (
@@ -16,7 +17,7 @@ from kizen_builder.tools.planners.fields import (
     plan_update_field,
 )
 from kizen_builder.tools.plans import PlanError
-from tests.conftest import load_fixture
+from tests.conftest import FAKE_BASE_URL, load_fixture
 
 PATIENTS = "patients"
 PATIENT_INFO_CAT = "Patient Info"
@@ -262,6 +263,123 @@ def test_update_with_no_effective_change_is_skip(patch_live_lookups):
 def test_update_unknown_field_lists_available(patch_live_lookups):
     with pytest.raises(PlanError, match="Available:"):
         plan_update_field(PATIENTS, "nope", {"name": "X"})
+
+
+def _patients_with(monkeypatch, patch_live_lookups, *extra_fields, **mrn_changes):
+    import kizen_builder.tools.planners.fields as mf
+
+    obj = patch_live_lookups(PATIENTS)
+    obj["fields"] = [
+        {**f, **mrn_changes} if f["api_name"] == "mrn" else f for f in obj["fields"]
+    ]
+    obj["fields"] = [*extra_fields, *obj["fields"]]
+    monkeypatch.setattr(mf, "get_object", lambda _api_name: obj)
+    return obj
+
+
+def test_update_ignores_a_deleted_field_with_the_same_api_name(
+    monkeypatch, patch_live_lookups
+):
+    deleted_mrn = {"id": "deleted-mrn", "api_name": "mrn", "deleted": True}
+    deleted_other = {"id": "deleted-x", "api_name": "old_notes", "deleted": True}
+    obj = _patients_with(monkeypatch, patch_live_lookups, deleted_mrn, deleted_other)
+    live_mrn = next(
+        f for f in obj["fields"] if f["api_name"] == "mrn" and not f.get("deleted")
+    )
+
+    (op,) = plan_update_field(PATIENTS, "mrn", {"name": "Medical Record #"}).operations
+    assert op.existing_uuid == live_mrn["id"]
+
+    with pytest.raises(PlanError, match="Available:") as exc:
+        plan_update_field(PATIENTS, "old_notes", {"name": "X"})
+    assert "old_notes" not in str(exc.value).split("Available:")[1]
+
+
+@pytest.mark.parametrize("existing, given", [("same", "same"), (None, "")])
+def test_update_unchanged_description_is_skip(
+    monkeypatch, patch_live_lookups, existing, given
+):
+    _patients_with(monkeypatch, patch_live_lookups, description=existing)
+    (op,) = plan_update_field(PATIENTS, "mrn", {"description": given}).operations
+    assert op.action == "skip"
+    assert op.payload == {}
+
+
+# One row per input key; each value differs from the `mrn` fixture's.
+@pytest.mark.parametrize(
+    "changes, category, expected",
+    [
+        ({"name": "MRN #"}, None, {"display_name": "MRN #"}),
+        ({"description": "Chart id"}, None, {"description": "Chart id"}),
+        ({"required": False}, None, {"is_required": False}),
+        ({"read_only": True}, None, {"is_read_only": True}),
+        ({"hidden": True}, None, {"is_hidden": True}),
+        (
+            {"options": ["A", "B"]},
+            None,
+            {"options": [{"name": "A", "code": "A"}, {"name": "B", "code": "B"}]},
+        ),
+        ({"rating": {"max_value": 5}}, None, {"rating": {"max_value": 5}}),
+        (
+            {"money_options": {"currency": "USD"}},
+            None,
+            {"money_options": {"currency": "USD"}},
+        ),
+        (
+            {"decimal_options": {"decimal_places": 2}},
+            None,
+            {"decimal_options": {"decimal_places": 2}},
+        ),
+        (
+            {"phone_options": {"default_country": "US"}},
+            None,
+            {"phonenumber_options": {"default_country": "US"}},
+        ),
+        (
+            {"status_options": {"color": "#000000"}},
+            None,
+            {"status_options": {"color": "#000000"}},
+        ),
+        ({}, PATIENT_INFO_CAT, {"category": _cat_id(PATIENTS, PATIENT_INFO_CAT)}),
+    ],
+    ids=lambda v: next(iter(v), "") if isinstance(v, dict) else None,
+)
+def test_update_maps_each_change_to_its_wire_key(
+    patch_live_lookups, changes, category, expected
+):
+    (op,) = plan_update_field(PATIENTS, "mrn", changes, category=category).operations
+    assert op.action == "update"
+    assert op.payload == expected
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "get_object drops is_read_only from the /fields rows, so False != None "
+        "plans an update; carrying the key through flips this to XPASS"
+    ),
+)
+def test_update_read_only_false_on_a_writable_field_is_skip():
+    # Runs the real get_object: patch_live_lookups would serve the fixture and
+    # never see a fix to get_object.
+    obj_id = "00000000-0000-4000-8000-0000000000a1"
+    base = f"{FAKE_BASE_URL}/api/custom-objects"
+    mrn = {
+        "id": "00000000-0000-4000-8000-0000000000f1",
+        "name": "mrn",
+        "field_type": "text",
+        "is_required": True,
+        "is_read_only": False,
+        "is_hidden": False,
+    }
+    with respx.mock(assert_all_mocked=True) as mock:
+        mock.get(base).respond(
+            json={"results": [{"id": obj_id, "name": PATIENTS}], "next": None}
+        )
+        mock.get(f"{base}/{obj_id}/categories").respond(json=[])
+        mock.get(f"{base}/{obj_id}/fields").respond(json=[mrn])
+        (op,) = plan_update_field(PATIENTS, "mrn", {"read_only": False}).operations
+    assert op.action == "skip"
 
 
 # ---------------------------------------------------------------------------

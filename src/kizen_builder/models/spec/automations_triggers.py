@@ -13,7 +13,10 @@ class TriggerFieldUpdatedConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     field_ref: str = Field(
-        description="'object.field' reference, resolved to field UUID at apply time."
+        description=(
+            "'object.field', or a bare field name on target_object; resolved "
+            "to field UUID at apply time."
+        )
     )
     fire_on_create: bool = True
     from_match_mode: str | None = None
@@ -122,7 +125,10 @@ class TriggerOnOrAroundDateConfig(BaseModel):
 
     field_ref: str | None = Field(
         default=None,
-        description="'object.field' reference. Resolved to UUID at apply time.",
+        description=(
+            "'object.field', or a bare field name on target_object. Resolved "
+            "to UUID at apply time."
+        ),
     )
     field_id: str | None = Field(
         default=None,
@@ -176,9 +182,25 @@ class TriggerEmailInteractionConfig(BaseModel):
 
 
 class TriggerEmailReceivedFromContactConfig(BaseModel):
-    """Config for `trigger_type: email_received_from_contact` (no required fields)."""
+    """Config for `trigger_type: email_received`. Contact automations only.
+
+    The type and its config key are spelled differently; see
+    :func:`trigger_config_field`.
+    """
 
     model_config = ConfigDict(extra="allow")
+
+    receiving_inbox: Literal["any", "selected_integrated_inboxes"] = Field(
+        default="any",
+        description="'any' (the UI's 'Any Integrated Inbox') or 'selected_integrated_inboxes'.",
+    )
+    selected_integrated_inboxes: list[str] | None = Field(
+        default=None,
+        description=(
+            "Integrated inbox UUIDs, required when receiving_inbox is "
+            "'selected_integrated_inboxes'. There is no name lookup."
+        ),
+    )
 
 
 class TriggerStageUpdatedConfig(BaseModel):
@@ -290,7 +312,7 @@ _TRIGGER_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "on_or_around_date": "trigger_on_or_around_date",
     "website_visited": "trigger_website_visited",
     "email_interaction": "trigger_email_interaction",
-    "email_received_from_contact": "trigger_email_received_from_contact",
+    "email_received": "trigger_email_received_from_contact",
     "stage_updated": "trigger_stage_updated",
     "email_link_clicked": "trigger_email_link_clicked",
     "schedule": "trigger_schedule",
@@ -299,6 +321,15 @@ _TRIGGER_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "webhook": "trigger_webhook",
     "manual": "trigger_manual",
 }
+
+
+def trigger_config_field(trigger_type: str) -> str:
+    """The key a trigger's config block rides under, in both dialects.
+
+    ``trigger_<type>`` for every type but ``email_received``. Types this table
+    doesn't know get the same rule, so unknown live types still translate.
+    """
+    return _TRIGGER_TYPE_TO_CONFIG_FIELD.get(trigger_type) or "trigger_" + trigger_type
 
 
 _TRIGGERS_REQUIRING_CONFIG = {

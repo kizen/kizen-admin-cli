@@ -7,40 +7,87 @@ from typing import Any
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FieldCategory, ObjectDef, PipelineStageSpec
 from kizen_builder.tools.objects import get_object, list_objects
+from kizen_builder.tools.planners.records import archive_operations
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.tools.records import active_record_ids
+from kizen_builder.utils import derived_object_api_name
+
+# Seconds `objects delete` waits for its bulk archive to clear search before
+# the object DELETE. Search reflects an archive well under 2 s later
+# (docs/specs/records.md), so this only bounds a stuck job.
+ARCHIVE_SETTLE_TIMEOUT = 300
+
+
+class ApiNameMismatch(PlanError):
+    """An asserted object api_name that Kizen won't derive from the name."""
 
 
 def plan_create_object(obj: dict[str, Any] | ObjectDef) -> Plan:
-    """Plan the creation of one custom object (no categories or fields yet)."""
+    """Plan the creation of one custom object (no categories or fields yet).
+
+    Kizen derives the api_name from the display name and refuses a supplied
+    one (403), so ``api_name`` is only an assertion: it must equal the
+    derived value, and the plan is keyed on the derived value.
+    """
     obj_def = obj if isinstance(obj, ObjectDef) else ObjectDef.model_validate(obj)
     env = load_env_config().name
 
-    existing = next(
-        (o for o in list_objects() if o["api_name"] == obj_def.api_name),
-        None,
-    )
+    live = [o for o in list_objects() if not o.get("deleted")]
+    # Before the mismatch check: a stored name can carry a collision suffix
+    # (`employee_m7SZCzg3`) that no display name derives.
+    existing = next((o for o in live if o["api_name"] == obj_def.api_name), None)
     if existing is not None:
         raise PlanError(
             f"object '{obj_def.api_name}' already exists (uuid {existing['id']}). "
-            "Use plan_update_object instead."
+            "Use `objects update` to change it."
         )
 
-    payload = _build_object_payload(obj_def)
+    derived = derived_object_api_name(obj_def.name)
+    if obj_def.api_name is not None and obj_def.api_name != derived:
+        msg = (
+            "Kizen derives the object api_name from the display name and "
+            f"refuses a supplied one: '{obj_def.name}' becomes '{derived}', "
+            f"not '{obj_def.api_name}'."
+        )
+        # The suggestion's slug is the asked api_name, which isn't live
+        # (checked above), so Kizen won't suffix it.
+        suggestion = obj_def.api_name.replace("_", " ").title()
+        if derived_object_api_name(suggestion) == obj_def.api_name:
+            raise ApiNameMismatch(
+                f"{msg} For '{obj_def.api_name}', use --name \"{suggestion}\"."
+            )
+        raise ApiNameMismatch(f"{msg} No display name produces '{obj_def.api_name}'.")
+
+    same_name = next((o for o in live if o.get("display_name") == obj_def.name), None)
+    if same_name is not None:
+        raise PlanError(
+            f"an object named '{obj_def.name}' already exists (api_name "
+            f"'{same_name['api_name']}', uuid {same_name['id']}), and Kizen "
+            "requires unique object names. Use `objects update` to change it."
+        )
+
+    preview: dict[str, Any] = {
+        "env": env,
+        "api_name (derived)": derived,
+        "object_name": obj_def.name,
+        "entity_name": obj_def.effective_entity_name,
+    }
+    if any(o["api_name"] == derived for o in live):
+        preview["warning"] = (
+            f"an object already holds api_name '{derived}', so Kizen will add "
+            "a random suffix to this one"
+        )
+
     op = PlanOperation(
         action="create",
         kind="object",
-        key=obj_def.api_name,
-        preview={
-            "env": env,
-            "api_name": obj_def.api_name,
-            "object_name": obj_def.name,
-            "entity_name": obj_def.effective_entity_name,
-        },
-        payload=payload,
+        key=derived,
+        preview=preview,
+        payload=_build_object_payload(obj_def),
     )
     return Plan.build(
         env=env,
-        summary=f"Create object '{obj_def.api_name}'",
+        summary=f"Create object '{derived}'",
         operations=[op],
     )
 
@@ -88,30 +135,50 @@ def plan_create_category(
 
 
 def plan_delete_object(object_api_name: str) -> Plan:
-    """Plan deletion (archive) of one custom object and its data."""
+    """Plan deleting one custom object, archiving its active records first.
+
+    Kizen refuses to delete an object that still has active records (400,
+    confirmed live 2026-09-28), so the plan archives them in
+    ``ARCHIVE_CHUNK``-id requests with email off, then deletes the object
+    once search reads 0.
+    """
     env = load_env_config().name
 
     try:
         obj = get_object(object_api_name)
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
+    if not obj["is_custom"]:
+        raise PlanError(
+            f"'{object_api_name}' is a built-in Kizen object. objects delete "
+            "only deletes custom objects, so nothing was planned and no "
+            "records were touched"
+        )
+
+    ids = active_record_ids(object_api_name)
+    archive_ops = archive_operations(env, object_api_name, obj["id"], ids)
+    warning = (
+        "Kizen refuses to delete an object with active records, so this plan "
+        f"archives its {len(ids)} active record(s) first, with no email"
+        if ids
+        else "deletes the object; it has no active records"
+    )
 
     op = PlanOperation(
         action="delete",
         kind="object",
         key=object_api_name,
-        preview={
-            "env": env,
-            "api_name": object_api_name,
-            "warning": "archives the object and its data across all records",
-        },
+        preview={"env": env, "api_name": object_api_name, "warning": warning},
+        payload={"wait_for_archive_seconds": ARCHIVE_SETTLE_TIMEOUT} if ids else {},
         existing_uuid=obj["id"],
     )
-    return Plan.build(
-        env=env,
-        summary=f"Delete object '{object_api_name}'",
-        operations=[op],
-    )
+    summary = f"Delete object '{object_api_name}'"
+    if ids:
+        summary = (
+            f"Archive {len(ids)} record(s) from {object_api_name} in "
+            f"{len(archive_ops)} request(s), then delete object '{object_api_name}'"
+        )
+    return Plan.build(env=env, summary=summary, operations=[*archive_ops, op])
 
 
 def plan_delete_category(object_api_name: str, category_name: str) -> Plan:

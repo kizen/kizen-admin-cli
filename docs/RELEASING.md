@@ -1,10 +1,11 @@
 # Releasing
 
 Versions are SemVer, static in `pyproject.toml`, tagged `vX.Y.Z`. Bumping the
-number is a deliberate act rather than something derived from the git history —
-the dominant install is an editable checkout, where an scm-derived version
-churns to `0.2.1.dev4+g1a2b3c` on every commit and makes "what version are you
-on?" unanswerable in a chat.
+number is a deliberate act rather than something derived from the git history.
+Users install from the default branch (see the README) and contributors from an
+editable checkout, so for both an scm-derived version would churn to
+`0.2.1.dev4+g1a2b3c` on every commit and make "what version are you on?"
+unanswerable in a chat.
 
 While the version is `0.x`, a minor bump may carry a breaking change. Say so in
 the changelog under **Changed** or **Removed**.

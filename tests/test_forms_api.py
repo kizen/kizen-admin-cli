@@ -33,7 +33,7 @@ def client(env_config):
 
 
 # ---------------------------------------------------------------------------
-# _paginate (via list_forms)
+# list_forms — paging
 # ---------------------------------------------------------------------------
 
 
@@ -135,13 +135,13 @@ def test_delete_form_on_204_returns_empty_dict(client, base_path):
 
 @pytest.mark.parametrize("base_path", BASE_PATHS)
 @respx.mock
-def test_duplicate_form(client, base_path):
+def test_duplicate_form_posts_an_empty_body(client, base_path):
     route = respx.post(f"{FAKE_BASE_URL}{base_path}/{FORM_ID}/duplicate").mock(
         return_value=Response(200, json={"id": "new-id"})
     )
-    out = forms_api.duplicate_form(client, base_path, FORM_ID, {"name": "Copy"})
+    out = forms_api.duplicate_form(client, base_path, FORM_ID)
     assert out == {"id": "new-id"}
-    assert json.loads(route.calls[0].request.content) == {"name": "Copy"}
+    assert json.loads(route.calls[0].request.content) == {}
 
 
 # ---------------------------------------------------------------------------

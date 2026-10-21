@@ -16,11 +16,17 @@ builders; nothing here re-asserts those.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
+from kizen_builder.api.client import KizenAPIError
 from kizen_builder.models.spec import FormDef, FormFieldDef
+from kizen_builder.tools.form_ui import build_form_ui, simple_form_page
 from kizen_builder.tools.planners.forms import (
     plan_add_form_field_options,
     plan_create_form,
@@ -96,6 +102,10 @@ def _mock_missing(base_path: str, identifier: str):
     respx.get(f"{FAKE_BASE_URL}{base_path}").mock(
         return_value=httpx.Response(200, json={"results": [], "next": None})
     )
+
+
+def _with_pages(*placed: dict) -> dict:
+    return {**FORM_DETAIL, "form_ui": build_form_ui([simple_form_page(list(placed))])}
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +246,8 @@ def test_plan_create_form_rejects_duplicate_inline_field_labels():
 @pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
 @respx.mock
 def test_plan_update_form_sends_only_changed_keys(base_path, kind):
-    _mock_detail(base_path)
+    _mock_detail(base_path, body=_with_pages(DROPDOWN_FIELD))
+    _mock_fields(base_path)
     plan = plan_update_form(
         "contact_us",
         {"name": "Renamed", "description": "original"},
@@ -254,6 +265,7 @@ def test_plan_update_form_sends_only_changed_keys(base_path, kind):
 @respx.mock
 def test_plan_update_form_ignores_unknown_keys():
     _mock_detail("/api/forms")
+    _mock_fields("/api/forms")
     plan = plan_update_form("contact_us", {"not_a_form_key": "x"})
     (op,) = plan.operations
     assert op.action == "skip"
@@ -262,7 +274,9 @@ def test_plan_update_form_ignores_unknown_keys():
 
 @respx.mock
 def test_plan_update_form_no_changes_skips():
+    """The live form places none of its fields, but a skip writes nothing."""
     _mock_detail("/api/forms")
+    _mock_fields("/api/forms")
     plan = plan_update_form("contact_us", {"name": "Contact Us"})
     (op,) = plan.operations
     assert op.action == "skip"
@@ -278,9 +292,108 @@ def test_plan_update_form_summarizes_form_ui_instead_of_dumping_it():
         "/api/forms",
         body=dict(FORM_DETAIL, form_ui={"pages": [{"a": 1}, {"b": 2}]}),
     )
+    _mock_fields("/api/forms", body=[])
     plan = plan_update_form("contact_us", {"form_ui": {"pages": [{"c": 3}]}})
     (op,) = plan.operations
     assert op.preview["diff"]["form_ui"] == "(2 page(s)) → (1 page(s))"
+
+
+def _field(n: int, name: str, *, linked: bool = False) -> dict:
+    return {
+        "id": f"00000000-0000-4000-8000-00000000{n:04d}",
+        "name": name,
+        "display_name": name.replace("_", " ").title(),
+        "field_type": "text",
+        "custom_object_field": {"id": f"cof-{n}", "name": name} if linked else None,
+    }
+
+
+FIRST, LAST, EMAIL = (
+    _field(1, "first_name"),
+    _field(2, "last_name"),
+    _field(3, "email"),
+)
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
+@respx.mock
+def test_plan_update_form_refuses_a_form_with_no_pages(base_path, kind):
+    """A new form has no pages, and its first update would delete its 3
+    default fields."""
+    _mock_detail(base_path, body={**FORM_DETAIL, "form_ui": {}})
+    _mock_fields(base_path, body=[FIRST, LAST, EMAIL])
+    with pytest.raises(PlanError) as exc:
+        plan_update_form("contact_us", {"name": "x"}, base_path=base_path, kind=kind)
+    assert str(exc.value) == (
+        f"{kind} 'Contact Us' has 3 field(s) not placed on a page: first_name, "
+        f"last_name, email. Kizen deletes them on any update to the {kind}. "
+        f"Place them with 'kizen {kind}s set-ui' first, or remove them with "
+        f"'kizen {kind}s fields delete'."
+    )
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
+@respx.mock
+def test_plan_update_form_names_only_the_unplaced_field(base_path, kind):
+    _mock_detail(base_path, body=_with_pages(FIRST, EMAIL))
+    _mock_fields(base_path, body=[FIRST, LAST, EMAIL])
+    with pytest.raises(
+        PlanError, match=r"has 1 field\(s\) not placed on a page: last_name\. "
+    ):
+        plan_update_form(
+            "contact_us", {"description": "x"}, base_path=base_path, kind=kind
+        )
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
+@respx.mock
+def test_plan_update_form_refuses_a_layout_that_leaves_a_field_off(base_path, kind):
+    _mock_detail(base_path, body=_with_pages(FIRST, LAST, EMAIL))
+    _mock_fields(base_path, body=[FIRST, LAST, EMAIL])
+    layout = build_form_ui([simple_form_page([FIRST, EMAIL])])
+    with pytest.raises(PlanError) as exc:
+        plan_update_form(
+            "contact_us", {"form_ui": layout}, base_path=base_path, kind=kind
+        )
+    assert str(exc.value) == (
+        "this layout leaves off 1 field(s): last_name. Kizen deletes every field "
+        f"that isn't on a page when the {kind} is saved. Add them to the layout, "
+        f"or remove them first with 'kizen {kind}s fields delete'."
+    )
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
+@respx.mock
+def test_plan_update_form_accepts_a_layout_placing_every_field(base_path, kind):
+    """A form with no pages yet is fixed by a set-ui that places them all."""
+    _mock_detail(base_path, body={**FORM_DETAIL, "form_ui": {}})
+    _mock_fields(base_path, body=[FIRST, LAST, EMAIL])
+    layout = build_form_ui([simple_form_page([FIRST, LAST, EMAIL])])
+    plan = plan_update_form(
+        "contact_us", {"form_ui": layout}, base_path=base_path, kind=kind
+    )
+    (op,) = plan.operations
+    assert op.action == "update"
+    assert op.payload == {"form_ui": layout}
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
+@respx.mock
+def test_plan_update_form_counts_linked_and_unlinked_nodes_as_placed(base_path, kind):
+    linked = _field(4, "company", linked=True)
+    form = _with_pages(linked, FIRST)
+    types = [
+        n["type"]["resolvedName"]
+        for n in json.loads(form["form_ui"]["pages"][0]["page_data"]).values()
+        if "field" in (n.get("props") or {})
+    ]
+    assert sorted(types) == ["CustomField", "FormField"]
+    _mock_detail(base_path, body=form)
+    _mock_fields(base_path, body=[linked, FIRST])
+    plan = plan_update_form("contact_us", {"name": "x"}, base_path=base_path, kind=kind)
+    (op,) = plan.operations
+    assert op.action == "update"
+    assert op.payload == {"name": "x"}
 
 
 @respx.mock
@@ -315,23 +428,52 @@ def test_plan_delete_form_not_found_raises_plan_error():
 
 
 @respx.mock
-def test_plan_duplicate_form_defaults_new_name_to_copy_of_source():
+def test_plan_duplicate_form_previews_the_server_default_name():
     _mock_detail("/api/forms")
     plan = plan_duplicate_form("contact_us")
     (op,) = plan.operations
     assert op.action == "duplicate"
     assert op.key == "form:contact_us:duplicate"
     assert op.payload == {}
-    assert op.preview["new_name"] == "Copy of Contact Us"
+    assert op.preview["new_name"] == "server default: 'Contact Us (copy #N)'"
 
 
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
 @respx.mock
-def test_plan_duplicate_form_explicit_name_goes_in_the_payload():
-    _mock_detail("/api/forms")
-    plan = plan_duplicate_form("contact_us", name="Second Copy")
+def test_plan_duplicate_form_name_goes_in_the_payload_when_every_field_is_placed(
+    base_path, kind
+):
+    _mock_detail(base_path, body=_with_pages(DROPDOWN_FIELD))
+    _mock_fields(base_path)
+    plan = plan_duplicate_form(
+        "contact_us", name="Second Copy", base_path=base_path, kind=kind
+    )
     (op,) = plan.operations
     assert op.payload == {"name": "Second Copy"}
     assert op.preview["new_name"] == "Second Copy"
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
+@respx.mock
+def test_plan_duplicate_form_refuses_a_rename_that_would_delete_an_unplaced_field(
+    base_path, kind
+):
+    _mock_detail(base_path, body=_with_pages(DROPDOWN_FIELD))
+    _mock_fields(base_path, body=[DROPDOWN_FIELD, {"id": OBJ_ID, "name": "extra"}])
+    with pytest.raises(PlanError) as exc:
+        plan_duplicate_form("contact_us", name="X", base_path=base_path, kind=kind)
+    msg = str(exc.value)
+    assert "Not on a page: extra." in msg and "outcome" not in msg
+    assert f"`kizen {kind}s duplicate {FORM_ID}` without --name" in msg
+    assert f"`kizen {kind}s update <copy id> --name 'X'`" in msg
+
+
+@respx.mock
+def test_plan_duplicate_form_refuses_a_rename_of_a_form_with_no_pages():
+    _mock_detail("/api/forms", body={**FORM_DETAIL, "form_ui": {}})
+    _mock_fields("/api/forms")
+    with pytest.raises(PlanError, match="Not on a page: outcome"):
+        plan_duplicate_form("contact_us", name="X")
 
 
 @respx.mock
@@ -367,6 +509,23 @@ def test_plan_create_form_fields_orders_after_existing_fields(base_path, kind):
     assert first.parent_object_uuid == FORM_ID
     assert first.payload["order"] == 1  # one field already exists
     assert second.payload["order"] == 2
+
+
+@pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
+@respx.mock
+def test_forms_fields_create_rejects_an_api_spelled_field_key(flags):
+    _mock_detail("/api/forms")
+    _mock_fields("/api/forms")
+    spec = [{"name": "Notes", "field_type": "text", "is_required": True}]
+    result = CliRunner().invoke(
+        cli.app,
+        ["forms", "fields", "create", "contact_us", *flags],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert "is_required" in result.stderr
+    assert "'required'" in result.stderr
 
 
 @respx.mock
@@ -584,3 +743,37 @@ def test_plan_remove_form_field_option_unknown_remap_target_raises():
     _mock_fields("/api/forms")
     with pytest.raises(PlanError, match="option 'Nope' not found"):
         plan_remove_form_field_option("contact_us", "outcome", "Yes", remap_to="Nope")
+
+
+_FORM_PLANS = [
+    pytest.param(lambda: plan_update_form("contact_us", {"name": "x"}), id="update"),
+    pytest.param(lambda: plan_delete_form("contact_us"), id="delete"),
+    pytest.param(lambda: plan_duplicate_form("contact_us"), id="duplicate"),
+    pytest.param(
+        lambda: plan_update_form_field("contact_us", "outcome", {"required": True}),
+        id="update_field",
+    ),
+]
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [401, 500])
+@pytest.mark.parametrize("plan", _FORM_PLANS)
+def test_form_plans_do_not_report_other_errors_as_not_found(plan, status):
+    respx.get(f"{FAKE_BASE_URL}/api/forms/contact_us").mock(
+        return_value=httpx.Response(status, json={"detail": "boom"})
+    )
+    with pytest.raises(KizenAPIError) as exc:
+        plan()
+    assert exc.value.status_code == status
+
+
+@respx.mock
+def test_plan_update_form_field_always_sends_description():
+    """Form field reads carry no description, so there is nothing to diff."""
+    _mock_detail("/api/forms")
+    _mock_fields("/api/forms")
+    plan = plan_update_form_field("contact_us", "outcome", {"description": ""})
+    (op,) = plan.operations
+    assert op.action == "update"
+    assert op.payload == {"description": ""}

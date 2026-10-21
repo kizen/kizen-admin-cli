@@ -10,6 +10,7 @@ from kizen_builder.models.spec.automations_shared import (
     CodeStepInputConfig,
     CodeStepOutputConfig,
     LlmDestinationConfig,
+    PluginCodeStepInputConfig,
 )
 
 
@@ -50,13 +51,32 @@ class ActionCodeStepConfig(BaseModel):
 
 
 class ActionPluginCodeStepConfig(BaseModel):
-    """Config for `step_type: plugin_code_step`."""
+    """Config for `step_type: plugin_code_step`: run a step an installed
+    plugin ships.
+
+    The step is bound by api_name, not by a plugin-app id. Inputs and outputs
+    are shaped as for `code_step`; inputs can also be
+    ``business_plugin_config``.
+    """
 
     model_config = ConfigDict(extra="allow")
 
-    business_plugin_app_id: str = Field(description="UUID of the plugin app.")
-    inputs: list[dict[str, Any]] = Field(default_factory=list)
-    outputs: list[dict[str, Any]] = Field(default_factory=list)
+    plugin_app_api_name: str = Field(
+        min_length=1,
+        description=(
+            "The installed plugin's api_name, as `business-plugin-apps` lists "
+            "it. A preview install is `<api_name>_preview_<branch>`."
+        ),
+    )
+    action_step_api_name: str = Field(
+        min_length=1,
+        description="The step's `action_step_api_name` in the plugin's manifest.",
+    )
+    notify_plugin_developer_on_failure: bool = False
+    inputs: list[PluginCodeStepInputConfig] = Field(default_factory=list)
+    outputs: list[CodeStepOutputConfig] = Field(default_factory=list)
+    # Secret names, as for code_step: bare strings or {"name": ...}.
+    secrets: list[Any] = Field(default_factory=list)
 
 
 class ActionLlmCallConfig(BaseModel):
@@ -79,7 +99,6 @@ class ActionLlmCallConfig(BaseModel):
     html_prompt: str | None = None
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = False
-    data_type: str | None = None
     business_plugin_app_id: str | None = Field(
         default=None,
         description=(
@@ -121,6 +140,16 @@ class ActionAudioTranscriptionConfig(BaseModel):
         description="'object.field' for the audio file field. Resolved to UUID at apply time.",
     )
     input_field_id: str | None = None
+    input_value_source: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Read the file from a related record or a variable instead: "
+            "{type: related_object_field, relationship_field (single-valued), "
+            "field}, {type: automation_variable, variable: <name>} or "
+            "{type: context_entity_field, field}. Fields take a UUID or "
+            "'object.field'. Set this or input_field_ref, never both."
+        ),
+    )
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = False
     data_type: str | None = None
@@ -150,6 +179,16 @@ class ActionFileContentExtractionConfig(BaseModel):
         description="'object.field' for the file field. Resolved to UUID at apply time.",
     )
     input_field_id: str | None = None
+    input_value_source: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Read the file from a related record or a variable instead: "
+            "{type: related_object_field, relationship_field (single-valued), "
+            "field}, {type: automation_variable, variable: <name>} or "
+            "{type: context_entity_field, field}. Fields take a UUID or "
+            "'object.field'. Set this or input_field_ref, never both."
+        ),
+    )
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = False
     data_type: str | None = None

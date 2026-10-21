@@ -19,6 +19,7 @@ from kizen_builder.cli._shared import cli_errors, console, err_console
 from kizen_builder.cli.automations import autos_app
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools.planners import automations as auto_planners
+from kizen_builder.tools.plans import PlanError
 
 
 @autos_app.command(
@@ -103,7 +104,7 @@ def _run_field_patch(
     """Preview -> confirm -> apply loop for one-field automation patches
     (`activate`/`deactivate`/`move`). Lighter than `_run_mutation`: no Plan
     object, just a before/after value pair for the one field being flipped."""
-    with cli_errors(LookupError):
+    with cli_errors(LookupError, PlanError):
         preview = call(False)
 
     if not json_out:
@@ -134,7 +135,7 @@ def _run_field_patch(
         hint="Preview with --dry-run, then re-run with --yes.",
     )
 
-    with cli_errors(LookupError):
+    with cli_errors(LookupError, PlanError):
         result = call(True)
 
     if json_out:

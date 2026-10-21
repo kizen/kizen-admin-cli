@@ -120,6 +120,21 @@ def search_records(
     return results[:limit]
 
 
+def active_record_ids(object_api_name: str) -> list[str]:
+    """Every active record's id on ``object_api_name``, across all pages.
+
+    Archived records drop out of search, so this is exactly the set Kizen
+    makes you archive before it will delete the object. Deduped, because an
+    offset page that shifts between requests can repeat a record.
+    """
+    config = load_env_config()
+    with KizenClient(config) as client:
+        records = records_api.search_records(
+            client, object_api_name, field_names=["name"], page_size=500
+        )
+    return list(dict.fromkeys(r["id"] for r in records))
+
+
 def related_records(
     record_id: str,
     object_ids: list[str] | None = None,

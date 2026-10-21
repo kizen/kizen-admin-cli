@@ -22,9 +22,9 @@ The `dev` extra carries pytest, respx, ruff, and mypy; a plain `uv sync` prunes
 them and collection fails on the missing imports. CI syncs the same way, with
 `--locked` added.
 
-`uv sync` is the dev setup: it builds the checkout's own `.venv`. Users install
-with `uv tool install --editable .`, which puts `kizen` on `PATH` globally; see
-[README.md](README.md).
+`uv sync` is the dev setup: it builds the checkout's own `.venv`. To use the
+CLI rather than develop it, install it as the [README](README.md#install)
+describes.
 
 `uv.lock` is committed and `uv sync` respects it. CI syncs with `--locked`, so a
 dependency change that arrives without a re-lock fails there.
@@ -32,7 +32,7 @@ dependency change that arrives without a re-lock fails there.
 To work on the smart-connector local loop, add the `connectors` extra:
 
 ```bash
-uv sync --extra connectors     # adds chdb (~100 MB native wheel) + spreadsheet readers
+uv sync --extra dev --extra connectors   # adds chdb (~100 MB native wheel) + spreadsheet readers
 ```
 
 CI omits it, so `test_smart_connectors_tools.py`'s execution test `importorskip`s
@@ -48,15 +48,25 @@ has the re-vendoring procedure for when Kizen ships a new dev package.
 To bring an existing checkout up to date:
 
 ```bash
-kizen upgrade --dry-run   # show what updating this checkout would run
-kizen upgrade             # git pull --ff-only + dependency reinstall, in one step
+git pull --ff-only && uv sync --extra dev   # add --extra connectors if you use it
 ```
+
+Not `kizen upgrade`: in a checkout it runs a plain `uv sync`, which prunes the
+extras.
 
 ## Tests
 
 ```bash
 uv run pytest                  # the default suite: offline, no network, fast
 uv run pytest -m wheel         # opt-in: builds a wheel, installs it, runs the CLI
+```
+
+CI's lint job runs:
+
+```bash
+uv run ruff check
+uv run ruff format --check
+uv run mypy src
 ```
 
 Four tiers, in increasing cost:
@@ -87,7 +97,7 @@ have a line here.
 ```
 src/kizen_builder/
   api/                           # Thin httpx wrappers around Kizen REST endpoints.
-    client.py                    #   the shared httpx client + auth headers
+    client.py                    #   the shared httpx client + auth headers + GET retry; paginate() follows DRF next links
     activities.py                #   activity-type (loggable definition) CRUD
     automations.py               #   automation CRUD (automation2 namespace)
     coderunner.py                #   POST /api/coderunner/run — code_step sandbox runner
@@ -104,7 +114,7 @@ src/kizen_builder/
     saved_views.py               #   filter groups / quick filters / column templates
     schema.py                    #   schema lookups backing the filtering DSL
     smart_connectors.py          #   smart-connector CRUD, scripts, executions
-    team.py                      #   team-member reads
+    team.py                      #   team-member reads + role changes
   tools/                         # Tool functions. What the CLI mostly calls.
     activities.py                #   list/get activity types + logged/scheduled reads
     automations.py               #   get/list/show/roundtrip/start, executions, step patching
@@ -141,7 +151,7 @@ src/kizen_builder/
         status.py                #       plan/apply set-status
         variables.py             #       suggest_execution_variables()
     steps.py                     #   step-graph surgery (find/edit/insert/remove, validation)
-    team.py                      #   search_team()
+    team.py                      #   search, get, resolve a member
     planners/                    #   plan_* tools — produce Plans, never mutate
       activities.py              #     plan_create/update/delete activity types + fields
       automations.py             #     plan_create_automation, plan_update_automation
@@ -155,6 +165,7 @@ src/kizen_builder/
       pipeline_stages.py         #     plan_create/update/remove stages, record stage-move
       records.py                 #     plan_create/update/delete records (data, not schema)
       saved_views.py             #     plan_create/update/delete the three saved-view kinds
+      team.py                    #     plan_update_team_member_roles
   filtering.py                   # Filter DSL (Field, All/Any, search/filter-config rendering).
   translate.py                   # Automation GET → PUT wire translation.
   models/spec/                   # Pydantic shapes for desired state (spec inputs);
@@ -203,6 +214,7 @@ src/kizen_builder/
     init.py                      #   kizen init
     code.py                      #   kizen code test
   config.py                      # Resolves the active env's credentials (chokepoint).
+  auth_helper.py                 # Running under app-builder: runs $KIZEN_AUTH_HELPER, caches the Bearer header, refreshes on 401.
   docs.py                        # Resolves the packaged docs tree (chokepoint) + env stubs.
   profiles.py                    # Central credentials.toml store + .kizen/profile pin.
   upgrade.py                     # Install-shape detection and update planning.
@@ -311,7 +323,12 @@ exit 1 from any command, and anything else into `error: internal: …`.
    outside the declared set is a plan error, and
    `test_declared_keys_match_what_the_builder_reads` fails if the declaration
    and the builder's `block.get(...)` calls disagree. Read-dialect aliases the
-   builder accepts count as read.
+   builder accepts count as read. A key a live read carries that must never be
+   sent back (derived linkage, an expanded mirror) goes in
+   `@honours(..., unsent_on_read=("key",))`; any other unread key in a live
+   read makes `translate` refuse the automation, and
+   `test_every_captured_read_key_is_classified` fails on a fixture that has
+   one.
 6. Update the wired list in `src/kizen_builder/docs/specs/automation.md`.
 7. If the type has an enum-typed field whose valid values you've confirmed
    (live, in a fixture, or via the drift snapshot once it captures enum
@@ -378,11 +395,10 @@ Fixtures shared by more than one round-trip module (`drift_object`,
 fixture defined in a test module is invisible to every other module.
 
 You need both halves. `GET /api/docs/schema` returns a real OpenAPI 3.0
-document (~557 paths, ~1,300 component schemas), but it doesn't match the live
+document (~576 paths, ~1,400 component schemas), but it doesn't match the live
 API: it declares `PermissionGroupRequest` as having exactly one field
 while the live endpoint takes a ~35 KB body, documents the automation step
-envelope in the read dialect rather than the write one, names one step block
-`action_llm_call` where live uses `action_call_llm`, and leaves `pipeline`
+envelope in the read dialect rather than the write one, and leaves `pipeline`
 optional on an endpoint that rejects a pipeline object without it. Those
 divergences are recorded with evidence and a `confirmed live` date in
 `KNOWN_SCHEMA_OMISSIONS` and `KNOWN_UNDOCUMENTED_BLOCKS` in

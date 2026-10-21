@@ -1,8 +1,8 @@
 """Objects every command module needs: the root Typer app, its callback and
 the group that ends any command on one `error:` line, the two consoles, the
-shared output-format options, `cli_errors()`, the user-file readers
-(`read_text_file`, `read_json_file`, `parse_json`), `warn_renamed_flag()`, and
-`_short`.
+shared output-format options, `cli_errors()`, `exit_spec_errors()`, the
+user-file readers (`read_text_file`, `read_json_file`, `parse_json`),
+`warn_renamed_flag()`, and `_short`.
 
 Nothing here imports a command module, so every other module in the
 package can import this one.
@@ -16,9 +16,10 @@ import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.markup import escape
 from typer.core import TyperGroup
@@ -122,6 +123,16 @@ def cli_errors(*also: type[Exception]) -> Iterator[None]:
     except _ALWAYS_EXPECTED + also as e:
         _print_error(e)
         raise typer.Exit(code=1) from e
+
+
+def exit_spec_errors(e: ValidationError) -> NoReturn:
+    """Print one `spec error: <loc>: <msg>` line per bad field, then exit 1."""
+    for err in e.errors():
+        loc = ".".join(str(p) for p in err["loc"]) or "spec"
+        err_console.print(
+            f"[red]spec error:[/red] {escape(loc)}: {escape(err['msg'])}", emoji=False
+        )
+    raise typer.Exit(code=1) from e
 
 
 def warn_renamed_flag(old: str, new: str) -> None:

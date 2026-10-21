@@ -13,6 +13,8 @@ from kizen_builder.models.spec.field_configs import (
     PhoneConfig,
     RatingConfig,
     StatusOption,
+    check_type_blocks,
+    reject_api_spellings,
 )
 from kizen_builder.models.spec.objects import _TYPES_REQUIRING_OPTIONS
 
@@ -64,7 +66,7 @@ class FormFieldDef(BaseModel):
     display name when omitted.
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(
         min_length=1,
@@ -90,22 +92,14 @@ class FormFieldDef(BaseModel):
     decimal_options: DecimalConfig | None = Field(default=None)
     phone_options: PhoneConfig | None = Field(default=None)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_api_spellings(cls, data: Any) -> Any:
+        return reject_api_spellings(data, cls.model_fields)
+
     @model_validator(mode="after")
     def _validate_type_specific_config(self) -> Self:
-        ft = self.field_type
-        if ft in _FORM_TYPES_REQUIRING_OPTIONS and not self.options:
-            raise ValueError(
-                f"field '{self.name}' of type '{ft}' requires a non-empty "
-                "'options' list"
-            )
-        if ft not in _FORM_TYPES_REQUIRING_OPTIONS and self.options is not None:
-            raise ValueError(
-                f"field '{self.name}' of type '{ft}' cannot have 'options'"
-            )
-        if ft == "money" and self.money_options is None:
-            self.money_options = MoneyConfig()
-        if ft == "rating" and self.rating is None:
-            self.rating = RatingConfig()
+        check_type_blocks(self, f"field '{self.name}'", _FORM_TYPES_REQUIRING_OPTIONS)
         return self
 
 
@@ -118,9 +112,10 @@ class FormDef(BaseModel):
     have no ``is_editable``/``webhook_url``/association-mode concept — instead
     every form/survey is *required* to declare which custom object its
     submissions attach records to (``related_object``) and a UI
-    ``template_type``. ``extra="allow"`` so specs authored straight from
-    ``kizen forms get`` / ``kizen surveys get`` output round-trip without
-    stripping server-only keys.
+    ``template_type``. ``extra="allow"``, so a top-level key the
+    CLI doesn't read is ignored. ``kizen forms get`` / ``kizen surveys get``
+    output is not a valid spec as printed, and ``fields`` entries take spec
+    spellings, not the API's.
     """
 
     model_config = ConfigDict(extra="allow")

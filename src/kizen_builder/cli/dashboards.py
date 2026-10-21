@@ -211,6 +211,43 @@ def dashboards_update(
     )
 
 
+@dashboards_app.command("duplicate")
+def dashboards_duplicate(
+    dashboard: str = typer.Argument(..., help="Dashboard UUID or api_name."),
+    name: str = typer.Option(
+        "",
+        "--name",
+        help="Name for the copy. Default: the server's '<name> (copy #N)'.",
+    ),
+    api_name: str = typer.Option(
+        "",
+        "--api-name",
+        help="api_name for the copy. Default: the server's '<api_name>_copy_N'.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Copy a dashboard, its dashlets and its sharing.
+
+    The copy is unpublished; publish it with `dashboards update`.
+    """
+    _run_mutation(
+        lambda: dash_planners.plan_duplicate_dashboard(
+            dashboard, name=name or None, api_name=api_name or None
+        ),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+    )
+
+
 @dashboards_app.command(
     "dashlet-config",
     epilog="Then drop the config into a DashboardDef — see `kizen docs show dashboard`",

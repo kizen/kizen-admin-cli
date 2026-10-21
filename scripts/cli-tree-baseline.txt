@@ -29,7 +29,7 @@
 │ layouts           Read and update record layouts for a custom object.                            │
 │ records           Read individual records from a custom object.                                  │
 │ filters           Look up valid --filter operators (no live env needed).                         │
-│ team              Look up team members.                                                          │
+│ team              Look up team members and change their roles.                                   │
 │ roles             Read and manage roles.                                                         │
 │ permissions       Read and manage permission groups + the permissions catalog.                   │
 │ automations       Read, create, update, and run automations.                                     │
@@ -82,6 +82,7 @@
 │ create     Create one activity type from flags, or a JSON ActivityDef (--spec-file/stdin).       │
 │ update     Update one activity type. Only the flags you set are changed.                         │
 │ delete     Delete one activity type.                                                             │
+│ duplicate  Duplicate one activity type.                                                          │
 │ fields     Manage the fields on an activity type.                                                │
 │ logged     Read logged activity instances (read-only).                                           │
 │ scheduled  Read scheduled activity instances (read-only).                                        │
@@ -91,8 +92,8 @@
                                                                                                     
  Create one activity type from flags, or a JSON ActivityDef (--spec-file/stdin).                    
                                                                                                     
- Flag mode covers the common metadata; use a spec for inline fields,                                
- visibility rules, or object associations.                                                          
+ Flag mode covers the common metadata and object associations; use a spec                           
+ for inline fields or visibility rules.                                                             
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --name                                    <str>  Display name (single-activity mode).            │
@@ -102,6 +103,10 @@
 │ --association-mode                        <str>  all_objects_associated |                        │
 │                                                  selected_objects_associated |                   │
 │                                                  no_objects_associated.                          │
+│ --object                                  <str>  Custom-object api_name or UUID to associate     │
+│                                                  (repeatable). Sets association mode to          │
+│                                                  selected_objects_associated unless              │
+│                                                  --association-mode is given.                    │
 │ --editable              --not-editable           Whether logged instances can be edited.         │
 │ --spec-file                               <str>  Bulk mode: path to a JSON ActivityDef (with     │
 │                                                  optional inline fields). Omit with stdin to     │
@@ -128,6 +133,21 @@
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
 │ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: activities duplicate [OPTIONS] {identifier}                                                 
+                                                                                                    
+ Duplicate one activity type.                                                                       
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    identifier      <str>  Activity api_name or UUID. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
+│ --dry-run                 Show the plan without applying.                                        │
+│ --yes      -y             Skip the y/N confirmation prompt.                                      │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: activities fields [OPTIONS] COMMAND [ARGS]...                                               
@@ -390,8 +410,11 @@
 │ --name                                         <str>  New display name.                          │
 │ --description                                  <str>  New description.                           │
 │ --association-mode                             <str>  New association mode.                      │
-│ --object                                       <str>  Custom-object api_name to associate        │
-│                                                       (repeatable). Sets association mode to     │
+│ --object                                       <str>  Custom-object api_name or UUID to          │
+│                                                       associate (repeatable). The list replaces  │
+│                                                       the current set; objects already in it     │
+│                                                       keep their Required and Read-only flags.   │
+│                                                       Sets association mode to                   │
 │                                                       selected_objects_associated unless         │
 │                                                       --association-mode is given.               │
 │ --editable                   --not-editable           Set the editable flag.                     │
@@ -1447,6 +1470,7 @@
 │ get             Show one dashboard/homepage plus a summary of its dashlets.                      │
 │ create          Create a dashboard/homepage and its dashlets from a JSON DashboardDef.           │
 │ update          Update a dashboard's metadata and/or dashlets from a JSON DashboardDef.          │
+│ duplicate       Copy a dashboard, its dashlets and its sharing.                                  │
 │ dashlet-config  Print a valid dashlet `config` for a named type, ready to edit.                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1497,6 +1521,24 @@
                                                                                                     
  Then drop the config into a DashboardDef — see `kizen docs show dashboard`                         
                                                                                                     
+                                                                                                    
+ Usage: dashboards duplicate [OPTIONS] {dashboard}                                                  
+                                                                                                    
+ Copy a dashboard, its dashlets and its sharing.                                                    
+                                                                                                    
+ The copy is unpublished; publish it with `dashboards update`.                                      
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    dashboard      <str>  Dashboard UUID or api_name. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --name              <str>  Name for the copy. Default: the server's '<name> (copy #N)'.          │
+│ --api-name          <str>  api_name for the copy. Default: the server's '<api_name>_copy_N'.     │
+│ --dry-run                  Show the plan without applying.                                       │
+│ --yes       -y             Skip the y/N confirmation prompt.                                     │
+│ --json                     Emit JSON (plan with --dry-run, results otherwise).                   │
+│ --help                     Show this message and exit.                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: dashboards get [OPTIONS] {dashboard}                                                        
                                                                                                     
@@ -1969,7 +2011,7 @@
 │ *    identifier      <str>  Form api_name or UUID. [required]                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --name             <str>  Name for the duplicate. Defaults to 'Copy of <name>'.                  │
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -2145,6 +2187,8 @@
  spec shape. A trailing "Thank You" page is added automatically unless                              
  the spec already includes a non-form page.                                                         
                                                                                                     
+ Refuses when the save would delete a field that isn't on a page.                                   
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    identifier      <str>  Form api_name or UUID. [required]                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -2162,6 +2206,8 @@
  Usage: forms update [OPTIONS] {identifier}                                                         
                                                                                                     
  Update one form/survey. Only the flags you set are changed.                                        
+                                                                                                    
+ Refuses when the save would delete a field that isn't on a page.                                   
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    identifier      <str>  Form api_name or UUID. [required]                                    │
@@ -2499,7 +2545,7 @@
 │ get     Show one object plus its categories and fields.                                          │
 │ create  Create one custom object (no fields/categories yet).                                     │
 │ update  Update one custom object. Only the flags you set are changed.                            │
-│ delete  Delete (archive) one custom object. Removes its data across all records.                 │
+│ delete  Delete one custom object. Archives its active records first, with no email.              │
 │ stages  Manage a pipeline's stages — status, chance-to-close, order. These live at a dedicated   │
 │         endpoint distinct from the object's mirrored 'stage' field; `fields options` cannot      │
 │         manage them (see `objects get` for a read-only view of the same data).                   │
@@ -2509,6 +2555,9 @@
                                                                                                     
  Create one custom object (no fields/categories yet).                                               
                                                                                                     
+ The plan shows the api_name Kizen will derive from `--name`, and the                               
+ result shows the one it stored.                                                                    
+                                                                                                    
  `--pipeline` (or `--object-type pipeline`) creates a stage-based                                   
  pipeline object; the default is a standard object. Kizen requires at                               
  least one stage to create a pipeline object, so this seeds a single                                
@@ -2516,8 +2565,11 @@
  the real ones afterward.                                                                           
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --api-name             <str>  Object api_name (e.g. 'invoice'). [required]                    │
-│ *  --name                 <str>  Display name (plural, e.g. 'Invoices'). [required]              │
+│    --api-name             <str>  Optional check. Kizen derives the api_name from --name and it   │
+│                                  can't be set or changed; if given, it must equal that value.    │
+│ *  --name                 <str>  Display name (plural, e.g. 'Invoices' gives api_name            │
+│                                  'invoices').                                                    │
+│                                  [required]                                                      │
 │    --entity-name          <str>  Singular form (e.g. 'Invoice'). Defaults to display name.       │
 │    --description          <str>  Object description.                                             │
 │    --object-type          <str>  Object type: 'standard' (default) or 'pipeline' (stage-based    │
@@ -2532,7 +2584,7 @@
                                                                                                     
  Usage: objects delete [OPTIONS] {object_api_name}                                                  
                                                                                                     
- Delete (archive) one custom object. Removes its data across all records.                           
+ Delete one custom object. Archives its active records first, with no email.                        
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    object_api_name      <str>  Object api_name to delete. [required]                           │
@@ -3146,18 +3198,16 @@
 │      record_id            <str>  One or more record UUIDs to update.                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --field               <str>  Field api_name to set. [required]                                │
-│ *  --value               <str>  New value (resolved against the field's type, same coercion as   │
-│                                 `records create`).                                               │
-│                                 [required]                                                       │
-│    --resolution          <str>  overwrite | add_only | remove_only | update_if_blank |           │
-│                                 overwrite_except_null (add_only/remove_only apply to             │
-│                                 multi-select fields).                                            │
-│                                 [default: overwrite]                                             │
-│    --dry-run                    Show the plan without applying.                                  │
-│    --yes         -y             Skip the y/N confirmation prompt.                                │
-│    --json                       Emit JSON (plan with --dry-run, results otherwise).              │
-│    --help                       Show this message and exit.                                      │
+│ --field       -f      <str>  The field to set: --field api_name=value (exactly one; value        │
+│                              coerced as in `records update`).                                    │
+│ --resolution          <str>  overwrite | add_only | remove_only | update_if_blank |              │
+│                              overwrite_except_null (add_only/remove_only apply to multi-select   │
+│                              fields).                                                            │
+│                              [default: overwrite]                                                │
+│ --dry-run                    Show the plan without applying.                                     │
+│ --yes         -y             Skip the y/N confirmation prompt.                                   │
+│ --json                       Emit JSON (plan with --dry-run, results otherwise).                 │
+│ --help                       Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: records unarchive [OPTIONS] {object_api_name} [record_id]...                                
@@ -3996,7 +4046,7 @@
 │ *    identifier      <str>  Survey api_name or UUID. [required]                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --name             <str>  Name for the duplicate. Defaults to 'Copy of <name>'.                  │
+│ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
@@ -4172,6 +4222,8 @@
  spec shape. A trailing "Thank You" page is added automatically unless                              
  the spec already includes a non-form page.                                                         
                                                                                                     
+ Refuses when the save would delete a field that isn't on a page.                                   
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    identifier      <str>  Survey api_name or UUID. [required]                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -4189,6 +4241,8 @@
  Usage: surveys update [OPTIONS] {identifier}                                                       
                                                                                                     
  Update one form/survey. Only the flags you set are changed.                                        
+                                                                                                    
+ Refuses when the save would delete a field that isn't on a page.                                   
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    identifier      <str>  Survey api_name or UUID. [required]                                  │
@@ -4214,7 +4268,7 @@
                                                                                                     
  Usage: team [OPTIONS] COMMAND [ARGS]...                                                            
                                                                                                     
- Look up team members.                                                                              
+ Look up team members and change their roles.                                                       
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -4222,6 +4276,7 @@
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
 │ search  Search team members by name or email.                                                    │
 │ get     Show one team member, including the role(s) they hold.                                   │
+│ update  Change a team member's roles. --role replaces the whole set.                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: team get [OPTIONS] {member}                                                                 
@@ -4257,6 +4312,29 @@
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: team update [OPTIONS] {member}                                                              
+                                                                                                    
+ Change a team member's roles. --role replaces the whole set.                                       
+                                                                                                    
+ With --add-role/--remove-role, roles you don't name are left alone.                                
+ Removing the business's last Admin is refused.                                                     
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    member      <str>  Team member id, name, or email. [required]                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --role                 <str>  Replace the member's roles with these (name or UUID, repeatable).  │
+│ --add-role             <str>  Role to add (name or UUID, repeatable).                            │
+│ --remove-role          <str>  Role to remove (name or UUID, repeatable).                         │
+│ --dry-run                     Show the plan without applying.                                    │
+│ --yes          -y             Skip the y/N confirmation prompt.                                  │
+│ --json                        Emit JSON (plan with --dry-run, results otherwise).                │
+│ --help                        Show this message and exit.                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and the last-Admin guard: see `kizen docs show team`                             
+                                                                                                    
+                                                                                                    
  Usage: upgrade [OPTIONS]                                                                           
                                                                                                     
  Update this CLI in place.                                                                          
@@ -4287,6 +4365,9 @@
 
 
 ===== activities delete =====
+
+
+===== activities duplicate =====
 
 
 ===== activities fields =====
@@ -4512,6 +4593,9 @@
 
 
 ===== dashboards dashlet-config =====
+
+
+===== dashboards duplicate =====
 
 
 ===== dashboards get =====
@@ -4962,6 +5046,9 @@
 
 
 ===== team search =====
+
+
+===== team update =====
 
 
 ===== upgrade =====

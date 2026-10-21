@@ -6,6 +6,7 @@ Endpoints (all undocumented in the public spec):
   GET    /api/dashboards/{id}     fetch a dashboard with embedded dashlets
   PATCH  /api/dashboards/{id}     update dashboard metadata
   DELETE /api/dashboards/{id}     delete a dashboard
+  POST   /api/dashboards/{id}/duplicate  copy a dashboard (body ignored)
 
   POST   /api/dashboards/{id}/dashlet    create a dashlet
   PATCH  /api/dashboards/{id}/dashlet/{dl_id}  update a dashlet
@@ -82,6 +83,15 @@ def update_dashboard(
     client: KizenClient, dashboard_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
     return client.patch(f"/api/dashboards/{dashboard_id}", json=payload)
+
+
+def duplicate_dashboard(client: KizenClient, dashboard_id: str) -> dict[str, Any]:
+    """POST /api/dashboards/{id}/duplicate with an empty body.
+
+    The server ignores the body: the copy is named ``<name> (copy #N)``, is
+    unpublished and has empty sharing. Set those with :func:`update_dashboard`.
+    """
+    return client.post(f"/api/dashboards/{dashboard_id}/duplicate", json={})
 
 
 def delete_dashboard(client: KizenClient, dashboard_id: str) -> None:

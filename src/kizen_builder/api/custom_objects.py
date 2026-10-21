@@ -32,7 +32,11 @@ def get_object(client: KizenClient, object_id: str) -> dict[str, Any]:
 
 
 def delete_object(client: KizenClient, object_id: str) -> dict[str, Any]:
-    """DELETE /api/custom-objects/{id}. Archives the object and its data."""
+    """DELETE /api/custom-objects/{id}.
+
+    Kizen answers 400 while the object has active records; archive them
+    first (`plan_delete_object` does).
+    """
     resp = client.delete(f"/api/custom-objects/{object_id}")
     return resp if isinstance(resp, dict) else {}
 

@@ -92,7 +92,6 @@ def test_survey_duplicate_posts_to_duplicate_endpoint():
         kind="survey",
         key="survey:x:duplicate",
         preview={},
-        payload={"name": "Copy of X"},
         existing_uuid="survey-uuid",
     )
     result = plan_tools.apply_plan(Plan.build(env="t", summary="t", operations=[op]))

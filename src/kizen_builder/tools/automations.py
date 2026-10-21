@@ -426,7 +426,7 @@ def build_wire_step(
     authored by copying an existing step's ``steps get`` output must not
     carry that step's id along and hijack its identity.
     """
-    from kizen_builder.models.spec import AutomationDef, AutomationStepDef
+    from kizen_builder.models.spec import AutomationStepDef
     from kizen_builder.tools.planners.automations import (
         LiveContext,
         _build_step_payload,
@@ -439,13 +439,24 @@ def build_wire_step(
     spec["order"] = 0  # placeholder; insert_step assigns real placement
     spec.setdefault("key", synthesize_key(payload, spec["step_type"]))
     step_def = AutomationStepDef.model_validate(spec)
+    return _build_step_payload(
+        step_def, _payload_auto(payload, target_object), LiveContext()
+    )
+
+
+def _payload_auto(payload: dict[str, Any], target_object: str | None) -> Any:
+    """The AutomationDef a step builder sees in `steps add`/`edit`. Its steps
+    are the live payload's wire steps, unvalidated: builders read them only
+    for variable declarations (a condition comparing a field to a variable)."""
+    from kizen_builder.models.spec import AutomationDef
+
     auto = AutomationDef(
         name=payload["name"],
         api_name=payload["api_name"],
         type=payload["type"],
         target_object=target_object,
     )
-    return _build_step_payload(step_def, auto, LiveContext())
+    return auto.model_copy(update={"steps": payload["steps"]})
 
 
 def normalize_step_patch(
@@ -459,33 +470,58 @@ def normalize_step_patch(
 
     Lets `steps edit` accept the same authoring shapes as create specs
     (field_refs, api_names) as well as raw wire dicts — builders are
-    idempotent on wire shapes. A condition patch that carries
-    `step_condition` must also have at least one rule, the same check
-    `automations create`/`update` and `steps add` apply.
+    idempotent on wire shapes (enforced by
+    `test_builders_rebuild_wire_blocks_unchanged`). A block key the builder
+    doesn't read is refused, and an initialize_variable's `variable` must pass
+    `AutomationVariableConfig`. The patched block then gets the same checks
+    `automations create`/`update` and `steps add` apply
+    (`_built_block_problem`).
     """
-    from kizen_builder.models.spec import AutomationDef
+    from pydantic import ValidationError
+    from pydantic_core import InitErrorDetails
+
+    from kizen_builder.filtering import VariableReferenceError
+    from kizen_builder.models.spec import AutomationVariableConfig
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         LiveContext,
         _block_field_for,
-        _condition_rules_problem,
+        _built_block_problem,
+        _reject_unhonoured_keys,
     )
     from kizen_builder.tools.plans import PlanError
 
     cfg_key = _block_field_for(step_type)
     builder = _STEP_BUILDERS.get(step_type)
     if cfg_key in patch and builder is not None and isinstance(patch[cfg_key], dict):
-        auto = AutomationDef(
-            name=payload["name"],
-            api_name=payload["api_name"],
-            type=payload["type"],
-            target_object=target_object,
-        )
-        patch[cfg_key] = builder(dict(patch[cfg_key]), auto, LiveContext())
-        if step_type == "condition":
-            problem = _condition_rules_problem(key, patch[cfg_key])
-            if problem:
-                raise PlanError(problem)
+        # Strict, not live: `steps get` prints translated blocks, so an
+        # unsent_on_read key here is one the author set and the edit would drop.
+        _reject_unhonoured_keys(builder, patch[cfg_key], f"step '{key}' {cfg_key}")
+        variable = patch[cfg_key].get("variable")
+        if step_type == "initialize_variable" and isinstance(variable, dict):
+            try:
+                AutomationVariableConfig.model_validate(variable)
+            except ValidationError as e:
+                # Re-rooted at the step so the loc reads as `steps add`'s does.
+                rerooted = [
+                    InitErrorDetails(
+                        type=err["type"],
+                        loc=(cfg_key, "variable", *err["loc"]),
+                        input=err["input"],
+                        ctx=err.get("ctx", {}),
+                    )
+                    for err in e.errors()
+                ]
+                raise ValidationError.from_exception_data(e.title, rerooted) from e
+        auto = _payload_auto(payload, target_object)
+        ctx = LiveContext()
+        try:
+            patch[cfg_key] = builder(dict(patch[cfg_key]), auto, ctx)
+        except VariableReferenceError as e:
+            raise PlanError(f"step '{key}': {e}") from e
+        problem = _built_block_problem(step_type, key, patch[cfg_key], auto, ctx)
+        if problem:
+            raise PlanError(problem)
     return patch
 
 

@@ -26,7 +26,7 @@ field Kizen rejected.
 | `layouts update` | [layout.md](layout.md) | `LayoutDef` (record layout) |
 | `filter-groups`, `quick-filters`, `columns` create\|update | [saved-views.md](saved-views.md) | filter DSL / `configuration_json` |
 | `permissions group-create`, `roles …` | [permission-group.md](permission-group.md) | shaping-op list |
-| `team search\|get` | [team.md](team.md) | — |
+| `team search\|get\|update` | [team.md](team.md) | — |
 | `smart-connectors` (all but `configure-flow`) | [smart-connectors.md](smart-connectors.md) | — |
 | `smart-connectors configure-flow` | [smart-connector-flow.md](smart-connector-flow.md) | execution variables + load steps |
 | `messages …` (and email template ground truth) | [email-templates.md](email-templates.md) | — |
@@ -47,8 +47,9 @@ with fields: create the object, then `categories create`, then `fields create`.
 - **`field_ref: "<object_api>.<field_api>"`** in automation and saved-view
   configs is resolved to a UUID at apply time and is portable across
   environments. Bare `field_id` UUIDs work too but are env-bound.
-- **`api_name`** is `^[A-Za-z0-9_]+$`. Kizen may rewrite it on create — read
-  back with the matching `get` command.
+- **`api_name`** is `^[A-Za-z0-9_]+$`. An object's comes from its display name
+  and can't be set (`objects.md`); an activity type's is kept as given
+  (`activity.md`). Elsewhere, read it back with the matching `get` command.
 - Everything runs through **plan → preview → confirm → apply**: `--dry-run` to
   preview, `--yes` to apply after approval.
 

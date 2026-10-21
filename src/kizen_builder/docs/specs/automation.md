@@ -134,14 +134,21 @@ sets a step's own severity. Omitted, the step inherits. Confirmed live
 
 ---
 
-## Wired trigger types (10)
+## Wired trigger types (11)
 
 `manual`, `new_entity_created`, `activity_logged`, `on_or_around_date`,
 `webhook`, `field_updated`, `schedule`, `scheduled_activity_overdue`,
-`form_submitted`, `survey_submitted`.
+`form_submitted`, `survey_submitted`, `email_received`.
 
 Each requiring config sets a `trigger_<name>` block matching `trigger_type`
 (e.g. `field_updated` → `trigger_field_updated: { field_ref, fire_on_create, … }`).
+The one exception is `email_received`, whose block is
+`trigger_email_received_from_contact: {receiving_inbox, selected_integrated_inboxes}`.
+`receiving_inbox` is `any` (the default when omitted) or
+`selected_integrated_inboxes`, which needs a list of integrated inbox UUIDs;
+reads expand each to `{id, email}`. It works on Contact automations only: a
+custom object gets 400 "only client custom object is allowed". Confirmed live
+2026-10-14.
 `manual` is an empty `trigger_manual: {}`. `schedule` → `trigger_schedule:
 {rrule, is_advanced}` — a recurring trigger (works on global automations too,
 where it's the only "time-based" option since `on_or_around_date` needs a
@@ -151,7 +158,12 @@ Kizen (e.g. `email_interaction`, `email_link_clicked`,
 `contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
 you try to spec them.
 
-## Wired step types (26)
+A `goal` step's `step_goal.triggers` are wait-until triggers with the same
+`trigger_type` names and config blocks as the top level, e.g. `email_received`
+to wait for a reply. Its `wait_type` is `never`, `delay` or
+`specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
+
+## Wired step types (27)
 
 | step_type | config block | purpose |
 |-----------|--------------|---------|
@@ -161,12 +173,13 @@ you try to spec them.
 | `stop_execution` | `action_stop_execution` | end this branch — the "Action Options" choice below is required in the UI |
 | `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
+| `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
 | `call_llm` | `action_call_llm` | prompt an LLM, write to `destinations` |
-| `file_content_extraction` | `action_file_content_extraction` | extract from a file field |
-| `audio_transcription` | `action_audio_transcription` | transcribe an audio field |
+| `file_content_extraction` | `action_file_content_extraction` | extract from a file field on the record, a related record, or in a variable (`input_value_source`) |
+| `audio_transcription` | `action_audio_transcription` | transcribe an audio field on the record, a related record, or in a variable (`input_value_source`) |
 | `change_field_value` | `action_change_field_value` | set/clear a field |
 | `archive_record` | `action_archive_record` | archive the record |
-| `create_related_entity` | `action_create_related_entity` | create a related record |
+| `create_related_entity` | `action_create_related_entity` | create a related record — see [`create_related_entity`](#create_related_entity) |
 | `modify_related_entities` | `action_modify_related_entities` | update related records |
 | `start_automation` | `action_start_automation` | start another automation |
 | `assign_team_member` | `action_assign_team_member` | assign owner (round-robin, role, field, …) |
@@ -198,7 +211,7 @@ quirks (custom_object/filter_groups/destination_variable are each
 scalars).
 
 Other step types exist in Kizen (`send_email`, `change_tags`,
-`http_request`, `plugin_code_step`, `update_pipeline_status`,
+`http_request`, `update_pipeline_status`,
 `modify_automation`, `request_info_via_text`, `delete_scheduled_activity`,
 `modify_related_entities_automation` — not to be confused with the wired
 `modify_related_entities`) but aren't wired here and raise `PlanError` if you
@@ -226,6 +239,93 @@ For the Python side — the `inputs.` / `outputs.` / `secrets[…]` / `kizen.api
 namespace, how each `data_type` arrives inside the script, and unit-testing a
 script before wiring it in — see `kizen docs show code-steps`.
 
+### `plugin_code_step`
+
+Runs a step from an installed plugin's manifest. The block has six keys:
+
+```json
+{ "step_type": "plugin_code_step", "key": "summarize", "parent_key": null,
+  "action_plugin_code_step": {
+    "plugin_app_api_name": "example_plugin",
+    "action_step_api_name": "summarize_records",
+    "notify_plugin_developer_on_failure": false,
+    "inputs":  [ { "name": "heading", "input_type": "field",
+                   "field_ref": "client_client.first_name" },
+                 { "name": "settings", "input_type": "business_plugin_config" } ],
+    "outputs": [ { "name": "records_json", "output_type": "variable",
+                   "variable_name": "context_text" } ],
+    "secrets": ["api_key"] } }
+```
+
+- `plugin_app_api_name` is the **installed** plugin's api_name, as
+  `business-plugin-apps` lists it. A preview install is
+  `<api_name>_preview_<branch>` (confirmed live 2026-10-05).
+  `action_step_api_name` names the step in that plugin's manifest. `GET
+  /external-integrations/bootstrap` lists each install's steps under
+  `automation_action_configs` (confirmed live 2026-10-14).
+- There's **no plugin-app id**, unlike the LLM steps. `business_plugin_app_id`
+  in this block is a plan error.
+- The server checks the names: an api_name with no install, including a
+  catalog plugin that isn't installed, and an `action_step_api_name` the
+  plugin doesn't ship are each a 400 naming the key. It also checks the
+  bindings against the manifest, and a required input or output that's
+  missing is a 400 naming it (all confirmed live 2026-10-14).
+- `inputs` and `outputs` take the `code_step` shapes above. `inputs` also
+  takes `input_type: business_plugin_config`, for plugin steps only. On the
+  wire it's `{name, input_type, data_type?, is_list?}` with no source key. A
+  UI-built step reads back in that shape (seen 2026-10-14), bound to a
+  parameter the manifest declares `static_value`. Kizen's 2026-10-13 release
+  notes say the step receives the install config as a JSON string and that
+  the manifest declares the parameter with `input_source:
+  business_plugin_config`. Neither is **confirmed live**, and neither is
+  writing one from the CLI.
+- `secrets` takes names, as for `code_step`, and is sent as `[{name}]`.
+- Step `id`s carry over as for any step. `activate`, `deactivate`, `steps`
+  edits to other steps and `roundtrip --execute` keep a plugin step's inputs,
+  outputs and secrets intact (confirmed live 2026-10-14).
+
+### `create_related_entity`
+
+Creates one record on another object and links it to the triggering record.
+
+```json
+{ "step_type": "create_related_entity", "key": "create_followup",
+  "parent_key": null,
+  "action_create_related_entity": {
+    "target_custom_object": "service_tickets",
+    "new_entity_name": "Follow-up for {{ entity_record.name }}",
+    "new_entity_name_html": "<p>Follow-up for {{ entity_record.name }}</p>",
+    "new_entity_owner_type": "assign_from_context_record",
+    "context_entity_field": "accounts.followup_ticket"
+  } }
+```
+
+- **`target_custom_object`** is the object the record is created on: an
+  api_name, a UUID, or an `{id}`/`{name}` dict. **`target_object`** is an
+  alias for it. Give one; `target_custom_object` wins when both are set.
+- **`new_entity_name`**, **`new_entity_name_html`** and
+  **`new_entity_owner_type`** (`assign_from_context_record` or
+  `newly_assigned_owner`) are required by the write schema. The owner can be
+  narrowed with `new_entity_owner_sub_type`, `new_entity_owner_role`,
+  `new_entity_owner_variable` or `new_entity_owner_employees`.
+- **`context_entity_field`** is a field on the automation's own
+  `target_object` that is set to point at the new record: after the step
+  runs, it holds the new record's id (confirmed live 2026-08-13). A bare or
+  `"object.field"` ref resolves at plan time. **`target_variable`** names a
+  variable that receives the new record.
+- The other keys it reads are `new_entity_stage`, `automations_to_start`,
+  `variable_field_resolution` and `context_entity_field_resolution`
+  (default `overwrite`), `existing_record_found_action` (default
+  `error_do_not_create`) and `archived_record_found_action` (default
+  `overwrite`). Any other key is a plan error on `automations create`/`update`,
+  `steps add` and `steps edit`.
+- **Field values can't be set at creation.** The step has no key for them:
+  `field_values` used to be forwarded, and Kizen accepted it and stored
+  nothing (confirmed live 2026-10-05). Create the record empty, then set its
+  values in a following
+  [`modify_related_entities`](#modify_related_entities--field-shape) step
+  whose hop is the same `context_entity_field`.
+
 ### `modify_related_entities` — field shape
 
 Updates one or more fields on a record related to the trigger record, via
@@ -252,6 +352,14 @@ one or more relationship-field hops.
   `relationship_field_ref` (or `relationship_field_id`), is also accepted
   and folded into this list — but the list is the real wire key; don't
   confuse this with `object_to_modify` (a plain object reference).
+- **`record_source`** says where the records come from:
+  `related_object_field` (the hop chain above) or `automation_variable`. For
+  `automation_variable`, set `record_source_variables` to the names of
+  **non-array** entity variables (an array variable 400s) and
+  `automation_target_relationship_fields: []`. Omitted, the server uses
+  `related_object_field`, which 400s without a hop:
+  *"automation_target_relationship_fields should be set"*. Confirmed live
+  2026-10-06.
 - **`fields_to_modify`** items use the *same* per-item shape as
   `change_field_value`'s flat form (`field_to_modify`/`field_ref`,
   `specific_field_value`, `related_object`, `related_object_field`,
@@ -275,6 +383,43 @@ one or more relationship-field hops.
   "target_values": [<uuid>], "order": 0}, ...]`. Each entry maps one source
   option UUID (on the field being read) to one target option UUID (on
   `field_to_modify`); `order` controls evaluation order for multiple rules.
+
+### Extraction input
+
+`file_content_extraction` and `audio_transcription` read their file from one
+of two keys, and Kizen accepts **exactly one**. Both, even when they agree, or
+neither, is a 400: `Only one of input_field or input_value_source should be
+set`. The planner refuses either case with a `PlanError` first.
+
+```json
+{ "input_field_ref": "claims.claim_attachment" }
+{ "input_value_source": { "type": "related_object_field",
+                          "relationship_field": "claims.policy",
+                          "field": "policies.policy_document" } }
+{ "input_value_source": { "type": "automation_variable", "variable": "claim_file" } }
+{ "input_value_source": { "type": "context_entity_field", "field": "claims.claim_attachment" } }
+```
+
+- `input_field_ref` (or `input_field` / `input_field_id`) is a file field on
+  the automation's own record.
+- `related_object_field` reads a file field on a related record:
+  `relationship_field` is the hop on `target_object`, `field` the file field
+  on the related object. **The hop must be single-valued** — a to-many hop
+  400s `Relationship field must be single-valued`.
+- `automation_variable` reads the file from a variable, named by `variable`.
+- `field` and `relationship_field` take a UUID or a dotted `"object.field"`
+  ref. The wire takes bare UUIDs, and `variable` as the name.
+- Every read mirrors `input_field` into a `context_entity_field` source as
+  well, and nulls `input_field` for the other source types. The planner
+  collapses the mirror back to `input_field`, so `steps get` output re-applies
+  as it is.
+
+Confirmed live 2026-10-14. The type enum also lists `specific_value`,
+`automation_entity_variable_field` and `blank`; those are unprobed as file
+inputs and pass through with the same unwrapping. The builder UI offers only
+fields on the record as a source, and an automation with a related-record or
+variable source does not open in the UI editor — it returns to the
+automation list.
 
 ### LLM & extraction destinations
 
@@ -415,7 +560,7 @@ an **automation variable** to a static value is a different clause shape,
                 ["fields_settings_search", true],
                 ["custom_object_id", "<object-uuid>"],
                 ["object_type", "standard"],
-                ["client_tag_field_id", "257bb114-1b86-4761-99bd-95292de23f46"]
+                ["client_tag_field_id", "<client-tag-field-uuid>"]
               ], "filter_type": "variable" }],
             ["lhs_variable", { "name": "score", "data_type": "number" }],
             ["condition", "less_than_or_equal_to"],
@@ -437,8 +582,39 @@ an **automation variable** to a static value is a different clause shape,
   a distinct token pair from the record-field DSL's single `is_blank`+bool
   form used elsewhere in `filter_config`.
 - **`custom_object_id`** is the automation's target object UUID;
-  **`client_tag_field_id`** (`257bb114-1b86-4761-99bd-95292de23f46`) is a
-  constant that appears fixed across envs.
+  **`client_tag_field_id`** is per business, not a constant: two businesses'
+  contact `tags` field ids differed (confirmed live 2026-10-05). Copy it from
+  the `view_model` of an existing condition in the same business
+  (`kizen automations get <api_name> --raw`). If there is none, use the
+  contact `tags` field's id from `kizen objects get client_client`. That
+  fallback is a best guess. Conditions were read in two businesses, one on 2026-10-05 and one on
+  2026-10-16. Record-field clauses mostly carried the `tags` id in both.
+  Variable clauses carried it in the second and a different id in the first. A
+  condition with no `view_model` still executes, so a wrong value probably
+  changes only how the builder UI shows the condition (not tested). A
+  field-vs-variable rule written with the filter spec's `variable` key doesn't
+  need it: the CLI resolves it per business (see [Field compared to an array
+  variable](#field-compared-to-an-array-variable)).
+
+### Field compared to an array variable
+
+To test a record field against a variable's values, put `"variable"` in
+place of `"value"` in the condition's filter spec. The variable must be
+declared in the same automation, as an array (a team-member field also takes
+a single `employee` variable). For a dropdown the array holds option names or
+option UUIDs; a test run matched with each. Not on Contacts automations.
+
+```json
+{ "key": "allowed", "parent_key": null, "step_type": "initialize_variable",
+  "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
+    "variable": { "name": "allowed_statuses", "data_type": "string", "is_array": true } } },
+{ "key": "check", "parent_key": "allowed", "step_type": "condition",
+  "step_condition": { "type": "custom_filter", "filter_config": { "all": [
+    { "field": "status", "op": "is_any_of", "variable": "allowed_statuses" } ] } } }
+```
+
+The field types, ops and variable kinds this takes are in
+`kizen docs show filters`.
 
 ### Reading a related record's field into a variable
 
@@ -522,12 +698,47 @@ as a real custom object's own api_name, and its span gets
 - **A variable the UI creates inline** (from a step's variable picker) is an
   ordinary root-chain `initialize_variable` with `sources: []`. Spec it that
   way. Confirmed live 2026-09-28.
-- **String and UUID arrays** are a variable with `is_array: true` (plus
-  `array_aggregation_mode` on the variable step). A static array value is a
-  `static` source with `source_subtype` (`string`/`uuid`), a list `value`
-  and `array_separator`. Give `value` as a list: with a single string such as
-  `"a\nb"`, GET drops `array_separator`, so the separator is lost on any
-  read-back and `diff` shows it as a change. Confirmed live 2026-09-29.
+- **`variable.data_type`** is one of `string`, `number`, `boolean`, `date`,
+  `datetime`, `phone_number`, `email`, `uuid`, `employee`, `entity`; anything
+  else is a spec error. The server answers an unknown type with a bare HTTP
+  500, confirmed live 2026-10-14. Only `string`, `uuid` and `entity`
+  variables can be arrays.
+- **Unknown keys in `variable`** are a spec error, because the server drops
+  them silently (`isArray` saved a scalar). Confirmed live 2026-10-14.
+- **String, UUID and entity arrays** are a variable with `is_array: true`,
+  plus two keys on the variable step: `array_aggregation_mode` (`add_all` or
+  `add_first_non_blank`) and `deduplicate_array` (bool). A static array
+  value is a `static` source with `source_subtype` (`string`/`uuid`), a list
+  `value` and `array_separator`. Give `value` as a list: with a single string
+  such as `"a\nb"`, GET drops `array_separator`, so the separator is lost on
+  any read-back and `diff` shows it as a change. Confirmed live 2026-09-29.
+  In the builder, `array_aggregation_mode` is "Choose Source Handling"
+  (*Add All Sources* / *First Non-Blank Source Only*) and `deduplicate_array`
+  is "Unique Values Only". Confirmed live 2026-10-14.
+- **`value_resolution` on `update_variable`** says how the sources combine
+  with an array variable's current value. Confirmed live 2026-10-14, starting
+  from `[a]` with `deduplicate_array: false`:
+
+  | `value_resolution` | sources `[b]` | sources empty |
+  |---|---|---|
+  | `add_only` | `[a, b]` (and `[a, c]` gives `[a, a, c]`) | not observed |
+  | `overwrite` | `[b]` | `[]` |
+  | `overwrite_except_null` | `[b]` | `[a]`: kept |
+  | null / omitted | `[b]` | `[]` |
+
+  - It works on array variables only. On a scalar variable the server 400s
+    with "Value resolution is supported for array variables only." The
+    planner refuses it first when the spec's `initialize_variable` for that
+    name has no `is_array: true`.
+  - Only `update_variable` takes it. On `initialize_variable` the server
+    drops it silently, so the planner refuses it there.
+  - Any other value is a plan error.
+  - **A PUT that omits it keeps the stored value** on a step whose `id` is
+    carried. Only an explicit `null` resets it, and the planner drops nulls,
+    so deleting the key from a spec doesn't clear it. Set `overwrite`
+    instead, which behaved the same as null.
+  - The builder UI has no control for it as of 2026-10-14, and opening the
+    step doesn't show a stored value.
 - **`stop_execution`'s "Action Options" dropdown is a required choice in
   the builder UI, and two of its five options don't stop anything.**
   Confirmed live (one automation with all 5 steps built through the UI,
@@ -578,8 +789,10 @@ as a real custom object's own api_name, and its span gets
   Fields are **bare api_names**; **ops are per field type** (e.g. dropdown uses
   `is_any_of`/`not_any_of`, numbers use `>=`/`between` — *not* `in`/`gte`). Run
   `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
-  dict for clause types the DSL doesn't cover (variable comparisons — see
-  "Variable-comparison condition step" above). **A condition needs at least one
+  dict for clause types the DSL doesn't cover (a variable compared to a static
+  value — see "Variable-comparison condition step" above). A field compared to
+  an array variable is in the DSL ("Field compared to an array variable"
+  above). **A condition needs at least one
   rule.** An empty `query`, a group with no `filters`, or an `in_group`/
   `not_in_group` with no `group_ids` is rejected at plan time. The API accepts
   an empty filter, but the UI then shows an error on the step (reported
@@ -618,17 +831,30 @@ Why a translator is mandatory rather than nice-to-have:
   **null**).
 - **A key the planner doesn't read is a plan-time error.** Any top-level key
   in a step or trigger config block that the type's builder doesn't read
-  fails `create`/`update`/`steps add` before the plan renders, even under
-  `--dry-run --json`, with a `plan error:` naming the key and every key that
-  block does read. Two limits: keys *inside* nested items
-  (`change_field_value.actions[]`, `code_step.inputs`/`outputs`,
-  `schedule_activity.schedule`) aren't checked, and neither is `steps edit`.
+  fails `create`/`update`/`steps add`/`steps edit` before the plan renders,
+  even under `--dry-run --json`, naming the key and every key that block does
+  read (`plan error:` from `create`/`update`, `error:` from `steps`). One
+  limit: keys *inside* nested items (`change_field_value.actions[]`,
+  `code_step.inputs`/`outputs`, `plugin_code_step.inputs`/`outputs`,
+  `schedule_activity.schedule`) aren't checked.
   Types whose builder forwards the whole block to Kizen (`delay`, `goal`,
   `stop_execution`, `initialize_variable`, `update_variable`,
   `send_related_contact_text`, and every trigger except `manual`,
-  `new_entity_created` and `activity_logged`) accept any key, and Kizen may
-  still ignore one. `send_related_contact_text` is the exception within
-  them: an extra key whose value is a dict or list is dropped, not forwarded.
+  `new_entity_created`, `activity_logged` and `email_received`) accept any
+  key, and Kizen may still ignore one. `send_related_contact_text` is the
+  exception within them: an extra key whose value is a dict or list is
+  dropped, not forwarded.
+- **So is a key a live read carries that the builder doesn't model.** Every
+  verb that reads an automation back, whether to write it (`activate`,
+  `deactivate`, `move`, `steps add|edit|remove`, `roundtrip --execute`) or to
+  show or diff it (`show`, `steps get`, `diff`), stops with an error naming
+  the automation, the step or trigger and the key, before any PUT.
+  Only a non-empty value counts, and the same limits apply: keys inside
+  nested items aren't checked, and neither are the forwarding types above.
+  Derived read-only keys are expected and never sent: `yes_steps`/`no_steps`
+  on a condition, and the message fields (`subject`, `content`, `name`, …) a
+  `notify_member_via_email`/`_text` read flattens into the block (confirmed
+  live 2026-10-16).
 
 Also: **automation updates need PUT, not PATCH.** PATCH refuses step/trigger
 changes, and PUT requires the current `revision` as `last_revision`.
@@ -678,17 +904,21 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
+| Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
+| `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
 
 `automation_variable_overrides` items carry a fixed key set on read, most null
 per entry — `value_source` says which one is live: `context_entity_field`,
 `automation_variable`, `specific_value`, and `blank` are confirmed live
 2026-09-01 (`sets_variable_overrides`/`Receives Variable Overrides`, five
 overrides on one target automation, incl. one `specific_value` and one
-`blank`). Four more sibling keys are real on the wire but unconfirmed —
-null in every capture so far: `automation_entity_variable`,
-`automation_entity_variable_field`, `relationship_field`,
-`related_record_field`. The translator raises rather than guesses at their
-`value_source` names or unwrap shape.
+`blank`). The schema's `ValueSourceEnum` adds two more:
+`related_object_field`, which pairs `relationship_field` (the hop, a UUID)
+with `related_record_field` (the field on the related record, a UUID), and
+`automation_entity_variable_field`, which pairs `automation_entity_variable`
+(a variable name) with `automation_entity_variable_field` (a field UUID).
+The translator carries every non-null value key with the unwrap its schema
+type calls for. Per the published schema, 2026-10-06; not yet seen live.
 
 ### Graph rules the server enforces
 
@@ -720,16 +950,16 @@ Beyond the step/trigger tables above:
 
 | where | the key |
 |---|---|
-| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref: "object.field"` resolves to it. **`from_value`/`to_value` write as bare UUIDs** — an expanded dict is silently stored as null |
-| `on_or_around_date` trigger | `field_id` |
+| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. **`from_value`/`to_value` write as bare UUIDs** — an expanded dict is silently stored as null |
+| `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object` |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}` |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
-| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves |
+| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see [Extraction input](#extraction-input) |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string |
-| `start_automation` | `automation_ids`, `relationship_field_ids` |
-| `archive_record` | `relationship_field_ids`, `automation_variable_name` |
-| `assign_team_member` | the `*_id` dialect: `role_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum — see below |
+| `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record` |
+| `archive_record` | `relationship_field_ids` (entries accept `"object.field"` refs), `automation_variable_name` |
+| `assign_team_member` | the `*_id` dialect: `role_id`, `employee_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum — see below |
 | `go_to_automation_step` | `step_key`, pointing at a synthesized key |
 
 The `manual` trigger is prepended to every spec automatically if absent.
@@ -754,6 +984,12 @@ bare strings 500s.**
 step's **own** `custom_object`, not the automation's `target_object` — which a
 global automation doesn't have at all.
 
+### `schedule_activity.note` and `html_note`
+
+Kizen stores the two separately, and a PUT without `html_note` clears it
+while `note` survives. Set both when you want the note in both forms.
+Confirmed live 2026-10-06.
+
 ### `schedule_activity.association_configs`
 
 Per-object record linkage, for activity types associated with more than one
@@ -764,15 +1000,19 @@ returns, which the server silently ignores.
 
 `association_source` is `none`/`context_record`/`related_field`/
 `record_variable`/`variable_related_field` — **not** `relationship_field`/
-`automation_variable`, which 400 with *"… is not a valid choice"*. Two more
+`automation_variable`, which 400 with *"… is not a valid choice"*. More
 confirmed rules:
 
 - **`context_record` is only valid when that entry's `custom_object_id` IS the
   automation's own `target_object`** — otherwise 400: *"context_record
-  custom_object_id must match the … workflow's custom object."* The server
-  **auto-adds this entry itself** for the automation's own object, so don't send
-  it, and don't count it when sizing the list you author — it appears as an extra
-  item in the live GET afterward.
+  custom_object_id must match the … workflow's custom object."*
+- **The server adds one entry per object the activity type is associated
+  with** — `context_record` for the automation's own object, `none` for the
+  others — so you needn't author them, and they appear in the live GET even
+  when you sent `[]`. A block copied from `steps get` already carries them and
+  re-applies unchanged through `steps edit`/`steps add`. An entry with a null
+  `custom_object_id` 400s with *"This field may not be null."*; the CLI rejects
+  an entry that names no object before sending. (Confirmed live 2026-10-14.)
 - **`related_field` requires a relationship field that exists ON THE ASSOCIATED
   OBJECT itself** — passing one from the automation's own `target_object` 400s
   with *"Relationship field … not found on source object"*. Resolution rules
@@ -803,11 +1043,51 @@ and not the `team_member` selector's set on notify/send steps. Confirmed live
 | `round_robin_role` | `role_id` |
 | `round_robin_team_members` | `employee_ids` |
 | `round_robin_all` | — |
-| `team_selector_field` | `field_id` |
-| `related_team_selector_field` | `related_field_id` |
+| `team_selector_field` | `field_id`: a team-selector field on the automation's own object |
+| `related_team_selector_field` | **Both required**: `related_field_id` is a single-value relationship field on the automation's own object (the hop); `field_id` is the team-selector field on the object it points to |
 
 `owner`, `last_active`, `last_active_role` and `employees` are all valid on
 *other* selectors and all 400 here with *"… is not a valid choice"*.
+
+The planner checks these keys per `type` and fails the plan if one is missing.
+The read spellings (`employee`, `role`, `field`, `related_field`, `employees`)
+count too. For `related_team_selector_field` it also checks that the hop is a
+single-value relationship field on `target_object`, so the far object's
+selector passed as the hop fails the plan. It skips that check on a global
+automation, or when `target_object` can't be read. The server
+enforces the same rules (confirmed live 2026-10-16, on create and on PUT):
+
+- a missing key 400s with *"This field is required for "<type>" type."*
+- the far object's selector passed as `related_field_id`, or a many-to-many
+  hop, 400s with *"Custom object has no single value relationship field with id
+  "<uuid>""*. The message names the field you passed, not the field it wanted.
+
+**A complete selector only means the keys are right.** It doesn't mean a run
+assigns anyone:
+
+- **The step writes only this record's `owner`.** It never writes to a related
+  record. `field_id` and `related_field_id` name the source the owner is copied
+  from (confirmed live 2026-08-13).
+- **`team_member` reports `completed` and leaves `owner` unchanged.** `updated`
+  still bumps. This was reproduced on two objects, on never-touched records
+  (confirmed live 2026-08-13). It is platform behaviour, and no spec change
+  fixes it. The `round_robin_*` types weren't tested.
+- **The selector types work on a record's first run.**
+  `related_team_selector_field` copied the far record's selector into this
+  record's `owner` (confirmed live 2026-08-13). Whether `field_id` may name a
+  team-selector field other than the far object's `owner` is unconfirmed.
+- **A re-run on a record the automation already processed silently no-ops**,
+  even when the source changed (confirmed live 2026-08-13). It looks like a
+  per-(automation, record) guard. Test against a fresh record each time.
+- **An empty source fails the step, not the run.** The step's
+  `detailed_log.reasons` says *"No employee found for team_selector_field:
+  <uuid>"*, or *"No value set for related_field_id: <uuid>"* when the hop is
+  empty. The run still reports `completed` (confirmed live 2026-10-16).
+- **`updated` bumps on every run, assigned or not**, so it is no evidence
+  either way. Read `owner` back.
+
+The reliable way to set an owner today is `kizen records update <object> <id>
+-f owner=<uuid>`, or a `change_field_value` step on `owner`.
 
 ### `move_to_folder` / `automations move`
 

@@ -51,11 +51,22 @@ package and is served by `kizen docs show`.
 `automations.py`, `records.py`, `permissions.py`, …). Each function builds a
 path, hands a dict to `KizenClient`, and returns the parsed response. No
 business logic, no spec awareness, no user-facing formatting. `api/client.py`
-owns the two things everything else depends on: the three auth headers
-(`X-API-KEY`, `X-BUSINESS-ID`, `X-USER-ID`, injected on every request from
-`EnvConfig.auth_headers()`) and `KizenAPIError`, the single exception type every
-non-2xx response normalizes into. One error shape means callers catch one thing;
-one injection point means no endpoint module can forget the headers.
+owns the three things everything else depends on: authentication on every
+request (file downloads included), `KizenAPIError`, the single exception type
+every non-2xx response normalizes into, and the retry policy. One error shape
+means callers catch one thing; one injection point means no endpoint module can
+forget the headers. The headers follow `EnvConfig.auth`. A profile's
+`ApiKeyAuth` sends `X-API-KEY`, `X-BUSINESS-ID` and `X-USER-ID`. Under
+app-builder, `HelperAuth` becomes
+[`BearerHelperAuth`](../src/kizen_builder/auth_helper.py), which sends only
+`Authorization: Bearer` and resends once after a 401 with a refreshed token;
+the environment contract is in
+[`operating.md`](../src/kizen_builder/docs/operating.md). Retry is decided by
+method and failure kind, never by endpoint: a GET retries a transport error or a
+429/502/503/504, any request retries a connection that never opened, and a
+write is never retried once sent. A write whose answer was lost says the server
+may have applied it instead. A search sent as POST passes `read_only=True`,
+which drops that warning; it is still not retried.
 
 **`tools/`** — read functions and orchestration, and what the CLI mostly calls:
 `list_objects()`, `get_object(api_name)`, `search_records()`, step-graph surgery
@@ -196,7 +207,8 @@ A new kind of Kizen entity touches every layer:
 2. `models/spec/` — Pydantic models for its spec shape.
 3. `tools/planners/<surface>.py` — `plan_*` functions returning `Plan`s.
 4. `tools/plans.py` — add its op kinds to the `Kind` literal and a dispatch
-   branch in `_execute`.
+   branch in `_execute`, and a row in `tests/test_execute_dispatch.py`. A
+   meta-test fails without it.
 5. `tools/<surface>.py` — read/show tools, if it has any.
 6. `cli/<surface>.py` — Typer commands, routed through `_run_mutation` for
    mutations, with an `epilog` pointing at its docs topic. Add it to the import
@@ -217,8 +229,10 @@ The registry, rather than the docs or the models, says what's actually wired:
   A type absent from the dict raises with the sorted list of supported types,
   whatever a spec model would accept. Each builder also declares the block keys
   it reads (`@honours`), and any other key in a spec block is a plan error.
-  Adding one means writing the builder, declaring its keys and registering it;
-  CONTRIBUTING.md has the checklist.
+  `translate` applies the same check to a live read, so a non-empty key the
+  builder neither reads nor declares `unsent_on_read` stops the GET→PUT
+  instead of being dropped. Adding one means writing the builder, declaring
+  its keys and registering it; CONTRIBUTING.md has the checklist.
 - Field types are gated the same way, split across two files: the `FieldType`
   literal and its type-specific config models in `models/spec/` (validated by
   `_validate_type_specific_config`), and payload construction in

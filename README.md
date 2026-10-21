@@ -46,8 +46,7 @@ your `PATH` works the same way — this needs Python 3.12 or newer, which `uv`
 would otherwise fetch for you automatically.
 
 If you're going to *develop* the CLI rather than use it, see
-[`CONTRIBUTING.md`](CONTRIBUTING.md) — that setup clones the repo and runs
-`uv sync`.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) — that setup clones the repo.
 
 ## Set up an environment folder
 
@@ -59,18 +58,21 @@ kizen init
 ```
 
 `init` prompts for a profile name (defaulting to a slug of the folder name),
-then API key, business ID, and user ID; the base URL defaults to the Kizen
-cloud. It validates the credentials with a live call, stores them centrally in
-`~/.config/kizen/credentials.toml` (mode 0600, never in the folder and never
-committed), and writes two small non-secret files:
+then API key, business ID, and user ID, then which Kizen environment: one of
+the named ones, or `url` to type a custom address. It validates the credentials
+with a live call, stores them centrally in `~/.config/kizen/credentials.toml`
+(mode 0600, never in the folder and never committed), and writes three small
+non-secret files:
 
 - `.kizen/profile` — the pin: which profile this folder targets, plus the
   `business_id` it expects.
 - `CLAUDE.md` and `AGENTS.md` — a short stub telling an agent to read
-  `kizen docs show operating` before it acts.
+  `kizen docs show operating` before it acts. An existing `CLAUDE.md` or
+  `AGENTS.md` is left alone.
 
-For scripted setup, pass `--api-key` / `--business-id` / `--user-id` (or set the
-matching `KIZEN_*` variables) and it only prompts for what's missing.
+For scripted setup, `kizen init --help` lists the flags. The environment needs
+`--base-url`; `kizen init` reads no `KIZEN_*` variable for it. With nothing
+on stdin, a missing value that has no default exits 2 and names the flag to pass.
 
 ## Then talk to it
 
@@ -128,8 +130,9 @@ copy into an environment folder:
 ```bash
 kizen docs show operating    # the operating model and the approval gate
 kizen docs show commands     # the command map
-kizen docs show reference    # API quirks, wire formats, process guides
+kizen docs show reference    # which topic covers what, plus conventions across surfaces
 kizen docs show automation   # a spec-file shape — one topic per shape
+kizen docs show examples     # one worked example across surfaces
 kizen docs list              # every topic
 kizen docs path              # where they live on disk
 ```
@@ -140,7 +143,7 @@ Layered so each fact lives in exactly one place:
 |---|---|
 | Command syntax and flags | `kizen <group> <cmd> --help` — generated from the code |
 | The JSON/CSV a `--spec-file` expects | `kizen docs show <shape>`; each command's `--help` names its topic |
-| Why the API behaves the way it does | `kizen docs show reference` |
+| Why the API behaves the way it does | `kizen docs show <surface>` (`reference` says which) |
 | How to operate an environment safely | `kizen docs show operating` |
 
 ## Staying current
@@ -157,8 +160,11 @@ so a new upstream dependency can't surface later as a bare `ImportError`.
 `--dry-run` shows the commands without running them. Since the docs ship inside
 the package, upgrading updates them too.
 
-`kizen init --refresh-stubs` re-writes the agent stubs in an existing folder
-without touching credentials, for when the stub template changes.
+`kizen init -p <profile> --refresh-stubs`, for when the stub template changes,
+re-runs `init` with that profile's stored values as defaults; without `-p` the
+profile defaults to the folder slug, not the pinned one. It re-checks the values
+live unless you pass `--skip-validation`, and it overwrites both stubs,
+discarding your edits.
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -170,17 +176,14 @@ What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 - **`code_step.secrets`** reference env-specific secret bindings. The
   environment must have a secret configured under each name the step expects,
   or it fails at runtime.
-- **Step UUIDs rotate on every automation PUT**, because the API replaces the
-  step set rather than merging it. Anything outside the automation that depends
-  on a stable step UUID will break across updates.
-- **The `connectors` extra** is needed by exactly two verbs —
-  `smart-connectors run` and `smart-connectors add-input`, the local loop for
-  iterating on connector SQL. It's three public PyPI packages, one of which
-  (`chdb`, embedded ClickHouse) is a native wheel around 100 MB, so it's carved
-  out rather than made a core dependency. Add it at install time with
-  `uv tool install --editable ".[connectors]"`, or later — run the command
-  without it and the error prints the exact install line for your environment.
-  See `kizen docs show reference`, "Installing the `connectors` extra".
+- **A hand-authored step keeps its identity across an update only if it sets
+  `id`**; see `kizen docs show automation`.
+- **The `connectors` extra** is needed only by `smart-connectors run` and
+  `smart-connectors add-input`, the local loop for iterating on connector SQL,
+  and it's optional because it includes a ~100 MB native wheel (`chdb`,
+  embedded ClickHouse). Run `kizen smart-connectors run` in a connector folder
+  without it and the error prints the install line for your setup; details are
+  in `kizen docs show smart-connectors`.
 
 ## Contributing
 

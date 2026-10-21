@@ -31,12 +31,12 @@ def _client() -> KizenClient:
 
 
 # ---------------------------------------------------------------------------
-# _paginate — the shared DRF ``next``-link follower
+# list_activities — paging
 # ---------------------------------------------------------------------------
 
 
 @respx.mock
-def test_paginate_follows_next_link_across_two_pages():
+def test_list_activities_follows_next_link_across_two_pages():
     route = respx.get(f"{FAKE_BASE_URL}/api/activities").mock(
         side_effect=[
             httpx.Response(
@@ -51,7 +51,7 @@ def test_paginate_follows_next_link_across_two_pages():
     )
 
     with _client() as client:
-        items = act_api._paginate(client, "/api/activities")
+        items = act_api.list_activities(client)
 
     assert [i["id"] for i in items] == ["1", "2"]
     assert route.call_count == 2
@@ -59,12 +59,12 @@ def test_paginate_follows_next_link_across_two_pages():
 
 
 @respx.mock
-def test_paginate_handles_bare_list_response():
+def test_list_activities_handles_bare_list_response():
     respx.get(f"{FAKE_BASE_URL}/api/activities").mock(
         return_value=httpx.Response(200, json=[{"id": "1"}, {"id": "2"}])
     )
     with _client() as client:
-        items = act_api._paginate(client, "/api/activities")
+        items = act_api.list_activities(client)
     assert [i["id"] for i in items] == ["1", "2"]
 
 
@@ -147,14 +147,14 @@ def test_delete_activity_returns_empty_dict_on_no_content():
 
 
 @respx.mock
-def test_duplicate_activity_posts_to_duplicate_endpoint():
+def test_duplicate_activity_posts_an_empty_body():
     route = respx.post(f"{FAKE_BASE_URL}/api/activities/{ACTIVITY_ID}/duplicate").mock(
         return_value=httpx.Response(201, json={"id": "new-id"})
     )
     with _client() as client:
-        result = act_api.duplicate_activity(client, ACTIVITY_ID, {"name": "Copy"})
+        result = act_api.duplicate_activity(client, ACTIVITY_ID)
     assert result == {"id": "new-id"}
-    assert json.loads(route.calls.last.request.content) == {"name": "Copy"}
+    assert json.loads(route.calls.last.request.content) == {}
 
 
 # ---------------------------------------------------------------------------

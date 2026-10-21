@@ -20,6 +20,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    exit_spec_errors,
     read_json_file,
     read_text_file,
 )
@@ -139,11 +140,7 @@ def _validate_email_spec(spec_dict: dict) -> EmailTemplateDef:
     try:
         return EmailTemplateDef.model_validate(spec_dict)
     except ValidationError as e:
-        for err in e.errors():
-            loc = ".".join(str(p) for p in err.get("loc", ())) or "spec"
-            msg = err.get("msg", "invalid value")
-            err_console.print(f"[red]spec error:[/red] {loc}: {msg}")
-        raise typer.Exit(code=1) from e
+        exit_spec_errors(e)
 
 
 @messages_templates_app.command(

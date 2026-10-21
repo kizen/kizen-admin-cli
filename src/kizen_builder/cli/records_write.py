@@ -11,7 +11,12 @@ from typing import Any
 import typer
 
 from kizen_builder.cli._mutations import _run_mutation
-from kizen_builder.cli._shared import err_console, parse_json, read_text_file
+from kizen_builder.cli._shared import (
+    err_console,
+    parse_json,
+    read_text_file,
+    warn_renamed_flag,
+)
 from kizen_builder.cli.records import records_app
 from kizen_builder.tools.planners import pipeline_stages as stage_planners
 from kizen_builder.tools.planners import records as record_planners
@@ -485,12 +490,14 @@ def records_set_field(
     record_id: list[str] = typer.Argument(
         None, help="One or more record UUIDs to update."
     ),
-    field: str = typer.Option(..., "--field", help="Field api_name to set."),
-    value: str = typer.Option(
-        ...,
-        "--value",
-        help="New value (resolved against the field's type, same coercion as `records create`).",
+    field: list[str] = typer.Option(
+        [],
+        "--field",
+        "-f",
+        help="The field to set: --field api_name=value (exactly one; value coerced "
+        "as in `records update`).",
     ),
+    value: str | None = typer.Option(None, "--value", hidden=True),
     resolution: str = typer.Option(
         "overwrite",
         "--resolution",
@@ -519,10 +526,25 @@ def records_set_field(
     if not ids:
         err_console.print("[red]error:[/red] pass at least one record UUID.")
         raise typer.Exit(code=2)
+    if len(field) != 1:
+        err_console.print(
+            "[red]error:[/red] pass exactly one --field api_name=value; "
+            "use `records update --spec-file` to change several fields."
+        )
+        raise typer.Exit(code=2)
+    if value is None:
+        ((field_name, field_value),) = _parse_field_flags(field).items()
+    else:
+        warn_renamed_flag("--value", "--field api_name=value")
+        field_name, field_value = field[0], _coerce_cell(value)
 
     _run_mutation(
         lambda: record_planners.plan_set_field(
-            object_api_name, ids, field, value, field_resolution=resolution
+            object_api_name,
+            ids,
+            field_name,
+            field_value,
+            field_resolution=resolution,
         ),
         dry_run=dry_run,
         yes=yes,

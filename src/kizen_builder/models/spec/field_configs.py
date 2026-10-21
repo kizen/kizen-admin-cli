@@ -1,13 +1,77 @@
-"""Type-specific config blocks shared by field-like models
+"""Type-specific config blocks and validators shared by field-like models
 (FieldDef, ActivityFieldDef, FormFieldDef)."""
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from collections.abc import Iterable
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kizen_builder.models.spec._base import ApiName, RelationCardinality, RelationType
+
+_API_SPELLINGS = {
+    "display_name": "name",
+    "is_hidden": "hidden",
+    "is_read_only": "read_only",
+    "is_required": "required",
+    "phonenumber_options": "phone_options",
+}
+"""API field keys (as `get` prints them) -> the spec key that means the same."""
+
+
+def reject_api_spellings(data: Any, spec_keys: Iterable[str]) -> Any:
+    """Refuse a field spec that uses the API's spelling of a spec key.
+
+    `objects get` / `activities get` / `forms get` print fields with the API's
+    keys, so a spec copied from that output would otherwise lose them. This
+    runs before pydantic's extra-key check, so it names the other unknown keys
+    too.
+    """
+    if not isinstance(data, dict):
+        return data
+    found = sorted(k for k in data if k in _API_SPELLINGS)
+    if not found:
+        return data
+    clauses = []
+    for key in found:
+        why = "the API's spelling"
+        if key == "display_name":
+            why += "; the API's 'name' is 'api_name' in a spec"
+        clauses.append(f"write '{_API_SPELLINGS[key]}', not '{key}' ({why})")
+    unknown = sorted(k for k in data if k not in spec_keys and k not in _API_SPELLINGS)
+    if unknown:
+        clauses.append("unknown keys: " + ", ".join(f"'{k}'" for k in unknown))
+    label = data.get("name") or data.get("display_name")
+    raise ValueError((f"field '{label}': " if label else "") + "; ".join(clauses))
+
+
+_BLOCK_TYPES = {
+    "money_options": "money",
+    "rating": "rating",
+    "decimal_options": "decimal",
+    "phone_options": "phonenumber",
+    "status_options": "status",
+}
+
+
+def check_type_blocks(
+    field: Any, label: str, types_requiring_options: set[str]
+) -> None:
+    """Reject `options` or a type block that doesn't match `field_type`, and
+    default the money and rating blocks."""
+    ft = field.field_type
+    if ft in types_requiring_options and not field.options:
+        raise ValueError(f"{label} of type '{ft}' requires a non-empty 'options' list")
+    if ft not in types_requiring_options and field.options is not None:
+        raise ValueError(f"{label} of type '{ft}' cannot have 'options'")
+    for block, block_type in _BLOCK_TYPES.items():
+        if ft != block_type and getattr(field, block) is not None:
+            raise ValueError(f"{label} of type '{ft}' cannot have '{block}'")
+    if ft == "money" and field.money_options is None:
+        field.money_options = MoneyConfig()
+    if ft == "rating" and field.rating is None:
+        field.rating = RatingConfig()
 
 
 class RelationConfig(BaseModel):

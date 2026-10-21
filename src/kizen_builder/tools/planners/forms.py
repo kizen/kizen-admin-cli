@@ -14,12 +14,19 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from kizen_builder.api.client import KizenAPIError
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FormDef, FormFieldDef
+from kizen_builder.tools.form_ui import unplaced_fields
 from kizen_builder.tools.forms import FORMS_BASE_PATH, get_form, list_forms
 from kizen_builder.tools.objects import get_object
-from kizen_builder.tools.plans import Kind, Plan, PlanError, PlanOperation
+from kizen_builder.tools.plans import (
+    Kind,
+    Plan,
+    PlanError,
+    PlanOperation,
+    copy_name_preview,
+    fetch_existing,
+)
 
 _OPTION_FIELD_TYPES = {
     "dropdown",
@@ -165,13 +172,15 @@ def plan_update_form(
     base_path: str = FORMS_BASE_PATH,
     kind: FormKind = "form",
 ) -> Plan:
-    """Plan a PATCH to one form/survey. Only keys present in ``changes`` are sent."""
+    """Plan a PATCH to one form/survey. Only keys present in ``changes`` are sent.
+
+    Kizen deletes every field not placed on a ``form_ui`` page whenever a form
+    is saved, so an update is refused while the ``form_ui`` it leaves on the
+    server (the one sent, else the live one) misses any field.
+    """
     obj_kind, _, _ = _kinds(kind)
     env = load_env_config().name
-    try:
-        current = get_form(identifier, base_path=base_path, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"{kind} '{identifier}' not found: {e}") from e
+    current = _load_form(identifier, base_path, kind)
 
     raw = current.get("raw") or {}
     payload: dict[str, Any] = {}
@@ -186,6 +195,8 @@ def plan_update_form(
             diff[wire] = (old, new)
 
     action = "update" if payload else "skip"
+    if action == "update":
+        _refuse_unplaced_fields(current, payload, kind)
     op = PlanOperation(
         action=action,  # type: ignore[arg-type]
         kind=obj_kind,
@@ -207,6 +218,30 @@ def plan_update_form(
     return Plan.build(env=env, summary=summary, operations=[op])
 
 
+def _refuse_unplaced_fields(
+    current: dict[str, Any], payload: dict[str, Any], kind: FormKind
+) -> None:
+    sends_layout = "form_ui" in payload
+    form_ui = payload["form_ui"] if sends_layout else current["raw"].get("form_ui")
+    unplaced = unplaced_fields(form_ui, current["fields"])
+    if not unplaced:
+        return
+    names = ", ".join(f["api_name"] or f["id"] for f in unplaced)
+    n = len(unplaced)
+    if sends_layout:
+        raise PlanError(
+            f"this layout leaves off {n} field(s): {names}. Kizen deletes every "
+            f"field that isn't on a page when the {kind} is saved. Add them to "
+            f"the layout, or remove them first with 'kizen {kind}s fields delete'."
+        )
+    raise PlanError(
+        f"{kind} '{current.get('name')}' has {n} field(s) not placed on a page: "
+        f"{names}. Kizen deletes them on any update to the {kind}. Place them "
+        f"with 'kizen {kind}s set-ui' first, or remove them with "
+        f"'kizen {kind}s fields delete'."
+    )
+
+
 def plan_delete_form(
     identifier: str,
     *,
@@ -216,10 +251,7 @@ def plan_delete_form(
     """Plan deletion of one form/survey."""
     obj_kind, _, _ = _kinds(kind)
     env = load_env_config().name
-    try:
-        current = get_form(identifier, base_path=base_path, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"{kind} '{identifier}' not found: {e}") from e
+    current = _load_form(identifier, base_path, kind, include_fields=False)
 
     op = PlanOperation(
         action="delete",
@@ -246,17 +278,31 @@ def plan_duplicate_form(
     base_path: str = FORMS_BASE_PATH,
     kind: FormKind = "form",
 ) -> Plan:
-    """Plan duplication of one form/survey."""
+    """Plan duplication of one form/survey.
+
+    Renaming the copy is an update, which deletes every field not placed on a
+    ``form_ui`` page, so ``name`` is refused unless the source places them all.
+    """
     obj_kind, _, _ = _kinds(kind)
     env = load_env_config().name
-    try:
-        current = get_form(identifier, base_path=base_path, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"{kind} '{identifier}' not found: {e}") from e
+    current = _load_form(identifier, base_path, kind, include_fields=bool(name))
 
-    payload: dict[str, Any] = {}
     if name:
-        payload["name"] = name
+        form_ui = current["raw"].get("form_ui")
+        unplaced = unplaced_fields(form_ui, current["fields"])
+        if unplaced or not (form_ui or {}).get("pages"):
+            missing = ", ".join(f["api_name"] or f["id"] for f in unplaced)
+            group = f"{kind}s"
+            raise PlanError(
+                f"can't rename a copy of {kind} '{current.get('name')}': the "
+                "rename is an update, and Kizen deletes every field an update "
+                "finds on no page. "
+                + (f"Not on a page: {missing}. " if unplaced else "It has no pages. ")
+                + f"To copy it safely, run `kizen {group} duplicate "
+                f"{current['id']}` without --name, place every field on the copy "
+                f"with `kizen {group} set-ui <copy id>`, then `kizen {group} "
+                f"update <copy id> --name {name!r}`."
+            )
 
     op = PlanOperation(
         action="duplicate",
@@ -265,9 +311,9 @@ def plan_duplicate_form(
         preview={
             "env": env,
             "source": current.get("name"),
-            "new_name": name or f"Copy of {current.get('name')}",
+            "new_name": copy_name_preview(current.get("name"), name),
         },
-        payload=payload,
+        payload={"name": name} if name else {},
         existing_uuid=current["id"],
     )
     return Plan.build(
@@ -282,13 +328,16 @@ def plan_duplicate_form(
 # ---------------------------------------------------------------------------
 
 
-def _load_form_with_fields(
-    identifier: str, base_path: str, kind: FormKind
+def _load_form(
+    identifier: str, base_path: str, kind: FormKind, *, include_fields: bool = True
 ) -> dict[str, Any]:
-    try:
-        return get_form(identifier, base_path=base_path, include_fields=True)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"{kind} '{identifier}' not found: {e}") from e
+    return fetch_existing(
+        kind,
+        identifier,
+        lambda: get_form(
+            identifier, base_path=base_path, include_fields=include_fields
+        ),
+    )
 
 
 def _find_form_field(
@@ -318,7 +367,7 @@ def plan_create_form_fields(
         raise PlanError("no fields provided to create")
     _, field_kind, _ = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     form_id = form["id"]
 
     have = {f.get("api_name") for f in form["fields"] if f.get("api_name")}
@@ -374,7 +423,7 @@ def plan_update_form_field(
     """Plan an update to one field on a form/survey."""
     _, field_kind, _ = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
 
     payload: dict[str, Any] = {}
@@ -382,6 +431,8 @@ def plan_update_form_field(
     if "name" in changes and changes["name"] != existing.get("display_name"):
         payload["display_name"] = changes["name"]
         diff["display_name"] = (existing.get("display_name"), changes["name"])
+    # Form and survey field reads carry no `description` (confirmed live
+    # 2026-10-01, docs/specs/form.md), so there's nothing to diff: send it.
     if "description" in changes:
         payload["description"] = changes["description"]
         diff["description"] = (existing.get("description"), changes["description"])
@@ -431,7 +482,7 @@ def plan_delete_form_field(
     """Plan deletion of one field from a form/survey."""
     _, field_kind, _ = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
 
     op = PlanOperation(
@@ -467,7 +518,7 @@ def plan_add_form_field_options(
         raise PlanError("no options provided to add")
     _, _, option_kind = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
     if existing.get("field_type") not in _OPTION_FIELD_TYPES:
         raise PlanError(
@@ -514,7 +565,7 @@ def plan_remove_form_field_option(
     """Plan removal of one option from a select-type field on a form/survey."""
     _, _, option_kind = _kinds(kind)
     env = load_env_config().name
-    form = _load_form_with_fields(identifier, base_path, kind)
+    form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
     opts = existing.get("options") or []
 

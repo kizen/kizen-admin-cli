@@ -1,4 +1,5 @@
-"""Automation runs (executions): endpoint paths + read→display field mapping.
+"""Automation runs (executions): endpoint paths, read→display field mapping,
+and the endpoint and body of each execution-control verb.
 
 Regression coverage for two bugs fixed in the `runs` command regroup:
 
@@ -22,13 +23,14 @@ import pytest
 import respx
 
 from kizen_builder.api.client import KizenAPIError
+from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools.automations import (
     get_execution,
     get_execution_history,
     list_executions,
     wait_for_execution,
 )
-from tests.conftest import FAKE_BASE_URL, load_fixture
+from tests.conftest import FAKE_BASE_URL, load_fixture, request_json
 
 EXEC_ID = "a5fa0b69-cf86-4849-81b2-1521cffe19a4"
 EXEC_BASE = f"{FAKE_BASE_URL}/api/automation2/automation-execution"
@@ -163,6 +165,30 @@ def test_get_execution_history_maps_row_id():
     ]
 
 
+@respx.mock
+def test_get_execution_history_reads_every_page():
+    """`/history` pages (confirmed live 2026-10-06); a long run's later steps
+    were dropped when only the first page was read."""
+    rows = load_fixture("executions/history_form_submission.json")["results"]
+    route = respx.get(f"{EXEC_BASE}/{EXEC_ID}/history").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": rows[:2],
+                    "next": f"{EXEC_BASE}/{EXEC_ID}/history?page=2",
+                },
+            ),
+            httpx.Response(200, json={"results": rows[2:], "next": None}),
+        ]
+    )
+
+    history = get_execution_history(EXEC_ID)
+
+    assert route.call_count == 2
+    assert [r["id"] for r in history] == [r["id"] for r in rows]
+
+
 # ---------------------------------------------------------------------------
 # wait_for_execution — the sample.py-shaped poll loop.
 # ---------------------------------------------------------------------------
@@ -271,7 +297,7 @@ def test_wait_for_execution_survives_a_transient_poll_error(monkeypatch):
     route = respx.get(f"{EXEC_BASE}/{EXEC_ID}").mock(
         side_effect=[
             httpx.Response(200, json=_execution("active")),
-            httpx.Response(503, json={"detail": "temporarily unavailable"}),
+            httpx.Response(500, json={"detail": "temporarily unavailable"}),
             httpx.Response(200, json=_execution("completed")),
         ]
     )
@@ -289,10 +315,10 @@ def test_wait_for_execution_gives_up_after_too_many_consecutive_errors(monkeypat
     respx.get(f"{EXEC_BASE}/{EXEC_ID}").mock(
         side_effect=[
             httpx.Response(200, json=_execution("active")),
-            httpx.Response(503, json={"detail": "down"}),
-            httpx.Response(503, json={"detail": "down"}),
-            httpx.Response(503, json={"detail": "down"}),
-            httpx.Response(503, json={"detail": "down"}),
+            httpx.Response(500, json={"detail": "down"}),
+            httpx.Response(500, json={"detail": "down"}),
+            httpx.Response(500, json={"detail": "down"}),
+            httpx.Response(500, json={"detail": "down"}),
         ]
     )
 
@@ -351,3 +377,124 @@ def test_get_execution_omits_paused_on_step_when_absent():
 
     summary = _summarize_execution("testenv", _execution("completed"))
     assert "paused_on_step" not in summary
+
+
+# ---------------------------------------------------------------------------
+# Execution control: the endpoint and exact body each verb POSTs.
+# ---------------------------------------------------------------------------
+
+STEP_ID = "2ed0252a-8408-4444-9da3-4ac4bbb0e228"
+HISTORY_ID = "9c4d2e1f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+
+
+def _actionable_execution(status: str) -> dict[str, Any]:
+    """An execution GET carrying every field `execution_action_body` reads."""
+    return _execution(
+        status,
+        client_id=None,
+        record_id="51612b78-723e-451b-aede-f8037d2523d4",
+        trigger_history_id="7e1f0c2a-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+        debug_mode=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("verb", "suffix"),
+    [
+        ("pause_execution", "/pause"),
+        ("resume_execution", "/play"),
+        ("cancel_execution", "/cancel"),
+        ("debug_sendit", "/debug-sendit"),
+    ],
+)
+def test_status_action_posts_the_execution_echo(verb, suffix):
+    before = _actionable_execution("active")
+    with respx.mock(assert_all_mocked=True) as mock:
+        mock.get(f"{EXEC_BASE}/{EXEC_ID}").mock(
+            side_effect=[
+                httpx.Response(200, json=before),
+                httpx.Response(200, json=_actionable_execution("paused")),
+            ]
+        )
+        post = mock.post(f"{EXEC_BASE}/{EXEC_ID}{suffix}").respond(json=None)
+
+        result = getattr(auto_tools, verb)(EXEC_ID)
+        calls = [(c.request.method, c.request.url.path) for c in mock.calls]
+
+    assert calls == [
+        ("GET", f"/api/automation2/automation-execution/{EXEC_ID}"),
+        ("POST", f"/api/automation2/automation-execution/{EXEC_ID}{suffix}"),
+        ("GET", f"/api/automation2/automation-execution/{EXEC_ID}"),
+    ]
+    keys = (
+        "id",
+        "automation_id",
+        "client_id",
+        "record_id",
+        "status",
+        "trigger_history_id",
+        "debug_mode",
+    )
+    assert request_json(post) == {k: before[k] for k in keys}
+    assert (result["status_before"], result["status_after"]) == ("active", "paused")
+
+
+@pytest.mark.parametrize(
+    ("branch", "body"),
+    [
+        (None, {"skip_step_id": STEP_ID}),
+        ("yes", {"skip_step_id": STEP_ID, "continue_with_branch": "yes"}),
+    ],
+    ids=["no-branch", "branch"],
+)
+def test_skip_and_resume_posts_the_step_and_optional_branch(branch, body):
+    with respx.mock(assert_all_mocked=True) as mock:
+        mock.get(f"{EXEC_BASE}/{EXEC_ID}").mock(
+            side_effect=[
+                httpx.Response(200, json=_execution("paused_by_failure")),
+                httpx.Response(200, json=_execution("active")),
+            ]
+        )
+        post = mock.post(f"{EXEC_BASE}/{EXEC_ID}/skip-and-resume").respond(json=None)
+
+        result = auto_tools.skip_and_resume_execution(EXEC_ID, STEP_ID, branch)
+
+    assert request_json(post) == body
+    assert (result["status_before"], result["status_after"]) == (
+        "paused_by_failure",
+        "active",
+    )
+
+
+@pytest.mark.parametrize(
+    ("verb", "suffix"),
+    [("debug_rerun", "/debug-rerun"), ("debug_restart", "/debug-restart")],
+)
+def test_debug_rerun_and_restart_post_the_step_id(verb, suffix):
+    with respx.mock(assert_all_mocked=True) as mock:
+        post = mock.post(f"{EXEC_BASE}/{EXEC_ID}{suffix}").respond(json={})
+
+        getattr(auto_tools, verb)(EXEC_ID, STEP_ID)
+        assert len(mock.calls) == 1
+
+    assert request_json(post) == {"step_id": STEP_ID}
+
+
+@pytest.mark.parametrize(
+    ("branch", "body"),
+    [
+        (None, {"action": "skip", "history_id": HISTORY_ID}),
+        (
+            "no",
+            {"action": "skip", "history_id": HISTORY_ID, "continue_with_branch": "no"},
+        ),
+    ],
+    ids=["no-branch", "branch"],
+)
+def test_debug_step_posts_the_action_and_optional_branch(branch, body):
+    with respx.mock(assert_all_mocked=True) as mock:
+        post = mock.post(f"{EXEC_BASE}/{EXEC_ID}/debug-step").respond(json={})
+
+        auto_tools.debug_step(EXEC_ID, "skip", HISTORY_ID, branch)
+
+    assert request_json(post) == body

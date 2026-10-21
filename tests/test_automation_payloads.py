@@ -12,10 +12,12 @@ import json
 import pytest
 
 from kizen_builder.models.spec import AutomationDef
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools.planners.automations import (
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
     LiveContext,
+    _assign_team_member_problem,
     _block_field_for,
     _build_automation_payload,
     _reject_unhonoured_keys,
@@ -327,6 +329,36 @@ def test_modify_related_entities_context_entity_field_dotted_ref_resolves(
     assert field_update["value_type"] == "context_entity_value"
 
 
+def test_modify_related_entities_record_source_from_a_variable(patch_live_lookups):
+    """Without `record_source`, the server defaults to `related_object_field`
+    and 400s for want of a hop (confirmed live 2026-10-06)."""
+    spec = {
+        "api_name": "mre_record_source_test",
+        "name": "MRE Record Source Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "modify",
+                "step_type": "modify_related_entities",
+                "order": 0,
+                "parent_key": None,
+                "action_modify_related_entities": {
+                    "object_to_modify": "encounters",
+                    "automation_target_relationship_fields": [],
+                    "record_source": "automation_variable",
+                    "record_source_variables": ["visit_record"],
+                    "fields_to_modify": [],
+                },
+            }
+        ],
+    }
+    action = _build(spec)["steps"][0]["action_modify_related_entities"]
+    assert action["record_source"] == "automation_variable"
+    assert action["record_source_variables"] == ["visit_record"]
+    assert action["automation_target_relationship_fields"] == []
+
+
 def test_call_llm_derives_html_prompt_from_plain_prompt(patch_live_lookups):
     """The Kizen builder UI keeps prompt/html_prompt in sync (same quirk as
     notify_member_via_text's content/html_content) — a plain-prompt-only
@@ -386,6 +418,32 @@ def test_call_llm_preserves_explicit_html_prompt(patch_live_lookups):
     payload = _build(spec)
     action = payload["steps"][0]["action_call_llm"]
     assert action["html_prompt"] == "<p>custom <b>markup</b></p>"
+
+
+def test_call_llm_rejects_data_type(patch_live_lookups):
+    """Kizen accepts `data_type` on call_llm and drops it (confirmed live
+    2026-10-14), so the planner refuses it rather than forwarding a no-op."""
+    spec = {
+        "api_name": "call_llm_data_type_test",
+        "name": "Call LLM Data Type Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "llm",
+                "step_type": "call_llm",
+                "order": 0,
+                "parent_key": None,
+                "action_call_llm": {
+                    "model_name": "gemini/gemini-2.5-flash",
+                    "prompt": "plain",
+                    "data_type": "text",
+                },
+            }
+        ],
+    }
+    with pytest.raises(PlanError, match="data_type"):
+        _build(spec)
 
 
 def test_call_llm_destinations_resolve_field_ref(patch_live_lookups):
@@ -1173,6 +1231,101 @@ def test_trigger_schedule(patch_live_lookups):
     }
 
 
+def _email_received_spec(block: dict | None) -> dict:
+    trigger: dict = {"trigger_type": "email_received", "order": 1}
+    goal_trigger: dict = {"trigger_type": "email_received"}
+    if block is not None:
+        trigger["trigger_email_received_from_contact"] = block
+        goal_trigger["trigger_email_received_from_contact"] = block
+    return {
+        "api_name": "email_received_test",
+        "name": "Email Received Test",
+        "type": "record_based",
+        "target_object": "client_client",
+        "triggers": [trigger],
+        "steps": [
+            {
+                "key": "g0",
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {"wait_type": "never", "triggers": [goal_trigger]},
+            }
+        ],
+    }
+
+
+def _email_received_blocks(payload: dict) -> tuple[dict, dict]:
+    top = next(t for t in payload["triggers"] if t["type"] == "email_received")
+    (goal,) = payload["steps"][0]["step_goal"]["triggers"]
+    assert "trigger_email_received" not in top
+    assert "trigger_email_received" not in goal
+    return (
+        top["trigger_email_received_from_contact"],
+        goal["trigger_email_received_from_contact"],
+    )
+
+
+@pytest.mark.parametrize(
+    "block, wire",
+    [
+        # Omitted entirely: the server requires receiving_inbox, and `any` is
+        # the UI default.
+        (None, {"receiving_inbox": "any"}),
+        ({}, {"receiving_inbox": "any"}),
+        ({"receiving_inbox": "any"}, {"receiving_inbox": "any"}),
+        (
+            {
+                "receiving_inbox": "selected_integrated_inboxes",
+                "selected_integrated_inboxes": ["1cf296ff-d456-413b-80bd-dda8576ead55"],
+            },
+            {
+                "receiving_inbox": "selected_integrated_inboxes",
+                "selected_integrated_inboxes": ["1cf296ff-d456-413b-80bd-dda8576ead55"],
+            },
+        ),
+    ],
+)
+def test_trigger_email_received(patch_live_lookups, block, wire):
+    """email_received: the config rides under
+    `trigger_email_received_from_contact`, at the top level and in a goal.
+    The wire matches what saved live (2026-10-14)."""
+    assert _email_received_blocks(_build(_email_received_spec(block))) == (wire, wire)
+
+
+@pytest.mark.parametrize("where", ["trigger", "goal"])
+def test_trigger_email_received_selected_needs_an_inbox(patch_live_lookups, where):
+    empty = {
+        "receiving_inbox": "selected_integrated_inboxes",
+        "selected_integrated_inboxes": [],
+    }
+    spec = _email_received_spec(None)
+    if where == "trigger":
+        spec["triggers"][0]["trigger_email_received_from_contact"] = empty
+    else:
+        spec["steps"][0]["step_goal"]["triggers"][0][
+            "trigger_email_received_from_contact"
+        ] = empty
+    with pytest.raises(PlanError, match="needs at least one inbox UUID"):
+        _build(spec)
+
+
+def test_goal_trigger_without_a_type_is_a_plan_error(patch_live_lookups):
+    spec = _email_received_spec(None)
+    del spec["steps"][0]["step_goal"]["triggers"][0]["trigger_type"]
+    with pytest.raises(PlanError, match="goal trigger 0 has no trigger_type"):
+        _build(spec)
+
+
+def test_trigger_email_received_from_contact_is_not_a_type():
+    """The config key's spelling is not a trigger type; the server says
+    "No such trigger_type" (confirmed live 2026-10-14)."""
+    spec = _email_received_spec(None)
+    spec["triggers"][0]["trigger_type"] = "email_received_from_contact"
+    with pytest.raises(ValueError, match="unknown trigger_type.*'email_received'"):
+        AutomationDef.model_validate(spec)
+
+
 def test_unsupported_step_type_raises_with_supported_list(patch_live_lookups):
     spec = {
         "api_name": "dsa_test",
@@ -1250,6 +1403,310 @@ def test_code_step_related_field_output_requires_related_field(patch_live_lookup
     spec["steps"][0]["action_code_step"]["outputs"][0].pop("related_field")
     with pytest.raises(PlanError, match="has no `related_field`"):
         _build(spec)
+
+
+def test_code_step_errors_keep_their_prefix(patch_live_lookups):
+    spec = _code_step_related_output_spec()
+    output = spec["steps"][0]["action_code_step"]["outputs"][0]
+    output.pop("field")
+    with pytest.raises(
+        PlanError,
+        match=rf"^step 's1': code_step output '{output['name']}' is type 'related_field'",
+    ):
+        _build(spec)
+
+
+# ---------------------------------------------------------------------------
+# plugin_code_step
+# ---------------------------------------------------------------------------
+
+PLUGIN_SPEC = {
+    "api_name": "plugin_code_steps",
+    "name": "Plugin Code Steps",
+    "type": "record_based",
+    "target_object": "client_client",
+    "steps": [
+        {
+            "key": "summarize",
+            "step_type": "plugin_code_step",
+            "order": 0,
+            "parent_key": None,
+            "action_plugin_code_step": {
+                "plugin_app_api_name": "example_plugin",
+                "action_step_api_name": "summarize_records",
+                "inputs": [
+                    {
+                        "name": "heading",
+                        "input_type": "field",
+                        "field_ref": "client_client.first_name",
+                        "data_type": "string",
+                        "is_list": False,
+                    },
+                    {
+                        "name": "prior",
+                        "input_type": "variable",
+                        "variable_name": "context_text",
+                    },
+                ],
+                "outputs": [
+                    {
+                        "name": "context",
+                        "output_type": "field",
+                        "field_ref": "client_client.last_name",
+                        "conflict_resolution": "update_if_blank",
+                    },
+                    {
+                        "name": "records_json",
+                        "output_type": "variable",
+                        "variable_name": "context_text",
+                    },
+                ],
+                "secrets": ["business_id"],
+            },
+        },
+        {
+            "key": "convert",
+            "step_type": "plugin_code_step",
+            "order": 1,
+            "parent_key": "summarize",
+            "action_plugin_code_step": {
+                "plugin_app_api_name": "example_plugin_preview_some_branch",
+                "action_step_api_name": "convert_to_pdf",
+                "notify_plugin_developer_on_failure": True,
+            },
+        },
+    ],
+}
+
+
+def _plugin_spec(**block_overrides: object) -> dict:
+    spec = json.loads(json.dumps(PLUGIN_SPEC))
+    spec["steps"][0]["action_plugin_code_step"].update(block_overrides)
+    return spec
+
+
+def test_plugin_code_step_builds_the_wire_block(patch_live_lookups):
+    """Wire shape confirmed live 2026-10-05 and 2026-10-14: both api names
+    verbatim, no plugin-app id, code_step-shaped inputs/outputs, secrets
+    as `[{name}]`."""
+    first, second = _build(PLUGIN_SPEC)["steps"]
+    assert first["action_plugin_code_step"] == {
+        "plugin_app_api_name": "example_plugin",
+        "action_step_api_name": "summarize_records",
+        "notify_plugin_developer_on_failure": False,
+        "secrets": [{"name": "business_id"}],
+        "inputs": [
+            {
+                "name": "heading",
+                "input_type": "field",
+                "field": {"id": "321de730-826e-46fc-b507-533fb5386701"},
+                "data_type": "string",
+                "is_list": False,
+            },
+            {
+                "name": "prior",
+                "input_type": "variable",
+                "variable": {"name": "context_text"},
+            },
+        ],
+        "outputs": [
+            {
+                "name": "context",
+                "output_type": "field",
+                "field": {"id": "27d03bf6-ac68-4e68-a0d1-9b0858dc19f9"},
+                "conflict_resolution": "update_if_blank",
+            },
+            {
+                "name": "records_json",
+                "output_type": "variable",
+                "variable": {"name": "context_text"},
+            },
+        ],
+    }
+    assert second["action_plugin_code_step"] == {
+        "plugin_app_api_name": "example_plugin_preview_some_branch",
+        "action_step_api_name": "convert_to_pdf",
+        "notify_plugin_developer_on_failure": True,
+        "secrets": [],
+        "inputs": [],
+        "outputs": [],
+    }
+
+
+def test_plugin_code_step_install_config_input_carries_no_source(patch_live_lookups):
+    """`business_plugin_config` has no key of its own on the wire, and the
+    UI-built read of one carries only nulls for the other sources."""
+    spec = _plugin_spec(
+        inputs=[
+            {
+                "name": "settings",
+                "input_type": "business_plugin_config",
+                "data_type": "string",
+                "is_list": False,
+            }
+        ]
+    )
+    (inp,) = _build(spec)["steps"][0]["action_plugin_code_step"]["inputs"]
+    assert inp == {
+        "name": "settings",
+        "input_type": "business_plugin_config",
+        "data_type": "string",
+        "is_list": False,
+    }
+
+
+def test_code_step_still_rejects_install_config_input():
+    spec = {
+        "api_name": "code_only",
+        "name": "Code Only",
+        "type": "global",
+        "steps": [
+            {
+                "key": "s1",
+                "step_type": "code_step",
+                "order": 0,
+                "parent_key": None,
+                "action_code_step": {
+                    "script": "pass",
+                    "inputs": [
+                        {"name": "settings", "input_type": "business_plugin_config"}
+                    ],
+                },
+            }
+        ],
+    }
+    with pytest.raises(ValueError) as exc:
+        AutomationDef.model_validate(spec)
+    message = str(exc.value)
+    for valid in ("'field'", "'variable'", "'related_field'", "'static_value'"):
+        assert valid in message
+
+
+def test_plugin_code_step_rejects_a_plugin_app_id(patch_live_lookups):
+    """LLM steps take `business_plugin_app_id`; plugin steps don't, and the
+    server would drop it."""
+    spec = _plugin_spec(business_plugin_app_id="11111111-1111-1111-1111-111111111111")
+    with pytest.raises(
+        PlanError, match="business_plugin_app_id would be silently dropped"
+    ):
+        _build(spec)
+
+
+def test_plugin_code_step_requires_the_step_api_name():
+    spec = _plugin_spec()
+    del spec["steps"][0]["action_plugin_code_step"]["action_step_api_name"]
+    with pytest.raises(ValueError, match="action_step_api_name"):
+        AutomationDef.model_validate(spec)
+
+
+def test_plugin_code_step_errors_name_the_step_type(patch_live_lookups):
+    spec = _plugin_spec(inputs=[{"name": "file", "input_type": "field"}])
+    with pytest.raises(
+        PlanError,
+        match="plugin_code_step input 'file' is type 'field' but has no "
+        "field/field_ref/field_id",
+    ):
+        _build(spec)
+
+
+def test_plugin_code_step_id_forwarded(patch_live_lookups):
+    spec = json.loads(json.dumps(PLUGIN_SPEC))
+    spec["steps"][0]["id"] = "plugin-step-uuid-123"
+    first, second = _build(spec)["steps"]
+    assert first["id"] == "plugin-step-uuid-123"
+    assert "id" not in second
+
+
+def test_diff_automation_reproduced_plugin_spec_has_no_plugin_step_lines(
+    patch_live_lookups,
+):
+    """The diff isn't empty: the stub object's id, error_notification_email
+    and initialize_variable read keys show up, as they do without plugin
+    steps (00-inbox/automation-diff-shows-read-only-trigger-keys.md)."""
+    raw = load_fixture("automations/plugin_code_steps.raw.json")
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    keys = ["init", "with_fields", "with_variable"]
+    spec = {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "record_based",
+        "target_object": "client_client",
+        "triggers": [
+            {
+                "trigger_type": "manual",
+                "order": 0,
+                "id": raw["triggers"][0]["id"],
+                "description": raw["triggers"][0]["description"],
+            }
+        ],
+        "steps": [
+            {
+                "key": key,
+                "id": step["id"],
+                "step_type": step["step_type"],
+                "order": step["order"],
+                "parent_key": keys[i - 1] if i else None,
+                "description": step["description"],
+                "action_on_failure": step["action_on_failure"],
+                _block_field_for(step["step_type"]): step[
+                    _block_field_for(step["step_type"])
+                ],
+            }
+            for i, (key, step) in enumerate(zip(keys, steps, strict=True))
+        ],
+    }
+    plugin_ids = {s["id"][:8] for s in steps if s["step_type"] == "plugin_code_step"}
+    assert len(plugin_ids) == 2
+    step_paths = [
+        d["path"].split(".")[1]
+        for d in diff_automation(spec)["diff"]
+        if d["path"].startswith("steps.")
+    ]
+    assert not [p for p in step_paths if p in plugin_ids or p.startswith("new:")]
+
+
+@pytest.mark.parametrize("verb", ["activate", "edit_other_step"])
+def test_put_rebuilds_plugin_steps_through_the_builder(monkeypatch, verb):
+    """`activate`/`deactivate` and every `steps` verb re-PUT the plugin steps
+    they don't touch. Until 2026-10-14 those went through `_generic_block`,
+    which kept expanded read objects; the server tolerated it then (checked
+    live), but the PUT now carries the same blocks a spec would build."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.tools import automations as auto_tools
+    from kizen_builder.tools.planners.automations import _step_plugin_code_step
+
+    raw = load_fixture("automations/plugin_code_steps.raw.json")
+    captured: dict = {}
+    monkeypatch.setattr(
+        auto_api,
+        "list_automations",
+        lambda client: [{"api_name": raw["api_name"], "id": raw["id"]}],
+    )
+    monkeypatch.setattr(auto_api, "get_automation", lambda client, automation_id: raw)
+
+    def fake_update_automation(client, automation_id, payload, last_revision=None):
+        captured.update(payload)
+        return {}
+
+    monkeypatch.setattr(auto_api, "update_automation", fake_update_automation)
+    if verb == "activate":
+        auto_tools.set_active(raw["api_name"], True, execute=True)
+    else:
+
+        def mutate(payload: dict, _raw: dict) -> dict:
+            payload["steps"][0]["user_description"] = "edited"
+            return {}
+
+        auto_tools.patch_steps(raw["api_name"], mutate, execute=True)
+
+    sent = {s["id"]: s for s in captured["steps"]}
+    plugin_steps = [s for s in raw["steps"] if s["step_type"] == "plugin_code_step"]
+    assert len(plugin_steps) == 2
+    for step in plugin_steps:
+        expected = _step_plugin_code_step(
+            dict(step["action_plugin_code_step"]), None, None
+        )
+        assert sent[step["id"]]["action_plugin_code_step"] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -1350,7 +1807,7 @@ def test_plan_update_strips_variable_ids(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_initialize_variable": {
-                    "variable": {"name": "org_match", "data_type": "text"},
+                    "variable": {"name": "org_match", "data_type": "string"},
                     "sources": [],
                 },
             }
@@ -1704,6 +2161,112 @@ def test_condition_raw_filter_config_null_value_rejected(patch_live_lookups):
         _build(_condition_spec(raw))
 
 
+def _variable_spec(rule, *declarations):
+    """A condition step comparing to a variable, after root-chain steps that
+    declare variables."""
+    spec = _condition_spec({"all": [rule]})
+    (check,) = spec["steps"]
+    steps = [
+        {
+            "key": f"declare{i}",
+            "order": i,
+            "parent_key": f"declare{i - 1}" if i else None,
+        }
+        | step
+        for i, step in enumerate(declarations)
+    ]
+    check.update(order=len(steps), parent_key=steps[-1]["key"] if steps else None)
+    spec["steps"] = [*steps, check]
+    return spec
+
+
+def _init_variable(name, data_type, is_array=True):
+    return {
+        "step_type": "initialize_variable",
+        "action_initialize_variable": {
+            "sources": [],
+            "variable": {"name": name, "data_type": data_type, "is_array": is_array},
+        },
+    }
+
+
+def _search_into(name, obj="patients", filter_config=None):
+    return {
+        "step_type": "search_records",
+        "action_search_records": {
+            "custom_object": {"name": obj},
+            "filter_type": "custom_filter",
+            "filter_config": filter_config or NAME_IS_X,
+            "destination_variable": name,
+        },
+    }
+
+
+def test_condition_compares_a_field_to_a_declared_array_variable(
+    patch_live_lookups, patients_filter_schema
+):
+    payload = _build(
+        _variable_spec(
+            {"field": "gender", "op": "is_any_of", "variable": "genders"},
+            _init_variable("genders", "string"),
+        )
+    )
+    (clause,) = payload["steps"][-1]["step_condition"]["filter_config"]["query"][0][
+        "filters"
+    ]
+    assert clause["value"] == "genders"
+    assert clause["value_type"] == "variable"
+    assert clause["condition"] == "is_any_of"
+    assert [
+        "variable",
+        {"name": "genders", "is_array": True, "data_type": "string"},
+    ] in (clause["view_model"])
+
+
+@pytest.mark.parametrize(
+    ("declarations", "message"),
+    [
+        (
+            [],
+            "step 'check': variable 'genders' isn't declared in this "
+            "automation (declared arrays: none)",
+        ),
+        (
+            [_init_variable("genders", "string", is_array=False)],
+            "step 'check': variable 'genders' isn't an array — comparing a "
+            "field to a variable needs an array variable",
+        ),
+        (
+            # Declared by the search, so the error is about its kind.
+            [_init_variable("other", "string"), _search_into("genders")],
+            "step 'check': field 'gender' (dropdown) can't be compared to "
+            "an entity (patients) array variable",
+        ),
+    ],
+)
+def test_condition_variable_checked_against_the_spec_declarations(
+    patch_live_lookups, patients_filter_schema, declarations, message
+):
+    spec = _variable_spec(
+        {"field": "gender", "op": "is_any_of", "variable": "genders"}, *declarations
+    )
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value) == message
+
+
+def test_search_records_filter_rejects_a_variable(
+    patch_live_lookups, patients_filter_schema
+):
+    rule = {"field": "name", "op": "is_any_of", "variable": "found"}
+    spec = _variable_spec(
+        {"field": "gender", "op": "is_blank"},
+        _search_into("found", filter_config={"all": [rule]}),
+    )
+    with pytest.raises(PlanError, match="only works in a condition step"):
+        _build(spec)
+
+
 # A condition with no rules is accepted by the API, but the Kizen UI shows an
 # error on the step (reported 2026-09-29), so the spec and patch paths reject it.
 
@@ -1788,6 +2351,87 @@ def test_steps_edit_condition_without_rules_rejected(patch_live_lookups):
     }
     with pytest.raises(PlanError, match="'check' has no filter rules"):
         normalize_step_patch(patch, "check", "condition", _LIVE_PAYLOAD, "patients")
+
+
+_GENDERS_DECLARED = {
+    **_LIVE_PAYLOAD,
+    "steps": [
+        {
+            "key": "declare",
+            "type": "initialize_variable",
+            "action_initialize_variable": {
+                "sources": [],
+                "variable": {
+                    "name": "genders",
+                    "data_type": "string",
+                    "is_array": True,
+                },
+            },
+        }
+    ],
+}
+_GENDERS_RULE = {
+    "type": "custom_filter",
+    "filter_config": {
+        "all": [{"field": "gender", "op": "is_any_of", "variable": "genders"}]
+    },
+}
+
+
+def _steps_add(payload):
+    from kizen_builder.tools.automations import build_wire_step
+
+    step = {"key": "check", "step_type": "condition", "step_condition": _GENDERS_RULE}
+    return build_wire_step(step, payload, "patients")["step_condition"]
+
+
+def _steps_edit(payload):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {"step_condition": _GENDERS_RULE}
+    return normalize_step_patch(patch, "check", "condition", payload, "patients")[
+        "step_condition"
+    ]
+
+
+@pytest.mark.parametrize("patch_step", [_steps_add, _steps_edit])
+def test_steps_add_and_edit_see_the_live_variable_declarations(
+    patch_live_lookups, patients_filter_schema, patch_step
+):
+    (clause,) = patch_step(_GENDERS_DECLARED)["filter_config"]["query"][0]["filters"]
+    assert clause["value"] == "genders"
+    with pytest.raises(PlanError) as e:
+        patch_step(_LIVE_PAYLOAD)
+    assert str(e.value) == (
+        "step 'check': variable 'genders' isn't declared in this automation "
+        "(declared arrays: none)"
+    )
+
+
+@pytest.mark.parametrize(
+    "step_type, block, key",
+    [
+        (
+            "create_related_entity",
+            {"new_entity_name": "x", "new_setting": 1},
+            "new_setting",
+        ),
+        # Exempt on a live read, but a patch that sets it would change nothing.
+        (
+            "modify_related_entities",
+            {"automation_variables": ["v"]},
+            "automation_variables",
+        ),
+    ],
+)
+def test_steps_edit_refuses_a_key_the_builder_does_not_read(step_type, block, key):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {_block_field_for(step_type): block}
+    with pytest.raises(
+        PlanError, match=rf"^step 'edited' \S+: {key} would be silently dropped"
+    ):
+        normalize_step_patch(patch, "edited", step_type, _LIVE_PAYLOAD, "patients")
 
 
 def test_steps_edit_without_condition_block_not_checked(patch_live_lookups):
@@ -1936,6 +2580,21 @@ def _schedule_activity_spec(action_config, target_object="patients"):
     }
 
 
+def test_step_schedule_activity_sends_note_and_html_note(patch_live_lookups):
+    payload = _build(
+        _schedule_activity_spec(
+            {
+                "activity_type_id": "11111111-1111-4111-8111-111111111111",
+                "note": "Plain note",
+                "html_note": "<p><strong>Rich</strong> note</p>",
+            }
+        )
+    )
+    action = payload["steps"][0]["action_schedule_activity"]
+    assert action["note"] == "Plain note"
+    assert action["html_note"] == "<p><strong>Rich</strong> note</p>"
+
+
 def test_step_schedule_activity_association_configs_author_shape(patch_live_lookups):
     patients = load_fixture("objects/patients.json")
     encounters_field = next(
@@ -1997,6 +2656,76 @@ def test_step_schedule_activity_association_configs_read_shape_passthrough(
     assert configs == [
         {"custom_object_id": patients["id"], "association_source": "none"}
     ]
+
+
+def test_steps_edit_schedule_activity_block_from_steps_get_is_unchanged(
+    patch_live_lookups,
+):
+    """The block `steps get` prints carries `custom_object_id`; re-applying it
+    unchanged must not null it (the server 400s on a null)."""
+    import copy
+
+    from kizen_builder.tools.automations import normalize_step_patch
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    payload = live_to_payload(raw)
+    step = next(s for s in payload["steps"] if s["type"] == "schedule_activity")
+    block = step["action_schedule_activity"]
+    patch = {"action_schedule_activity": copy.deepcopy(block)}
+    out = normalize_step_patch(
+        patch, step["key"], "schedule_activity", payload, raw["custom_object"]["name"]
+    )
+    assert out["action_schedule_activity"] == block
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {
+            "custom_object_id": "8fa0a1cb-1111-4111-8111-111111111111",
+            "association_source": "related_field",
+            "relationship_field_id": "8fa0a1cb-2222-4222-8222-222222222222",
+        },
+        {
+            "custom_object_id": "8fa0a1cb-1111-4111-8111-111111111111",
+            "association_source": "record_variable",
+            "automation_variable_name": "x",
+        },
+    ],
+    ids=["related_field", "record_variable"],
+)
+def test_step_schedule_activity_association_configs_write_shape_passthrough(
+    patch_live_lookups, entry
+):
+    payload = _build(
+        _schedule_activity_spec(
+            {
+                "activity_type_id": "11111111-1111-4111-8111-111111111111",
+                "association_configs": [entry],
+            }
+        )
+    )
+    configs = payload["steps"][0]["action_schedule_activity"]["association_configs"]
+    assert configs == [entry]
+
+
+def test_step_schedule_activity_association_config_without_object_rejected(
+    patch_live_lookups,
+):
+    spec = _schedule_activity_spec(
+        {
+            "activity_type_id": "11111111-1111-4111-8111-111111111111",
+            "association_configs": [{"object": "patients"}, {"source": "none"}],
+        }
+    )
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value) == "step 's1': " + (
+        "schedule_activity association_configs entry 2 names no object: set "
+        "'object' to the associated object's api_name, or 'custom_object_id' "
+        "to its UUID."
+    )
 
 
 def test_step_schedule_activity_assigned_to_specific_role_uses_role_id(
@@ -2299,7 +3028,6 @@ def _branching_test_spec() -> dict:
                "new_entity_name_html": "<p>thing 1</p>",
                "new_entity_owner_type": "newly_assigned_owner",
                "new_entity_owner_sub_type": "round_robin_any_role",
-               "target_object": create_obj["name"],
                "target_custom_object": create_obj["id"],
            }),
     ]  # fmt: skip
@@ -2455,6 +3183,44 @@ def test_create_related_entity_reads_target_object_as_target_custom_object(
     assert action["target_custom_object"] == patients["id"]
 
 
+def test_create_related_entity_field_values_is_a_plan_error(patch_live_lookups):
+    """Kizen accepts `field_values` and stores nothing (confirmed live
+    2026-10-05), so it is an unread key like any other."""
+    from kizen_builder.tools.automations import build_wire_step
+
+    block = {
+        "target_custom_object": "patients",
+        "new_entity_name": "Follow-up",
+        "field_values": [{"field": "status", "value": "open"}],
+    }
+    spec = _one_step_spec("create_related_entity", block)
+    with pytest.raises(PlanError, match="field_values would be silently dropped"):
+        _build(spec)
+    with pytest.raises(PlanError, match="field_values would be silently dropped"):
+        build_wire_step(spec["steps"][0], _LIVE_PAYLOAD, "patients")
+
+
+def test_create_related_entity_needs_only_target_custom_object(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step
+
+    patients = load_fixture("objects/patients.json")
+    spec = _one_step_spec(
+        "create_related_entity",
+        {"target_custom_object": "patients", "new_entity_name": "Follow-up"},
+    )
+    action = _build(spec)["steps"][0]["action_create_related_entity"]
+    assert action["target_custom_object"] == patients["id"]
+    step = build_wire_step(spec["steps"][0], _LIVE_PAYLOAD, "patients")
+    action = step["action_create_related_entity"]
+    assert action["target_custom_object"] == patients["id"]
+
+
+def test_create_related_entity_without_a_target_names_both_keys():
+    spec = _one_step_spec("create_related_entity", {"new_entity_name": "Follow-up"})
+    with pytest.raises(ValueError, match="'target_custom_object'.*'target_object'"):
+        AutomationDef.model_validate(spec)
+
+
 def test_every_wired_builder_declares_its_keys():
     undeclared = [
         f"{kind} {name}"
@@ -2485,32 +3251,67 @@ def test_declared_keys_match_what_the_builder_reads(builder):
     assert set(builder.honoured_keys) == builder_keys.declarable(builder.__name__)
 
 
-# No captured fixture has these; the test below re-plans their output instead.
+@pytest.mark.parametrize(
+    "path",
+    sorted((FIXTURES / "automations").glob("*.raw.json")),
+    ids=lambda p: p.name.removesuffix(".raw.json"),
+)
+def test_every_captured_read_key_is_classified(path):
+    """A read key that is null in every capture today would make `translate`
+    refuse the automation the day it is set. Declare it: honoured if the
+    builder should carry it, `unsent_on_read` if it must not be sent."""
+    assert builder_keys.unclassified_read_keys(json.loads(path.read_text())) == set()
+
+
+# No captured fixture has these; test_uncaptured_builder_output_replans_unchanged
+# re-plans their output instead.
 _UNCAPTURED = {"notify_member_via_email", "notify_member_via_text"}
+
+# Wired triggers no captured fixture has: their wire shape is unverified.
+_UNCAPTURED_TRIGGERS = {"form_submitted", "survey_submitted"}
+
+
+def _wire_blocks() -> list:
+    from kizen_builder.translate import live_to_payload
+
+    params = []
+    for path in sorted((FIXTURES / "automations").glob("*.raw.json")):
+        raw = json.loads(path.read_text())
+        payload = live_to_payload(raw)
+        target = (raw.get("custom_object") or {}).get("name")
+        name = path.name.removesuffix(".raw.json")
+        for kind, entries, builders, cfg in (
+            ("step", payload["steps"], _STEP_BUILDERS, _block_field_for),
+            ("trigger", payload["triggers"], _TRIGGER_BUILDERS, trigger_config_field),
+        ):
+            for e in entries:
+                if e["type"] in builders:
+                    block = e.get(cfg(e["type"])) or {}
+                    id_ = f"{name}-{e['key']}"
+                    params.append(
+                        pytest.param(kind, e["type"], block, payload, target, id=id_)
+                    )
+    return params
+
+
+_WIRE_BLOCKS = _wire_blocks()
+
+
+def test_wire_blocks_cover_every_wired_type():
+    steps = {p.values[1] for p in _WIRE_BLOCKS if p.values[0] == "step"}
+    triggers = {p.values[1] for p in _WIRE_BLOCKS if p.values[0] == "trigger"}
+    assert set(_STEP_BUILDERS) - steps == _UNCAPTURED
+    assert set(_TRIGGER_BUILDERS) - triggers == _UNCAPTURED_TRIGGERS
 
 
 def test_builder_output_passes_the_check():
     """Idempotence: every wire block the translator emits from a captured
     automation — what `steps get` and `automations show` print — re-plans
     without a rejected key, so a copied block can be re-applied."""
-    from kizen_builder.translate import live_to_payload
-
-    checked: set[str] = set()
-    for path in sorted((FIXTURES / "automations").glob("*.raw.json")):
-        payload = live_to_payload(json.loads(path.read_text()))
-        for s in payload["steps"]:
-            builder = _STEP_BUILDERS.get(s["type"])
-            if builder is not None:
-                block = s.get(_block_field_for(s["type"])) or {}
-                _reject_unhonoured_keys(builder, block, f"{path.name} {s['key']}")
-                checked.add(s["type"])
-        for t in payload["triggers"]:
-            builder = _TRIGGER_BUILDERS.get(t["type"])
-            if builder is not None:
-                block = t.get(f"trigger_{t['type']}") or {}
-                _reject_unhonoured_keys(builder, block, f"{path.name} {t['key']}")
-    declared = {t for t, b in _STEP_BUILDERS.items() if b.honoured_keys is not None}
-    assert declared - checked == _UNCAPTURED
+    for p in _WIRE_BLOCKS:
+        kind, block_type, block, _, _ = p.values
+        builders = _STEP_BUILDERS if kind == "step" else _TRIGGER_BUILDERS
+        _reject_unhonoured_keys(builders[block_type], block, p.id)
 
 
 @pytest.mark.parametrize(
@@ -2540,3 +3341,684 @@ def test_uncaptured_builder_output_replans_unchanged(
     cfg = _block_field_for(step_type)
     wire = _build(_one_step_spec(step_type, block))["steps"][0][cfg]
     assert _build(_one_step_spec(step_type, wire))["steps"][0][cfg] == wire
+
+
+# Intended differences between a captured wire block and its rebuild, as
+# {(step_or_trigger_type, dotted_path): reason}. List indices read as `[]`.
+_REBUILD_ALLOWED_DIFFS: dict[tuple[str, str], str] = {}
+
+
+def _diff_paths(a: object, b: object, path: str = "") -> set[str]:
+    """Dotted paths where `a` and `b` differ; an absent key counts."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return {
+            p
+            for k in a.keys() | b.keys()
+            for p in (
+                _diff_paths(a[k], b[k], f"{path}.{k}" if path else k)
+                if k in a and k in b
+                else {f"{path}.{k}" if path else k}
+            )
+        }
+    if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+        return {
+            p for x, y in zip(a, b, strict=True) for p in _diff_paths(x, y, f"{path}[]")
+        }
+    return set() if a == b else {path}
+
+
+def _rebuild(kind, block_type, wire, payload, target):
+    """The builder call `normalize_step_patch` makes, with no live lookups."""
+    import copy
+
+    from kizen_builder.tools.automations import _payload_auto
+    from kizen_builder.translate import _SHIM_CTX
+
+    if kind == "trigger":
+        return _TRIGGER_BUILDERS[block_type](copy.deepcopy(wire), _SHIM_CTX)
+    auto = _payload_auto(payload, target)
+    return _STEP_BUILDERS[block_type](copy.deepcopy(wire), auto, _SHIM_CTX)
+
+
+@pytest.mark.parametrize("kind, block_type, wire, payload, target", _WIRE_BLOCKS)
+def test_builders_rebuild_wire_blocks_unchanged(
+    kind, block_type, wire, payload, target
+):
+    """What `steps get` prints, re-applied through `steps edit`'s builder
+    call, rebuilds value for value — so a copied block is a no-op."""
+    allowed = {p for (t, p) in _REBUILD_ALLOWED_DIFFS if t == block_type}
+    diffs = _diff_paths(wire, _rebuild(kind, block_type, wire, payload, target))
+    unexpected = sorted(diffs - allowed)
+    assert not unexpected, f"rebuild differs at {unexpected}"
+
+
+def test_rebuild_allowed_diffs_all_occur():
+    seen = {
+        (p.values[1], d)
+        for p in _WIRE_BLOCKS
+        for d in _diff_paths(p.values[2], _rebuild(*p.values))
+    }
+    stale = sorted(set(_REBUILD_ALLOWED_DIFFS) - seen)
+    assert not stale, f"_REBUILD_ALLOWED_DIFFS entries match no difference: {stale}"
+
+
+# ---------------------------------------------------------------------------
+# initialize_variable variable: data_type, is_array, unknown keys
+# (confirmed live 2026-10-14: an unknown data_type is a bare HTTP 500)
+# ---------------------------------------------------------------------------
+
+
+def _variable_type_message() -> str:
+    from typing import get_args
+
+    from kizen_builder.models.spec.automations_shared import (
+        AutomationVariableDataType,
+    )
+
+    *rest, last = (f"'{t}'" for t in get_args(AutomationVariableDataType))
+    return f"Input should be {', '.join(rest)} or {last}"
+
+
+def test_variable_data_type_matches_the_schema_snapshot():
+    from typing import get_args
+
+    from kizen_builder.models.spec.automations_shared import (
+        AutomationVariableDataType,
+    )
+    from tests.drift.contracts import load_snapshot
+
+    entry = load_snapshot()["contracts"]["schema:AutomationVariableRequest"]
+    enum = entry["properties"]["data_type"]
+    assert enum.startswith("ExecutionVariableDataTypeEnum{")
+    assert set(get_args(AutomationVariableDataType)) == set(
+        enum[enum.index("{") + 1 : -1].split(",")
+    )
+
+
+def _fixture_variable() -> dict:
+    """An entity array variable as a live read carries it: all 11 keys."""
+    raw = load_fixture("automations/condition_variable_rhs_pipeline.raw.json")
+    return next(
+        s["action_initialize_variable"]["variable"]
+        for s in raw["steps"]
+        if s["step_type"] == "initialize_variable"
+        and "is_array_item_variable" in s["action_initialize_variable"]["variable"]
+    )
+
+
+def _edit_variable(variable: dict) -> dict:
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {"action_initialize_variable": {"variable": variable, "sources": []}}
+    return normalize_step_patch(
+        patch, "init", "initialize_variable", _LIVE_PAYLOAD, "patients"
+    )
+
+
+_BAD_VARIABLES = [
+    pytest.param({"name": "tags", "data_type": t}, "data_type", id=t)
+    for t in ("text", "list", "object")
+] + [
+    pytest.param(
+        {"name": "tags", "data_type": "string", "is_array": "maybe"},
+        "is_array",
+        id="is_array-maybe",
+    ),
+    pytest.param(
+        {"name": "tags", "data_type": "string", "isArray": True},
+        "isArray",
+        id="isArray-typo",
+    ),
+]
+
+_GOOD_VARIABLES = [
+    pytest.param({"name": "owner", "data_type": "employee"}, id="employee"),
+    pytest.param(
+        {"name": "branch", "data_type": "entity", "data_subtype": "obj-uuid"},
+        id="entity",
+    ),
+    pytest.param({"name": "inbox", "data_type": "email"}, id="email"),
+]
+
+
+@pytest.mark.parametrize("path", ["create", "steps edit"])
+@pytest.mark.parametrize("variable, field", _BAD_VARIABLES)
+def test_bad_variable_is_a_spec_error(patch_live_lookups, path, variable, field):
+    from pydantic import ValidationError
+
+    spec = _one_step_spec("initialize_variable", {"variable": variable})
+    with pytest.raises(ValidationError) as e:
+        if path == "create":
+            AutomationDef.model_validate(spec)
+        else:
+            _edit_variable(variable)
+    (err,) = e.value.errors()
+    assert err["loc"][-3:] == ("action_initialize_variable", "variable", field)
+    if field == "data_type":
+        assert err["msg"] == _variable_type_message()
+
+
+@pytest.mark.parametrize("variable", [*_GOOD_VARIABLES, pytest.param(None, id="read")])
+def test_good_variable_plans_on_both_paths(patch_live_lookups, variable):
+    variable = variable or _fixture_variable()
+    spec = _one_step_spec("initialize_variable", {"variable": dict(variable)})
+    built = _build(spec)["steps"][0]["action_initialize_variable"]["variable"]
+    edited = _edit_variable(dict(variable))["action_initialize_variable"]["variable"]
+    assert built["data_type"] == edited["data_type"] == variable["data_type"]
+
+
+# ---------------------------------------------------------------------------
+# update_variable value_resolution (confirmed live 2026-10-14)
+# ---------------------------------------------------------------------------
+
+
+def _array_update_block(**extra: object) -> dict:
+    return {
+        "variable": {"name": "tags", "data_type": "string"},
+        "sources": [
+            {
+                "source_type": "static",
+                "source_subtype": "string",
+                "value": ["b"],
+                "array_separator": "comma",
+            }
+        ],
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": False,
+        **extra,
+    }
+
+
+@pytest.mark.parametrize("value", ["add_only", "overwrite", "overwrite_except_null"])
+def test_update_variable_forwards_value_resolution(patch_live_lookups, value):
+    spec = _one_step_spec(
+        "update_variable", _array_update_block(value_resolution=value)
+    )
+    block = _build(spec)["steps"][0]["action_update_variable"]
+    assert block["value_resolution"] == value
+    assert block["array_aggregation_mode"] == "add_all"
+    assert block["deduplicate_array"] is False
+
+
+@pytest.mark.parametrize("extra", [{}, {"value_resolution": None}])
+def test_update_variable_omits_null_value_resolution(patch_live_lookups, extra):
+    spec = _one_step_spec("update_variable", _array_update_block(**extra))
+    assert "value_resolution" not in _build(spec)["steps"][0]["action_update_variable"]
+
+
+@pytest.mark.parametrize(
+    "key, value, allowed",
+    [
+        (
+            "value_resolution",
+            "append",
+            "'add_only', 'overwrite' or 'overwrite_except_null'",
+        ),
+        ("array_aggregation_mode", "all", "'add_first_non_blank' or 'add_all'"),
+    ],
+)
+def test_update_variable_rejects_unknown_option(key, value, allowed):
+    spec = _one_step_spec("update_variable", _array_update_block(**{key: value}))
+    with pytest.raises(ValueError, match=allowed):
+        AutomationDef.model_validate(spec)
+
+
+def test_initialize_variable_rejects_value_resolution(patch_live_lookups):
+    block = _array_update_block(value_resolution="add_only")
+    block["variable"]["is_array"] = True
+    with pytest.raises(PlanError, match="only update_variable does"):
+        _build(_one_step_spec("initialize_variable", block))
+
+
+def test_live_update_variable_with_null_value_resolution_replans_unchanged(
+    patch_live_lookups,
+):
+    """Post-2026-10-13 reads carry `value_resolution: null` on every
+    update_variable. A spec copied from that read plans to the same wire
+    block the translator produces, with no value_resolution key."""
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/update_variable_goto_branching.raw.json")
+    step = next(s for s in raw["steps"] if s["step_type"] == "update_variable")
+    step["action_update_variable"]["value_resolution"] = None
+    live = next(s for s in live_to_payload(raw)["steps"] if s["id"] == step["id"])
+
+    spec = _one_step_spec("update_variable", step["action_update_variable"])
+    planned = _build(spec)["steps"][0]["action_update_variable"]
+    assert "value_resolution" not in planned
+    assert planned == live["action_update_variable"]
+
+
+def _init_then_update_spec(*, is_array: bool | None, defined_as: str = "tags") -> dict:
+    variable: dict = {"name": defined_as, "data_type": "string"}
+    if is_array is not None:
+        variable["is_array"] = is_array
+    spec = _one_step_spec("initialize_variable", {"variable": variable, "sources": []})
+    spec["steps"][0]["key"] = "init"
+    spec["steps"].append(
+        {
+            "key": "bump",
+            "step_type": "update_variable",
+            "order": 1,
+            "parent_key": "init",
+            "action_update_variable": _array_update_block(value_resolution="add_only"),
+        }
+    )
+    return spec
+
+
+@pytest.mark.parametrize("is_array", [False, None])
+def test_update_variable_rejects_value_resolution_on_scalar(
+    patch_live_lookups, is_array
+):
+    with pytest.raises(PlanError, match="'bump' sets value_resolution on 'tags'"):
+        _build(_init_then_update_spec(is_array=is_array))
+
+
+def test_update_variable_value_resolution_on_array_plans(patch_live_lookups):
+    steps = _build(_init_then_update_spec(is_array=True))["steps"]
+    assert steps[1]["action_update_variable"]["value_resolution"] == "add_only"
+
+
+def test_update_variable_value_resolution_on_undefined_variable_passes(
+    patch_live_lookups,
+):
+    """No definition to check against: the server decides."""
+    steps = _build(_init_then_update_spec(is_array=False, defined_as="other"))["steps"]
+    assert steps[1]["action_update_variable"]["value_resolution"] == "add_only"
+
+
+def test_value_resolution_check_reads_raw_wire_steps():
+    """``steps add`` can hand the check a live payload's raw step dicts."""
+    from types import SimpleNamespace
+
+    from kizen_builder.tools.planners.automations import (
+        _scalar_value_resolution_problem,
+    )
+
+    def init(is_array):
+        return {
+            "step_type": "initialize_variable",
+            "action_initialize_variable": {
+                "variable": {
+                    "name": "tags",
+                    "data_type": "string",
+                    "is_array": is_array,
+                }
+            },
+        }
+
+    block = {"variable": "tags", "value_resolution": "add_only"}
+    scalar = SimpleNamespace(steps=[init(False), {"step_type": "delay"}])
+    assert "isn't an array variable" in _scalar_value_resolution_problem(
+        "bump", block, scalar
+    )
+    array = SimpleNamespace(steps=[init(True)])
+    assert _scalar_value_resolution_problem("bump", block, array) is None
+
+
+def test_translate_keeps_value_resolution_on_scalar_variable():
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/update_variable_goto_branching.raw.json")
+    step = next(s for s in raw["steps"] if s["step_type"] == "update_variable")
+    step["action_update_variable"]["value_resolution"] = "add_only"
+    live = next(s for s in live_to_payload(raw)["steps"] if s["id"] == step["id"])
+    assert live["action_update_variable"]["value_resolution"] == "add_only"
+
+
+def _patient_field_id(api_name: str) -> str:
+    patients = load_fixture("objects/patients.json")
+    return next(f["id"] for f in patients["fields"] if f["api_name"] == api_name)
+
+
+@pytest.mark.parametrize(
+    "ref", ["mrn", "patients.mrn", "db489b3e-a880-41f7-90b9-312b8cfdd02b"]
+)
+def test_create_related_entity_context_entity_field_resolves(patch_live_lookups, ref):
+    spec = _one_step_spec(
+        "create_related_entity",
+        {
+            "target_object": "encounters",
+            "new_entity_name": "Follow-up",
+            "context_entity_field": ref,
+        },
+    )
+    action = _build(spec)["steps"][0]["action_create_related_entity"]
+    assert action["context_entity_field"] == _patient_field_id("mrn")
+
+
+def _field_ref_trigger_spec(
+    trigger_type: str, block: dict, *, goal: bool, target: str | None = "patients"
+) -> dict:
+    trigger = {"trigger_type": trigger_type, f"trigger_{trigger_type}": block}
+    spec: dict = {
+        "api_name": "field_ref_trigger_test",
+        "name": "Field Ref Trigger Test",
+        "type": "record_based" if target else "global",
+        "target_object": target,
+        "steps": [],
+    }
+    if goal:
+        spec["steps"] = [
+            {
+                "key": "g0",
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {"wait_type": "never", "triggers": [trigger]},
+            }
+        ]
+    else:
+        spec["triggers"] = [{**trigger, "order": 1}]
+    return spec
+
+
+def _field_ref_trigger_block(payload: dict, trigger_type: str, goal: bool) -> dict:
+    if goal:
+        (t,) = payload["steps"][0]["step_goal"]["triggers"]
+    else:
+        t = next(t for t in payload["triggers"] if t["type"] == trigger_type)
+    return t[f"trigger_{trigger_type}"]
+
+
+_FIELD_REF_TRIGGER_CASES = [
+    ("field_updated", "mrn", {"fire_on_create": True}),
+    ("on_or_around_date", "date_of_birth", {"date_offset": "on_day_and_time"}),
+]
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+@pytest.mark.parametrize("trigger_type, field, extra", _FIELD_REF_TRIGGER_CASES)
+@pytest.mark.parametrize("qualified", [False, True], ids=["bare", "dotted"])
+def test_trigger_field_ref_resolves(
+    patch_live_lookups, trigger_type, field, extra, goal, qualified
+):
+    ref = f"patients.{field}" if qualified else field
+    spec = _field_ref_trigger_spec(trigger_type, {"field_ref": ref, **extra}, goal=goal)
+    block = _field_ref_trigger_block(_build(spec), trigger_type, goal)
+    assert block["field_id"] == _patient_field_id(field)
+    assert "field_ref" not in block
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+@pytest.mark.parametrize("trigger_type, field, extra", _FIELD_REF_TRIGGER_CASES)
+def test_trigger_field_ref_uuid_passes_through(
+    patch_live_lookups, trigger_type, field, extra, goal
+):
+    uuid = _patient_field_id(field)
+    spec = _field_ref_trigger_spec(
+        trigger_type, {"field_ref": uuid, **extra}, goal=goal
+    )
+    assert (
+        _field_ref_trigger_block(_build(spec), trigger_type, goal)["field_id"] == uuid
+    )
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+@pytest.mark.parametrize("trigger_type, field, extra", _FIELD_REF_TRIGGER_CASES)
+def test_trigger_bare_field_ref_needs_a_target_object(
+    patch_live_lookups, trigger_type, field, extra, goal
+):
+    spec = _field_ref_trigger_spec(
+        trigger_type, {"field_ref": field, **extra}, goal=goal, target=None
+    )
+    with pytest.raises(PlanError, match="unqualified and the automation has no"):
+        _build(spec)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "encounters",
+        "patients.encounters",
+        {"id": "b69f1a9c-3f3b-4c4d-9989-60a83373c0e8"},
+    ],
+)
+def test_start_automation_relationship_field_ids_resolve(patch_live_lookups, ref):
+    spec = _one_step_spec(
+        "start_automation",
+        {
+            "record_source": "related_record",
+            "relationship_field_ids": [ref],
+            "automation_ids": ["00000000-0000-4000-8000-000000000001"],
+        },
+    )
+    action = _build(spec)["steps"][0]["action_start_automation"]
+    assert action["relationship_field_ids"] == [_patient_field_id("encounters")]
+
+
+def test_stop_execution_maps_to_its_config_block():
+    from kizen_builder.models.spec.automations import _STEP_TYPE_TO_CONFIG_FIELD
+
+    assert _STEP_TYPE_TO_CONFIG_FIELD["stop_execution"] == "action_stop_execution"
+    spec = _one_step_spec("stop_execution", {})
+    del spec["steps"][0]["action_stop_execution"]
+    AutomationDef.model_validate(spec)
+
+
+@pytest.mark.parametrize("step_type", ["branch", "merge_branches"])
+def test_configless_step_with_stop_execution_block_rejected(step_type):
+    spec = _merged_condition_spec()
+    merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")
+    merge.update(
+        step_type=step_type, action_stop_execution={"action": "stop_and_complete"}
+    )
+    with pytest.raises(ValueError, match=f"'{step_type}' takes no config block"):
+        AutomationDef.model_validate(spec)
+
+
+# ---------------------------------------------------------------------------
+# assign_team_member — each `type` needs its own keys. The server 400s a
+# selector without them, but its message for a wrong hop names the wrong field.
+# ---------------------------------------------------------------------------
+
+_EMPLOYEE = "33333333-3333-3333-3333-333333333333"
+_HOP = "889f65e2-dd31-42f0-a088-c3c1dd8ea484"  # encounters.patient_rel, many_to_one
+_FAR_SELECTOR = "35b02ad4-0d62-4cfb-90d4-dbe4b9dc5904"  # patients.owner
+
+
+def _assign_spec(block: dict, target_object: str | None = "encounters") -> dict:
+    return {
+        "api_name": "assign_test",
+        "name": "Assign Test",
+        "type": "record_based" if target_object else "global",
+        "target_object": target_object,
+        "steps": [
+            {
+                "key": "assign",
+                "step_type": "assign_team_member",
+                "order": 0,
+                "parent_key": None,
+                "action_assign_team_member": block,
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("block", "missing"),
+    [
+        ({"type": "team_member"}, "employee_id: a team member's UUID"),
+        ({"type": "round_robin_role"}, "role_id: a role's UUID"),
+        ({"type": "round_robin_team_members"}, "employee_ids: team member UUIDs"),
+        (
+            {"type": "team_selector_field"},
+            "field_id: a team-selector field on the automation's own object",
+        ),
+        (
+            {"type": "related_team_selector_field", "field_id": _FAR_SELECTOR},
+            "related_field_id: a single-value relationship field on the "
+            "automation's own object",
+        ),
+        (
+            {"type": "related_team_selector_field", "related_field_id": _HOP},
+            "field_id: a team-selector field on the object related_field_id points to",
+        ),
+    ],
+)
+def test_assign_team_member_missing_key_rejected(patch_live_lookups, block, missing):
+    with pytest.raises(PlanError) as e:
+        _build(_assign_spec(block))
+    msg = str(e.value)
+    assert f"'assign' (type {block['type']}) needs {missing}." in msg
+    assert "not that a run assigns anyone" in msg
+
+
+def test_assign_team_member_round_robin_all_needs_nothing(patch_live_lookups):
+    block = _build(_assign_spec({"type": "round_robin_all"}))["steps"][0]
+    assert block["action_assign_team_member"] == {"type": "round_robin_all"}
+
+
+def test_assign_team_member_read_dialect_satisfies_the_check(patch_live_lookups):
+    block = {
+        "type": "related_team_selector_field",
+        "related_field": {"id": _HOP, "name": "patient_rel"},
+        "field": {"id": _FAR_SELECTOR, "name": "owner"},
+    }
+    built = _build(_assign_spec(block))["steps"][0]["action_assign_team_member"]
+    assert built == {
+        "type": "related_team_selector_field",
+        "field_id": _FAR_SELECTOR,
+        "related_field_id": _HOP,
+    }
+    employee = {"type": "team_member", "employee": {"id": _EMPLOYEE}}
+    built = _build(_assign_spec(employee))["steps"][0]["action_assign_team_member"]
+    assert built == {"type": "team_member", "employee_id": _EMPLOYEE}
+
+
+def test_assign_team_member_related_selector_builds_both_keys(patch_live_lookups):
+    block = {
+        "type": "related_team_selector_field",
+        "related_field_id": _HOP,
+        "field_id": _FAR_SELECTOR,
+    }
+    built = _build(_assign_spec(block))["steps"][0]["action_assign_team_member"]
+    assert built == {
+        "type": "related_team_selector_field",
+        "related_field_id": _HOP,
+        "field_id": _FAR_SELECTOR,
+    }
+
+
+def test_assign_team_member_hop_must_be_single_value(patch_live_lookups):
+    block = {
+        "type": "related_team_selector_field",
+        "related_field_id": "ae78e103-ab10-47d5-9dbc-730c26ae4882",  # many_to_many
+        "field_id": _FAR_SELECTOR,
+    }
+    with pytest.raises(PlanError) as e:
+        _build(_assign_spec(block))
+    assert str(e.value) == (
+        "assign_team_member step 'assign': related_field_id is 'conditions' on "
+        "'encounters', which isn't a single-value relationship field "
+        "(field_type relationship, cardinality many_to_many). It must be the hop "
+        "from this object; field_id names the selector on the far object."
+    )
+
+
+def test_assign_team_member_hop_must_be_on_target_object(patch_live_lookups):
+    # The reported shape: the far object's selector passed as the hop.
+    block = {
+        "type": "related_team_selector_field",
+        "related_field_id": _FAR_SELECTOR,
+        "field_id": _FAR_SELECTOR,
+    }
+    with pytest.raises(PlanError) as e:
+        _build(_assign_spec(block))
+    assert str(e.value) == (
+        f"assign_team_member step 'assign': related_field_id {_FAR_SELECTOR} "
+        "isn't a field on 'encounters'. It must be the hop from this object; "
+        "field_id names the selector on the far object."
+    )
+
+
+def test_assign_team_member_hop_check_skipped_without_an_object():
+    class Unreadable:
+        def object_data(self, api_name):
+            raise PlanError(f"object '{api_name}' not found")
+
+    block = {
+        "type": "related_team_selector_field",
+        "related_field_id": _FAR_SELECTOR,
+        "field_id": _FAR_SELECTOR,
+    }
+    for target_object in ("encounters", None):
+        auto = AutomationDef.model_validate(_assign_spec(block, target_object))
+        assert _assign_team_member_problem("assign", block, auto, Unreadable()) is None
+
+
+def test_steps_add_and_edit_check_assign_team_member(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step, normalize_step_patch
+
+    block = {"type": "team_selector_field"}
+    step = {
+        "key": "assign",
+        "step_type": "assign_team_member",
+        "action_assign_team_member": block,
+    }
+    with pytest.raises(
+        PlanError, match="'assign' \\(type team_selector_field\\) needs"
+    ):
+        build_wire_step(step, _LIVE_PAYLOAD, "encounters")
+    patch = {"action_assign_team_member": dict(block)}
+    with pytest.raises(
+        PlanError, match="'assign' \\(type team_selector_field\\) needs"
+    ):
+        normalize_step_patch(
+            patch, "assign", "assign_team_member", _LIVE_PAYLOAD, "encounters"
+        )
+
+
+def test_notify_team_member_selector_not_checked(patch_live_lookups):
+    """`_team_member_selector` is shared; the assign check stays on assign."""
+    spec = _assign_spec({"type": "round_robin_all"})
+    spec["steps"][0] = {
+        "key": "notify",
+        "step_type": "notify_member_via_text",
+        "order": 0,
+        "parent_key": None,
+        "action_notify_member_via_text": {
+            "team_member": {"type": "team_member"},
+            "content": "hi",
+        },
+    }
+    action = _build(spec)["steps"][0]["action_notify_member_via_text"]
+    assert action["team_member"] == {"type": "team_member"}
+
+
+def test_translate_keeps_an_incomplete_assign_team_member():
+    """Live reads skip the check, so an existing automation still roundtrips."""
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/kitchen_sink_triggers.raw.json")
+    step = next(s for s in raw["steps"] if s["step_type"] == "assign_team_member")
+    step["action_assign_team_member"] = {"type": "team_selector_field", "field": None}
+    live = next(s for s in live_to_payload(raw)["steps"] if s["id"] == step["id"])
+    assert live["action_assign_team_member"] == {"type": "team_selector_field"}
+
+
+def test_steps_edit_checks_value_resolution_on_a_scalar_variable(patch_live_lookups):
+    """`steps edit` shares the spec path's built-block checks."""
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    payload = {
+        **_GENDERS_DECLARED,
+        "steps": [
+            {
+                **_GENDERS_DECLARED["steps"][0],
+                "action_initialize_variable": {
+                    "sources": [],
+                    "variable": {"name": "genders", "data_type": "string"},
+                },
+            }
+        ],
+    }
+    patch = {
+        "action_update_variable": {
+            "variable": "genders",
+            "value_resolution": "add_only",
+        }
+    }
+    with pytest.raises(PlanError, match="isn't an array variable"):
+        normalize_step_patch(patch, "bump", "update_variable", payload, "patients")

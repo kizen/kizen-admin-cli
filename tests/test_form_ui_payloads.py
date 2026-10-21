@@ -35,6 +35,7 @@ from kizen_builder.tools.form_ui import (
     simple_form_page,
     text_block,
     thank_you_page,
+    unplaced_fields,
 )
 
 LINKED_FIELD = {
@@ -344,3 +345,11 @@ def test_simple_form_page_lays_out_heading_fields_and_submit_button_one_per_row(
         n for n in tree.values() if n.get("type", {}).get("resolvedName") == "Text"
     )
     assert "Contact Us" in heading["custom"]["text"]
+
+
+def test_unplaced_fields_are_those_on_no_page():
+    ui = build_form_ui([simple_form_page([LINKED_FIELD]), thank_you_page()])
+    assert unplaced_fields(ui, [LINKED_FIELD, UNLINKED_FIELD]) == [UNLINKED_FIELD]
+    assert unplaced_fields(ui, [LINKED_FIELD]) == []
+    assert unplaced_fields({}, [LINKED_FIELD]) == [LINKED_FIELD]
+    assert unplaced_fields(None, [LINKED_FIELD]) == [LINKED_FIELD]

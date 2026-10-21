@@ -1,5 +1,6 @@
 {
   "name": "Site Visit",
+  "api_name": "site_visit",
   "association_mode": "selected_objects_associated",
   "selected_object_ids": ["<service_tickets_object_uuid>"],
   "fields": [

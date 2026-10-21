@@ -17,29 +17,6 @@ from urllib.parse import urlsplit
 
 from kizen_builder.api.client import KizenClient
 
-
-def _paginate(client: KizenClient, path: str) -> list[dict[str, Any]]:
-    """Follow DRF ``next`` links, returning the flat list of result dicts."""
-    items: list[dict[str, Any]] = []
-    nxt: str | None = path
-    while nxt:
-        resp = client.get(nxt)
-        if isinstance(resp, dict) and "results" in resp:
-            items.extend(resp["results"])
-            following = resp.get("next")
-            if following:
-                parts = urlsplit(following)
-                nxt = parts.path + (f"?{parts.query}" if parts.query else "")
-            else:
-                nxt = None
-        elif isinstance(resp, list):
-            items.extend(resp)
-            nxt = None
-        else:
-            nxt = None
-    return items
-
-
 # ---------------------------------------------------------------------------
 # Activity types
 # ---------------------------------------------------------------------------
@@ -69,7 +46,7 @@ def list_activities(
     path = "/api/activities"
     if params:
         path += "?" + "&".join(params)
-    return _paginate(client, path)
+    return client.paginate(path)
 
 
 def get_activity(client: KizenClient, identifier: str) -> dict[str, Any]:
@@ -95,11 +72,13 @@ def delete_activity(client: KizenClient, identifier: str) -> dict[str, Any]:
     return resp if isinstance(resp, dict) else {}
 
 
-def duplicate_activity(
-    client: KizenClient, identifier: str, payload: dict[str, Any]
-) -> dict[str, Any]:
-    """POST /api/activities/{identifier}/duplicate."""
-    return client.post(f"/api/activities/{identifier}/duplicate", json=payload)
+def duplicate_activity(client: KizenClient, identifier: str) -> dict[str, Any]:
+    """POST /api/activities/{identifier}/duplicate with an empty body.
+
+    The server ignores the body and names the copy ``<name> (copy #N)``; rename
+    it with :func:`update_activity`.
+    """
+    return client.post(f"/api/activities/{identifier}/duplicate", json={})
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +246,7 @@ def list_scheduled(
         else "/api/activities/scheduled-activity"
     )
     path = base + ("?" + "&".join(params) if params else "")
-    return _paginate(client, path)
+    return client.paginate(path)
 
 
 def get_scheduled(client: KizenClient, scheduled_id: str) -> dict[str, Any]:

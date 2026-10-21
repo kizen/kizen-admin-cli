@@ -21,6 +21,7 @@ import hashlib
 import io
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -37,14 +38,38 @@ from kizen_builder.api import permissions as perm_api
 from kizen_builder.api import pipelines as pipelines_api
 from kizen_builder.api import records as records_api
 from kizen_builder.api import saved_views as sv_api
+from kizen_builder.api import team as team_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import EnvConfig, load_env_config
-from kizen_builder.tools.bulk_actions import wait_for_bulk_action
+from kizen_builder.tools.bulk_actions import poll_until, wait_for_bulk_action
 from kizen_builder.tools.permissions import LEVELS
 
 
 class PlanError(ValueError):
     """Raised when planning fails because the input doesn't match live state."""
+
+
+def is_not_found(exc: Exception) -> bool:
+    """A failed lookup or an HTTP 404. A 401 or a 5xx is not a miss."""
+    return isinstance(exc, LookupError) or (
+        isinstance(exc, KizenAPIError) and exc.status_code == 404
+    )
+
+
+def fetch_existing[T](kind: str, ident: str, fetch: Callable[[], T]) -> T:
+    """Read the thing a plan changes. A miss becomes a ``PlanError``; any other
+    API error propagates as itself."""
+    try:
+        return fetch()
+    except (LookupError, KizenAPIError) as e:
+        if not is_not_found(e):
+            raise
+        raise PlanError(f"{kind} '{ident}' not found: {e}") from e
+
+
+def copy_name_preview(source_name: str | None, name: str | None) -> str:
+    """The ``new_name`` a duplicate plan previews: ``name``, or the server's own."""
+    return name or f"server default: '{source_name} (copy #N)'"
 
 
 Action = Literal["create", "update", "delete", "duplicate", "upsert", "apply", "skip"]
@@ -75,6 +100,7 @@ Kind = Literal[
     "survey_field",
     "survey_field_option",
     "role",
+    "team_member",
     "permission_group",
     "permission_setting",
     "filter_group",
@@ -379,6 +405,17 @@ def apply_plan(plan: Plan) -> ApplyResult:
                 op.action == "upsert" and isinstance(resp, dict) and resp.get("action")
             ):
                 message = resp["action"]  # "created" or "updated"
+            elif (
+                op.kind == "object"
+                and op.action == "create"
+                and isinstance(resp, dict)
+                and resp.get("name")
+            ):
+                # Kizen derives the api_name; a slug collision adds a random
+                # suffix the plan couldn't predict (confirmed live 2026-10-14).
+                message = f"api_name {resp['name']}"
+                if resp["name"] != op.key:
+                    message += f" (the plan predicted {op.key})"
             elif op.kind == "record_archive" and isinstance(resp, dict):
                 # Counts ids sent, not records archived (confirmed live
                 # 2026-09-28: an already-archived id still counts).
@@ -465,6 +502,9 @@ def _blocked_by(op: PlanOperation, failed_keys: set[str]) -> str | None:
         prefix = op.key.split(".", 1)[0]
         if prefix in failed_keys:
             return prefix
+    # An object delete waits on its own archive chunks (`<object>#<ids>`).
+    if op.kind == "object" and op.action == "delete":
+        return min((k for k in failed_keys if k.startswith(f"{op.key}#")), default=None)
     return None
 
 
@@ -510,6 +550,9 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
                 f"{op.action} object op '{op.key}' has no existing_uuid — planning bug"
             )
         if op.action == "delete":
+            timeout = op.payload.get("wait_for_archive_seconds")
+            if timeout is not None:
+                _wait_for_no_active_records(client, op.key, timeout)
             return co_api.delete_object(client, op.existing_uuid)
         return co_api.update_object(client, op.existing_uuid, op.payload)
 
@@ -708,7 +751,26 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             return dash_api.create_dashboard(client, op.payload)
         if op.existing_uuid is None:
             raise PlanError(
-                f"update dashboard op '{op.key}' has no existing_uuid — planning bug"
+                f"{op.action} dashboard op '{op.key}' has no existing_uuid — planning bug"
+            )
+        if op.action == "duplicate":
+
+            def patch_and_read(copy_id: str) -> dict[str, Any]:
+                dash_api.update_dashboard(client, copy_id, op.payload)
+                # The PATCH response shows empty role and member grants even
+                # when they were saved; the GET shows what was (live 2026-10-16).
+                return dash_api.get_dashboard(client, copy_id)
+
+            return _patch_copy(
+                dash_api.duplicate_dashboard(client, op.existing_uuid),
+                patch_and_read,
+                op.payload,
+                "only you can see it. Set its name and sharing with `kizen "
+                "dashboards update {id}` and a spec of its api_name {api_name}, "
+                "the source's sharing_settings (from `kizen dashboards get "
+                '<source> --raw`) and "published": false to keep it a draft. '
+                "There is no `dashboards delete` yet; to remove it, delete it "
+                "in Kizen",
             )
         return dash_api.update_dashboard(client, op.existing_uuid, op.payload)
 
@@ -749,6 +811,14 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             )
         if op.action == "delete":
             return act_api.delete_activity(client, op.existing_uuid)
+        if op.action == "duplicate":
+            return _patch_copy(
+                act_api.duplicate_activity(client, op.existing_uuid),
+                lambda copy_id: act_api.update_activity(client, copy_id, op.payload),
+                op.payload,
+                "rename it with `kizen activities update {id} --name ...` or "
+                "remove it with `kizen activities delete {id}`",
+            )
         return act_api.update_activity(client, op.existing_uuid, op.payload)
 
     if op.kind == "activity_field":
@@ -865,8 +935,14 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
         if op.action == "delete":
             return forms_api.delete_form(client, base_path, op.existing_uuid)
         if op.action == "duplicate":
-            return forms_api.duplicate_form(
-                client, base_path, op.existing_uuid, op.payload
+            return _patch_copy(
+                forms_api.duplicate_form(client, base_path, op.existing_uuid),
+                lambda copy_id: forms_api.update_form(
+                    client, base_path, copy_id, op.payload
+                ),
+                op.payload,
+                f"rename it with `kizen {op.kind}s update {{id}} --name ...` or "
+                f"remove it with `kizen {op.kind}s delete {{id}}`",
             )
         return forms_api.update_form(client, base_path, op.existing_uuid, op.payload)
 
@@ -943,6 +1019,15 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             return {}
         return perm_api.update_role(client, op.existing_uuid, op.payload)
 
+    if op.kind == "team_member":
+        team_api.change_team_member_roles(
+            client,
+            op.payload["team_member_ids"],
+            op.payload["role_ids_to_add"],
+            op.payload["role_ids_to_remove"],
+        )
+        return {}
+
     if op.kind == "permission_group":
         if op.action == "create":
             return perm_api.create_permission_group(client, op.payload)
@@ -998,6 +1083,68 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
     raise ValueError(f"unknown operation kind: {op.kind}")
 
 
+def _patch_copy(
+    copy: dict[str, Any],
+    patch: Callable[[str], dict[str, Any]],
+    payload: dict[str, Any],
+    recovery: str,
+) -> dict[str, Any]:
+    """PATCH a just-made duplicate with ``payload``, when it has any.
+
+    The form, activity and dashboard ``/duplicate`` endpoints ignore their
+    body (confirmed live 2026-10-06), so the name and sharing go on afterwards.
+    A failed PATCH leaves the copy behind; the error names it and gives
+    ``recovery``, formatted with the copy's ``id`` and ``api_name``.
+    """
+    if not payload:
+        return copy
+    try:
+        return patch(copy["id"])
+    except KizenAPIError as e:
+        raise _with_context(
+            e,
+            f"while updating the copy {copy['id']} (api_name "
+            f"{copy.get('api_name')}), which was created; "
+            + recovery.format(id=copy["id"], api_name=copy.get("api_name")),
+        ) from e
+
+
+def _with_context(e: KizenAPIError, context: str) -> KizenAPIError:
+    return KizenAPIError(e.status_code, f"{e.message} — {context}", body=e.body)
+
+
+def _wait_for_no_active_records(
+    client: KizenClient, object_api_name: str, timeout: float
+) -> None:
+    """Poll the object's record count every 2 s until it reads 0.
+
+    Bulk archive is asynchronous, and Kizen refuses the object DELETE while
+    any record is still active. Raises instead of sending it after ``timeout``.
+    The count is a search POST, which the client never retries.
+    """
+    rerun = f"Re-run kizen objects delete {object_api_name}"
+    try:
+        remaining, _ = poll_until(
+            lambda: records_api.count_records(client, object_api_name),
+            lambda n: n == 0,
+            timeout=timeout,
+        )
+    except KizenAPIError as e:
+        raise KizenAPIError(
+            e.status_code,
+            f"{e.message} — while counting records after the archive; the "
+            "records are already archived, so the object was not deleted. "
+            f"{rerun} to finish",
+            body=e.body,
+        ) from e
+    if remaining != 0:
+        raise KizenAPIError(
+            0,
+            f"{remaining} record(s) still active after {timeout}s; the "
+            f"archive may still be running. {rerun}",
+        )
+
+
 def _execute_record_import(
     client: KizenClient, object_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1026,11 +1173,10 @@ def _execute_record_import(
             client, object_id, {**payload["body"], "s3_object_id": file_id}
         )
     except KizenAPIError as e:
-        raise KizenAPIError(
-            e.status_code,
-            f"{e.message} — while submitting file {file_id}; the import may "
-            "have started, so check the object before retrying",
-            body=e.body,
+        raise _with_context(
+            e,
+            f"while submitting file {file_id}; the import may have started, so "
+            "check the object before retrying",
         ) from e
     status_id = submitted.get("status_id") if isinstance(submitted, dict) else None
     if not status_id:
@@ -1063,12 +1209,10 @@ def _execute_record_import(
                 )
         count_after = records_api.count_records(client, object_id)
     except KizenAPIError as e:
-        raise KizenAPIError(
-            e.status_code,
-            f"{e.message} — after submitting import job {status_id} (file "
-            f"{file_id}), which may still be running; check the object before "
-            "retrying",
-            body=e.body,
+        raise _with_context(
+            e,
+            f"after submitting import job {status_id} (file {file_id}), which "
+            "may still be running; check the object before retrying",
         ) from e
 
     return {

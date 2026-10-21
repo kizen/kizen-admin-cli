@@ -826,7 +826,7 @@ def test_start_wait_survives_a_transient_history_fetch_error(monkeypatch):
     respx.get(f"{exec_base}/{exec_id}/history").mock(
         side_effect=[
             httpx.Response(200, json=[]),
-            httpx.Response(503, json={"detail": "temporarily unavailable"}),
+            httpx.Response(500, json={"detail": "temporarily unavailable"}),
             httpx.Response(200, json=[trigger_row]),
         ]
     )
@@ -2100,7 +2100,7 @@ def test_objects_create_defaults_to_standard(monkeypatch):
             "objects",
             "create",
             "--api-name",
-            "invoice",
+            "invoices",
             "--name",
             "Invoices",
             "--dry-run",
@@ -2118,7 +2118,7 @@ def test_objects_create_pipeline_flag(monkeypatch):
             "objects",
             "create",
             "--api-name",
-            "deal",
+            "deals",
             "--name",
             "Deals",
             "--pipeline",
@@ -2137,7 +2137,7 @@ def test_objects_create_object_type_flag(monkeypatch):
             "objects",
             "create",
             "--api-name",
-            "deal",
+            "deals",
             "--name",
             "Deals",
             "--object-type",
@@ -2167,6 +2167,47 @@ def test_objects_create_rejects_bad_object_type(monkeypatch):
     )
     assert result.exit_code == 2
     assert "object-type" in result.stderr
+
+
+def test_objects_create_api_name_is_optional_and_never_forwarded(monkeypatch):
+    seen = _capture_object_planner(monkeypatch)
+    result = runner.invoke(
+        cli.app, ["objects", "create", "--name", "Invoices", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "api_name" not in seen["obj"]
+
+
+@pytest.mark.parametrize(
+    "api_name, exit_code, says",
+    [
+        ("invoice", 2, "'Invoices' becomes 'invoices', not 'invoice'"),
+        # A stored collision suffix no display name derives.
+        ("invoices_AHpZedMd", 1, "'invoices_AHpZedMd' already exists"),
+    ],
+)
+def test_objects_create_checks_api_name_against_live_then_derivation(
+    monkeypatch, api_name, exit_code, says
+):
+    monkeypatch.setattr(
+        object_planners,
+        "list_objects",
+        lambda: [{"id": "x", "api_name": "invoices_AHpZedMd", "display_name": "Bills"}],
+    )
+    result = runner.invoke(
+        cli.app,
+        [
+            "objects",
+            "create",
+            "--api-name",
+            api_name,
+            "--name",
+            "Invoices",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == exit_code, result.output
+    assert says in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -2286,6 +2327,43 @@ def test_fields_create_reserved_name_gives_clean_spec_error():
     assert "spec error:" in result.stderr
     assert "Kizen-reserved" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+_BAD_VARIABLE = {"name": "tags", "data_type": "text", "[/x]": 1}
+
+
+@pytest.mark.parametrize(
+    "argv, spec",
+    [
+        (
+            ["add", "a", "--root"],
+            {
+                "step_type": "initialize_variable",
+                "action_initialize_variable": {"variable": _BAD_VARIABLE},
+            },
+        ),
+        (
+            ["edit", "a", "init"],
+            {"action_initialize_variable": {"variable": _BAD_VARIABLE}},
+        ),
+    ],
+    ids=["add", "edit"],
+)
+def test_steps_bad_variable_prints_escaped_spec_errors(monkeypatch, argv, spec):
+    payload = {"steps": [{"key": "init", "type": "initialize_variable"}]}
+    monkeypatch.setattr(
+        auto_tools, "patch_steps", lambda _api, mutate, execute: mutate(payload, {})
+    )
+    result = runner.invoke(
+        cli.app,
+        ["automations", "steps", *argv, "--dry-run"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 1
+    loc = "spec error: action_initialize_variable.variable"
+    assert f"{loc}.data_type: Input should be 'string'" in result.stderr
+    assert f"{loc}.[/x]: Extra inputs are not permitted" in result.stderr
+    assert "internal:" not in result.stderr
 
 
 def test_fields_create_single_missing_flags_errors(monkeypatch):
@@ -2598,6 +2676,51 @@ def test_init_banner_shows_tagline_only_on_tiny_terminal(monkeypatch, tmp_path):
     assert "KIZEN" not in result.stdout
     assert "::::" not in result.stdout
     assert profiles.get_profile("banner-tiny") is not None
+
+
+@pytest.mark.parametrize("stdin", ["\n\n\n\n", ""], ids=["bare-enter", "eof"])
+def test_init_reprompt_hides_stored_api_key(monkeypatch, tmp_path, stdin):
+    """Rich prints a prompt's default even with `password=True`, so re-running
+    `init` used to show the stored key in the terminal."""
+    from kizen_builder import config, profiles
+
+    config.set_profile_override(None)
+    profiles.write_profile(
+        profiles.ProfileCreds(
+            name="delta",
+            api_key="FAKEKEY123",
+            business_id="DDDD",
+            user_id="user1",
+            base_url="https://app.go.kizen.com",
+        )
+    )
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli.app, ["init", "--profile", "delta", "--skip-validation"], input=stdin
+    )
+    assert result.exit_code == 0, result.output
+    assert "FAKEKEY123" not in result.output
+    assert "Y123" not in result.output
+    assert "API_KEY (Enter keeps the stored key):" in result.output
+    assert "BUSINESS_ID (DDDD):" in result.output
+
+    stored = profiles.get_profile("delta")
+    assert stored is not None and stored.api_key == "FAKEKEY123"
+
+
+def test_init_api_key_prompt_has_no_empty_default(monkeypatch, tmp_path):
+    from kizen_builder import config
+
+    config.set_profile_override(None)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        cli.app,
+        ["init", "--profile", "epsilon", "--skip-validation"],
+        input="apikey\nEEEE\nuser1\ngo\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert "API_KEY: " in result.output
+    assert "API_KEY ()" not in result.output
 
 
 def test_init_environment_picker_resolves_named_host(monkeypatch, tmp_path):
@@ -2929,6 +3052,71 @@ def test_forms_duplicate_dry_run(monkeypatch):
     assert result.exit_code == 0, result.output
 
 
+_UNPLACED_FORM_ID = "00000000-0000-4000-8000-0000000010f1"
+_UNPLACED_FIELDS = [
+    {"id": f"00000000-0000-4000-8000-00000000100{i}", "name": name}
+    for i, name in enumerate(["first_name", "last_name", "email"], 1)
+]
+
+
+@pytest.mark.parametrize("dry_run", [[], ["--dry-run"]], ids=["yes", "dry-run"])
+@pytest.mark.parametrize(
+    "group, base, argv, named",
+    [
+        (
+            "forms",
+            "/api/forms",
+            ["update", _UNPLACED_FORM_ID, "--name", "X"],
+            "first_name, last_name, email",
+        ),
+        (
+            "surveys",
+            "/api/surveys",
+            ["update", _UNPLACED_FORM_ID, "--name", "X"],
+            "first_name, last_name, email",
+        ),
+        (
+            "forms",
+            "/api/forms",
+            ["set-ui", _UNPLACED_FORM_ID, "--spec-file", "SPEC"],
+            "leaves off 2 field(s): last_name, email.",
+        ),
+        (
+            "surveys",
+            "/api/surveys",
+            ["set-ui", _UNPLACED_FORM_ID, "--spec-file", "SPEC"],
+            "leaves off 2 field(s): last_name, email.",
+        ),
+    ],
+    ids=["forms-update", "surveys-update", "forms-set-ui", "surveys-set-ui"],
+)
+def test_form_writes_that_would_delete_a_field_send_nothing(
+    group, base, argv, named, dry_run, tmp_path
+):
+    """A form with no pages loses every field on its next save, and set-ui with
+    a partial layout loses the ones it leaves out, so both stop at plan time."""
+    spec = tmp_path / "ui.json"
+    spec.write_text(json.dumps({"pages": [{"simple": True, "fields": ["first_name"]}]}))
+    argv = [str(spec) if a == "SPEC" else a for a in argv]
+    with respx.mock(assert_all_mocked=True, assert_all_called=False) as mock:
+        mock.get(f"{FAKE_BASE_URL}{base}/{_UNPLACED_FORM_ID}").mock(
+            return_value=httpx.Response(
+                200,
+                json={"id": _UNPLACED_FORM_ID, "name": "New", "form_ui": {}},
+            )
+        )
+        mock.get(f"{FAKE_BASE_URL}{base}/{_UNPLACED_FORM_ID}/fields").mock(
+            return_value=httpx.Response(200, json=_UNPLACED_FIELDS)
+        )
+        result = runner.invoke(cli.app, [group, *argv, *dry_run, "--yes"])
+        writes = [c for c in mock.calls if c.request.method != "GET"]
+
+    assert result.exit_code == 1, result.output
+    assert "plan error:" in result.stderr
+    assert named in plain(result.stderr)
+    assert writes == []
+
+
 def test_perms_group_renders_resolution_warnings_on_stderr(monkeypatch):
     """`describe_group`'s name resolution is best-effort and reports what it
     couldn't resolve. Those warnings go to stderr so stdout stays pure result
@@ -2980,3 +3168,78 @@ def test_team_get_reports_ambiguous_ref_as_a_cli_error(monkeypatch):
 
     assert result.exit_code == 1
     assert "ambiguous" in result.stderr
+
+
+def test_team_update_refuses_role_with_add_role_before_any_api_call(monkeypatch):
+    def no_call(*a, **kw):
+        raise AssertionError("no API call expected")
+
+    monkeypatch.setattr(perm_tools, "resolve_role", no_call)
+
+    result = runner.invoke(
+        cli.app, ["team", "update", "m1", "--role", "Admin", "--add-role", "Sales"]
+    )
+
+    assert result.exit_code == 2
+    assert "pass either --role or --add-role/--remove-role, not both." in result.stderr
+
+
+def test_team_update_without_a_role_flag_is_an_error(monkeypatch):
+    def no_call(*a, **kw):
+        raise AssertionError("no API call expected")
+
+    monkeypatch.setattr(perm_tools, "resolve_role", no_call)
+
+    result = runner.invoke(cli.app, ["team", "update", "m1"])
+
+    assert result.exit_code == 2
+    assert "pass --role, or --add-role/--remove-role." in result.stderr
+
+
+def test_team_update_dry_run_plans_without_writing(monkeypatch):
+    from kizen_builder.tools.planners import team as team_planners
+    from kizen_builder.tools.plans import Plan, PlanOperation
+
+    calls = {}
+
+    def fake_plan(member, *, set_roles, add, remove):
+        calls.update(member=member, set_roles=set_roles, add=add, remove=remove)
+        return Plan.build(
+            env="testenv",
+            summary="Change roles",
+            operations=[
+                PlanOperation(
+                    action="update",
+                    kind="team_member",
+                    key="Alex Example",
+                    payload={
+                        "team_member_ids": ["m1"],
+                        "role_ids_to_add": ["r-sales"],
+                        "role_ids_to_remove": [],
+                    },
+                    existing_uuid="m1",
+                )
+            ],
+        )
+
+    def no_apply(plan):
+        raise AssertionError("dry run must not apply")
+
+    monkeypatch.setattr(
+        perm_tools, "resolve_role", lambda ref: {"id": f"r-{ref.lower()}"}
+    )
+    monkeypatch.setattr(team_planners, "plan_update_team_member_roles", fake_plan)
+    monkeypatch.setattr(plan_tools, "apply_plan", no_apply)
+
+    result = runner.invoke(
+        cli.app, ["team", "update", "m1", "--add-role", "Sales", "--dry-run", "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == {
+        "member": "m1",
+        "set_roles": None,
+        "add": ["r-sales"],
+        "remove": [],
+    }
+    assert json.loads(result.stdout)["operations"][0]["kind"] == "team_member"

@@ -86,7 +86,8 @@ kizen surveys list [--search <text>]         # surveys (same shape as forms, dif
 kizen surveys get <api_name|uuid>            # one survey: metadata + fields
 # forms/surveys create/update/set-ui + fields ARE wired (see Mutate below and
 # kizen docs show form). A form needs both fields AND a form_ui page layout to
-# render/submit. Submissions/subscribers/page-view/upload are not covered yet.
+# render/submit, and every field must be on a page before `update` or `set-ui`,
+# or Kizen deletes it. Submissions/subscribers/page-view/upload are not covered yet.
 ```
 
 ### Runtime (runs live; asks first, except `runs pause`)
@@ -166,7 +167,7 @@ output (the plan with `--dry-run`, apply results otherwise).
 
 ```
 # create
-kizen objects create --api-name X --name Y [--object-type standard|pipeline] [--pipeline] [...]
+kizen objects create --name Y [--api-name X] [--object-type standard|pipeline] [--pipeline] [...]   # api_name is derived from --name
 kizen categories create <object_api_name> --api-name X --name Y
 kizen fields create <object_api_name> --api-name X --type text --category Y [...]   # one field
 kizen fields create <object_api_name> [--spec-file path | < stdin]                  # many at once
@@ -182,13 +183,14 @@ kizen categories update <object_api_name> <current_name> --name <new>
 kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [...]
 kizen automations update [--spec-file path | < stdin]
 kizen dashboards update <uuid|api_name> [--spec-file | < stdin]   # metadata + dashlets (diff by id)
+kizen dashboards duplicate <uuid|api_name> [--name X] [--api-name Y]   # unpublished copy, source's sharing
 kizen records update <object> <uuid> --field api_name=value [...]    # one record
 kizen records update <object> [--spec-file f.csv|f.json | < stdin]   # bulk update (each row needs an 'id')
 kizen records upsert <object> <lookup_value> --field api_name=value [...]  # create-or-update by lookup_value
 kizen records upsert <object> [--spec-file f.csv|f.json | < stdin]   # bulk upsert (each row needs 'lookup_value')
 kizen records import <object> [--spec-file f.csv|f.json | < stdin] [--mode create|upsert|update]
     # one server-side job through the CSV uploader; row errors exit 1 (kizen docs show records)
-kizen records set-field <object> <uuid> [<uuid> ...] --field X --value Y [--resolution ...]
+kizen records set-field <object> <uuid> [<uuid> ...] --field api_name=value [--resolution ...]
     # set one field to one value across many records in ONE call (bulk-change-field-value).
     # Id-targeted only — build the id list with `records list --filter` first;
     # no server-side bulk-by-filter wired up yet (see kizen docs show records).
@@ -204,16 +206,17 @@ kizen columns update <object> <uuid|name> [--name] [--config-file f] [--owner]
 kizen columns apply-to-roles/apply-to-users/apply-to-permission-groups <object> <uuid|name> --role/--user/--group <name|uuid> [...]
 
 # delete — objects, categories, records, fields (and field options)
-kizen objects delete <api_name>                                # archive an object + its data
+kizen objects delete <api_name>                                # archives its active records (no email), then the object
 kizen categories delete <object_api_name> <category_name>
 kizen filter-groups delete <object> <uuid|name>
 kizen quick-filters delete <object> <uuid|name>
 kizen columns delete <object> <uuid|name>
 # activities (activity types / loggable definitions) — logging/scheduling stays in the UI
-kizen activities create --name X [--api-name Y] [--association-mode ...] [--editable] [--spec-file f]
+kizen activities create --name X [--api-name Y] [--association-mode ...] [--object <api_name> ...] [--editable] [--spec-file f]
 kizen activities update <activity> [--name] [--description] [--object <api_name> ...] \
     [--association-mode ...] [--visibility-rules-file f] [--spec-file f]
 kizen activities delete <activity>
+kizen activities duplicate <activity> [--name X]
 kizen activities fields create <activity> --name X --type text [--option ...]   # native activity field
 kizen activities fields create <activity> --linked-field object_api.field_api    # surface an existing CO field
 kizen activities fields create <activity> [--spec-file f]                        # bulk (either kind)
@@ -228,7 +231,8 @@ kizen forms update <form> [--spec-file f | < stdin]                    # FormDef
 kizen forms set-ui <form> [--spec-file f | < stdin]                    # form_ui page layout (required to render)
 kizen forms fields create <form> [--spec-file f | < stdin]             # FormFieldDef list
 kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
-# a form needs BOTH fields and a form_ui layout to render/submit.
+# a form needs BOTH fields and a form_ui layout to render/submit, and every field
+# must be on a page before `update` or `set-ui`, or Kizen deletes it.
 # submissions, subscribers, page-view, and upload endpoints are NOT covered yet — later slice
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)
@@ -236,7 +240,7 @@ kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--ov
 kizen smart-connectors run [--dir path] [--skip-sql]       # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
 kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
-# `run`/`add-input` need `uv sync --extra connectors` (chdb). `push` previews a SQL diff and confirms
+# `run`/`add-input` need the 'connectors' extra; `run`'s error prints the install line (see smart-connectors). `push` previews a SQL diff and confirms
 # (mutation gate) before writing; only --publish makes a live change. See kizen docs show smart-connectors.
 
 # smart connectors — building one from scratch, in order. Spec: kizen docs show smart-connector-flow
@@ -287,6 +291,7 @@ kizen records move <pipeline> <uuid> --stage <name>                # move a reco
 kizen roles create --name X [--group <name|uuid> ...] [--permission <flag> ...] [--default]
 kizen roles update <name|uuid> [--name Y] [--group <name|uuid> ...] [--default/--no-default]  # --group REPLACES the set
 kizen roles delete <name|uuid>
+kizen team update <member> [--role R ...] [--add-role R ...] [--remove-role R ...]  # --role REPLACES the set
 kizen permissions group-create --name X [--base default|clone] [--source-group <name|uuid>] [--settings-file f]
 kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
 kizen permissions group-delete <name|uuid>

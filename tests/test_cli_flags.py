@@ -21,6 +21,7 @@ from kizen_builder.tools.planners import activities as act_planners
 from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.planners import forms as form_planners
 from kizen_builder.tools.planners import permissions as perm_planners
+from kizen_builder.tools.planners import records as record_planners
 from kizen_builder.tools.plans import Plan
 from tests.conftest import iter_commands
 
@@ -92,6 +93,7 @@ def _stub_renamed_flag_tools(monkeypatch) -> list:
         (act_planners, "plan_add_activity_field_options"): plan,
         (form_planners, "plan_add_form_field_options"): plan,
         (perm_planners, "plan_create_permission_group"): plan,
+        (record_planners, "plan_set_field"): plan,
         (perm_tools, "describe_group"): {"id": "g1", "name": "Sales", "blocks": []},
         (code_tools, "run_code_step"): {"raw": {"values": {}}, "error": None},
         (sc_tools, "plan_create_connector"): {"preview": {"name": "Orders"}},
@@ -172,6 +174,9 @@ _GROUP_CREATE = ["permissions", "group-create", "--name", "N", "--base", "clone"
          "--status inactive is deprecated; use smart-connectors deactivate."),
         ([*_SC, "activate", "c", "--dry-run"], [], ["--status", "operational"],
          "--status is deprecated; operational is the default."),
+        (["records", "set-field", "orders", "r1", "--dry-run"],
+         ["--field", 'tags=["A","B"]'], ["--field", "tags", "--value", '["A","B"]'],
+         "--value is deprecated; use --field api_name=value."),
     ],
 )  # fmt: skip
 def test_old_flag_spellings_warn_and_behave_like_the_new_ones(

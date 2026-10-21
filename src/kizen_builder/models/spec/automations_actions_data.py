@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kizen_builder.models.spec._base import ApiName
 from kizen_builder.models.spec.automations_shared import (
@@ -53,14 +53,28 @@ class ActionCreateRelatedEntityConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    target_object: ApiName = Field(
+    target_custom_object: str | dict[str, Any] | None = Field(
+        default=None,
         description=(
-            "api_name of the target custom object. Resolved to UUID from state "
-            "at apply time and sent as `target_custom_object`, which a block "
-            "may also set directly (it wins when both are given)."
-        )
+            "Object the new record is created on — api_name, UUID, or an "
+            "{id}/{name} dict. Resolved to UUID at apply time."
+        ),
     )
-    field_values: list[dict[str, Any]] = Field(default_factory=list)
+    target_object: ApiName | None = Field(
+        default=None,
+        description=(
+            "Alias for `target_custom_object`, which wins when both are given."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _require_target(self) -> Self:
+        if not (self.target_custom_object or self.target_object):
+            raise ValueError(
+                "create_related_entity requires 'target_custom_object' "
+                "(or its alias 'target_object')"
+            )
+        return self
 
 
 class ActionModifyRelatedEntitiesConfig(BaseModel):
@@ -73,6 +87,25 @@ class ActionModifyRelatedEntitiesConfig(BaseModel):
         description="'object.field' for the relationship field. Resolved to UUID at apply time.",
     )
     relationship_field_id: str | None = None
+    record_source: Literal["related_object_field", "automation_variable"] | None = (
+        Field(
+            default=None,
+            description=(
+                "Where the records to modify come from. Omitted, the server uses "
+                "'related_object_field', which needs a hop in "
+                "`automation_target_relationship_fields`. 'automation_variable' "
+                "reads them from `record_source_variables` instead, with "
+                "`automation_target_relationship_fields: []`."
+            ),
+        )
+    )
+    record_source_variables: list[str] | None = Field(
+        default=None,
+        description=(
+            "Names of the non-array entity variables holding the records, for "
+            "`record_source: automation_variable`. An array variable 400s."
+        ),
+    )
 
 
 class ActionModifyRelatedEntitiesAutomationConfig(BaseModel):
@@ -147,6 +180,15 @@ class ActionSearchRecordsConfig(BaseModel):
     )
 
 
+ArrayAggregationMode = Literal["add_first_non_blank", "add_all"]
+
+_ARRAY_AGGREGATION_MODE_DESCRIPTION = (
+    "Array variables: 'add_all' adds every source, 'add_first_non_blank' only "
+    "the first non-blank one."
+)
+_DEDUPLICATE_ARRAY_DESCRIPTION = "Array variables: keep unique values only."
+
+
 class ActionInitializeVariableConfig(BaseModel):
     """Config for `step_type: initialize_variable`."""
 
@@ -155,6 +197,12 @@ class ActionInitializeVariableConfig(BaseModel):
     variable: AutomationVariableConfig
     sources: list[VariableSourceConfig] = Field(default_factory=list)
     is_required: bool = False
+    array_aggregation_mode: ArrayAggregationMode | None = Field(
+        default=None, description=_ARRAY_AGGREGATION_MODE_DESCRIPTION
+    )
+    deduplicate_array: bool | None = Field(
+        default=None, description=_DEDUPLICATE_ARRAY_DESCRIPTION
+    )
 
 
 class ActionUpdateVariableConfig(BaseModel):
@@ -164,6 +212,25 @@ class ActionUpdateVariableConfig(BaseModel):
 
     variable: AutomationVariableConfig
     sources: list[VariableSourceConfig] = Field(default_factory=list)
+    array_aggregation_mode: ArrayAggregationMode | None = Field(
+        default=None, description=_ARRAY_AGGREGATION_MODE_DESCRIPTION
+    )
+    deduplicate_array: bool | None = Field(
+        default=None, description=_DEDUPLICATE_ARRAY_DESCRIPTION
+    )
+    value_resolution: (
+        Literal["add_only", "overwrite", "overwrite_except_null"] | None
+    ) = Field(
+        default=None,
+        description=(
+            "Array variables only; the server 400s it on a scalar variable. "
+            "How the sources combine with the array's current value: "
+            "'add_only' appends (duplicates kept when deduplicate_array is false), "
+            "'overwrite' replaces it, even with an empty array, "
+            "'overwrite_except_null' replaces it unless the sources are empty. "
+            "Null (the default) behaved like 'overwrite'."
+        ),
+    )
 
 
 class ActionMathOperatorConfig(BaseModel):

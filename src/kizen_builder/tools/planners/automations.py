@@ -49,11 +49,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from kizen_builder.config import load_env_config
+from kizen_builder.filtering import VariableReferenceError
 from kizen_builder.models.spec import (
     AutomationDef,
     AutomationStepDef,
     AutomationTriggerDef,
 )
+from kizen_builder.models.spec.automations_triggers import trigger_config_field
 from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
@@ -631,7 +633,7 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
         triggers = [manual] + [
             t.model_copy(update={"order": i + 1}) for i, t in enumerate(triggers)
         ]
-    payload["triggers"] = [_build_trigger_payload(t, ctx) for t in triggers]
+    payload["triggers"] = [_build_trigger_payload(t, auto, ctx) for t in triggers]
     _validate_trigger_orders(payload["triggers"])
     payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
 
@@ -701,22 +703,26 @@ def _unwrap_variable_name(value: Any) -> str | None:
     return None
 
 
-def _resolve_field_ref(ref: str, auto: AutomationDef, ctx: LiveContext) -> str:
-    """Resolve a 'object.field' reference to a field UUID.
+def _split_field_ref(ref: str, auto: AutomationDef) -> tuple[str, str]:
+    """Split an 'object.field' reference into (object, field).
 
     A bare ``ref`` (no dot) is interpreted against the automation's
     ``target_object``.
     """
     if "." in ref:
         obj_api, fld_api = ref.split(".", 1)
-    else:
-        if not auto.target_object:
-            raise PlanError(
-                f"field_ref '{ref}' is unqualified and the automation has no "
-                "target_object to default to."
-            )
-        obj_api, fld_api = auto.target_object, ref
-    return ctx.field_uuid(obj_api, fld_api)
+        return obj_api, fld_api
+    if not auto.target_object:
+        raise PlanError(
+            f"field_ref '{ref}' is unqualified and the automation has no "
+            "target_object to default to."
+        )
+    return auto.target_object, ref
+
+
+def _resolve_field_ref(ref: str, auto: AutomationDef, ctx: LiveContext) -> str:
+    """Resolve a 'object.field' (or bare) reference to a field UUID."""
+    return ctx.field_uuid(*_split_field_ref(ref, auto))
 
 
 def _resolve_field(value: Any, auto: AutomationDef, ctx: LiveContext) -> str | None:
@@ -767,7 +773,9 @@ def _resolve_object(value: Any, ctx: LiveContext) -> str | None:
 _Builder = Callable[..., dict[str, Any]]
 
 
-def honours(*keys: str) -> Callable[[_Builder], _Builder]:
+def honours(
+    *keys: str, unsent_on_read: tuple[str, ...] = ()
+) -> Callable[[_Builder], _Builder]:
     """Declare the config-block keys a step/trigger builder reads.
 
     Any other key in a spec block is a plan-time error: the builder would
@@ -775,10 +783,15 @@ def honours(*keys: str) -> Callable[[_Builder], _Builder]:
     builder, so the list moves with the code it describes;
     ``tests/test_automation_payloads.py`` checks it against the builder's
     real ``block.get(...)`` calls.
+
+    ``unsent_on_read`` names keys a live read carries that must not be sent
+    back (derived linkage, read-side mirrors), so `translate` lets them
+    through rather than refusing the read.
     """
 
     def mark(builder: _Builder) -> _Builder:
         builder.honoured_keys = frozenset(keys)  # type: ignore[attr-defined]
+        builder.unsent_on_read = frozenset(unsent_on_read)  # type: ignore[attr-defined]
         return builder
 
     return mark
@@ -793,19 +806,51 @@ def honours_all(builder: _Builder) -> _Builder:
     return builder
 
 
+def _unclassified_read_keys(
+    builder: _Builder, block: dict[str, Any], *, skip_empty: bool
+) -> set[str]:
+    """Keys of a live-read block that the builder neither reads nor declares
+    unsent and that aren't read-only. ``skip_empty`` ignores keys whose value
+    has nothing to lose; the completeness tests pass False to catch a key
+    while it is still null."""
+    honoured: frozenset[str] | None = builder.honoured_keys  # type: ignore[attr-defined]
+    if honoured is None:
+        return set()
+    unsent: frozenset[str] = builder.unsent_on_read  # type: ignore[attr-defined]
+    unknown = set(block) - honoured - _READ_ONLY_KEYS - unsent
+    if skip_empty:
+        unknown = {k for k in unknown if block[k] not in (None, [], {}, "")}
+    return unknown
+
+
 def _reject_unhonoured_keys(
-    builder: _Builder, block: dict[str, Any], where: str
+    builder: _Builder, block: dict[str, Any], where: str, *, live: bool = False
 ) -> None:
+    """Refuse a block key the builder would drop. ``live`` checks a GET
+    block instead of a spec one (see `_unclassified_read_keys`)."""
     honoured: frozenset[str] | None = builder.honoured_keys  # type: ignore[attr-defined]
     if honoured is None:
         return
-    unknown = sorted(set(block) - honoured)
-    if unknown:
+    if live:
+        unknown = _unclassified_read_keys(builder, block, skip_empty=True)
+    else:
+        unknown = set(block) - honoured
+    if not unknown:
+        return
+    keys = ", ".join(sorted(unknown))
+    one = len(unknown) == 1
+    if live:
         raise PlanError(
-            f"{where}: {', '.join(unknown)} would be silently dropped — the "
-            f"planner doesn't read {'that key' if len(unknown) == 1 else 'those keys'}. "
-            f"Keys it reads: {', '.join(sorted(honoured)) or '(none)'}"
+            f"{where}: {keys} would be lost on PUT — the CLI doesn't model "
+            f"{'that setting' if one else 'those settings'}, so it stopped "
+            "before writing anything. Change this step in the Kizen UI until "
+            "the CLI supports it."
         )
+    raise PlanError(
+        f"{where}: {keys} would be silently dropped — the "
+        f"planner doesn't read {'that key' if one else 'those keys'}. "
+        f"Keys it reads: {', '.join(sorted(honoured)) or '(none)'}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -821,7 +866,26 @@ def _trigger_spec_key(t: AutomationTriggerDef) -> str:
     return f"trigger.{t.trigger_type}.{order}"
 
 
-def _build_trigger_payload(t: AutomationTriggerDef, ctx: LiveContext) -> dict[str, Any]:
+# Their builders resolve only 'object.field', so a bare name is qualified with
+# target_object before dispatch.
+_FIELD_REF_TRIGGERS = frozenset({"field_updated", "on_or_around_date"})
+
+
+def _qualify_trigger_field_ref(
+    trigger_type: str, block: dict[str, Any], auto: AutomationDef
+) -> dict[str, Any]:
+    ref = block.get("field_ref")
+    if trigger_type not in _FIELD_REF_TRIGGERS or not isinstance(ref, str) or not ref:
+        return block
+    if is_uuid(ref):
+        rest = {k: v for k, v in block.items() if k != "field_ref"}
+        return {**rest, "field_id": block.get("field_id") or ref}
+    return {**block, "field_ref": ".".join(_split_field_ref(ref, auto))}
+
+
+def _build_trigger_payload(
+    t: AutomationTriggerDef, auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
     p: dict[str, Any] = {
         "key": _trigger_spec_key(t),
         "type": t.trigger_type,
@@ -843,11 +907,15 @@ def _build_trigger_payload(t: AutomationTriggerDef, ctx: LiveContext) -> dict[st
             f"trigger type '{t.trigger_type}' not yet supported. "
             f"Supported: {sorted(_TRIGGER_BUILDERS)}"
         )
-    cfg_field = f"trigger_{t.trigger_type}"
+    cfg_field = trigger_config_field(t.trigger_type)
     spec_block = getattr(t, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
+    block_dict = _qualify_trigger_field_ref(t.trigger_type, block_dict, auto)
     p[cfg_field] = builder(block_dict, ctx)
+    problem = _inbox_selection_problem([p])
+    if problem:
+        raise PlanError(problem)
     return p
 
 
@@ -989,6 +1057,20 @@ def _trigger_scheduled_activity_overdue(
     return out
 
 
+@honours("receiving_inbox", "selected_integrated_inboxes")
+def _trigger_email_received(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
+    # Contact automations only: a custom object gets 400 "only client custom
+    # object is allowed" (confirmed live 2026-10-14). Reads expand each
+    # selected inbox to {id, email}; the wire takes bare UUIDs. An empty
+    # selection passes through; only specs reject it (_inbox_selection_problem).
+    receiving_inbox = block.get("receiving_inbox") or "any"
+    inboxes = [_unwrap_id(i) for i in block.get("selected_integrated_inboxes") or []]
+    out: dict[str, Any] = {"receiving_inbox": receiving_inbox}
+    if inboxes or receiving_inbox == "selected_integrated_inboxes":
+        out["selected_integrated_inboxes"] = inboxes
+    return out
+
+
 _TRIGGER_BUILDERS: dict[str, Any] = {
     "manual": _trigger_manual,
     "new_entity_created": _trigger_new_entity_created,
@@ -1000,6 +1082,7 @@ _TRIGGER_BUILDERS: dict[str, Any] = {
     "scheduled_activity_overdue": _trigger_scheduled_activity_overdue,
     "form_submitted": _trigger_form_submitted,
     "survey_submitted": _trigger_survey_submitted,
+    "email_received": _trigger_email_received,
 }
 
 
@@ -1036,6 +1119,12 @@ class KnownChoices:
 # session) — do not also write the list into `automation.md` prose (check
 # the registry, not the prose).
 KNOWN_ENUM_CHOICES_TRIGGERS: dict[str, dict[str, KnownChoices]] = {
+    "email_received": {
+        "receiving_inbox": KnownChoices(
+            values=("any", "selected_integrated_inboxes"),
+            source="tests/fixtures/automations/email_received.raw.json",
+        ),
+    },
     "on_or_around_date": {
         "date_offset": KnownChoices(
             values=("on_day", "on_day_and_time", "days_before", "days_after"),
@@ -1149,11 +1238,13 @@ def _build_step_payload(
     spec_block = getattr(step, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
-    wire_block = builder(block_dict, auto, ctx)
-    if step.step_type == "condition":
-        problem = _condition_rules_problem(step.key, wire_block)
-        if problem:
-            raise PlanError(problem)
+    try:
+        wire_block = builder(block_dict, auto, ctx)
+    except (PlanError, VariableReferenceError) as e:
+        raise PlanError(f"step '{step.key}': {e}") from e
+    problem = _built_block_problem(step.step_type, step.key, wire_block, auto, ctx)
+    if problem:
+        raise PlanError(problem)
     p[cfg_field] = wire_block
     return p
 
@@ -1196,7 +1287,16 @@ def _normalize_llm_decision(ld: Any) -> Any:
     return out
 
 
-@honours("type", "llm_decision", "filter_config", "group_ids", "groups")
+# `yes_steps`/`no_steps` mirror the linkage that `parent_key`/`parent_yes_no`
+# carry on write.
+@honours(
+    "type",
+    "llm_decision",
+    "filter_config",
+    "group_ids",
+    "groups",
+    unsent_on_read=("yes_steps", "no_steps"),
+)
 def _step_condition(
     block: dict[str, Any], auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1206,7 +1306,7 @@ def _step_condition(
     }
     if block.get("filter_config") is not None:
         out["filter_config"] = _render_filter_config(
-            block["filter_config"], auto.target_object
+            block["filter_config"], auto.target_object, _declared_variables(auto.steps)
         )
     # in_group conditions: reads expand to `groups: [{id, name, …}]`;
     # writes take `group_ids: [uuid]`.
@@ -1216,6 +1316,34 @@ def _step_condition(
         out["group_ids"] = [_unwrap_id(g) for g in block["groups"] if _unwrap_id(g)]
     # NEVER set yes_step_ids / no_step_ids — server crashes.
     return out
+
+
+def _declared_variables(steps: Any) -> dict[str, dict[str, Any]]:
+    """The variable declarations by name, for a filter spec's ``"variable"``:
+    ``initialize_variable`` steps, then the ``search_records`` destinations
+    they don't declare (entity arrays of the searched object). ``steps`` are
+    spec steps, or a translated payload's wire steps (`steps add`/`edit`)."""
+    steps = [_to_dict(s) for s in steps]
+    declared: dict[str, dict[str, Any]] = {}
+    for s in steps:
+        var = _to_dict(s.get("action_initialize_variable")).get("variable")
+        if isinstance(var, dict) and var.get("name"):
+            declared[var["name"]] = {
+                "data_type": var.get("data_type"),
+                "is_array": bool(var.get("is_array")),
+                "data_subtype": _unwrap_id(var.get("data_subtype")),
+            }
+    for s in steps:
+        block = _to_dict(s.get("action_search_records"))
+        name = _unwrap_variable_name(block.get("destination_variable"))
+        if name and name not in declared:
+            obj = block.get("custom_object")
+            declared[name] = {
+                "data_type": "entity",
+                "is_array": True,
+                "data_subtype": _api_name_of(obj) or _unwrap_id(obj),
+            }
+    return declared
 
 
 def _condition_rules_problem(key: str, block: dict[str, Any]) -> str | None:
@@ -1239,14 +1367,93 @@ def _condition_rules_problem(key: str, block: dict[str, Any]) -> str | None:
     return None
 
 
+def _inbox_selection_problem(triggers: list[dict[str, Any]]) -> str | None:
+    """Why an email_received trigger can never fire, or None.
+
+    The server saves "selected inboxes" with an empty list (200, 2026-10-14).
+    Checked on spec and patch paths only, so live reads still re-PUT it.
+    """
+    for t in triggers:
+        if t.get("type") != "email_received":
+            continue
+        block = t.get("trigger_email_received_from_contact") or {}
+        selected = block.get("receiving_inbox") == "selected_integrated_inboxes"
+        if selected and not block.get("selected_integrated_inboxes"):
+            return (
+                f"trigger '{t.get('key')}' (email_received): receiving_inbox "
+                "'selected_integrated_inboxes' needs at least one inbox UUID "
+                "in selected_integrated_inboxes"
+            )
+    return None
+
+
+def _scalar_value_resolution_problem(
+    key: str, block: dict[str, Any], auto: AutomationDef
+) -> str | None:
+    """Why a built ``action_update_variable`` sets value_resolution on a
+    scalar variable, or None.
+
+    The server 400s it (confirmed live 2026-10-14). Only a variable the spec
+    defines exactly once is checked; anything else is left to the server.
+    Spec and patch paths, like ``_condition_rules_problem``. ``auto.steps`` may be
+    typed spec steps or a live payload's raw wire dicts.
+    """
+    name = block.get("variable")
+    if block.get("value_resolution") is None or not isinstance(name, str):
+        return None
+    inits = [
+        _to_dict(_to_dict(s).get("action_initialize_variable")) for s in auto.steps
+    ]
+    defs = [
+        v
+        for v in (i.get("variable") for i in inits)
+        if isinstance(v, dict) and v.get("name") == name
+    ]
+    if len(defs) != 1 or defs[0].get("is_array"):
+        return None
+    return (
+        f"update_variable step '{key}' sets value_resolution on '{name}', "
+        "which isn't an array variable. The server takes it on array "
+        "variables only."
+    )
+
+
+def _built_block_problem(
+    step_type: str,
+    key: str,
+    block: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> str | None:
+    """Why a built step config block is wrong, or None: what the API would
+    accept anyway, or reject only at apply with a less useful message. The
+    checks `automations create`/`update`, `steps add` and `steps edit`
+    share; live reads skip them so existing automations still translate.
+    """
+    if step_type == "condition":
+        return _condition_rules_problem(key, block)
+    if step_type == "goal":
+        return _inbox_selection_problem(block["triggers"])
+    if step_type == "update_variable":
+        return _scalar_value_resolution_problem(key, block, auto)
+    if step_type == "assign_team_member":
+        return _assign_team_member_problem(key, block, auto, ctx)
+    return None
+
+
 def _render_filter_config(
-    fc: dict[str, Any], object_api_name: str | None
+    fc: dict[str, Any],
+    object_api_name: str | None,
+    variables: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Accept either a JSON filter spec ({"all"|"any": [...]} — compiled via
     the filtering DSL with field names resolved against ``object_api_name``)
     or a raw filter_config dict (normalized: group ids assigned, null clause
     values rejected). Raw is the only form for clause types the DSL doesn't
-    cover (e.g. automation-variable comparisons).
+    cover (e.g. a variable compared to a static value).
+
+    ``variables`` (condition steps only) are the automation's declared
+    variables, which a spec condition's ``"variable"`` may name.
 
     ``object_api_name`` is the condition/search step's own target object —
     the automation's ``target_object`` for a condition step, but a
@@ -1264,7 +1471,9 @@ def _render_filter_config(
             )
         try:
             with filtering.filter_context(object_api_name):
-                return filtering.as_filter_config(filtering.from_spec(fc))
+                return filtering.as_filter_config(filtering.from_spec(fc, variables))
+        except filtering.VariableReferenceError:
+            raise
         except (ValueError, LookupError) as e:
             raise PlanError(f"invalid filter spec: {e}") from e
     try:
@@ -1289,7 +1498,7 @@ def _step_delay(
 
 @honours_all
 def _step_goal(
-    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     """Goal steps embed a list of TRIGGERS (wait-until conditions) whose
     blocks read in the same expanded shape as top-level triggers — reuse the
@@ -1302,6 +1511,8 @@ def _step_goal(
     triggers = []
     for i, t in enumerate(block.get("triggers") or []):
         trigger_type = t.get("trigger_type") or t.get("type")
+        if not trigger_type:
+            raise PlanError(f"goal trigger {i} has no trigger_type")
         p: dict[str, Any] = {
             "key": t.get("key") or f"goal_trigger_{i}",
             "type": trigger_type,
@@ -1314,8 +1525,10 @@ def _step_goal(
             p["id"] = t["id"]
         if t.get("description"):
             p["description"] = t["description"]
-        cfg_field = f"trigger_{trigger_type}"
-        nested = dict(t.get(cfg_field) or {})
+        cfg_field = trigger_config_field(trigger_type)
+        nested = _qualify_trigger_field_ref(
+            trigger_type, dict(t.get(cfg_field) or {}), auto
+        )
         builder = _TRIGGER_BUILDERS.get(trigger_type)
         p[cfg_field] = builder(nested, ctx) if builder else _strip(nested)
         triggers.append(p)
@@ -1353,7 +1566,7 @@ def _step_archive_record(
         "record_source": block.get("record_source", "this_record"),
     }
     rels = block.get("relationship_field_ids") or block.get("relationship_fields") or []
-    ids = [_resolve_field(r, auto, ctx) or _unwrap_id(r) for r in rels if r]
+    ids = [_resolve_field(r, auto, ctx) for r in rels if r]
     out["relationship_field_ids"] = [r for r in ids if r]
     var = block.get("automation_variable_name") or block.get("automation_variable")
     if var:
@@ -1405,6 +1618,76 @@ def _step_assign_team_member(
     return _team_member_selector(block)
 
 
+# Per `type`: each key the selector needs, and what it names. Checked on the
+# built block, so the read dialect (`employee`, `field`, …) satisfies it too.
+_ASSIGN_TEAM_MEMBER_KEYS: dict[str, tuple[tuple[str, str], ...]] = {
+    "team_member": (("employee_id", "a team member's UUID"),),
+    "round_robin_role": (("role_id", "a role's UUID"),),
+    "round_robin_team_members": (("employee_ids", "team member UUIDs"),),
+    "team_selector_field": (
+        ("field_id", "a team-selector field on the automation's own object"),
+    ),
+    "related_team_selector_field": (
+        (
+            "related_field_id",
+            "a single-value relationship field on the automation's own object",
+        ),
+        ("field_id", "a team-selector field on the object related_field_id points to"),
+    ),
+}
+_SINGLE_VALUE_CARDINALITIES = ("many_to_one", "one_to_one")
+_KEYS_ARE_NOT_A_RUN = (
+    "A complete selector only means the keys are there, not that a run "
+    "assigns anyone (see `kizen docs show automation`, assign_team_member)."
+)
+
+
+def _assign_team_member_problem(
+    key: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> str | None:
+    """Why a built ``action_assign_team_member`` lacks a key its ``type``
+    needs, or names a hop that isn't a single-value relationship field on
+    ``target_object``.
+
+    The server 400s each of these at apply (confirmed live 2026-10-16); its
+    message for a wrong hop names the field passed, not the one it wanted.
+    A pass is necessary, not sufficient: correctly keyed steps still no-op
+    on the platform side (see the doc).
+    """
+    kind = block.get("type") or ""
+    for wire_key, what in _ASSIGN_TEAM_MEMBER_KEYS.get(kind, ()):
+        if not block.get(wire_key):
+            return (
+                f"assign_team_member step '{key}' (type {kind}) needs "
+                f"{wire_key}: {what}. {_KEYS_ARE_NOT_A_RUN}"
+            )
+    if kind != "related_team_selector_field" or not auto.target_object:
+        return None
+    try:
+        fields = ctx.object_data(auto.target_object)["fields"]
+    except PlanError:
+        return None  # can't read the object: leave it to the server
+    hop_id = block["related_field_id"]
+    hop = next((f for f in fields if f.get("id") == hop_id), None)
+    if hop is None:
+        return (
+            f"assign_team_member step '{key}': related_field_id {hop_id} isn't "
+            f"a field on '{auto.target_object}'. It must be the hop from this "
+            "object; field_id names the selector on the far object."
+        )
+    cardinality = (hop.get("relation") or {}).get("cardinality")
+    if cardinality not in _SINGLE_VALUE_CARDINALITIES:
+        return (
+            f"assign_team_member step '{key}': related_field_id is "
+            f"'{hop.get('api_name')}' on '{auto.target_object}', which isn't a "
+            f"single-value relationship field (field_type "
+            f"{hop.get('field_type')}, cardinality {cardinality}). It must be "
+            "the hop from this object; field_id names the selector on the far "
+            "object."
+        )
+    return None
+
+
 # `type` isn't read, but the builder always emits it with the only valid
 # value, so a block copied from `steps get` re-applies unchanged.
 @honours("type", "step_key", "step", "trigger_key")
@@ -1437,7 +1720,7 @@ def _step_go_to_automation_step(
     "automation_variable_overrides",
 )
 def _step_start_automation(
-    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     """Write dialect differs from read: automation_ids / relationship_field_ids /
     automation_variable_name (bare UUIDs and names). Read-dialect keys
@@ -1449,7 +1732,8 @@ def _step_start_automation(
         "resume_paused_automations": block.get("resume_paused_automations") or False,
     }
     rels = block.get("relationship_field_ids") or block.get("relationship_fields") or []
-    out["relationship_field_ids"] = [_unwrap_id(r) for r in rels if r]
+    ids = [_resolve_field(r, auto, ctx) for r in rels if r]
+    out["relationship_field_ids"] = [r for r in ids if r]
     var = block.get("automation_variable_name") or block.get("automation_variable")
     if var:
         out["automation_variable_name"] = (
@@ -1487,13 +1771,13 @@ def _step_start_automation(
 # Every value-carrying key an override entry can hold, and how the write
 # dialect wants it narrowed. Keyed by the payload key rather than by
 # `value_source`, deliberately: which key holds the value is observable on
-# any entry, whereas the `value_source` string that selects each one is only
-# knowable from a capture that exercises it. Driving off the key means an
-# override whose `value_source` we have never seen still round-trips.
+# any entry, and the published `ValueSourceEnum` /
+# `WriteAutomationVariableOverrideRequest` pair each key with a source (two
+# sources use two keys each). Driving off the key means an override whose
+# `value_source` we have never captured still round-trips.
 #
-# The two unwrap rules are this module's existing conventions, not new
-# guesses: automation-variable references resolve by name, field references
-# by UUID. `specific_value` is a bare scalar already.
+# The unwraps follow the schema's types: automation-variable references are
+# names, field references UUIDs. `specific_value` is a bare scalar already.
 _OVERRIDE_VALUE_KEYS: dict[str, Callable[[Any], Any] | None] = {
     "context_entity_field": _unwrap_id,
     "automation_variable": _unwrap_variable_name,
@@ -1655,13 +1939,13 @@ def _change_field_value_action(
         # a valid UUID") instead of resolving.
         out["context_entity_field"] = _resolve_field(
             a["context_entity_field"], auto, ctx
-        ) or _unwrap_id(a["context_entity_field"])
+        )
 
     # Optional reference fields
     if a.get("automation_target_relationship_field") is not None:
         out["automation_target_relationship_field"] = _resolve_field(
             a["automation_target_relationship_field"], auto, ctx
-        ) or _unwrap_id(a["automation_target_relationship_field"])
+        )
     if a.get("related_object") is not None:
         out["related_object"] = _resolve_object(a["related_object"], ctx)
     if a.get("related_object_field") is not None:
@@ -1682,6 +1966,11 @@ def _change_field_value_action(
     "relationship_field_id",
     "object_to_modify",
     "fields_to_modify",
+    "record_source",
+    "record_source_variables",
+    # The config row's own id, and the expanded mirror of
+    # `record_source_variables`.
+    unsent_on_read=("id", "automation_variables"),
 )
 def _step_modify_related_entities(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -1700,17 +1989,19 @@ def _step_modify_related_entities(
     out: dict[str, Any] = {
         "object_to_modify": _resolve_object(block.get("object_to_modify"), ctx),
         "automation_target_relationship_fields": [
-            r
-            for r in (
-                _resolve_field(r, auto, ctx) or _unwrap_id(r) for r in rel_fields_in
-            )
-            if r
+            r for r in (_resolve_field(r, auto, ctx) for r in rel_fields_in) if r
         ],
         "fields_to_modify": [
             _change_field_value_action(f, auto, ctx)
             for f in (block.get("fields_to_modify") or [])
         ],
     }
+    if block.get("record_source") is not None:
+        out["record_source"] = block["record_source"]
+    if block.get("record_source_variables") is not None:
+        out["record_source_variables"] = [
+            _unwrap_variable_name(v) for v in block["record_source_variables"]
+        ]
     return out
 
 
@@ -1732,10 +2023,9 @@ def _step_modify_related_entities(
     "automations_to_start",
     "existing_record_found_action",
     "archived_record_found_action",
-    "field_values",
 )
 def _step_create_related_entity(
-    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "new_entity_name": block.get("new_entity_name"),
@@ -1750,7 +2040,9 @@ def _step_create_related_entity(
         "new_entity_owner_employees": [
             _unwrap_id(e) for e in (block.get("new_entity_owner_employees") or []) if e
         ],
-        "context_entity_field": _unwrap_id(block.get("context_entity_field")),
+        "context_entity_field": _resolve_field(
+            block.get("context_entity_field"), auto, ctx
+        ),
         "target_custom_object": _resolve_object(
             block.get("target_custom_object") or block.get("target_object"), ctx
         ),
@@ -1771,9 +2063,6 @@ def _step_create_related_entity(
             "archived_record_found_action", "overwrite"
         ),
     }
-    # Allow field_values pass-through (advanced: caller specifies field UUIDs).
-    if block.get("field_values"):
-        out["field_values"] = block["field_values"]
     return {k: v for k, v in out.items() if v is not None}
 
 
@@ -1897,7 +2186,8 @@ def _variable_step_extras(block: dict[str, Any]) -> dict[str, Any]:
 
     ``array_aggregation_mode`` is REQUIRED (non-null) when the variable is an
     array; other keys (e.g. deduplication) pass through when set. Null values
-    are dropped — reads include them, writes reject them.
+    are dropped: reads include them, and an explicit null would reset a
+    stored ``value_resolution``.
     """
     handled = {"sources", "variable", "is_required"}
     return {k: v for k, v in block.items() if k not in handled and v is not None}
@@ -1907,6 +2197,11 @@ def _variable_step_extras(block: dict[str, Any]) -> dict[str, Any]:
 def _step_initialize_variable(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
+    # The server accepts it here and silently drops it (confirmed live 2026-10-14).
+    if block.get("value_resolution") is not None:
+        raise PlanError(
+            "initialize_variable doesn't take value_resolution — only update_variable does."
+        )
     return {
         **_variable_step_extras(block),
         "sources": _normalize_variable_sources(block.get("sources") or []),
@@ -1959,7 +2254,6 @@ def _normalize_variable(v: Any) -> Any:
     "business_plugin_app",
     "destinations",
     "is_advanced",
-    "data_type",
     "merge_field_validation",
 )
 def _step_call_llm(
@@ -1993,8 +2287,6 @@ def _step_call_llm(
         )
     if block.get("is_advanced") is not None:
         out["is_advanced"] = block["is_advanced"]
-    if block.get("data_type"):
-        out["data_type"] = block["data_type"]
     if block.get("merge_field_validation"):
         out["merge_field_validation"] = block["merge_field_validation"]
     return {k: v for k, v in out.items() if v is not None}
@@ -2035,6 +2327,7 @@ def _normalize_destinations(destinations: list[dict[str, Any]]) -> list[dict[str
     "input_field",
     "input_field_id",
     "file_field",
+    "input_value_source",
     "destinations",
     "is_advanced",
     "data_type",
@@ -2060,12 +2353,43 @@ def _step_file_content_extraction(
         or block.get("input_field_id")
         or block.get("file_field")
     )
+    input_field = None
     if input_ref:
         if isinstance(input_ref, str) and "." in input_ref:
             obj_api, fld_api = input_ref.split(".", 1)
-            out["input_field"] = ctx.field_uuid(obj_api, fld_api)
+            input_field = ctx.field_uuid(obj_api, fld_api)
         else:
-            out["input_field"] = _resolve_field(input_ref, auto, ctx) or input_ref
+            input_field = _resolve_field(input_ref, auto, ctx) or input_ref
+    # Same wire conventions as variable sources: bare UUIDs, variable by name.
+    source = None
+    if block.get("input_value_source"):
+        (source,) = _normalize_variable_sources([block.get("input_value_source")])
+        for key in ("field", "relationship_field"):
+            ref = source.get(key)
+            if isinstance(ref, str) and "." in ref:
+                obj_api, fld_api = ref.split(".", 1)
+                source[key] = ctx.field_uuid(obj_api, fld_api)
+    # Kizen takes exactly one of the two, and every read mirrors input_field
+    # into a context_entity_field source. Collapse the mirror, so a re-save
+    # sends what was written.
+    if input_field and source:
+        if (
+            source.get("type") != "context_entity_field"
+            or source.get("field") != input_field
+        ):
+            raise PlanError(
+                "set input_field_ref or input_value_source, not both — Kizen "
+                "accepts only one."
+            )
+        source = None
+    if not input_field and not source:
+        raise PlanError(
+            "needs an input — set input_field_ref (a file field on the target "
+            "record) or input_value_source (a related record's field, or a "
+            "variable)."
+        )
+    out["input_field"] = input_field
+    out["input_value_source"] = source
     if block.get("html_prompt") is not None:
         out["html_prompt"] = block["html_prompt"]
     elif out.get("prompt"):
@@ -2137,9 +2461,7 @@ def _resolve_llm_destinations(
             # destination. Resolve whichever of relationship_field_ref/
             # field_ref/field the caller gave; fall back to auto-detection.
             hop = hop_ref or ref or d.get("field")
-            hop_uuid = (
-                (_resolve_field(hop, auto, ctx) or _unwrap_id(hop)) if hop else None
-            )
+            hop_uuid = _resolve_field(hop, auto, ctx) if hop else None
             if not hop_uuid and dest_obj_api and auto.target_object:
                 hop_uuid = ctx.find_relationship_field(auto.target_object, dest_obj_api)
             if not hop_uuid:
@@ -2186,6 +2508,7 @@ def _resolve_llm_destinations(
     "assigned_to",
     "association_configs",
     "note",
+    "html_note",
 )
 def _step_schedule_activity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -2206,16 +2529,17 @@ def _step_schedule_activity(
         out["assigned_to"] = _normalize_assigned_to(block["assigned_to"])
     if block.get("association_configs") is not None:
         out["association_configs"] = [
-            _normalize_association_config(a, auto, ctx)
-            for a in block["association_configs"]
+            _normalize_association_config(a, auto, ctx, n)
+            for n, a in enumerate(block["association_configs"], 1)
         ]
-    if block.get("note") is not None:
-        out["note"] = block["note"]
+    for key in ("note", "html_note"):
+        if block.get(key) is not None:
+            out[key] = block[key]
     return out
 
 
 def _normalize_association_config(
-    a: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    a: dict[str, Any], auto: AutomationDef, ctx: LiveContext, n: int
 ) -> dict[str, Any]:
     """One entry of schedule_activity's `association_configs` — per-object
     record linkage for activity types associated with more than one custom
@@ -2229,13 +2553,21 @@ def _normalize_association_config(
     `record_variable`/`variable_related_field` (not `relationship_field`/
     `automation_variable` — those 400 with "not a valid choice").
 
-    Accepts either the friendly author shape (`object`/`source`/
-    `relationship_field_ref`/`automation_variable`) or a live read's raw wire
+    Accepts three shapes: the friendly author shape (`object`/`source`/
+    `relationship_field_ref`/`automation_variable`), a live read's raw wire
     dict (`custom_object`/`association_source`/`relationship_field`/
-    `automation_variable`).
+    `automation_variable`), or the write shape `steps get` prints
+    (`custom_object_id`/`association_source`/`relationship_field_id`/
+    `automation_variable_name`). `n` is the entry's 1-based position.
     """
-    object_ref = a.get("custom_object") or a.get("object")
+    object_ref = a.get("custom_object") or a.get("object") or a.get("custom_object_id")
     object_id = _resolve_object(object_ref, ctx)
+    if not object_id:
+        raise PlanError(
+            f"schedule_activity association_configs entry {n} names no object: "
+            "set 'object' to the associated object's api_name, or "
+            "'custom_object_id' to its UUID."
+        )
     out: dict[str, Any] = {
         "custom_object_id": object_id,
         "association_source": a.get("association_source") or a.get("source") or "none",
@@ -2346,12 +2678,28 @@ def _step_send_related_contact_text(
     return out
 
 
+# A read flattens the message resource that `id` points at into the block.
+# The write carries only the `id`, and the message keeps its own content.
 @honours(
     "team_member",
     "cc_team_member",
     "id",
     "email_template_id",
     "email_template",
+    unsent_on_read=(
+        "created",
+        "name",
+        "subject",
+        "content",
+        "craft_json",
+        "base_message_id",
+        "from_name_type",
+        "custom_from_name",
+        "sender_type",
+        "sender_role",
+        "sender_team_member",
+        "external_account",
+    ),
 )
 def _step_notify_member_via_email(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
@@ -2427,12 +2775,15 @@ def _merge_field_resolvers(
     return resolve_label, resolve_objectname
 
 
+# `id`, `name` and `created` describe the message resource the server
+# keeps for the step; the write sends its content inline instead.
 @honours(
     "team_member",
     "content",
     "html_content",
     "base_message_id",
     "message_template_id",
+    unsent_on_read=("id", "name", "created"),
 )
 def _step_notify_member_via_text(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -2520,15 +2871,48 @@ def _step_code_step(
         "runtime": block.get("runtime", "python-3-13"),
         "inputs": [_code_input(i, auto, ctx) for i in (block.get("inputs") or [])],
         "outputs": [_code_output(o, auto, ctx) for o in (block.get("outputs") or [])],
-        "secrets": [
-            {"name": s.get("name") if isinstance(s, dict) else s}
-            for s in (block.get("secrets") or [])
+        "secrets": _secret_names(block.get("secrets")),
+    }
+
+
+@honours(
+    "plugin_app_api_name",
+    "action_step_api_name",
+    "notify_plugin_developer_on_failure",
+    "inputs",
+    "outputs",
+    "secrets",
+)
+def _step_plugin_code_step(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    where = "plugin_code_step"
+    return {
+        "plugin_app_api_name": block.get("plugin_app_api_name"),
+        "action_step_api_name": block.get("action_step_api_name"),
+        "notify_plugin_developer_on_failure": (
+            block.get("notify_plugin_developer_on_failure") or False
+        ),
+        "secrets": _secret_names(block.get("secrets")),
+        "inputs": [_code_input(i, auto, ctx, where) for i in block.get("inputs") or []],
+        "outputs": [
+            _code_output(o, auto, ctx, where) for o in block.get("outputs") or []
         ],
     }
 
 
+def _secret_names(secrets: list[Any] | None) -> list[dict[str, Any]]:
+    """Secrets as `[{name}]`, from bare names, spec dicts or expanded reads."""
+    return [
+        {"name": s.get("name") if isinstance(s, dict) else s} for s in (secrets or [])
+    ]
+
+
 def _code_input(
-    inp: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    inp: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+    where: str = "code_step",
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": inp["name"],
@@ -2547,7 +2931,7 @@ def _code_input(
         )
         if not field_uuid:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'field' but has no field/field_ref/field_id"
+                f"{where} input '{inp['name']}' is type 'field' but has no field/field_ref/field_id"
             )
         out["field"] = {"id": field_uuid}
     elif it == "variable":
@@ -2559,7 +2943,7 @@ def _code_input(
         )
         if not name:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'variable' but has no variable_name"
+                f"{where} input '{inp['name']}' is type 'variable' but has no variable_name"
             )
         out["variable"] = {"name": name}
     elif it == "static_value":
@@ -2579,7 +2963,7 @@ def _code_input(
         fld_id = _unwrap_id(fld) or inp.get("field_id")
         if not fld_id:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'related_field' but "
+                f"{where} input '{inp['name']}' is type 'related_field' but "
                 "has no `field` (the relationship field on the automation's object)"
             )
         out["field"] = {"id": fld_id}
@@ -2587,7 +2971,7 @@ def _code_input(
         rf_id = _unwrap_id(rf)
         if not rf_id:
             raise PlanError(
-                f"code_step input '{inp['name']}' is type 'related_field' but "
+                f"{where} input '{inp['name']}' is type 'related_field' but "
                 "has no `related_field` (the field on the related object)"
             )
         out["related_field"] = {"id": rf_id}
@@ -2599,7 +2983,10 @@ def _code_input(
 
 
 def _code_output(
-    o: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    o: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+    where: str = "code_step",
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": o["name"],
@@ -2618,7 +3005,7 @@ def _code_output(
         )
         if not field_uuid:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'field' but has no field/field_ref/field_id"
+                f"{where} output '{o['name']}' is type 'field' but has no field/field_ref/field_id"
             )
         out["field"] = {"id": field_uuid}
     elif ot == "variable":
@@ -2630,7 +3017,7 @@ def _code_output(
         )
         if not name:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'variable' but has no variable_name"
+                f"{where} output '{o['name']}' is type 'variable' but has no variable_name"
             )
         out["variable"] = {"name": name}
     elif ot == "related_field":
@@ -2641,7 +3028,7 @@ def _code_output(
         fld_id = _unwrap_id(fld) or o.get("field_id")
         if not fld_id:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'related_field' but "
+                f"{where} output '{o['name']}' is type 'related_field' but "
                 "has no `field` (the relationship field on the automation's object)"
             )
         out["field"] = {"id": fld_id}
@@ -2649,7 +3036,7 @@ def _code_output(
         rf_id = _unwrap_id(rf)
         if not rf_id:
             raise PlanError(
-                f"code_step output '{o['name']}' is type 'related_field' but "
+                f"{where} output '{o['name']}' is type 'related_field' but "
                 "has no `related_field` (the field on the related object)"
             )
         out["related_field"] = {"id": rf_id}
@@ -2673,6 +3060,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "goal": _step_goal,
     "stop_execution": _step_stop_execution,
     "code_step": _step_code_step,
+    "plugin_code_step": _step_plugin_code_step,
     "archive_record": _step_archive_record,
     "go_to_automation_step": _step_go_to_automation_step,
     "start_automation": _step_start_automation,
@@ -2731,7 +3119,7 @@ assert set(KNOWN_ENUM_CHOICES_TRIGGERS) <= set(_TRIGGER_BUILDERS), (
 
 # block key (the wire dict key a step/trigger's config rides under, e.g.
 # "action_create_related_entity", "trigger_on_or_around_date" — the exact
-# mapping `_block_field_for()` / `trigger_{type}` already use when building a
+# mapping `_block_field_for()` / `trigger_config_field()` already use when building a
 # payload) -> (step_or_trigger_type, its KnownChoices table).
 _KNOWN_CHOICES_BLOCK_TABLES: dict[str, tuple[str, dict[str, KnownChoices]]] = {
     **{
@@ -2739,7 +3127,7 @@ _KNOWN_CHOICES_BLOCK_TABLES: dict[str, tuple[str, dict[str, KnownChoices]]] = {
         for step_type, table in KNOWN_ENUM_CHOICES.items()
     },
     **{
-        f"trigger_{trigger_type}": (trigger_type, table)
+        trigger_config_field(trigger_type): (trigger_type, table)
         for trigger_type, table in KNOWN_ENUM_CHOICES_TRIGGERS.items()
     },
 }

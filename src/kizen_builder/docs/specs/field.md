@@ -76,6 +76,10 @@ api_name — `kizen objects get <object>` lists the category display names.
 Exactly one type-specific block may be set, and it must match `field_type` —
 mismatches are rejected at plan time.
 
+Any other key is a spec error. That includes the API's spellings that `get`
+prints (`is_required`, `is_read_only`, `is_hidden`, `display_name`,
+`phonenumber_options`), and the error names the key to write instead.
+
 ### `field_type` values (24)
 
 ```
@@ -148,8 +152,11 @@ auto-generates the `"1 - Low" … "5 - High"` scale.
   `mobile_phone`, `birthday`, …) are auto-created by Kizen and rejected.
   **Rule of thumb: prefix api_names with the object's api_name**
   (`account_first_name`, not `first_name`).
-- **Kizen may pluralize/rewrite api_names.** After applying, `kizen objects get
-  <object>` to confirm the server's stored name before referencing it.
+- **The object's api_name comes from its display name**, not from anything
+  you send (`kizen docs show objects`). Field api_names are sent as given;
+  whether Kizen ever rewrites one hasn't been checked, so after applying, run
+  `kizen objects get <object>` to confirm the stored name before referencing
+  it.
 - **`required`/`read_only`** are for system fields, not custom ones — the
   single-field CLI flags don't expose them; setting them in a spec is accepted
   but usually a no-op for custom fields.

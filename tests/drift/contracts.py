@@ -252,6 +252,9 @@ BASE_SCHEMA_CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract("automations", "trigger envelope", schema_name="WriteTriggerRequest"),
     Contract("automations", "step envelope", schema_name="WriteStepRequest"),
+    Contract(
+        "automations", "automation variable", schema_name="AutomationVariableRequest"
+    ),
 )
 
 
@@ -264,6 +267,7 @@ def automation_block_contracts() -> tuple[Contract, ...]:
     name is the CLI's own — importing the registries here is what keeps the
     drift scope in step with ``_STEP_BUILDERS``.
     """
+    from kizen_builder.models.spec.automations_triggers import trigger_config_field
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         _TRIGGER_BUILDERS,
@@ -284,7 +288,7 @@ def automation_block_contracts() -> tuple[Contract, ...]:
             Contract(
                 "automations",
                 f"trigger config: {trigger_type}",
-                schema_name=f"WriteTriggerRequest.trigger_{trigger_type}",
+                schema_name=f"WriteTriggerRequest.{trigger_config_field(trigger_type)}",
             )
         )
     return tuple(out)
@@ -304,11 +308,6 @@ def tracked() -> tuple[Contract, ...]:
 #: takes. Asserted in both directions: something newly missing fails, and so
 #: does something here turning up documented (delete the entry when it does).
 KNOWN_UNDOCUMENTED_BLOCKS: dict[str, str] = {
-    "schema:WriteStepRequest.action_call_llm": (
-        "the schema declares the property as `action_llm_call`; both the write "
-        "path and every captured read response use `action_call_llm` "
-        "(confirmed live 2026-08-05)"
-    ),
     "schema:WriteStepRequest.action_stop_execution": (
         "undeclared entirely; the API accepts `action_stop_execution: {}` and "
         "the round-trip half creates two such steps every run "
@@ -368,19 +367,28 @@ KNOWN_SCHEMA_OMISSIONS: dict[str, dict[str, str]] = {
             "(confirmed live 2026-08-05)"
         ),
     },
-    "schema:WriteStepRequest.action_create_related_entity": {
-        "field_values": (
-            "a silent no-op: the create returns 200 and the read-back has no "
-            "`field_values` key (confirmed live 2026-10-05). The builder's "
-            "pass-through should go"
-        ),
-    },
     "schema:WriteStepRequest.action_go_to_automation_step": {
         "type": (
             "the builder always sends the fixed value `go_to_automation_step`; "
             "accepted, and absent from the read-back, which carries only "
             "`step`/`trigger` (confirmed live 2026-10-05). Carries no data"
         ),
+    },
+}
+
+#: Write-schema properties of a declared config block that its builder
+#: neither honours nor declares ``unsent_on_read``, each with the reason the
+#: CLI never sends it. Checked by
+#: ``test_write_schema_keys_are_honoured_or_known_unsent``: a property missing
+#: from here may be a setting the CLI drops on every PUT.
+KNOWN_UNSENT_SCHEMA_KEYS: dict[str, dict[str, str]] = {
+    "schema:WriteStepRequest.step_condition": {
+        "yes_step_ids": (
+            "derived linkage: the write carries `parent_key`/`parent_yes_no` on "
+            "each child instead, and these 500 on write (the envelope note "
+            "above KNOWN_SCHEMA_OMISSIONS)"
+        ),
+        "no_step_ids": "same as yes_step_ids",
     },
 }
 
@@ -545,9 +553,11 @@ def match_endpoint(
 def extract(schema: dict[str, Any]) -> dict[str, Any]:
     """Reduce a live OpenAPI document to just the tracked contracts.
 
-    The full document is ~1.5 MB / 557 paths / 1326 component schemas; this
+    The full document is ~1.6 MB / 576 paths / 1399 component schemas; this
     keeps only what the CLI writes to, so the committed snapshot is reviewable
-    and the diff is about something.
+    and the diff is about something. ``operationId`` is left out: the CLI
+    never sends it, and the schema generator renames it whenever a sibling
+    route is added.
     """
     paths = schema.get("paths") or {}
     components = schema.get("components", {}).get("schemas", {})
@@ -565,7 +575,6 @@ def extract(schema: dict[str, Any]) -> dict[str, Any]:
                 "surface": c.surface,
                 "label": c.label,
                 "schema_path": schema_path,
-                "operation_id": op.get("operationId"),
                 "query_params": sorted(
                     p["name"]
                     for p in op.get("parameters") or []
@@ -688,7 +697,7 @@ def diff(snapshot_contracts: dict[str, Any], live: dict[str, Any]) -> Drift:
                 "   <-- the endpoint appeared/disappeared"
             )
         else:
-            for scalar in ("operation_id", "request_schema", "request_required"):
+            for scalar in ("request_schema", "request_required"):
                 if (scalar in old or scalar in new) and old.get(scalar) != new.get(
                     scalar
                 ):

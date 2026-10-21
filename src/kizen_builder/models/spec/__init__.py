@@ -54,6 +54,7 @@ from kizen_builder.models.spec.automations_shared import (
     LlmDestinationConfig,
     CodeStepInputConfig,
     CodeStepOutputConfig,
+    PluginCodeStepInputConfig,
 )
 from kizen_builder.models.spec.automations_triggers import (
     TriggerFieldUpdatedConfig,
@@ -190,9 +191,9 @@ class SolutionSpec(BaseModel):
     def _unique_object_api_names(cls, v: list[ObjectDef]) -> list[ObjectDef]:
         seen: set[str] = set()
         for o in v:
-            if o.api_name in seen:
-                raise ValueError(f"duplicate object api_name '{o.api_name}'")
-            seen.add(o.api_name)
+            if o.effective_api_name in seen:
+                raise ValueError(f"duplicate object api_name '{o.effective_api_name}'")
+            seen.add(o.effective_api_name)
         return v
 
     @field_validator("automations")
@@ -245,6 +246,7 @@ __all__ = [
     "LlmDestinationConfig",
     "CodeStepInputConfig",
     "CodeStepOutputConfig",
+    "PluginCodeStepInputConfig",
     "TriggerFieldUpdatedConfig",
     "TriggerContactTagAddedRemovedConfig",
     "TriggerActivityLoggedConfig",

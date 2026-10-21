@@ -33,6 +33,25 @@ gets pointed at the wrong host by hand; free-text URL entry is still there for
 self-hosted or one-off setups, reached with a deliberate `url` choice, not a
 default.
 
+**Under app-builder, there is no profile.** The wrapper
+launches `kizen` with these variables in the process environment (a `.env`
+file can't supply them):
+
+| Variable | Value |
+|---|---|
+| `KIZEN_AUTH_HELPER` | A command that prints `{"Authorization": "Bearer <token>"}` on one line. Split like a shell word list but run without a shell, with a 15s timeout. Its presence turns this mode on. |
+| `KIZEN_BASE_URL` | The https origin, shaped like a profile's `base_url` (`https://staging.kizen.com`, no `/api`). |
+| `KIZEN_BUSINESS_ID`, `KIZEN_USER_ID` | The identity. The directory pin's `business_id` is still enforced against `KIZEN_BUSINESS_ID`. |
+
+All four are required. The credential store is never read. `--profile` or
+`$KIZEN_PROFILE` alongside them is an error. Requests carry only the Bearer
+header. The helper runs on the first request; whenever Kizen answers 401 it
+runs again and that request is resent once. The Kizen user needs the "OAuth
+authorizations" permission; without it every request is a 403. `kizen init`,
+`kizen envs list` and `kizen upgrade` refuse, because app-builder owns the
+credentials and the installation; `kizen upgrade --check` says the
+installation is managed by app-builder and exits 0.
+
 **2. Pull live before reasoning.** Before planning any change, call the
 relevant read commands to fetch the current state of the env. Don't assume
 from prior turns or from any local notes — Kizen state can change between
@@ -205,7 +224,8 @@ wire dialect, and the quirks that bite — lives in
 - Condition `filter_config` uses the shared filter DSL — the same one
   `records list --filter` and saved views take. `kizen docs show filters` has
   both layers (the friendly DSL and the wire form it resolves to), the per-type
-  operator rules, and the variable-comparison clause the DSL doesn't cover.
+  operator rules, and the clause for a variable compared to a static value,
+  which the DSL doesn't cover.
 
 ### Secrets in code steps are env-specific
 

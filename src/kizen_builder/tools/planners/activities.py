@@ -1,4 +1,4 @@
-"""Plan creation/update/delete for activity types and their fields.
+"""Plan creation/update/delete/duplication for activity types and their fields.
 
 Mirrors the custom-object field planner: activity fields are structurally the
 same as custom-object fields, so the payload builder and option handling are
@@ -9,11 +9,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from kizen_builder.api.client import KizenAPIError
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ActivityDef, ActivityFieldDef
+from kizen_builder.models.spec.activities import check_association_keys
 from kizen_builder.tools.activities import get_activity, list_activities
-from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.tools.plans import (
+    Plan,
+    PlanError,
+    PlanOperation,
+    copy_name_preview,
+    fetch_existing,
+)
 
 _OPTION_FIELD_TYPES = {
     "dropdown",
@@ -59,6 +65,7 @@ def plan_create_activity(spec: dict[str, Any] | ActivityDef) -> Plan:
         )
 
     activity_key = f"activity:{act_def.api_name or act_def.name}"
+    payload = _build_activity_payload(act_def)
     ops: list[PlanOperation] = [
         PlanOperation(
             action="create",
@@ -68,10 +75,10 @@ def plan_create_activity(spec: dict[str, Any] | ActivityDef) -> Plan:
                 "env": env,
                 "name": act_def.name,
                 "api_name": act_def.api_name or "(server-derived)",
-                "association_mode": act_def.association_mode or "(default)",
+                "association_mode": payload.get("association_mode", "(default)"),
                 "fields": len(act_def.fields or []),
             },
-            payload=_build_activity_payload(act_def),
+            payload=payload,
         )
     ]
 
@@ -118,20 +125,24 @@ _UPDATABLE_ACTIVITY_KEYS = {
     "webhook_url": "webhook_url",
     "redirect_url": "redirect_url",
     "calendar_sync_enabled": "calendar_sync_enabled",
-    "custom_object_ids": "custom_object_ids",
-    "selected_object_ids": "selected_object_ids",
     "associated_objects": "associated_objects",
     "loggable_sharing_settings": "loggable_sharing_settings",
 }
 
 
 def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
-    """Plan a PATCH to one activity type. Only keys present in ``changes`` are sent."""
-    env = load_env_config().name
+    """Plan a PATCH to one activity type. Only keys present in ``changes`` are sent.
+
+    ``selected_object_ids`` is sent as ``associated_objects``, which replaces
+    the whole association set; objects already in it keep their flags.
+    """
     try:
-        current = get_activity(identifier, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"activity '{identifier}' not found: {e}") from e
+        check_association_keys(changes)
+    except ValueError as e:
+        raise PlanError(str(e)) from e
+    changes = _with_associated_objects(changes, create=False)
+    env = load_env_config().name
+    current = _load_activity(identifier, include_fields=False)
 
     raw = current.get("raw") or {}
     payload: dict[str, Any] = {}
@@ -140,15 +151,17 @@ def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
         if key not in changes:
             continue
         new = changes[key]
-        # visibility_rules / *_ids / sharing are structural — always include when
-        # explicitly passed; scalar keys skip when unchanged.
-        if key in (
-            "visibility_rules",
-            "custom_object_ids",
-            "selected_object_ids",
-            "associated_objects",
-            "loggable_sharing_settings",
-        ):
+        # visibility_rules / associations / sharing are structural — always
+        # include when explicitly passed; scalar keys skip when unchanged.
+        if key == "associated_objects":
+            stored = raw.get(wire) or []
+            payload[wire] = new
+            diff[wire] = (
+                _association_labels(stored, stored),
+                _association_labels(new, stored),
+            )
+            continue
+        if key in ("visibility_rules", "loggable_sharing_settings"):
             payload[wire] = new
             diff[wire] = ("…", "(updated)")
             continue
@@ -181,10 +194,7 @@ def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
 def plan_delete_activity(identifier: str) -> Plan:
     """Plan deletion of one activity type (and every logged instance's schema link)."""
     env = load_env_config().name
-    try:
-        current = get_activity(identifier, include_fields=False)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"activity '{identifier}' not found: {e}") from e
+    current = _load_activity(identifier, include_fields=False)
 
     op = PlanOperation(
         action="delete",
@@ -204,16 +214,41 @@ def plan_delete_activity(identifier: str) -> Plan:
     )
 
 
+def plan_duplicate_activity(identifier: str, *, name: str | None = None) -> Plan:
+    """Plan duplication of one activity type, renaming the copy when ``name`` is given."""
+    env = load_env_config().name
+    current = _load_activity(identifier, include_fields=False)
+
+    op = PlanOperation(
+        action="duplicate",
+        kind="activity",
+        key=f"activity:{current.get('api_name') or identifier}:duplicate",
+        preview={
+            "env": env,
+            "source": current.get("name"),
+            "new_name": copy_name_preview(current.get("name"), name),
+        },
+        payload={"name": name} if name else {},
+        existing_uuid=current["id"],
+    )
+    return Plan.build(
+        env=env,
+        summary=f"Duplicate activity '{current.get('name')}'",
+        operations=[op],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Activity fields
 # ---------------------------------------------------------------------------
 
 
-def _load_activity_with_fields(identifier: str) -> dict[str, Any]:
-    try:
-        return get_activity(identifier, include_fields=True)
-    except (LookupError, KizenAPIError) as e:
-        raise PlanError(f"activity '{identifier}' not found: {e}") from e
+def _load_activity(identifier: str, *, include_fields: bool = True) -> dict[str, Any]:
+    return fetch_existing(
+        "activity",
+        identifier,
+        lambda: get_activity(identifier, include_fields=include_fields),
+    )
 
 
 def _find_activity_field(
@@ -238,7 +273,7 @@ def plan_create_activity_fields(
     if not fields:
         raise PlanError("no fields provided to create")
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     activity_id = activity["id"]
 
     have = {f.get("api_name") for f in activity["fields"] if f.get("api_name")}
@@ -290,7 +325,7 @@ def plan_update_activity_field(
 ) -> Plan:
     """Plan an update to one field on an activity type."""
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     existing = _find_activity_field(activity, field_api_name)
 
     payload: dict[str, Any] = {}
@@ -298,7 +333,9 @@ def plan_update_activity_field(
     if "name" in changes and changes["name"] != existing.get("display_name"):
         payload["display_name"] = changes["name"]
         diff["display_name"] = (existing.get("display_name"), changes["name"])
-    if "description" in changes:
+    if "description" in changes and changes["description"] != (
+        existing.get("description") or ""
+    ):
         payload["description"] = changes["description"]
         diff["description"] = (existing.get("description"), changes["description"])
     if "required" in changes and changes["required"] != existing.get("is_required"):
@@ -340,7 +377,7 @@ def plan_update_activity_field(
 def plan_delete_activity_field(identifier: str, field_api_name: str) -> Plan:
     """Plan deletion of one field from an activity type."""
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     existing = _find_activity_field(activity, field_api_name)
 
     op = PlanOperation(
@@ -370,7 +407,7 @@ def plan_add_activity_field_options(
     if not options:
         raise PlanError("no options provided to add")
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     existing = _find_activity_field(activity, field_api_name)
     if existing.get("field_type") not in _OPTION_FIELD_TYPES:
         raise PlanError(
@@ -410,7 +447,7 @@ def plan_remove_activity_field_option(
 ) -> Plan:
     """Plan removal of one option from a select-type field on an activity type."""
     env = load_env_config().name
-    activity = _load_activity_with_fields(identifier)
+    activity = _load_activity(identifier)
     existing = _find_activity_field(activity, field_api_name)
     opts = existing.get("options") or []
 
@@ -459,6 +496,54 @@ def plan_remove_activity_field_option(
 # ---------------------------------------------------------------------------
 
 
+def _with_associated_objects(spec: dict[str, Any], *, create: bool) -> dict[str, Any]:
+    """Swap ``selected_object_ids`` for the ``associated_objects`` they mean.
+
+    POST rejects an entry without ``is_required``/``is_readonly``. PATCH keeps
+    the stored flags of an object already in the set when its entry omits them,
+    so an update leaves them out rather than resetting them. Without an
+    ``association_mode`` the server picks ``all_objects_associated`` even when a
+    list is sent, so a non-empty list defaults it.
+    """
+    out = dict(spec)
+    ids = out.pop("selected_object_ids", None)
+    if ids is not None:
+        entries: list[dict[str, Any]] = [
+            {"custom_object": {"id": object_id}, "order": i}
+            for i, object_id in enumerate(ids)
+        ]
+        if create:
+            for entry in entries:
+                entry.update(is_required=False, is_readonly=False)
+        out["associated_objects"] = entries
+    if out.get("associated_objects") and out.get("association_mode") is None:
+        out["association_mode"] = "selected_objects_associated"
+    return out
+
+
+def _association_labels(
+    entries: list[dict[str, Any]], stored: list[dict[str, Any]]
+) -> str:
+    """``patients (required), <uuid>``: what the read will show after the PATCH."""
+    by_id = {e["custom_object"]["id"]: e for e in stored}
+    labels = []
+    for entry in entries:
+        object_id = entry["custom_object"]["id"]
+        old = by_id.get(object_id, {})
+        flags = [
+            word
+            for key, word in (("is_required", "required"), ("is_readonly", "read-only"))
+            if entry.get(key, old.get(key, False))
+        ]
+        name = (
+            old.get("custom_object", {}).get("name")
+            or entry["custom_object"].get("name")
+            or object_id
+        )
+        labels.append(f"{name} ({', '.join(flags)})" if flags else name)
+    return ", ".join(labels) or "(none)"
+
+
 def _build_activity_payload(act: ActivityDef) -> dict[str, Any]:
     payload: dict[str, Any] = {"name": act.name}
     optional = {
@@ -471,14 +556,14 @@ def _build_activity_payload(act: ActivityDef) -> dict[str, Any]:
         "webhook_url": act.webhook_url,
         "redirect_url": act.redirect_url,
         "calendar_sync_enabled": act.calendar_sync_enabled,
-        "custom_object_ids": act.custom_object_ids,
         "selected_object_ids": act.selected_object_ids,
+        "associated_objects": act.associated_objects,
         "loggable_sharing_settings": act.loggable_sharing_settings,
     }
     for key, value in optional.items():
         if value is not None:
             payload[key] = value
-    return payload
+    return _with_associated_objects(payload, create=True)
 
 
 def _build_activity_field_payload(

@@ -26,6 +26,7 @@ from tests import builder_keys
 from tests.drift.contracts import (
     KNOWN_SCHEMA_OMISSIONS,
     KNOWN_UNDOCUMENTED_BLOCKS,
+    KNOWN_UNSENT_SCHEMA_KEYS,
     SNAPSHOT_PATH,
     UPDATE_ENV_VAR,
     _resolve,
@@ -120,6 +121,29 @@ def test_no_schema_drift(openapi_schema, drift_config, update_snapshot):
         )
 
 
+def _declared_blocks(openapi_schema):
+    """(contract key, builder, schema node) for each `@honours` builder whose
+    config block the schema documents."""
+    from kizen_builder.models.spec.automations_triggers import trigger_config_field
+    from kizen_builder.tools.planners.automations import (
+        _STEP_BUILDERS,
+        _TRIGGER_BUILDERS,
+        _prefix_for,
+    )
+
+    blocks = {
+        f"schema:WriteStepRequest.{_prefix_for(t)}_{t}": b
+        for t, b in _STEP_BUILDERS.items()
+    } | {
+        f"schema:WriteTriggerRequest.{trigger_config_field(t)}": b
+        for t, b in _TRIGGER_BUILDERS.items()
+    }
+    for key, builder in sorted(blocks.items()):
+        node = _resolve(openapi_schema, key.removeprefix("schema:"))
+        if builder.honoured_keys is not None and node is not None:
+            yield key, builder, node
+
+
 def test_forwarded_block_keys_are_declared_or_known_omissions(openapi_schema):
     """Keys a builder forwards under the author's own spelling must be declared
     by the live schema for that config block, or listed in
@@ -135,24 +159,8 @@ def test_forwarded_block_keys_are_declared_or_known_omissions(openapi_schema):
     (``KNOWN_UNDOCUMENTED_BLOCKS``). Fails in both directions, like
     ``test_undeclared_fields_match_the_known_omissions``.
     """
-    from kizen_builder.tools.planners.automations import (
-        _STEP_BUILDERS,
-        _TRIGGER_BUILDERS,
-        _prefix_for,
-    )
-
-    blocks = {
-        f"schema:WriteStepRequest.{_prefix_for(t)}_{t}": b
-        for t, b in _STEP_BUILDERS.items()
-    } | {
-        f"schema:WriteTriggerRequest.trigger_{t}": b
-        for t, b in _TRIGGER_BUILDERS.items()
-    }
     problems: list[str] = []
-    for key, builder in sorted(blocks.items()):
-        node = _resolve(openapi_schema, key.removeprefix("schema:"))
-        if builder.honoured_keys is None or node is None:
-            continue
+    for key, builder, node in _declared_blocks(openapi_schema):
         undeclared = builder_keys.forwarded_as_is(builder.__name__) - set(
             node.get("properties") or {}
         )
@@ -171,4 +179,39 @@ def test_forwarded_block_keys_are_declared_or_known_omissions(openapi_schema):
         + "\n\nFor a new key, create a step with it and read it back: record "
         "whether Kizen keeps it, with `confirmed live <date>`. For a listed key, "
         "delete the entry."
+    )
+
+
+def test_write_schema_keys_are_honoured_or_known_unsent(openapi_schema):
+    """Every property the schema documents for a declared config block is
+    one its builder honours, declares ``unsent_on_read``, or is listed in
+    ``KNOWN_UNSENT_SCHEMA_KEYS`` with a reason.
+
+    This is how `schedule_activity.html_note` and the modify step's
+    `record_source` were found: the builder never read them, every PUT
+    dropped them, and the read-side refusal can't see a key that no read
+    has carried yet. Fails in both directions, like
+    ``test_forwarded_block_keys_are_declared_or_known_omissions``.
+    """
+    problems: list[str] = []
+    for key, builder, node in _declared_blocks(openapi_schema):
+        unsent = (
+            set(node.get("properties") or {})
+            - builder.honoured_keys
+            - builder.unsent_on_read
+        )
+        known = set(KNOWN_UNSENT_SCHEMA_KEYS.get(key, {}))
+        if unsent - known:
+            problems.append(
+                f"{key}: not honoured, not listed: {sorted(unsent - known)}"
+            )
+        if known - unsent:
+            problems.append(
+                f"{key}: listed but honoured or gone: {sorted(known - unsent)}"
+            )
+    assert not problems, (
+        "Write-schema keys disagree with KNOWN_UNSENT_SCHEMA_KEYS:\n  "
+        + "\n  ".join(problems)
+        + "\n\nFor a new key, honour it in the builder if the CLI should carry "
+        "it, or list it with the reason it must never be sent."
     )

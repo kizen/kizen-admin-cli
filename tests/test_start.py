@@ -17,33 +17,31 @@ import pytest
 import respx
 
 from kizen_builder.tools.automations import start_and_wait, start_automation
-from tests.conftest import FAKE_BASE_URL
+from tests.conftest import FAKE_BASE_URL, mock_automation_lookup
 
 AUTO_ID = "1800a96e-fb22-4ec3-a912-ca1795744b7a"
 AUTOS = f"{FAKE_BASE_URL}/api/automation2/automations"
 
 
-def _mock_automation(*, api_name: str, object_name: str, variables: list[dict]):
+def _mock_automation(
+    *,
+    api_name: str,
+    object_name: str | None = None,
+    variables: list[dict] | None = None,
+    active: bool = True,
+):
     """Mock the list + detail lookups start_automation performs."""
-    respx.get(AUTOS).mock(
-        return_value=httpx.Response(
-            200, json={"results": [{"id": AUTO_ID, "api_name": api_name}], "next": None}
-        )
-    )
-    respx.get(f"{AUTOS}/{AUTO_ID}").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "id": AUTO_ID,
-                "api_name": api_name,
-                "revision": 1,
-                "active": True,
-                "custom_object": {"name": object_name},
-                "variables": variables,
-                "triggers": [],
-                "steps": [],
-            },
-        )
+    mock_automation_lookup(
+        {
+            "id": AUTO_ID,
+            "api_name": api_name,
+            "revision": 1,
+            "active": active,
+            "custom_object": {"name": object_name} if object_name else None,
+            "variables": variables or [],
+            "triggers": [],
+            "steps": [],
+        }
     )
 
 
@@ -121,33 +119,9 @@ def test_no_variables_sends_bare_record_id():
     assert body == {"record_id": "rec-1"}  # no empty variable_overrides key
 
 
-def _mock_global_automation(*, api_name: str):
-    """Mock a global (record-less) automation — no custom_object."""
-    respx.get(AUTOS).mock(
-        return_value=httpx.Response(
-            200, json={"results": [{"id": AUTO_ID, "api_name": api_name}], "next": None}
-        )
-    )
-    respx.get(f"{AUTOS}/{AUTO_ID}").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "id": AUTO_ID,
-                "api_name": api_name,
-                "revision": 1,
-                "active": True,
-                "custom_object": None,
-                "variables": [],
-                "triggers": [],
-                "steps": [],
-            },
-        )
-    )
-
-
 @respx.mock
 def test_global_automation_starts_without_record():
-    _mock_global_automation(api_name="nightly_sync")
+    _mock_automation(api_name="nightly_sync")
     route = _start_route("nightly_sync")
 
     result = start_automation("nightly_sync")  # no record
@@ -174,30 +148,7 @@ def test_record_based_automation_without_record_errors():
 @respx.mock
 def test_inactive_automation_errors_before_start():
     """An inactive automation is caught locally, not sent (the API 400s on it)."""
-    respx.get(AUTOS).mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "results": [{"id": AUTO_ID, "api_name": "global_test"}],
-                "next": None,
-            },
-        )
-    )
-    respx.get(f"{AUTOS}/{AUTO_ID}").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "id": AUTO_ID,
-                "api_name": "global_test",
-                "revision": 1,
-                "active": False,
-                "custom_object": None,
-                "variables": [],
-                "triggers": [],
-                "steps": [],
-            },
-        )
-    )
+    _mock_automation(api_name="global_test", active=False)
     route = _start_route("global_test")
 
     with pytest.raises(LookupError, match="inactive"):

@@ -61,6 +61,7 @@ def search_records(
             f"/api/records/{object_identifier}/search",
             json=body,
             params={"page": page, "page_size": page_size, **extra_params},
+            read_only=True,
         )
         if isinstance(data, list):
             results.extend(data)
@@ -87,6 +88,7 @@ def count_records(
         f"/api/records/{object_identifier}/search",
         json={"query": filters or [], "and": True},
         params={"page": 1, "page_size": 1},
+        read_only=True,
     )
     return int(data["count"])
 
@@ -245,6 +247,7 @@ def related_pipeline_records(
             f"/api/records/{record_id}/related-pipeline-records",
             json=body,
             params={"page": page, "page_size": page_size},
+            read_only=True,
         )
         results.extend(data.get("results", []))
         if not data.get("next"):

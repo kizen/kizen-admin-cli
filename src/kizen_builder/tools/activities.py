@@ -53,6 +53,8 @@ def resolve_activity_id(client: KizenClient, identifier: str) -> tuple[str, str]
         detail = act_api.get_activity(client, identifier)
         return detail["id"], detail.get("name") or identifier
     except KizenAPIError as e:
+        if e.status_code != 404:
+            raise
         # Fall back to a name/api_name scan of the list endpoint.
         for a in act_api.list_activities(client):
             if identifier in (a.get("id"), a.get("api_name"), a.get("name")):
@@ -80,6 +82,7 @@ def _normalize_field(f: dict[str, Any]) -> dict[str, Any]:
         "id": f.get("id"),
         "api_name": f.get("name"),
         "display_name": f.get("display_name"),
+        "description": f.get("description"),
         "field_type": f.get("field_type"),
         "custom_object_field": f.get("custom_object_field"),
         "linked_field": _linked_field_label(f.get("custom_object_field")),
@@ -111,7 +114,6 @@ def get_activity(identifier: str, *, include_fields: bool = True) -> dict[str, A
             fields = act_api.list_activity_fields(client, detail["id"])
 
     custom_objects = detail.get("custom_objects") or []
-    selected_objects = detail.get("selected_objects") or []
 
     return {
         "env": config.name,
@@ -131,10 +133,7 @@ def get_activity(identifier: str, *, include_fields: bool = True) -> dict[str, A
             {"id": o.get("id"), "name": o.get("name") or o.get("object_name")}
             for o in custom_objects
         ],
-        "selected_objects": [
-            {"id": o.get("id"), "name": o.get("name") or o.get("object_name")}
-            for o in selected_objects
-        ],
+        "associated_objects": detail.get("associated_objects") or [],
         "loggable_sharing_settings": detail.get("loggable_sharing_settings"),
         "deleted": detail.get("deleted", False),
         "created": detail.get("created"),

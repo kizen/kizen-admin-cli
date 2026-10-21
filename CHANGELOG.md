@@ -18,6 +18,30 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Breaking: a step setting the CLI doesn't model now stops every verb that
+  reads an automation back, instead of being dropped.** `activate`,
+  `deactivate`, `move`, `steps add|edit|remove` and `roundtrip --execute`
+  used to write the automation back without it; `show`, `steps get` and
+  `diff` printed the automation without it. Each now fails with an
+  `error:` naming the automation, the step or trigger and the setting, and
+  nothing is written. Such an automation can't be edited through the CLI
+  until the setting is supported.
+- **Breaking: `objects create --api-name` is now optional, and a value Kizen
+  won't produce exits 2.** Kizen derives an object's api_name from `--name`
+  and refuses a supplied one, so the old flag was silently ignored and
+  `--api-name invoice --name Invoices` built `invoices`. The error names the
+  derived value and a `--name` that gives the one you wanted. The plan now
+  shows `api_name (derived)`, refuses a display name a live object already
+  has, and warns when Kizen will add a random suffix. The result line (and
+  `--json`'s `message`) shows the api_name Kizen stored. An object spec's
+  `api_name` is optional too.
+- **Breaking: an automation variable's `data_type` must be one Kizen
+  accepts.** `string`, `number`, `boolean`, `date`, `datetime`,
+  `phone_number`, `email`, `uuid`, `employee` or `entity`. Anything else,
+  such as `text`, `list` or `object`, is now a spec error at `--dry-run`.
+  Before, the plan passed and Kizen answered the create with an HTTP 500.
+  `steps add` and `steps edit` check it too. Unknown keys in a variable are
+  rejected as well: `isArray` used to save a scalar variable.
 - **Breaking: `automations start`, `roundtrip --execute`, `code test` and
   every `automations runs` verb except `pause` now y/N-confirm. Scripts must
   pass `--yes` or they exit 2.** Each of them runs live and can't be undone;
@@ -45,6 +69,27 @@ called out explicitly under **Changed** or **Removed**.
   `activity_logged` trigger. `create_related_entity` now reads
   `target_object` as the target object, so `target_custom_object` no longer
   needs to repeat it.
+- **Breaking: `create_related_entity`'s `field_values` is now a plan error
+  on `automations create`/`update`, `steps add` and `steps edit`, and
+  `target_object` is no longer required.** Kizen accepted `field_values`
+  and stored nothing, so a spec that set it created the record without the
+  values and reported success. To create a related record with values,
+  create it empty and set them in a following `modify_related_entities`
+  step. A block that names its object only with `target_custom_object`, as
+  one copied from `steps get` does, now validates for `automations create`
+  and `steps add`.
+- **Breaking: an activity, form or survey field spec key the CLI doesn't
+  read is now a spec error.** `activities create`, `activities fields
+  create`, and `forms`/`surveys` `create` and `fields create` used to drop it
+  silently, so a field written with the API's `"is_required": true` applied
+  as optional. The error names the key. For the API's spellings
+  (`is_required`, `is_read_only`, `is_hidden`, `display_name`,
+  `phonenumber_options`) it also names the key to write instead.
+  Custom-object field specs already rejected unknown keys, and now give the
+  same hint. A type block that doesn't match `field_type`, such as
+  `money_options` on a `text` field, is now rejected on these fields too. A
+  spec that applied before can fail after upgrading: rename or remove the
+  key.
 - **Breaking: `records delete` is removed; `records archive` is the one way
   to remove records.** Kizen's delete was always an archive (same restorable
   state, same id), so the two commands did the same thing. `records archive`
@@ -174,9 +219,112 @@ called out explicitly under **Changed** or **Removed**.
   the step in the UI, and a group condition with no groups has nothing to
   test. Reading and editing a live automation that already carries one
   still works, so `steps edit` can fix it.
+- **A `call_llm` step that sets `data_type` is now rejected at plan time.**
+  Kizen accepted the key and discarded it, so the step was saved without it.
+- **A step's plan error from an automation spec now starts with `step
+  '<key>': `**, e.g. `step 'run_script': code_step input …`.
+- **A spec with `custom_object_ids` is a plan error on `activities create`
+  and `update`; use `selected_object_ids`.** The key was never sent to
+  anything that honoured it. `activities get --json` shows the server's
+  `associated_objects` (with each object's `is_required`) in place of a
+  `selected_objects` key that was always empty.
+- **`records set-field` takes `--field api_name=value`**, the same shape as
+  `records create|update|upsert`. The old `--field <api_name> --value <value>`
+  still works and prints a deprecation warning on stderr. Exactly one
+  `--field` is accepted; use `records update --spec-file` for several.
+- **Reads retry on a dropped connection and on HTTP 429, 502, 503 or 504.**
+  Each GET gets up to two retries, 1 s and then 2 s apart, or the server's
+  `Retry-After` up to 10 s. A request whose connection never opened is
+  retried for every method. A write is never retried once it was sent. A
+  write that hits a timeout, a dropped connection or a 502/503/504 now says
+  the server may have applied it and to read live state before retrying,
+  where before it read as a plain network error. File downloads get the same
+  retry, and their errors now carry the server's message and the `kizen
+  init` hint on a 401.
+- **An `assign_team_member` step missing a key its `type` needs now fails at
+  `--dry-run`, naming the key and the object it lives on.** That covers
+  `automations create`/`update` specs and `steps add`/`steps edit`.
+  `related_team_selector_field` needs both `related_field_id` (the hop on
+  this object) and `field_id` (the selector on the far object). A hop that
+  isn't a single-value relationship field on `target_object`, such as the
+  far object's selector, is rejected too. Kizen 400s these at apply, and its
+  message for a wrong hop names the field you passed rather than the one it
+  wanted. A passing check doesn't
+  mean a run assigns anyone: `kizen docs show automation` lists the types
+  that report `completed` without changing `owner`.
 
 ### Added
 
+- **`kizen` can run under app-builder with no profile.**
+  When `KIZEN_AUTH_HELPER` is set, the environment comes from
+  `KIZEN_BASE_URL`, `KIZEN_BUSINESS_ID` and `KIZEN_USER_ID`, and every request
+  authenticates with a Bearer token printed by the helper command, refreshed
+  once on a 401. `~/.config/kizen/credentials.toml` isn't read, and a pinned
+  directory still refuses a different `business_id`. In this mode `kizen
+  init`, `kizen envs list` and `kizen upgrade` refuse, and `kizen upgrade
+  --check` says the installation is managed by app-builder and exits 0.
+  Profile mode is unchanged. `kizen docs show operating` has the variable
+  contract.
+
+- **`activities duplicate <activity>`** copies an activity type, and
+  **`dashboards duplicate <dashboard>`** copies a dashboard with its
+  dashlets. `--name` names the copy, and `dashboards duplicate` also takes
+  `--api-name`. Without them, Kizen names the copy `<name> (copy #N)`. A
+  dashboard copy keeps the source's sharing, which Kizen would otherwise
+  empty so only you could see it, and is unpublished; publish it with
+  `dashboards update`.
+- **Automation specs can set `record_source` and `record_source_variables`
+  on `modify_related_entities`**, to modify the records held in entity
+  variables rather than reached through a relationship hop, **and
+  `html_note` on `schedule_activity`.**
+- **Specs can author the `email_received` trigger and goal trigger.** Set
+  `trigger_type: email_received` at the top level or in a goal's `triggers`,
+  with an optional `trigger_email_received_from_contact: {receiving_inbox,
+  selected_integrated_inboxes}`. `receiving_inbox` defaults to `any`;
+  `selected_integrated_inboxes` takes inbox UUIDs. Contact automations only.
+- **Automation specs can author `plugin_code_step` steps**, and automations
+  that contain them update, diff and round-trip. Name the plugin by its
+  installed api_name. There's no plugin app id. Inputs and outputs take the
+  `code_step` shapes, and an input can also be `business_plugin_config`
+  (the plugin's install config, per Kizen's 2026-10-13 release; run-time
+  delivery not confirmed live). `show`, `roundtrip` and `steps`
+  now print a live plugin step in the same shape a spec takes.
+- **`team update`** assigns and removes team members' roles (`--role`
+  replaces the set; `--add-role`/`--remove-role` change one at a time), with
+  the usual dry-run and confirmation. It refuses to remove the last Admin.
+- **Extraction and transcription steps can read their file from a related
+  record or an automation variable.** `file_content_extraction` and
+  `audio_transcription` take `input_value_source` as an alternative to
+  `input_field_ref`: `{type: related_object_field, relationship_field,
+  field}` or `{type: automation_variable, variable}`, with dotted
+  `object.field` refs resolved. `steps get` prints it in the same shape. Set
+  one or the other: a step with both, or neither, is a plan error. The hop
+  must be a single-valued relationship. The Kizen UI can't open an
+  automation that uses one of these sources yet.
+- **Condition steps can compare a field to an array variable (`"variable":
+  "<name>"` in a filter spec).** `{"field": "status", "op": "is_any_of",
+  "variable": "allowed_statuses"}` compiles to the rule the Kizen UI writes
+  for its "Variable" option, and the step opens in the UI editor. It is
+  accepted on dropdown, checkboxes, team-member and relationship fields, with
+  `is_any_of` or `not_any_of`. In a test run a dropdown rule matched with the
+  array holding either option names or option UUIDs; the other field types
+  were not run. The variable must be declared in the same automation, by
+  `initialize_variable` or as a `search_records` destination, and be a kind
+  the UI offers for that field; anything else is a plan error naming the
+  step. Contacts automations and other filters (`search_records`,
+  `records list --filter`, filter groups, dashlets) reject `"variable"`.
+  `kizen docs show filters` lists the field types and variable kinds.
+- **`update_variable` specs take `value_resolution`** (`add_only`,
+  `overwrite`, `overwrite_except_null`), Kizen's 2026-10-13 option for how
+  an update combines with an array variable's current value. Invalid values
+  are a plan error. So are `array_aggregation_mode` values other than
+  `add_all`/`add_first_non_blank`, which used to reach the server unchecked.
+  `value_resolution` on an `initialize_variable` step is now a plan error
+  too: Kizen accepted it there and silently dropped it. `kizen docs show
+  automation` has what each value does. It works on array variables only,
+  and setting it on a variable the automation defines as scalar is a plan
+  error, in a spec and in `steps add`/`steps edit`.
+  The builder UI doesn't show the option yet.
 - **Automation specs can build branch groups, parallel branches and skipped
   conditions.** Two new step types, `branch` and `merge_branches`, and three
   step fields: `is_branch_group_initiator`, `continue_with_branch` and
@@ -354,8 +502,92 @@ called out explicitly under **Changed** or **Removed**.
   it — while a mismatch on a control that had **no entry at all** at plan
   time (the fresh-insert case above) still surfaces as `failed`. See
   `docs/specs/permission-group.md`.
+- **`activities create --object`** associates the new type with objects by
+  api_name or UUID (repeatable), as `activities update --object` already
+  did.
 
 ### Fixed
+
+- **`forms`/`surveys update` and `set-ui` no longer delete fields.** Kizen
+  deletes every field that isn't placed on a page whenever a form is saved,
+  so updating a form with no layout yet emptied it, and a partial `set-ui`
+  dropped the fields it left out. Both now stop before writing and name the
+  fields; place them with `set-ui` or remove them with `fields delete`.
+- **`forms`/`surveys duplicate --name` was ignored by the server and the
+  copy kept the `(copy #N)` name; the name is now applied.** The preview
+  said the copy would get the name, and `--help` said the default was
+  `Copy of <name>`; both now match what Kizen does. Kizen deletes every
+  field not placed on a `form_ui` page whenever a form is updated, so
+  `--name` now refuses a source with an unplaced field, or with no pages,
+  and names the fields: duplicate without `--name`, place every field with
+  `set-ui`, then rename the copy with `update`.
+- **Automation field refs that were sent as literal strings or dropped now
+  resolve to the field's UUID.** `create_related_entity`'s
+  `context_entity_field` and `start_automation`'s `relationship_field_ids`
+  sent an `"object.field"` ref to Kizen as-is, which it rejected. A bare
+  field name in a `field_updated` or `on_or_around_date` trigger's
+  `field_ref`, top-level or in a goal, was dropped without an error, so the
+  trigger saved with no field. A bare name now resolves against the
+  automation's `target_object`, and is a plan error when there is none.
+- **`fields update` can no longer match a deleted field.** A deleted field
+  that shared the api_name could be picked over the live one, and deleted
+  fields were listed under `Available:`.
+- **Updating a custom-object or activity field's description to its current
+  value plans as `skip`, not `update`.** The CLI never read the live
+  description, so any description counted as a change. Forms and surveys
+  still always update it: their field reads carry no description.
+- **Auth and server errors are no longer reported as "not found".** Forms,
+  surveys, activities and object lookups turned any API error, such as a 401
+  or a 500, into "not found"; only a 404 does that now, and anything else
+  shows as itself. Role and permission-group updates and deletes now report
+  a 404 as `role '<id>' not found` instead of a raw HTTP error.
+- **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
+  longer clear a Schedule Activity step's HTML note, and no longer fail with
+  HTTP 400 on a Modify Related Records step that reads its records from a
+  variable.** Each of them re-saves the whole automation, and the re-save
+  dropped both settings.
+- **`automations steps edit` refuses a config-block key the step type doesn't
+  read, as `steps add` already did.** It used to drop the key and report
+  success.
+- **`automations steps edit` and `steps add` no longer fail with HTTP 400 on a
+  Schedule Activity step copied from `steps get`.** The re-save sent each
+  associated object as `null`. An `association_configs` entry in a spec can
+  now give `custom_object_id`, and an entry that names no object is a plan
+  error.
+- **`objects delete` works on an object that still has records.** It used to
+  show a plan and then fail with a 400 from Kizen. It now archives the records
+  first, 500 per request with Kizen's email off, then deletes the object.
+  Built-in objects such as Contacts are refused before anything is planned.
+- **`code test` no longer reports a network error for a script that runs
+  longer than 30 seconds.** The script kept running and its `kizen.api`
+  writes landed, so rerunning it wrote twice. The command now waits up to 2
+  minutes. The server ends a run at about 55 seconds, so a long script now
+  reports the server's own `Task timed out after 55.00 seconds`.
+- **`automations runs view`, `runs logs` and `automations start --show-logs`
+  now show every step of a long run.** Before, they read only the first page
+  of its history, so a run with more than 100 history rows lost the rest.
+- **`steps add` prints a bad step spec as `spec error:` lines** instead of
+  `error: internal: ValidationError` and a debug hint. A spec key containing
+  `[` no longer crashes the `spec error:` line either.
+- **The README's setup instructions match the CLI.** Scripted `kizen init`
+  needs `--base-url`; the `connectors` install line no longer assumes a clone;
+  a stale warning that step ids rotate on every update is gone.
+- **The variable-condition docs no longer call `client_tag_field_id` a
+  constant.** It varies by business. The docs say where to get it.
+- **`kizen init` no longer prints the stored API key when it re-prompts for an
+  existing profile.** The prompt showed the key as its default, so it landed in
+  scrollback, screen shares and recordings. It now reads `API_KEY (Enter keeps
+  the stored key):`, and pressing Enter still keeps it.
+
+- **`activate`, `deactivate`, `move`, `steps` and `roundtrip --execute` no
+  longer fail with HTTP 400 on automations with an Email Received trigger or
+  goal.** They sent the trigger's config under the wrong key, so the
+  automation could only be edited in the UI.
+- **`activate`, `deactivate`, `move`, `steps add|edit|remove` and `roundtrip
+  --execute` no longer fail with HTTP 400** on an automation whose extraction
+  or transcription step reads from a related record or a variable. Each of
+  them re-saves the whole automation, and the re-save dropped the step's
+  input.
 
 - **`smart-connectors seeds add` and `seeds remove` keep a seed's fields when
   they re-save it.** Adding a seed for an object the connector already seeds,
@@ -587,6 +819,20 @@ called out explicitly under **Changed** or **Removed**.
   associating an activity type with Contacts via `activities update --object
   client_client` previously failed with `object 'client_client' not found`,
   since both resolve through the same `list_objects()` call.
+- **Activity types associate with the objects their spec names.**
+  `activities create` with `selected_object_ids` 400'd, and `activities
+  update --spec-file` with `selected_object_ids` returned success and
+  changed nothing. Both now send the ids as `associated_objects`, and set
+  `association_mode: selected_objects_associated` when the spec doesn't; a
+  hand-written `associated_objects` list gets the same default instead of
+  being stored as `all_objects_associated`. `activities update --object`
+  keeps the Required and Read-only flags of objects already associated.
+
+- **`records set-field` JSON-decodes its value the way `records update`
+  does, so a multi-select takes a list.** Before, `--value '["A","B"]'` was
+  sent as one option named by its JSON text. A value starting with `[` or `{`
+  is now decoded, so a text field set to JSON-looking text gets the decoded
+  value, as it already did in `records update`.
 
 ### Added
 

@@ -85,6 +85,9 @@ block until the run finishes). `runs logs <exec_uuid>` prints each step's
   description}`), **not** at the row top level. Timing is `execution_time_ms`
   (null for async steps like `code_step` / `call_llm`) plus `created` /
   `updated`.
+- `/history` is a paginated DRF envelope of 100 rows a page by default; a
+  211-row run came back as three pages (**confirmed live 2026-10-16**). The
+  CLI follows every `next` link.
 - `detailed_log` on a history row is where a `code_step`'s output lands —
   **only** `outputs.log("…")` populates it; plain `print()` does not.
   `runs logs <exec_uuid>` renders it. **Confirmed live 2026-08-13**, its shape

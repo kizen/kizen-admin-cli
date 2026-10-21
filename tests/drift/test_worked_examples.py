@@ -53,11 +53,11 @@ def _load(name: str) -> Any:
 def example_object(drift_client, scratch) -> dict[str, Any]:
     """object.json's object + category, then a read-back for the derived name.
 
-    Kizen pluralizes the api_name on create — `examples.md`'s first live
-    finding. Every fixture downstream hardcodes the pluralized form
+    Kizen derives the api_name from the display name — `examples.md`'s first
+    live finding. Every fixture downstream hardcodes the derived form
     (`service_tickets`), so this fixture asserts that assumption rather than
-    silently trusting it: if Kizen's pluralization ever changes, this fails
-    here with a clear reason instead of a confusing 404 three stages later.
+    silently trusting it: if Kizen's derivation ever changes, this fails here
+    with a clear reason instead of a confusing 404 three stages later.
     """
     from kizen_builder.api import custom_objects as co_api
     from kizen_builder.models.spec import ObjectDef
@@ -77,12 +77,13 @@ def example_object(drift_client, scratch) -> dict[str, Any]:
     live = co_api.get_object(drift_client, created["id"])
     api_name = live["name"]
 
-    assert api_name == "service_tickets", (
-        f"object.json's api_name 'service_ticket' came back as {api_name!r}, "
-        "not the 'service_tickets' every downstream fixture hardcodes "
-        "(fields.json's self-relation, automation.json's target_object). "
-        "Kizen's pluralization rule apparently changed — examples.md and "
-        "these fixtures need to be revisited, not worked around here."
+    assert api_name == obj_def.effective_api_name == "service_tickets", (
+        f"'Service Tickets' came back as api_name {api_name!r}, not the "
+        "'service_tickets' every downstream fixture hardcodes (fields.json's "
+        "self-relation, automation.json's target_object). Kizen's derivation "
+        "rule (or a live object already holding the slug) changed it — "
+        "examples.md and these fixtures need to be revisited, not worked "
+        "around here."
     )
 
     categories = [
@@ -142,67 +143,57 @@ def test_the_self_relationship_field_resolves(example_fields, example_object):
 
 
 # ---------------------------------------------------------------------------
-# Stage 3: the activity type — the create-then-associate workaround
+# Stage 3: the activity type, its fields and its association in one plan
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
 def example_activity(drift_client, scratch, example_object, example_fields):
-    """activity.json's fields, then the object association.
-
-    `activities create --spec-file` 400s if `selected_object_ids` is sent
-    (examples.md's second live finding: there is no create-time equivalent of
-    `activities update --object`) — so this mirrors the doc's own working
-    sequence: create the type and its fields first, associate second.
-    """
+    """activity.json as written, placeholders resolved, through
+    `plan_create_activity` → `apply_plan` — what `activities create
+    --spec-file` runs."""
     from kizen_builder.api import activities as act_api
-    from kizen_builder.models.spec import ActivityDef, ActivityFieldDef
-    from kizen_builder.tools.planners.activities import _build_activity_field_payload
+    from kizen_builder.tools.planners.activities import plan_create_activity
+    from kizen_builder.tools.plans import apply_plan
 
-    spec = _load("activity.json")
-    priority_uuid = example_fields["priority"]["id"]
-
-    act_def = ActivityDef.model_validate({"name": spec["name"]})
-    created = act_api.create_activity(drift_client, {"name": act_def.name})
-    scratch.track(
-        "activity",
-        created["id"],
-        lambda: act_api.delete_activity(drift_client, created["id"]),
+    text = json.dumps(_load("activity.json"))
+    text = text.replace("<service_tickets_object_uuid>", example_object["uuid"])
+    text = text.replace(
+        "<service_tickets.priority_field_uuid>", example_fields["priority"]["id"]
     )
+    spec = json.loads(text)
 
-    fields: dict[str, dict[str, Any]] = {}
-    for idx, field in enumerate(spec["fields"]):
-        field = dict(field)
-        if field.get("field_type") == "activity_custom_field":
-            field["custom_object_field"] = priority_uuid
-        fd = ActivityFieldDef.model_validate(field)
-        payload = _build_activity_field_payload(fd, default_order=idx)
-        created_field = act_api.create_activity_field(
-            drift_client, created["id"], payload
-        )
+    result = apply_plan(plan_create_activity(spec))
+    activity_id = result.results[0].server_uuid
+    if activity_id:
         scratch.track(
-            "activity_field",
-            created_field["id"],
-            lambda fid=created_field["id"]: act_api.delete_activity_field(
-                drift_client, created["id"], fid
-            ),
+            "activity",
+            activity_id,
+            lambda: act_api.delete_activity(drift_client, activity_id),
         )
-        fields[created_field["name"]] = created_field
+    fields: dict[str, dict[str, Any]] = {}
+    for r in result.results[1:]:
+        if r.server_uuid and r.raw:
+            scratch.track(
+                "activity_field",
+                r.server_uuid,
+                lambda fid=r.server_uuid: act_api.delete_activity_field(
+                    drift_client, activity_id, fid
+                ),
+            )
+            fields[r.raw["name"]] = r.raw
+    assert result.all_ok, [r.message for r in result.results if r.status != "ok"]
 
-    act_api.update_activity(
-        drift_client,
-        created["id"],
-        {
-            "association_mode": "selected_objects_associated",
-            "associated_objects": [{"custom_object": {"id": example_object["uuid"]}}],
-        },
-    )
-    live = act_api.get_activity(drift_client, created["id"])
-    return {"uuid": created["id"], "live": live, "fields": fields}
+    live = act_api.get_activity(drift_client, activity_id)
+    return {"uuid": activity_id, "live": live, "fields": fields}
 
 
 def test_the_activity_type_applies_with_its_fields(example_activity):
     assert set(example_activity["fields"]) >= {"outcome", "priority_snapshot"}
+
+
+def test_the_activity_keeps_its_pinned_api_name(example_activity):
+    assert example_activity["live"]["api_name"] == "site_visit"
 
 
 def test_the_activity_is_associated_to_the_object_by_uuid(
@@ -272,9 +263,8 @@ def test_the_automation_applies(example_automation):
 def test_create_related_entity_resolved_the_context_entity_field(
     example_automation, example_fields
 ):
-    """The doc's headline finding: `target_object` (the declared spec field)
-    is dead; the builder reads `target_custom_object`. This fixture sends
-    both — this asserts the one the server actually stored came through."""
+    """The worked example names its object only with `target_object`, the
+    alias; it goes on the wire as `target_custom_object`."""
     sent = next(
         s
         for s in example_automation["sent"]["steps"]

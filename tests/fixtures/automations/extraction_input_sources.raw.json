@@ -1,0 +1,414 @@
+{
+  "id": "6bd13760-5d8f-4de4-b1b3-71d6c230047f",
+  "name": "Extraction Input Sources",
+  "api_name": "extraction_input_sources",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "d5d4d307-1493-4c94-ab8e-fedc8c08c79e",
+    "name": "claims",
+    "description": "",
+    "entity_name": "Claims",
+    "object_name": "Claims",
+    "object_class": "custom_objects",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "65768bc2-09dd-4fb5-a2ec-e15f0e3c2e6f",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "120d4106-d14f-4c16-b930-6fee4b3af2c7",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "f878f199-6b92-4a00-b437-25d5dccddb77",
+          "name": "claim_file",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-14T13:56:51.827333Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "83645002-ace8-456f-a524-b71df3336b92",
+      "step_type": "file_content_extraction",
+      "order": 1,
+      "description": "File Content Extraction",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "120d4106-d14f-4c16-b930-6fee4b3af2c7",
+      "parent_condition": "",
+      "action_file_content_extraction": {
+        "model_name": "kizen/lite",
+        "business_plugin_app": null,
+        "prompt": "Summarize the policy document.",
+        "html_prompt": "<p>Summarize the policy document.</p>",
+        "merge_field_validation": "error_if_required",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": {
+              "id": "3bf64e7c-8a2d-40ce-b444-ebdd647b7d75",
+              "name": "claim_summary",
+              "display_name": "Claim Summary",
+              "deleted": false,
+              "field_type": "longtext",
+              "options": [],
+              "relation": null,
+              "rating": null
+            },
+            "variable": null,
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false,
+        "data_type": "image",
+        "input_field": null,
+        "input_value_source": {
+          "type": "related_object_field",
+          "value_custom_object": null,
+          "value_datatype": null,
+          "value": null,
+          "field": {
+            "id": "ee4cecb6-10a9-435f-b82c-4798a64808de",
+            "name": "policy_document",
+            "display_name": "Policy Document",
+            "deleted": false,
+            "field_type": "files",
+            "options": [],
+            "relation": null,
+            "rating": null
+          },
+          "relationship_field": {
+            "id": "62bb1252-acf9-4bca-914e-91e9f4ab952b",
+            "name": "policy",
+            "display_name": "Policy",
+            "deleted": false,
+            "field_type": "relationship",
+            "options": [],
+            "relation": {
+              "id": "745cb8ab-f2f0-4faf-813e-edde1d7ee10b",
+              "related_field": "e71cc6fb-3800-425f-a02f-d607c0e5b274",
+              "related_object": "b427fa2a-ba76-40bc-aa85-0b000a6b3551",
+              "related_object_name": "Policies",
+              "related_object_object_name": "policies",
+              "related_entity_name": "Policies",
+              "related_category": "2bae3aab-a837-466d-aca8-d41515f3c863",
+              "related_name": "Claims",
+              "relation_type": "primary",
+              "cardinality": "many_to_one",
+              "fetch_url": "standard"
+            },
+            "rating": null
+          },
+          "variable": null
+        }
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "674130f0-34e0-4768-a311-7f0b5c4e7ea7",
+      "step_type": "audio_transcription",
+      "order": 2,
+      "description": "Audio Transcription",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "83645002-ace8-456f-a524-b71df3336b92",
+      "parent_condition": "",
+      "action_audio_transcription": {
+        "model_name": "kizen/transcribe",
+        "business_plugin_app": null,
+        "prompt": "Transcribe the policy recording.",
+        "html_prompt": "<p>Transcribe the policy recording.</p>",
+        "merge_field_validation": "error_if_required",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": {
+              "id": "3bf64e7c-8a2d-40ce-b444-ebdd647b7d75",
+              "name": "claim_summary",
+              "display_name": "Claim Summary",
+              "deleted": false,
+              "field_type": "longtext",
+              "options": [],
+              "relation": null,
+              "rating": null
+            },
+            "variable": null,
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false,
+        "data_type": "audio",
+        "input_field": null,
+        "input_value_source": {
+          "type": "related_object_field",
+          "value_custom_object": null,
+          "value_datatype": null,
+          "value": null,
+          "field": {
+            "id": "ee4cecb6-10a9-435f-b82c-4798a64808de",
+            "name": "policy_document",
+            "display_name": "Policy Document",
+            "deleted": false,
+            "field_type": "files",
+            "options": [],
+            "relation": null,
+            "rating": null
+          },
+          "relationship_field": {
+            "id": "62bb1252-acf9-4bca-914e-91e9f4ab952b",
+            "name": "policy",
+            "display_name": "Policy",
+            "deleted": false,
+            "field_type": "relationship",
+            "options": [],
+            "relation": {
+              "id": "745cb8ab-f2f0-4faf-813e-edde1d7ee10b",
+              "related_field": "e71cc6fb-3800-425f-a02f-d607c0e5b274",
+              "related_object": "b427fa2a-ba76-40bc-aa85-0b000a6b3551",
+              "related_object_name": "Policies",
+              "related_object_object_name": "policies",
+              "related_entity_name": "Policies",
+              "related_category": "2bae3aab-a837-466d-aca8-d41515f3c863",
+              "related_name": "Claims",
+              "relation_type": "primary",
+              "cardinality": "many_to_one",
+              "fetch_url": "standard"
+            },
+            "rating": null
+          },
+          "variable": null
+        }
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "cb54eef9-3aa8-474d-bc08-6bdf101915c1",
+      "step_type": "file_content_extraction",
+      "order": 3,
+      "description": "File Content Extraction",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "674130f0-34e0-4768-a311-7f0b5c4e7ea7",
+      "parent_condition": "",
+      "action_file_content_extraction": {
+        "model_name": "kizen/lite",
+        "business_plugin_app": null,
+        "prompt": "Summarize the file held in the variable.",
+        "html_prompt": "<p>Summarize the file held in the variable.</p>",
+        "merge_field_validation": "error_if_required",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": {
+              "id": "3bf64e7c-8a2d-40ce-b444-ebdd647b7d75",
+              "name": "claim_summary",
+              "display_name": "Claim Summary",
+              "deleted": false,
+              "field_type": "longtext",
+              "options": [],
+              "relation": null,
+              "rating": null
+            },
+            "variable": null,
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false,
+        "data_type": "image",
+        "input_field": null,
+        "input_value_source": {
+          "type": "automation_variable",
+          "value_custom_object": null,
+          "value_datatype": null,
+          "value": null,
+          "field": null,
+          "relationship_field": null,
+          "variable": {
+            "id": "f878f199-6b92-4a00-b437-25d5dccddb77",
+            "name": "claim_file",
+            "data_type": "string",
+            "data_subtype": null,
+            "deleted": false,
+            "is_array": false
+          }
+        }
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "cb627a49-d67e-4bc3-bbab-505d9b72d05a",
+      "step_type": "file_content_extraction",
+      "order": 4,
+      "description": "File Content Extraction",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "cb54eef9-3aa8-474d-bc08-6bdf101915c1",
+      "parent_condition": "",
+      "action_file_content_extraction": {
+        "model_name": "kizen/lite",
+        "business_plugin_app": null,
+        "prompt": "Summarize the claim attachment.",
+        "html_prompt": "<p>Summarize the claim attachment.</p>",
+        "merge_field_validation": "error_if_required",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": {
+              "id": "3bf64e7c-8a2d-40ce-b444-ebdd647b7d75",
+              "name": "claim_summary",
+              "display_name": "Claim Summary",
+              "deleted": false,
+              "field_type": "longtext",
+              "options": [],
+              "relation": null,
+              "rating": null
+            },
+            "variable": null,
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false,
+        "data_type": "image",
+        "input_field": {
+          "id": "a32c92f6-60d2-4dfe-83c3-66a85b7b7107",
+          "name": "claim_attachment",
+          "display_name": "Claim Attachment",
+          "deleted": false,
+          "field_type": "files",
+          "options": [],
+          "relation": null,
+          "rating": null
+        },
+        "input_value_source": {
+          "type": "context_entity_field",
+          "value_custom_object": null,
+          "value_datatype": null,
+          "value": null,
+          "field": {
+            "id": "a32c92f6-60d2-4dfe-83c3-66a85b7b7107",
+            "name": "claim_attachment",
+            "display_name": "Claim Attachment",
+            "deleted": false,
+            "field_type": "files",
+            "options": [],
+            "relation": null,
+            "rating": null
+          },
+          "relationship_field": null,
+          "variable": null
+        }
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "f878f199-6b92-4a00-b437-25d5dccddb77",
+      "name": "claim_file",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-14T13:56:51.827333Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    }
+  ],
+  "revision": 10,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-14T08:56:51.795150-05:00",
+  "updated": "2026-10-14T08:58:33.536611-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

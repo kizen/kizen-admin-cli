@@ -172,6 +172,23 @@ class ActionAssignTeamMemberConfig(BaseModel):
     employee_ids: list[str] = Field(
         default_factory=list, description="The pool for `round_robin_team_members`."
     )
+    field_id: str | None = Field(
+        default=None,
+        description=(
+            "The team-selector field the owner is copied from. Required for "
+            "`team_selector_field` (a field on the automation's own object) and "
+            "`related_team_selector_field` (a field on the object "
+            "`related_field_id` points to)."
+        ),
+    )
+    related_field_id: str | None = Field(
+        default=None,
+        description=(
+            "Required for `related_team_selector_field`, with `field_id`: a "
+            "single-value relationship field on the automation's own object "
+            "(the hop)."
+        ),
+    )
 
 
 class TagToAddConfig(BaseModel):
@@ -256,10 +273,11 @@ class ActionScheduleActivityConfig(BaseModel):
         default_factory=list,
         description=(
             "Per-object record association for activity types tied to more "
-            "than one custom object — one entry per ADDITIONALLY associated "
-            "object (not the automation's own target_object — the server "
-            "auto-adds a context_record entry for that one; don't send it "
-            "yourself, and don't count it when sizing this list). Author "
+            "than one custom object. The server adds one entry per associated "
+            "object itself (context_record for the automation's own "
+            "target_object, none for the others), so you needn't author "
+            "those; a block copied from `steps get` already carries them and "
+            "re-applies unchanged. Author "
             "shape: {'object': api_name, 'source': 'none'|'context_record'|"
             "'related_field'|'record_variable'|'variable_related_field', "
             "'relationship_field_ref': 'object.field' (for source="
@@ -279,13 +297,21 @@ class ActionScheduleActivityConfig(BaseModel):
             "as-is — note those READ key names differ from the WRITE keys "
             "(`custom_object_id`/`relationship_field_id`/"
             "`automation_variable_name`), which this field's builder "
-            "translates automatically. Replaces the non-functional "
+            "translates automatically. The write keys themselves, as `steps "
+            "get` prints them, are accepted too. Replaces the non-functional "
             "`additional_association_relationship_fields` key from an "
             "earlier, unconfirmed guess at this step's wire shape — that key "
             "silently no-op'd."
         ),
     )
     note: str | None = None
+    html_note: str | None = Field(
+        default=None,
+        description=(
+            "HTML-formatted note. Kizen stores it separately from `note`, and "
+            "a write without it clears it (confirmed live 2026-10-06)."
+        ),
+    )
 
 
 class ActionDeleteScheduledActivityConfig(BaseModel):
