@@ -14,7 +14,7 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
-## [0.3.0] — 2026-10-06
+## [0.3.0] — 2026-10-21
 
 ### Changed
 
