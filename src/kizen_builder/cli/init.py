@@ -17,7 +17,7 @@ from kizen_builder import docs as docs_res
 from kizen_builder import profiles
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.cli._shared import app, console, err_console
-from kizen_builder.config import EnvConfig
+from kizen_builder.config import ApiKeyAuth, EnvConfig, refuse_in_helper_mode
 
 # The dotted-halftone Kizen logo mark from Kizen's node CLI (@kizenapps/cli's
 # src/ui/Logo.tsx), transcribed verbatim from that package's published source
@@ -302,6 +302,7 @@ def init(
     anything still missing is prompted for, so this works interactively and
     headlessly from the same command.
     """
+    refuse_in_helper_mode("init", "this environment's credentials")
     _print_banner()
     cwd = Path.cwd()
     if not profile:
@@ -344,10 +345,10 @@ def init(
     if not skip_validation:
         cfg = EnvConfig(
             name=profile.lower(),
-            api_key=api_key,
             business_id=business_id,
             user_id=user_id,
             base_url=base_url_in,
+            auth=ApiKeyAuth(api_key),
         )
         try:
             _validate_creds(cfg)
