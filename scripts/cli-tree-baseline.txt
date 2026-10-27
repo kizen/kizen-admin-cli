@@ -32,6 +32,8 @@
 │ team              Look up team members and change their roles.                                   │
 │ roles             Read and manage roles.                                                         │
 │ permissions       Read and manage permission groups + the permissions catalog.                   │
+│ service-accounts  Read and manage integration service accounts (run-tools-as identities). See    │
+│                   `kizen docs show service-account`.                                             │
 │ automations       Read, create, update, and run automations.                                     │
 │ messages          Email templates and automation-scoped messages — the content                   │
 │                   notify_member_via_email steps reference (see `kizen docs show                  │
@@ -3518,6 +3520,126 @@
 │ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: service-accounts [OPTIONS] COMMAND [ARGS]...                                                
+                                                                                                    
+ Read and manage integration service accounts (run-tools-as identities). See `kizen docs show       
+ service-account`.                                                                                  
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list     List service accounts with their groups and key count (previews only).                  │
+│ get      Show one service account and its permission groups.                                     │
+│ history  Show a service account's history events.                                                │
+│ create   Create an integration service account. Its API key is never shown.                      │
+│ update   Update an integration service account. Only the flags you pass change.                  │
+│ delete   Delete (archive) an integration service account. This is permanent.                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: service-accounts create [OPTIONS]                                                           
+                                                                                                    
+ Create an integration service account. Its API key is never shown.                                 
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ *  --name             <str>  Account name; Kizen derives api_name. [required]                    │
+│    --group    -g      <str>  Permission group name or UUID (repeatable). With none, Kizen        │
+│                              creates the account disabled.                                       │
+│    --dry-run                 Show the plan without applying.                                     │
+│    --yes      -y             Skip the y/N confirmation prompt.                                   │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --help                    Show this message and exit.                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts delete [OPTIONS] {account}                                                 
+                                                                                                    
+ Delete (archive) an integration service account. This is permanent.                                
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    account      <str>  Service account name, api_name or UUID. [required]                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts get [OPTIONS] {account}                                                    
+                                                                                                    
+ Show one service account and its permission groups.                                                
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    account      <str>  Service account name, api_name or UUID. [required]                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts history [OPTIONS] {account}                                                
+                                                                                                    
+ Show a service account's history events.                                                           
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    account      <str>  Service account name, api_name or UUID. [required]                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --limit   -n      <int>  Max events to return. [default: 25]                                     │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts list [OPTIONS]                                                             
+                                                                                                    
+ List service accounts with their groups and key count (previews only).                             
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --search  -s      <str>  Filter by name.                                                         │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts update [OPTIONS] {account}                                                 
+                                                                                                    
+ Update an integration service account. Only the flags you pass change.                             
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    account      <str>  Service account name, api_name or UUID. [required]                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --name                  <str>  Rename the account (api_name is kept).                            │
+│ --api-name              <str>  Set the api_name.                                                 │
+│ --group         -g      <str>  Replace the account's permission groups with these (name or UUID, │
+│                                repeatable).                                                      │
+│ --clear-groups                 Remove every permission group; Kizen disables the account.        │
+│ --dry-run                      Show the plan without applying.                                   │
+│ --yes           -y             Skip the y/N confirmation prompt.                                 │
+│ --json                         Emit JSON (plan with --dry-run, results otherwise).               │
+│ --help                         Show this message and exit.                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
  Usage: smart-connectors [OPTIONS] COMMAND [ARGS]...                                                
                                                                                                     
  Build, inspect, and iterate on smart connectors. Read verbs                                        
@@ -5070,6 +5192,27 @@
 
 
 ===== roles update =====
+
+
+===== service-accounts =====
+
+
+===== service-accounts create =====
+
+
+===== service-accounts delete =====
+
+
+===== service-accounts get =====
+
+
+===== service-accounts history =====
+
+
+===== service-accounts list =====
+
+
+===== service-accounts update =====
 
 
 ===== smart-connectors =====

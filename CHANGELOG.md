@@ -42,6 +42,9 @@ called out explicitly under **Changed** or **Removed**.
 - **`kizen mcp-servers`** lists, creates, updates and deletes MCP servers
   from a spec, checks tool names against the live catalogue, and shows a
   server's tools and change history.
+- **`kizen service-accounts`** lists, creates, updates, deletes and shows
+  the history of integration service accounts, with permission groups by
+  name. API keys are never printed.
 
 ### Fixed
 

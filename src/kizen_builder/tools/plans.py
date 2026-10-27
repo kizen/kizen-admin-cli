@@ -39,6 +39,7 @@ from kizen_builder.api import permissions as perm_api
 from kizen_builder.api import pipelines as pipelines_api
 from kizen_builder.api import records as records_api
 from kizen_builder.api import saved_views as sv_api
+from kizen_builder.api import service_accounts as sa_api
 from kizen_builder.api import team as team_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import EnvConfig, load_env_config
@@ -104,6 +105,7 @@ Kind = Literal[
     "role",
     "team_member",
     "permission_group",
+    "service_account",
     "permission_setting",
     "filter_group",
     "quick_filter",
@@ -418,6 +420,18 @@ def apply_plan(plan: Plan) -> ApplyResult:
                 message = f"api_name {resp['name']}"
                 if resp["name"] != op.key:
                     message += f" (the plan predicted {op.key})"
+            elif (
+                op.kind == "service_account"
+                and op.action == "create"
+                and isinstance(resp, dict)
+            ):
+                message = (
+                    f"api_name {resp.get('api_name')}; Kizen issued an API key, "
+                    "which the CLI does not show"
+                )
+                predicted = op.preview.get("predicted api_name")
+                if predicted and resp.get("api_name") != predicted:
+                    message += f" (the plan predicted {predicted})"
             elif op.kind == "record_archive" and isinstance(resp, dict):
                 # Counts ids sent, not records archived (confirmed live
                 # 2026-09-28: an already-archived id still counts).
@@ -1034,6 +1048,18 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             perm_api.delete_role(client, op.existing_uuid)
             return {}
         return perm_api.update_role(client, op.existing_uuid, op.payload)
+
+    if op.kind == "service_account":
+        if op.action == "create":
+            return sa_api.create_service_account(client, op.payload)
+        if op.existing_uuid is None:
+            raise PlanError(
+                f"{op.action} service_account op '{op.key}' has no existing_uuid — planning bug"
+            )
+        if op.action == "delete":
+            sa_api.delete_service_account(client, op.existing_uuid)
+            return {}
+        return sa_api.update_service_account(client, op.existing_uuid, op.payload)
 
     if op.kind == "team_member":
         team_api.change_team_member_roles(

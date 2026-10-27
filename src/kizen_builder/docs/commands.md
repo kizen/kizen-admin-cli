@@ -76,6 +76,10 @@ kizen permissions groups                     # list permission groups (raw)
 kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --field-permissions adds per-field rows; --raw for wire JSON
 kizen permissions meta                        # the permissions catalog (sections, capabilities, defaults)
 
+kizen service-accounts list [--search <text>]  # name, api_name, type, status, groups, key count + preview (never a key)
+kizen service-accounts get <name|api_name|uuid>      # one account's fields + permission groups
+kizen service-accounts history <name|api_name|uuid> [-n 25]  # history events (when, event, by)
+
 kizen activities list [--object <api_name>] [--search <text>]  # activity types
 kizen activities get <api_name|uuid>         # one activity type: metadata, fields, visibility rules
 kizen activities fields list <activity>      # fields on an activity type
@@ -302,6 +306,9 @@ kizen team update <member> [--role R ...] [--add-role R ...] [--remove-role R ..
 kizen permissions group-create --name X [--base default|clone] [--source-group <name|uuid>] [--settings-file f]
 kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
 kizen permissions group-delete <name|uuid>
+kizen service-accounts create --name X [--group <name|uuid> ...]  # integration account; Kizen derives api_name; no groups = disabled
+kizen service-accounts update <ref> [--name Y] [--api-name y] [--group <name|uuid> ... | --clear-groups]  # --group REPLACES the set; rename keeps api_name
+kizen service-accounts delete <ref>                                # permanent archive; integration accounts only
 
 # patch one automation step (GET → translate → mutate node → validate → atomic PUT)
 kizen automations steps edit <api> <key> [--spec-file path | < stdin]
