@@ -1,0 +1,172 @@
+{
+  "count": 4,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": "81c3921d-b81c-481c-9e73-010dbb9378cf",
+      "group_id": null,
+      "business_id": "00000000-0000-4000-8000-00000000b1d0",
+      "type_name": "mcp_server_updated",
+      "type_display_name": "MCP Server Updated",
+      "has_relationship": false,
+      "instance": {
+        "id": "e38f1367-267b-4344-823f-5126284b004d",
+        "custom_object_id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+        "entity_record_name": "Contact"
+      },
+      "initiator": {
+        "type": "employee_api_request",
+        "id": "00000000-0000-4000-8000-0000000005e7",
+        "first_name": "Sample",
+        "last_name": "User",
+        "email": "user@example.com",
+        "account_type": "user_standard"
+      },
+      "data": {
+        "api_name": "support_tools",
+        "new_value": {
+          "name": "Support Tools",
+          "is_enabled": false,
+          "tool_names": [],
+          "description": null,
+          "is_default_for_business": false
+        },
+        "old_value": {
+          "name": "Support Tools",
+          "is_enabled": false,
+          "tool_names": [],
+          "description": null,
+          "is_default_for_business": false
+        },
+        "mcp_server_name": "Support Tools"
+      },
+      "comments": [],
+      "created": "2026-10-27T13:18:37.057531Z"
+    },
+    {
+      "id": "af19dc24-8d50-418b-9332-50d6459bb863",
+      "group_id": null,
+      "business_id": "00000000-0000-4000-8000-00000000b1d0",
+      "type_name": "mcp_server_updated",
+      "type_display_name": "MCP Server Updated",
+      "has_relationship": false,
+      "instance": {
+        "id": "e38f1367-267b-4344-823f-5126284b004d",
+        "custom_object_id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+        "entity_record_name": "Contact"
+      },
+      "initiator": {
+        "type": "employee_api_request",
+        "id": "00000000-0000-4000-8000-0000000005e7",
+        "first_name": "Sample",
+        "last_name": "User",
+        "email": "user@example.com",
+        "account_type": "user_standard"
+      },
+      "data": {
+        "api_name": "support_tools",
+        "new_value": {
+          "name": "Support Tools",
+          "is_enabled": false,
+          "tool_names": [],
+          "description": null,
+          "is_default_for_business": false
+        },
+        "old_value": {
+          "name": "Support Tools",
+          "is_enabled": false,
+          "tool_names": [],
+          "description": "Tools the support agent uses",
+          "is_default_for_business": false
+        },
+        "mcp_server_name": "Support Tools"
+      },
+      "comments": [],
+      "created": "2026-10-27T13:18:36.117629Z"
+    },
+    {
+      "id": "f20a3d0a-01d5-4c52-b1fd-ac7a23402aae",
+      "group_id": null,
+      "business_id": "00000000-0000-4000-8000-00000000b1d0",
+      "type_name": "mcp_server_updated",
+      "type_display_name": "MCP Server Updated",
+      "has_relationship": false,
+      "instance": {
+        "id": "e38f1367-267b-4344-823f-5126284b004d",
+        "custom_object_id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+        "entity_record_name": "Contact"
+      },
+      "initiator": {
+        "type": "employee_api_request",
+        "id": "00000000-0000-4000-8000-0000000005e7",
+        "first_name": "Sample",
+        "last_name": "User",
+        "email": "user@example.com",
+        "account_type": "user_standard"
+      },
+      "data": {
+        "api_name": "support_tools",
+        "new_value": {
+          "name": "Support Tools",
+          "is_enabled": true,
+          "tool_names": [],
+          "description": "Tools the support agent uses",
+          "is_default_for_business": false
+        },
+        "old_value": {
+          "name": "Support Tools",
+          "is_enabled": true,
+          "tool_names": [
+            "listCustomObjects",
+            "listObjectFields",
+            "searchCatalog"
+          ],
+          "description": "Tools the support agent uses",
+          "is_default_for_business": false
+        },
+        "mcp_server_name": "Support Tools"
+      },
+      "comments": [],
+      "created": "2026-10-27T13:18:35.888702Z"
+    },
+    {
+      "id": "cc6ce8fd-8c1f-408f-b71e-926d081accf0",
+      "group_id": null,
+      "business_id": "00000000-0000-4000-8000-00000000b1d0",
+      "type_name": "mcp_server_created",
+      "type_display_name": "MCP Server Created",
+      "has_relationship": false,
+      "instance": {
+        "id": "e38f1367-267b-4344-823f-5126284b004d",
+        "custom_object_id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+        "entity_record_name": "Contact"
+      },
+      "initiator": {
+        "type": "employee_api_request",
+        "id": "00000000-0000-4000-8000-0000000005e7",
+        "first_name": "Sample",
+        "last_name": "User",
+        "email": "user@example.com",
+        "account_type": "user_standard"
+      },
+      "data": {
+        "api_name": "support_tools",
+        "new_value": {
+          "name": "Support Tools",
+          "is_enabled": true,
+          "tool_names": [
+            "listCustomObjects",
+            "getCustomObject"
+          ],
+          "description": "Tools the support agent uses",
+          "is_default_for_business": false
+        },
+        "mcp_server_name": "Support Tools"
+      },
+      "comments": [],
+      "created": "2026-10-27T13:18:35.367536Z"
+    }
+  ],
+  "errors": null
+}

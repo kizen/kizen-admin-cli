@@ -52,6 +52,7 @@ from kizen_builder.cli import activities_instances  # noqa: F401
 from kizen_builder.cli import forms  # noqa: F401
 from kizen_builder.cli import automations_write  # noqa: F401
 from kizen_builder.cli import folders  # noqa: F401
+from kizen_builder.cli import mcp_servers  # noqa: F401
 from kizen_builder.cli import apply  # noqa: F401
 from kizen_builder.cli import smart_connectors  # noqa: F401
 from kizen_builder.cli import smart_connectors_seeds  # noqa: F401

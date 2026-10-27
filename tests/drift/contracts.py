@@ -152,6 +152,10 @@ ENDPOINT_CONTRACTS: tuple[Contract, ...] = (
         "post",
         "/api/custom-objects/{object_identifier}/fields/{field_identifier}/options/{id}/replace",
     ),
+    # --- mcp_servers -------------------------------------------------------
+    Contract("mcp_servers", "create MCP server", "post", "/api/mcp-servers"),
+    Contract("mcp_servers", "update MCP server", "patch", "/api/mcp-servers/{id}"),
+    Contract("mcp_servers", "delete MCP server", "delete", "/api/mcp-servers/{id}"),
     # --- permissions -------------------------------------------------------
     Contract("permissions", "create permission group", "post", "/api/permission-group"),
     Contract(

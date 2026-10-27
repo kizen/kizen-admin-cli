@@ -1,0 +1,93 @@
+{
+  "groups": [
+    {
+      "key": "custom_knowledge",
+      "label": "Custom Knowledge",
+      "tools": [
+        {
+          "name": "listCatalogs",
+          "display_name": "listCatalogs",
+          "description": "List the knowledge catalogs available to this business (owned and installed). Use this first to discover what knowledge exists before searching. Returns each catalog's id, api_name, and description.",
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "searchCatalog",
+          "display_name": "searchCatalog",
+          "description": "Semantic search across knowledge catalogs. Returns the most relevant content chunks with their source description, source_id, url, and a relevance score. Optionally narrow the search to specific catalogs by api_name or UUID.\n\n{catalog_list}",
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "getDocument",
+          "display_name": "getDocument",
+          "description": "Retrieve the full text of a knowledge source by its source_id (obtained from searchCatalog). Returns source metadata and the concatenated content of all its chunks in order.",
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        }
+      ]
+    },
+    {
+      "key": "custom_objects",
+      "label": "Custom Objects",
+      "tools": [
+        {
+          "name": "listCustomObjects",
+          "display_name": "listCustomObjects",
+          "description": "List the objects configured in this business - Kizen's built-in objects (such as Contacts) plus any custom Standard or Pipeline objects. Use this to discover what kinds of records exist before querying them. Returns each object's api_name, display names, type, id, creation date, and record count. Supports search, sorting, and pagination. Only objects you have permission to see are returned. To fetch one object you already have an api_name or id for, use getCustomObject instead.",
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "listObjectFields",
+          "display_name": "listObjectFields",
+          "description": "List the fields defined on one object, which is how you discover its schema before reading or writing records. Takes the object's api_name or id from listCustomObjects. Each row leads with `name` - the api_name to use in API payloads - alongside the display name, field type, category name, and the flags that govern writes (is_required, is_read_only, allows_nulls, allows_empty). Relation fields show their target as '<cardinality> -> <api_name>', e.g. 'many_to_one -> receipts', with '(inverse)' appended on the mirror side of the relation. Dropdown-style fields list their valid `options`. Supports search on the display name or api_name, sorting, and filtering by category name. Not paginated - every field you have permission to see is returned. For a dropdown-style field, use listObjectFieldOptions (passing this row's `name`) to list its valid options.",
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "listObjectFieldOptions",
+          "display_name": "listObjectFieldOptions",
+          "description": "List the valid options for one dropdown-style field (checkboxes, choices, dropdown, dynamictags, radio, rating, status, yesnomaybe), as discovered via listObjectFields. Write back a row's `name` - or its `code` on rating fields, whose options are a fixed numeric scale that search and sort do not apply to. Not paginated. team_selector and timezone fields have no options here.",
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "getCustomObject",
+          "display_name": "getCustomObject",
+          "description": "Get one object's configuration by api_name or id - use this when you already have a reference to a specific object (from an automation, a dashboard, or another tool) and do not want to list everything. Returns its identity (api_name, display name, entity name, type), description, record count, ownership and configuration flags; for pipelines also its stage names and lost/disqualified reasons. For the object's fields use listObjectFields, for a field's options use listObjectFieldOptions, and to browse or search across many objects use listCustomObjects.",
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        }
+      ]
+    }
+  ]
+}

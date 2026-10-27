@@ -2,7 +2,7 @@
   "_meta": {
     "base_url": "https://app.go.kizen.com",
     "captured": "2026-10-14",
-    "contracts_tracked": 69,
+    "contracts_tracked": 72,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
       "title": "Kizen API",
@@ -49,6 +49,19 @@
       ],
       "schema_path": "/api/custom-objects/{object_identifier}/fields/{id}",
       "surface": "fields"
+    },
+    "DELETE /api/mcp-servers/{id}": {
+      "label": "delete MCP server",
+      "present": true,
+      "query_params": [
+        "ordering"
+      ],
+      "request_schema": null,
+      "responses": [
+        "204"
+      ],
+      "schema_path": "/api/mcp-servers/{id}",
+      "surface": "mcp_servers"
     },
     "DELETE /api/permission-group/{id}": {
       "label": "delete permission group",
@@ -177,6 +190,34 @@
       ],
       "schema_path": "/api/custom-objects/{object_identifier}/fields/{id}",
       "surface": "fields"
+    },
+    "PATCH /api/mcp-servers/{id}": {
+      "label": "update MCP server",
+      "present": true,
+      "query_params": [
+        "ordering"
+      ],
+      "request_body": {
+        "present": true,
+        "properties": {
+          "api_name": "string",
+          "description": "string?",
+          "is_default_for_business": "boolean",
+          "is_enabled": "boolean",
+          "name": "string",
+          "sharing_settings": "EntityPermissionRequest",
+          "tool_names": "array[string]"
+        },
+        "required": [],
+        "type": "object"
+      },
+      "request_required": false,
+      "request_schema": "PatchedMCPServerConfigRequest",
+      "responses": [
+        "200"
+      ],
+      "schema_path": "/api/mcp-servers/{id}",
+      "surface": "mcp_servers"
     },
     "PATCH /api/permission-group/{id}": {
       "label": "update permission group sections",
@@ -610,6 +651,37 @@
       ],
       "schema_path": "/api/custom-objects/{object_pk}/quick-filters",
       "surface": "saved_views"
+    },
+    "POST /api/mcp-servers": {
+      "label": "create MCP server",
+      "present": true,
+      "query_params": [
+        "ordering"
+      ],
+      "request_body": {
+        "present": true,
+        "properties": {
+          "api_name": "string",
+          "description": "string?",
+          "is_default_for_business": "boolean",
+          "is_enabled": "boolean",
+          "name": "string",
+          "sharing_settings": "EntityPermissionRequest",
+          "tool_names": "array[string]"
+        },
+        "required": [
+          "name",
+          "sharing_settings"
+        ],
+        "type": "object"
+      },
+      "request_required": true,
+      "request_schema": "MCPServerConfigRequest",
+      "responses": [
+        "201"
+      ],
+      "schema_path": "/api/mcp-servers",
+      "surface": "mcp_servers"
     },
     "POST /api/permission-group": {
       "label": "create permission group",

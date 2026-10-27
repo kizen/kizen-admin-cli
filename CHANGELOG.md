@@ -253,6 +253,9 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **`kizen mcp-servers`** lists, creates, updates and deletes MCP servers
+  from a spec, checks tool names against the live catalogue, and shows a
+  server's tools and change history.
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
   dashlets. `--name` names the copy, and `dashboards duplicate` also takes

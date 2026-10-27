@@ -131,6 +131,12 @@ from kizen_builder.models.spec.dashboards import (
     ColumnTemplateDef,
     LayoutDef,
 )
+from kizen_builder.models.spec.mcp_servers import (
+    MCPServerApiName,
+    SharingBuckets,
+    MCPServerSharing,
+    MCPServerDef,
+)
 from kizen_builder.models.spec.email_templates import (
     ColumnPreset,
     COLUMN_FRACTIONS,
@@ -310,6 +316,10 @@ __all__ = [
     "QuickFilterDef",
     "ColumnTemplateDef",
     "LayoutDef",
+    "MCPServerApiName",
+    "SharingBuckets",
+    "MCPServerSharing",
+    "MCPServerDef",
     "ColumnPreset",
     "COLUMN_FRACTIONS",
     "TextBlockDef",

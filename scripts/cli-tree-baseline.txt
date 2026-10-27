@@ -50,6 +50,7 @@
 │                   layout (form_ui).                                                              │
 │ surveys           Create, read, update, and delete surveys, their fields, and their visual page  │
 │                   layout (form_ui).                                                              │
+│ mcp-servers       Read, create, update, and delete MCP servers.                                  │
 │ smart-connectors  Build, inspect, and iterate on smart connectors. Read verbs                    │
 │                   (list/get/executions/scripts/events/metadata) are safe. The local SQL loop is  │
 │                   pull → run → push: `pull` builds a working directory, `run` executes           │
@@ -2321,6 +2322,143 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Spec shape (a LayoutDef; PUT-replaces the layout): see `kizen docs show layout`                    
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers [OPTIONS] COMMAND [ARGS]...                                                     
+                                                                                                    
+ Read, create, update, and delete MCP servers.                                                      
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list     List the MCP servers in the configured env.                                             │
+│ get      Show one MCP server, its endpoint URL and its tools.                                    │
+│ tools    List the tools a server can serve — the valid `tool_names`.                             │
+│ history  Show a server's change history, newest first.                                           │
+│ create   Create an MCP server from a JSON MCPServerDef.                                          │
+│ update   Update an MCP server from a JSON MCPServerDef.                                          │
+│ delete   Delete an MCP server. Kizen deletes it outright, with its history.                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: mcp-servers create [OPTIONS]                                                                
+                                                                                                    
+ Create an MCP server from a JSON MCPServerDef.                                                     
+                                                                                                    
+ `name` and `api_name` are required. Tool names are checked against                                 
+ `kizen mcp-servers tools`. With no `sharing_settings`, every team member                           
+ can view it.                                                                                       
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON MCPServerDef. Default: read from stdin.               │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers delete [OPTIONS] {server}                                                       
+                                                                                                    
+ Delete an MCP server. Kizen deletes it outright, with its history.                                 
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    server      <str>  MCP server UUID or api_name. [required]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers get [OPTIONS] {server}                                                          
+                                                                                                    
+ Show one MCP server, its endpoint URL and its tools.                                               
+                                                                                                    
+ The endpoint URL is what an MCP client connects to; the CLI never calls it.                        
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    server      <str>  MCP server UUID or api_name. [required]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --raw                    Emit the full API response — a valid `mcp-servers update` spec. Implies │
+│                          JSON.                                                                   │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers history [OPTIONS] {server}                                                      
+                                                                                                    
+ Show a server's change history, newest first.                                                      
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    server      <str>  MCP server UUID or api_name. [required]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers list [OPTIONS]                                                                  
+                                                                                                    
+ List the MCP servers in the configured env.                                                        
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers tools [OPTIONS]                                                                 
+                                                                                                    
+ List the tools a server can serve — the valid `tool_names`.                                        
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers update [OPTIONS] {server}                                                       
+                                                                                                    
+ Update an MCP server from a JSON MCPServerDef.                                                     
+                                                                                                    
+ Only the keys the spec sets are compared. `get --raw` output works as a                            
+ spec: its read-only keys are ignored. A Kizen-managed server takes only                            
+ `{"is_default_for_business": true}`, which makes it the default again.                             
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    server      <str>  MCP server UUID or api_name. [required]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON MCPServerDef. Default: read from stdin.               │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
                                                                                                     
                                                                                                     
  Usage: messages [OPTIONS] COMMAND [ARGS]...                                                        
@@ -4731,6 +4869,30 @@
 
 
 ===== layouts update =====
+
+
+===== mcp-servers =====
+
+
+===== mcp-servers create =====
+
+
+===== mcp-servers delete =====
+
+
+===== mcp-servers get =====
+
+
+===== mcp-servers history =====
+
+
+===== mcp-servers list =====
+
+
+===== mcp-servers tools =====
+
+
+===== mcp-servers update =====
 
 
 ===== messages =====

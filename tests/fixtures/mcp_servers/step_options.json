@@ -1,0 +1,18 @@
+[
+  {
+    "id": "bde29351-2a8b-4479-a0d3-c65d8292782e",
+    "name": "Read Only",
+    "api_name": "readonly",
+    "is_enabled": true,
+    "deleted": false,
+    "tool_count": 7
+  },
+  {
+    "id": "e38f1367-267b-4344-823f-5126284b004d",
+    "name": "Support Tools",
+    "api_name": "support_tools",
+    "is_enabled": false,
+    "deleted": false,
+    "tool_count": 0
+  }
+]
