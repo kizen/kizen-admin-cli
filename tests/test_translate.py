@@ -32,6 +32,7 @@ ALL_FIXTURES = [
     "automations/activity_logged_schedule_activity.raw.json",
     "automations/archive_record.raw.json",
     "automations/branching_test.raw.json",
+    "automations/call_llm_mcp.raw.json",
     "automations/condition_code_step.raw.json",
     "automations/condition_variable_rhs.raw.json",
     "automations/condition_variable_rhs_pipeline.raw.json",
@@ -1276,6 +1277,34 @@ def test_validator_flags_skipped_goal_without_branch(kitchen: dict) -> None:
         f"skipped goal '{goal['key']}' needs continue_with_branch 'yes' or "
         "'no' (server 400s otherwise)"
     ]
+
+
+def test_call_llm_tool_settings_translate_to_ids() -> None:
+    """Reads expand mcp_server/run_tools_as; the wire takes bare UUIDs. A
+    step with no server sends an explicit null pair: a PUT that omits both
+    keeps the server and clears the account (confirmed live 2026-10-27).
+    live_to_payload runs the builder with a context that fails on any lookup."""
+    raw = load_fixture("automations/call_llm_mcp.raw.json")
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    with_tools, bare = (s["action_call_llm"] for s in steps)
+    payload = live_to_payload(raw)
+    keys = (
+        "mcp_server_id",
+        "run_tools_as_id",
+        "max_sequential_turns",
+        "tool_failure_policy",
+    )
+    assert [_step_block(payload, "call_llm", i)[k] for i in (0, 1) for k in keys] == [
+        with_tools["mcp_server"]["id"],
+        with_tools["run_tools_as"]["id"],
+        with_tools["max_sequential_turns"],
+        "never_fail",
+        None,
+        None,
+        25,
+        "never_fail",
+    ]
+    assert bare["mcp_server"] is None and with_tools["max_sequential_turns"] == 10
 
 
 def test_validator_accepts_plain_fan_out() -> None:

@@ -124,6 +124,45 @@ class ActionLlmCallConfig(BaseModel):
             "audio_transcription, and a condition step's llm_decision block."
         ),
     )
+    mcp_server: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The MCP server whose tools the model may call: its api_name or "
+            "UUID, from the Call LLM step's own server picker "
+            "(GET /api/mcp-servers/step-options). Needs run_tools_as. Omitted "
+            "means no server, so an update detaches one set in the UI."
+        ),
+    )
+    mcp_server_id: str | None = Field(
+        default=None,
+        description="The MCP server's UUID (the wire spelling of mcp_server).",
+    )
+    run_tools_as: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The service account the MCP server's tools run as: its name or "
+            "UUID, from the step's run-as picker "
+            "(GET /api/automation2/automations/run-tools-as-options), which "
+            "leaves out a plugin's own service account. Needs mcp_server."
+        ),
+    )
+    run_tools_as_id: str | None = Field(
+        default=None,
+        description="The service account's UUID (the wire spelling of run_tools_as).",
+    )
+    max_sequential_turns: int | None = Field(
+        default=None,
+        ge=1,
+        le=32767,
+        description="How many model turns the step may take in a row. Default 25.",
+    )
+    tool_failure_policy: Literal["never_fail"] | None = Field(
+        default=None,
+        description=(
+            "What a failed tool call does to the step. 'never_fail' (the "
+            "default) is the only value Kizen accepts."
+        ),
+    )
 
 
 class ActionAudioTranscriptionConfig(BaseModel):

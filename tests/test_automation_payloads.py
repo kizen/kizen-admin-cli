@@ -588,6 +588,295 @@ def test_call_llm_related_object_field_without_hop_raises(patch_live_lookups):
         _build(spec)
 
 
+# ---------------------------------------------------------------------------
+# call_llm MCP server, run-as account, turn limit, tool failure policy
+# (wire shapes confirmed live 2026-10-27)
+# ---------------------------------------------------------------------------
+
+_SERVER_ID = "bde29351-0000-4000-8000-000000000001"
+_ACCOUNT_ID = "afa714ac-0000-4000-8000-000000000002"
+_TWIN_ID = "afa714ac-0000-4000-8000-000000000003"
+
+
+@pytest.fixture
+def step_pickers(monkeypatch):
+    """Serve the call_llm step's two pickers; count the GETs."""
+    from kizen_builder.api import automations as api
+    from kizen_builder.api import client
+
+    class _Client:
+        def __init__(self, cfg):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    calls = {"servers": 0, "accounts": 0}
+    lists = {
+        "servers": [
+            {"id": _SERVER_ID, "name": "Example Tools", "api_name": "example_tools"}
+        ],
+        "accounts": [
+            {"id": _ACCOUNT_ID, "name": "Automation Runner"},
+            {"id": _TWIN_ID, "name": "Twin"},
+            {"id": "afa714ac-0000-4000-8000-000000000004", "name": "Twin"},
+        ],
+    }
+
+    def serve(which):
+        def fetch(_client):
+            calls[which] += 1
+            return lists[which]
+
+        return fetch
+
+    monkeypatch.setattr(client, "KizenClient", _Client)
+    monkeypatch.setattr(api, "list_mcp_step_options", serve("servers"))
+    monkeypatch.setattr(api, "list_run_tools_as_options", serve("accounts"))
+    return {"calls": calls, "lists": lists}
+
+
+def _llm_spec(*blocks: dict) -> dict:
+    return {
+        "api_name": "call_llm_tools_test",
+        "name": "Call LLM Tools Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": f"llm{i}",
+                "step_type": "call_llm",
+                "order": i,
+                "parent_key": f"llm{i - 1}" if i else None,
+                "action_call_llm": {"model_name": "kizen/pro", "prompt": "Hi", **b},
+            }
+            for i, b in enumerate(blocks)
+        ],
+    }
+
+
+_TOOL_KEYS = (
+    "mcp_server_id",
+    "run_tools_as_id",
+    "max_sequential_turns",
+    "tool_failure_policy",
+)
+
+
+def _tool_keys(payload: dict, i: int = 0) -> tuple:
+    block = payload["steps"][i]["action_call_llm"]
+    return tuple(block[k] for k in _TOOL_KEYS)
+
+
+def test_call_llm_omitted_tool_keys_build_to_explicit_defaults(patch_live_lookups):
+    """Omitting both ids on a PUT keeps the server and clears the account,
+    so the builder always sends the pair, null included."""
+    assert _tool_keys(_build(_llm_spec({}))) == (None, None, 25, "never_fail")
+
+
+def test_call_llm_names_resolve_through_the_step_pickers(
+    patch_live_lookups, step_pickers
+):
+    payload = _build(
+        _llm_spec(
+            {"mcp_server": "example_tools", "run_tools_as": "Automation Runner"},
+            {
+                "mcp_server": "example_tools",
+                "run_tools_as": "Automation Runner",
+                "max_sequential_turns": 10,
+                "tool_failure_policy": "never_fail",
+            },
+        )
+    )
+    assert _tool_keys(payload, 0) == (_SERVER_ID, _ACCOUNT_ID, 25, "never_fail")
+    assert _tool_keys(payload, 1) == (_SERVER_ID, _ACCOUNT_ID, 10, "never_fail")
+    assert step_pickers["calls"] == {"servers": 1, "accounts": 1}
+
+
+def test_call_llm_ids_and_read_objects_need_no_lookup(patch_live_lookups):
+    """A UUID or a read's expanded object never reaches a resolver."""
+    from kizen_builder.translate import _SHIM_CTX
+
+    for block in (
+        {"mcp_server_id": _SERVER_ID, "run_tools_as_id": _ACCOUNT_ID},
+        {"mcp_server": _SERVER_ID, "run_tools_as": _ACCOUNT_ID},
+        {
+            "mcp_server": {"id": _SERVER_ID, "api_name": "example_tools"},
+            "run_tools_as": {"id": _ACCOUNT_ID, "name": "Automation Runner"},
+        },
+    ):
+        out = _STEP_BUILDERS["call_llm"](
+            {"model_name": "kizen/pro", "html_prompt": "<p>Hi</p>", **block},
+            AutomationDef.model_validate(_llm_spec()),
+            _SHIM_CTX,
+        )
+        assert (out["mcp_server_id"], out["run_tools_as_id"]) == (
+            _SERVER_ID,
+            _ACCOUNT_ID,
+        )
+
+
+@pytest.mark.parametrize(
+    "block, message",
+    [
+        (
+            {"mcp_server": "nope", "run_tools_as": "Automation Runner"},
+            "MCP server 'nope' isn't one a Call LLM step can attach in "
+            "'{env}'. Available: example_tools",
+        ),
+        (
+            {"mcp_server": "example_tools", "run_tools_as": "Nobody"},
+            "service account 'Nobody' can't run a Call LLM step's tools in "
+            "'{env}'. Available: Automation Runner, Twin, Twin",
+        ),
+        (
+            {"mcp_server": "example_tools", "run_tools_as": "Twin"},
+            "service account name 'Twin' matches 2 accounts in '{env}': "
+            f"{_TWIN_ID}, afa714ac-0000-4000-8000-000000000004. Use the id instead.",
+        ),
+        (
+            {"mcp_server": "example_tools", "mcp_server_id": _TWIN_ID},
+            "set mcp_server or mcp_server_id, not both",
+        ),
+        (
+            {"run_tools_as": "Automation Runner", "run_tools_as_id": _TWIN_ID},
+            "set run_tools_as or run_tools_as_id, not both",
+        ),
+        (
+            {"mcp_server": "example_tools"},
+            "step 'llm0': mcp_server is set without run_tools_as. Kizen runs an "
+            "MCP server's tools as a service account, so set both or neither.",
+        ),
+        (
+            {"run_tools_as_id": _ACCOUNT_ID},
+            "step 'llm0': run_tools_as is set without mcp_server. Set both or neither.",
+        ),
+    ],
+    ids=[
+        "unknown-server",
+        "unknown-account",
+        "ambiguous-account",
+        "server-twice",
+        "account-twice",
+        "server-alone",
+        "account-alone",
+    ],
+)
+def test_call_llm_tool_reference_errors(
+    patch_live_lookups, step_pickers, block, message
+):
+    env = LiveContext().env
+    with pytest.raises(PlanError) as e:
+        _build(_llm_spec(block))
+    assert message.format(env=env) in str(e.value)
+
+
+def test_call_llm_both_spellings_agreeing_is_fine(patch_live_lookups, step_pickers):
+    payload = _build(
+        _llm_spec(
+            {
+                "mcp_server": "example_tools",
+                "mcp_server_id": _SERVER_ID,
+                "run_tools_as": {"id": _ACCOUNT_ID},
+                "run_tools_as_id": _ACCOUNT_ID,
+            }
+        )
+    )
+    assert _tool_keys(payload)[:2] == (_SERVER_ID, _ACCOUNT_ID)
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("max_sequential_turns", 0),
+        ("max_sequential_turns", 32768),
+        ("tool_failure_policy", "fail_step"),
+    ],
+)
+def test_call_llm_tool_settings_are_bounded_in_the_spec(field, value):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=field):
+        AutomationDef.model_validate(_llm_spec({field: value}))
+
+
+@pytest.fixture
+def live_mcp_automation(monkeypatch, patch_live_lookups):
+    """The captured call_llm_mcp automation as the live one `update` reads:
+    step 0 has a server and account, step 1 has neither."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/call_llm_mcp.raw.json")
+    raw["custom_object"]["name"] = "patients"
+    monkeypatch.setattr(
+        ma, "list_automations", lambda: [{"api_name": raw["api_name"], "id": raw["id"]}]
+    )
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _update_spec(raw: dict, *blocks: dict) -> dict:
+    spec = _llm_spec(*blocks)
+    spec.update(api_name=raw["api_name"], name=raw["name"])
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    for step, live in zip(spec["steps"], steps, strict=True):
+        step["id"] = live["id"]
+    return spec
+
+
+def test_update_dry_run_names_steps_whose_mcp_server_goes(live_mcp_automation):
+    """A spec that omits the keys sends nulls, so the update detaches a server
+    attached in the UI. The preview `--dry-run` prints says which steps."""
+    plan = plan_update_automation(_update_spec(live_mcp_automation, {}, {}))
+    (op,) = plan.operations
+    assert op.preview["detaches_mcp_server"] == ["llm0"]
+    assert op.preview["clears_run_tools_as"] == ["llm0"]
+
+
+def test_update_dry_run_is_quiet_when_the_server_stays(
+    live_mcp_automation, step_pickers
+):
+    step_pickers["lists"]["servers"][0]["id"] = live_mcp_automation["steps"][0][
+        "action_call_llm"
+    ]["mcp_server"]["id"]
+    step_pickers["lists"]["accounts"][0]["id"] = live_mcp_automation["steps"][0][
+        "action_call_llm"
+    ]["run_tools_as"]["id"]
+    tools = {"mcp_server": "example_tools", "run_tools_as": "Automation Runner"}
+    (op,) = plan_update_automation(
+        _update_spec(live_mcp_automation, tools, {})
+    ).operations
+    assert "detaches_mcp_server" not in op.preview
+    assert "clears_run_tools_as" not in op.preview
+
+
+def test_steps_edit_call_llm_names_the_server_by_api_name(
+    patch_live_lookups, step_pickers
+):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {
+        "action_call_llm": {
+            "model_name": "kizen/pro",
+            "html_prompt": "<p>Hi</p>",
+            "mcp_server": "example_tools",
+            "run_tools_as": "Automation Runner",
+            "max_sequential_turns": 10,
+        }
+    }
+    out = normalize_step_patch(patch, "llm", "call_llm", _LIVE_PAYLOAD, "patients")
+    block = out["action_call_llm"]
+    assert tuple(block[k] for k in _TOOL_KEYS) == (
+        _SERVER_ID,
+        _ACCOUNT_ID,
+        10,
+        "never_fail",
+    )
+
+
 def test_find_relationship_field_auto_detects_unambiguous_hop(monkeypatch):
     """LiveContext.find_relationship_field is the auto-detect fallback used
     when a related_object_field destination omits relationship_field_ref."""

@@ -253,6 +253,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Automation specs can give a Call LLM step an MCP server's tools:**
+  `mcp_server` (api_name or UUID), `run_tools_as` (a service account's name
+  or UUID), `max_sequential_turns` and `tool_failure_policy`. Set the server
+  and the account together; `--dry-run` refuses one without the other. A
+  spec that leaves them out gets no server, so `update` detaches one attached
+  in the UI. `update --dry-run` names those steps (`detaches_mcp_server=`),
+  and `diff` shows the change.
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
   dashlets. `--name` names the copy, and `dashboards duplicate` also takes
@@ -495,6 +502,14 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Automations with an AI (Call LLM) step can be shown, diffed and edited
+  again.** Since Kizen's 2026-10-26 release every such step carries two
+  settings the CLI refused, so `show`, `diff`, `steps`, `activate`,
+  `deactivate`, `move` and `roundtrip` stopped on any automation with one.
+- **`automations update` from a spec no longer leaves an MCP-attached Call
+  LLM step without its run-as account.** Kizen kept the server and dropped
+  the account when a step's spec left both out, storing a step it then
+  refuses to save.
 - **`forms`/`surveys update` and `set-ui` no longer delete fields.** Kizen
   deletes every field that isn't placed on a page whenever a form is saved,
   so updating a form with no layout yet emptied it, and a partial `set-ui`

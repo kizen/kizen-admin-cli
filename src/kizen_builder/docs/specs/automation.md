@@ -174,7 +174,7 @@ to wait for a reply. Its `wait_type` is `never`, `delay` or
 | `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
 | `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
-| `call_llm` | `action_call_llm` | prompt an LLM, write to `destinations` |
+| `call_llm` | `action_call_llm` | prompt an LLM, optionally with an MCP server's tools, write to `destinations` |
 | `file_content_extraction` | `action_file_content_extraction` | extract from a file field on the record, a related record, or in a variable (`input_value_source`) |
 | `audio_transcription` | `action_audio_transcription` | transcribe an audio field on the record, a related record, or in a variable (`input_value_source`) |
 | `change_field_value` | `action_change_field_value` | set/clear a field |
@@ -537,6 +537,41 @@ into the UI's `kzn-merge-field` span markup); a plain-prompt-only step
 still runs fine via the raw API, but its rich-text prompt editor renders
 blank in the builder UI without this. Pass `html_prompt` explicitly to
 override the derivation.
+
+**Tools (MCP server)** — a `call_llm` step can let the model call an MCP
+server's tools. Confirmed live 2026-10-27:
+
+| Spec key | Wire key | Value |
+|---|---|---|
+| `mcp_server` | `mcp_server_id` | the server's `api_name` or UUID |
+| `run_tools_as` | `run_tools_as_id` | the service account's `name` or UUID |
+| `max_sequential_turns` | same | 1–32767, default 25 |
+| `tool_failure_policy` | same | `never_fail`, the only value Kizen accepts |
+
+- Names resolve against the step's own pickers:
+  `GET /api/mcp-servers/step-options` for servers and
+  `GET /api/automation2/automations/run-tools-as-options` for accounts. The
+  second leaves out a plugin's own service account, and a write naming that
+  account is a 400. A service account resolves by `name` because a user-made
+  one has no `api_name`. A name two accounts share is an error; give the UUID.
+  The `*_id` spellings take the same values.
+- Set both `mcp_server` and `run_tools_as`, or neither. Kizen 400s on either
+  alone, and `--dry-run` refuses it first.
+- A model without tool calling 400s with "The selected model does not support
+  tool calling". The model catalog has no flag for it, so the server's 400 is
+  the only check.
+- Reads expand both references (`mcp_server {id, name, api_name, …}`,
+  `run_tools_as {id, name}`), and every `call_llm` step reads
+  `max_sequential_turns` and `tool_failure_policy`, server or not.
+- The planner always sends all four keys. A step that omits them gets no
+  server, no account, 25 turns and `never_fail`, so `update` from a spec
+  without them **detaches a server attached in the UI**. `update --dry-run`
+  names those steps in its preview: `detaches_mcp_server=[<step key>, …]`,
+  and `clears_run_tools_as=[…]` for a run-as account that goes. Steps pair
+  as `diff` pairs them, and `diff` shows each change as
+  `mcp_server_id: '<uuid>' → None` and `run_tools_as_id: '<uuid>' → None`.
+  Kizen itself, given a PUT that omits both ids, keeps the server and clears
+  the account, which leaves a step its own validator rejects.
 
 ### Variable-comparison condition step
 

@@ -2067,6 +2067,72 @@ def test_extraction_input_sources_put_back_unchanged(
     assert list(semantic_diff(before, after)) == []
 
 
+@pytest.fixture(scope="session")
+def drift_ai_mcp_step(
+    drift_client, scratch, drift_object, drift_step_fields, drift_llm_models
+) -> dict[str, Any]:
+    """A `call_llm` step with an MCP server and a run-as account, named the
+    way a spec names them: the first row of each of the step's own pickers.
+    Skips when either picker is empty. Stored config only, as above."""
+    from kizen_builder.api import automations as auto_api
+
+    servers = auto_api.list_mcp_step_options(drift_client)
+    accounts = auto_api.list_run_tools_as_options(drift_client)
+    if not servers or not accounts:
+        pytest.skip(
+            "the drift environment has no MCP server or no service account a "
+            "Call LLM step can use"
+        )
+    spec = _base_spec("ai_mcp", drift_object)
+    spec["steps"] = [
+        {
+            "key": "llm_tools",
+            "step_type": "call_llm",
+            "order": 0,
+            "parent_key": None,
+            "action_call_llm": _llm_block(
+                drift_llm_models["call"],
+                prompt="Summarize this record using the available tools.",
+                destinations=[{"field": drift_step_fields["longtext"]["id"]}],
+                mcp_server=servers[0]["api_name"],
+                run_tools_as=accounts[0]["id"],
+                max_sequential_turns=10,
+            ),
+        },
+    ]
+    record = _create_automation(drift_client, scratch, spec)
+    return {**record, "server": servers[0], "account": accounts[0]}
+
+
+def test_call_llm_mcp_server_and_account_read_back(drift_ai_mcp_step):
+    """The wire takes `mcp_server_id`/`run_tools_as_id`; the read expands
+    both to objects. A spec names the server by api_name."""
+    (live,) = _live_steps_by_type(drift_ai_mcp_step)["call_llm"]
+    block = live["action_call_llm"]
+    assert block["mcp_server"]["id"] == drift_ai_mcp_step["server"]["id"]
+    assert block["run_tools_as"]["id"] == drift_ai_mcp_step["account"]["id"]
+    assert block["max_sequential_turns"] == 10
+    assert block["tool_failure_policy"] == "never_fail"
+
+
+def test_call_llm_mcp_step_puts_back_unchanged(drift_client, drift_ai_mcp_step):
+    """What every read-modify-write verb does: translate, PUT, re-read."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.translate import live_to_payload, semantic_diff, validate_payload
+
+    before = drift_ai_mcp_step["live"]
+    payload = live_to_payload(before)
+    assert validate_payload(payload) == []
+    auto_api.update_automation(
+        drift_client,
+        drift_ai_mcp_step["uuid"],
+        payload,
+        last_revision=payload.get("last_revision"),
+    )
+    after = auto_api.get_automation(drift_client, drift_ai_mcp_step["uuid"])
+    assert list(semantic_diff(before, after)) == []
+
+
 def test_input_field_reads_back_mirrored_as_a_context_source(
     drift_ai_steps, drift_step_fields
 ):
@@ -2485,6 +2551,7 @@ THEMED_AUTOMATIONS = (
     "drift_related_steps",
     "drift_messaging",
     "drift_ai_steps",
+    "drift_ai_mcp_step",
     "drift_extraction_sources",
     "drift_plugin_steps",
     "drift_activity_steps",
