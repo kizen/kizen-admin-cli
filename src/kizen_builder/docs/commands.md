@@ -32,6 +32,10 @@ kizen automations modification-history <api_name>    # who changed this automati
 kizen automations failures <api_name>                # recent step-failure history
 kizen dashboards list                        # list dashboards + homepages (mine)
 kizen dashboards get <uuid|api_name>         # one dashboard + dashlet summary (--raw for full config)
+kizen mcp-servers list                       # MCP servers: api_name, tool count, enabled, default
+kizen mcp-servers get <uuid|api_name>        # one server: endpoint_url + its tools (--raw is a valid update spec)
+kizen mcp-servers tools                      # the tool catalogue — valid tool_names
+kizen mcp-servers history <uuid|api_name>    # who changed a server, when, which keys
 kizen layouts list <object_api_name>         # record layouts on a custom object
 kizen layouts get <object_api_name> [--name] # one layout's block/column structure
 kizen records get <object> <uuid>            # one record with all field values
@@ -173,6 +177,7 @@ kizen fields create <object_api_name> --api-name X --type text --category Y [...
 kizen fields create <object_api_name> [--spec-file path | < stdin]                  # many at once
 kizen automations create [--spec-file path | < stdin]
 kizen dashboards create [--spec-file path | < stdin]            # dashboard/homepage + dashlets
+kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools + sharing (kizen docs show mcp-server)
 kizen layouts update <object_api_name> [--spec-file | < stdin]  # PUT-replace a record layout
 kizen records create <object> --field api_name=value [...]      # one record (values resolved vs schema)
 kizen records create <object> [--spec-file f.csv|f.json | < stdin]   # bulk create from CSV/JSON
@@ -184,6 +189,7 @@ kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [
 kizen automations update [--spec-file path | < stdin]
 kizen dashboards update <uuid|api_name> [--spec-file | < stdin]   # metadata + dashlets (diff by id)
 kizen dashboards duplicate <uuid|api_name> [--name X] [--api-name Y]   # unpublished copy, source's sharing
+kizen mcp-servers update <uuid|api_name> [--spec-file | < stdin]   # tools compare as a set; `get --raw` output re-applies as a skip
 kizen records update <object> <uuid> --field api_name=value [...]    # one record
 kizen records update <object> [--spec-file f.csv|f.json | < stdin]   # bulk update (each row needs an 'id')
 kizen records upsert <object> <lookup_value> --field api_name=value [...]  # create-or-update by lookup_value
@@ -211,6 +217,7 @@ kizen categories delete <object_api_name> <category_name>
 kizen filter-groups delete <object> <uuid|name>
 kizen quick-filters delete <object> <uuid|name>
 kizen columns delete <object> <uuid|name>
+kizen mcp-servers delete <uuid|api_name>                       # hard delete; Kizen-managed servers are refused
 # activities (activity types / loggable definitions) — logging/scheduling stays in the UI
 kizen activities create --name X [--api-name Y] [--association-mode ...] [--object <api_name> ...] [--editable] [--spec-file f]
 kizen activities update <activity> [--name] [--description] [--object <api_name> ...] \

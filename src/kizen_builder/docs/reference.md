@@ -21,6 +21,7 @@ the wire formats, endpoints, and confirmed quirks together.
 | Activity types, logged & scheduled activities | `activity` |
 | Forms & surveys (incl. `form_ui` pages) | `form` |
 | Dashboards & homepages | `dashboard` |
+| MCP servers (the tools AI steps and MCP clients use) | `mcp-server` |
 | Record layouts | `layout` |
 | Filter groups, quick filters, column templates | `saved-views` |
 | Roles & permission groups | `permission-group` |

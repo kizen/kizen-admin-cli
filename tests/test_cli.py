@@ -3263,3 +3263,80 @@ def test_team_update_dry_run_plans_without_writing(monkeypatch):
         "remove": [],
     }
     assert json.loads(result.stdout)["operations"][0]["kind"] == "team_member"
+
+
+# --- mcp-servers -------------------------------------------------------------
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("args", "check"),
+    [
+        (
+            ["list"],
+            lambda d: [s["api_name"] for s in d] == ["readonly", "support_tools"],
+        ),
+        (
+            ["get", "support_tools"],
+            lambda d: (
+                d["tools"][0]
+                == {"group": "custom_objects", "name": "listCustomObjects"}
+                and "raw" not in d
+            ),
+        ),
+        (["get", "support_tools", "--raw"], lambda d: "sharing_stats" in d),
+        (
+            ["tools"],
+            lambda d: [g["key"] for g in d] == ["custom_knowledge", "custom_objects"],
+        ),
+        (
+            ["history", "support_tools"],
+            lambda d: d[-1]["type_name"] == "mcp_server_created",
+        ),
+    ],
+    ids=["list", "get", "get-raw", "tools", "history"],
+)
+def test_mcp_servers_reads_emit_json(args, check):
+    base = f"{FAKE_BASE_URL}/api/mcp-servers"
+    detail = load_fixture("mcp_servers/detail.json")
+    respx.get(base).respond(json=load_fixture("mcp_servers/list.json"))
+    respx.get(f"{base}/tools").respond(json=load_fixture("mcp_servers/tools.json"))
+    respx.get(f"{base}/{detail['id']}").respond(json=detail)
+    respx.get(f"{base}/{detail['id']}/events-history").respond(
+        json=load_fixture("mcp_servers/events_history.json")
+    )
+    flags = [] if "--raw" in args else ["--json"]
+    result = runner.invoke(cli.app, ["mcp-servers", *args, *flags])
+    assert result.exit_code == 0, result.output
+    assert check(json.loads(result.stdout))
+
+
+def test_mcp_servers_history_changed_column(monkeypatch):
+    from kizen_builder.tools import mcp_servers as mcp_tools
+
+    events = load_fixture("mcp_servers/events_history.json")["results"]
+    monkeypatch.setattr(mcp_tools, "list_history", lambda ref: events)
+    result = runner.invoke(
+        cli.app, ["mcp-servers", "history", "support_tools", "-o", "csv"]
+    )
+    assert result.exit_code == 0, result.output
+    rows = result.stdout.strip().splitlines()
+    assert rows[0] == "when,event,by,changed"
+    assert [r.split(",", 3)[3] for r in rows[1:]] == [
+        "—",
+        "description",
+        "tool_names",
+        "—",
+    ]
+    assert rows[1].split(",")[2] == "user@example.com"
+
+
+def test_mcp_servers_history_with_no_events(monkeypatch):
+    from kizen_builder.tools import mcp_servers as mcp_tools
+
+    monkeypatch.setattr(mcp_tools, "list_history", lambda ref: [])
+    result = runner.invoke(cli.app, ["mcp-servers", "history", "support_tools"])
+    assert result.exit_code == 0, result.output
+    assert "no events yet (Kizen records them a second or so after a change)" in plain(
+        result.stdout
+    )

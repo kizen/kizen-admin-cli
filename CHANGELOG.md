@@ -39,6 +39,9 @@ called out explicitly under **Changed** or **Removed**.
   spec that leaves them out gets no server, so `update` detaches one attached
   in the UI. `update --dry-run` names those steps (`detaches_mcp_server=`),
   and `diff` shows the change.
+- **`kizen mcp-servers`** lists, creates, updates and deletes MCP servers
+  from a spec, checks tool names against the live catalogue, and shows a
+  server's tools and change history.
 
 ### Fixed
 

@@ -34,6 +34,7 @@ from kizen_builder.api import dashboards as dash_api
 from kizen_builder.api import files as files_api
 from kizen_builder.api import forms as forms_api
 from kizen_builder.api import layouts as layout_api
+from kizen_builder.api import mcp_servers as mcp_api
 from kizen_builder.api import permissions as perm_api
 from kizen_builder.api import pipelines as pipelines_api
 from kizen_builder.api import records as records_api
@@ -84,6 +85,7 @@ Kind = Literal[
     "automation_folder",
     "dashboard",
     "dashlet",
+    "mcp_server",
     "layout",
     "record",
     "activity",
@@ -790,6 +792,20 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
         return dash_api.update_dashlet(
             client, op.parent_object_uuid, op.existing_uuid, op.payload
         )
+
+    if op.kind == "mcp_server":
+        if op.action == "create":
+            return mcp_api.create_mcp_server(client, op.payload)
+        if op.existing_uuid is None:
+            raise PlanError(
+                f"{op.action} mcp_server op '{op.key}' has no existing_uuid — planning bug"
+            )
+        if op.action == "update":
+            return mcp_api.update_mcp_server(client, op.existing_uuid, op.payload)
+        if op.action == "delete":
+            mcp_api.delete_mcp_server(client, op.existing_uuid)
+            return {}
+        raise PlanError(f"unsupported mcp_server action '{op.action}'")
 
     if op.kind == "layout":
         # Layouts are PUT-replace only (Kizen auto-creates the Standard View).

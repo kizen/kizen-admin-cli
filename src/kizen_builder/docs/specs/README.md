@@ -23,6 +23,7 @@ field Kizen rejected.
 | `activities create`, `activities fields create` | [activity.md](activity.md) | `ActivityDef` / `ActivityFieldDef` |
 | `forms create\|update\|set-ui`, `forms fields create` (and `surveys …`) | [form.md](form.md) | `FormDef` / `FormFieldDef` / `form_ui` |
 | `dashboards create\|update` | [dashboard.md](dashboard.md) | `DashboardDef` + dashlets |
+| `mcp-servers create\|update` | [mcp-server.md](mcp-server.md) | `MCPServerDef` |
 | `layouts update` | [layout.md](layout.md) | `LayoutDef` (record layout) |
 | `filter-groups`, `quick-filters`, `columns` create\|update | [saved-views.md](saved-views.md) | filter DSL / `configuration_json` |
 | `permissions group-create`, `roles …` | [permission-group.md](permission-group.md) | shaping-op list |

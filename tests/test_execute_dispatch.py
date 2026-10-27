@@ -355,6 +355,7 @@ ROWS = [
         f"/api/dashboards/{P}/dashlet/{E}",
         parent=True,
     )[:2],
+    *_crud("mcp_server", "/api/mcp-servers", f"/api/mcp-servers/{E}", parent=False),
     _row(
         "layout",
         "update",

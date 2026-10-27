@@ -1,0 +1,100 @@
+{
+  "count": 2,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": "bde29351-2a8b-4479-a0d3-c65d8292782e",
+      "name": "Read Only",
+      "api_name": "readonly",
+      "description": null,
+      "tool_names": [
+        "listCustomObjects",
+        "listObjectFields",
+        "listObjectFieldOptions",
+        "getCustomObject",
+        "listCatalogs",
+        "searchCatalog",
+        "getDocument"
+      ],
+      "is_system_managed": true,
+      "endpoint_url": "https://kizen.test/api/mcp/readonly",
+      "is_enabled": true,
+      "is_default_for_business": true,
+      "created": "2026-09-14T18:52:55.847024-05:00",
+      "updated": "2026-09-14T18:52:55.847026-05:00",
+      "owner": {},
+      "employee_access": "View",
+      "sharing_settings": {
+        "private": false,
+        "all_team_members": 1,
+        "roles": {
+          "view": [],
+          "edit": [],
+          "admin": []
+        },
+        "team_members": {
+          "view": [],
+          "edit": [],
+          "admin": []
+        }
+      },
+      "sharing_stats": {
+        "None": 0,
+        "View": 2,
+        "Edit": 0,
+        "Admin": 0
+      },
+      "tool_count": 7
+    },
+    {
+      "id": "e38f1367-267b-4344-823f-5126284b004d",
+      "name": "Support Tools",
+      "api_name": "support_tools",
+      "description": "Tools the support agent uses",
+      "tool_names": [
+        "listCustomObjects",
+        "listObjectFields",
+        "searchCatalog"
+      ],
+      "is_system_managed": false,
+      "endpoint_url": "https://kizen.test/api/mcp/support_tools",
+      "is_enabled": true,
+      "is_default_for_business": false,
+      "created": "2026-10-27T08:18:35.333889-05:00",
+      "updated": "2026-10-27T08:18:36.775948-05:00",
+      "owner": {
+        "id": "00000000-0000-4000-8000-0000000005e7",
+        "display_name": "Sample User (user@example.com)"
+      },
+      "employee_access": "Owner",
+      "sharing_settings": {
+        "private": false,
+        "all_team_members": 0,
+        "roles": {
+          "view": [],
+          "edit": [],
+          "admin": []
+        },
+        "team_members": {
+          "view": [
+            {
+              "id": "00000000-0000-4000-8000-0000000005a1",
+              "display_name": "Sample Service Account"
+            }
+          ],
+          "edit": [],
+          "admin": []
+        }
+      },
+      "sharing_stats": {
+        "None": 2,
+        "View": 0,
+        "Edit": 0,
+        "Admin": 0
+      },
+      "tool_count": 3
+    }
+  ],
+  "errors": null
+}
