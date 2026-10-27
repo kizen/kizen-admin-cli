@@ -182,7 +182,8 @@ class AutomationStepDef(BaseModel):
         description=(
             "Set on a `branch`, `condition` or `goal` step whose lanes rejoin. "
             "The step then needs exactly one `merge_branches` child, and steps "
-            "after the merge hang off that merge step."
+            "after the merge hang off that merge step. A `loop` is always sent "
+            "as an initiator, whatever this says."
         ),
     )
     continue_with_branch: Literal["yes", "no"] | None = Field(

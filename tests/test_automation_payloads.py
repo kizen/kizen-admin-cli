@@ -3021,6 +3021,242 @@ def test_broken_loop_spec_fails_plan(patch_live_lookups):
     assert "next_or_finish step 'next' has parent 'check'" in str(e.value)
 
 
+def _var(key, parent, name, order, data_type="string", is_array=False, sources=()):
+    variable = {"name": name, "data_type": data_type, "is_array": is_array}
+    if data_type == "entity":
+        variable["data_subtype"] = load_fixture("objects/patients.json")["id"]
+    block = {"sources": list(sources), "variable": variable}
+    if is_array:
+        block["array_aggregation_mode"] = "add_all"
+    return _s(
+        key, parent, "initialize_variable", order, action_initialize_variable=block
+    )
+
+
+def _loop(key, parent, array, item, order, **kw):
+    block = {"array_variable": array, "item_variable": item}
+    return _s(key, parent, "loop", order, step_loop=block, **kw)
+
+
+_STRINGS = [{"source_type": "static", "source_subtype": "string", "value": ["a", "b"]}]
+
+
+def _authored_loop_spec(steps: list[dict], record_based: bool = True) -> dict:
+    for i, s in enumerate(steps):
+        s["order"] = i
+    spec = {
+        "api_name": "authored_loop",
+        "name": "Authored Loop",
+        "type": "record_based" if record_based else "global",
+        "steps": steps,
+    }
+    if record_based:
+        spec["target_object"] = "patients"
+    return spec
+
+
+def _string_loop_steps() -> list[dict]:
+    return [
+        _var("arr", None, "arr", 0, is_array=True, sources=_STRINGS),
+        _var("item", "arr", "arr_item", 0),
+        _loop("each", "item", "arr", "arr_item", 0),
+        _s("body", "each", "delay", 0),
+        _s("next", "each", "next_or_finish", 0),
+        _s("after", "next", "delay", 0),
+    ]
+
+
+def _nested_loops(
+    depth: int, root_parent: str | None = None, arrays: list[str] | None = None
+) -> list[dict]:
+    """`depth` loops, each the body of the one before, and an `exit_loop` in
+    the innermost body. Each loop iterates its entry in `arrays` (by default
+    a different array per level) through its own item variable."""
+    arrays = arrays or [f"arr{n}" for n in range(depth)]
+    steps: list[dict] = []
+    parent = root_parent
+    for name in dict.fromkeys(arrays):
+        steps.append(_var(name, parent, name, 0, is_array=True, sources=_STRINGS))
+        parent = name
+    for n in range(depth):
+        steps.append(_var(f"item{n}", parent, f"item{n}", 0))
+        parent = f"item{n}"
+    closers = []
+    for n, name in enumerate(arrays):
+        steps.append(_loop(f"l{n}", parent, name, f"item{n}", 0))
+        closers.append(_s(f"n{n}", f"l{n}", "next_or_finish", 0))
+        parent = f"l{n}"
+    steps.append(_s("leave", parent, "exit_loop", 0))
+    return steps + closers[::-1]
+
+
+def _built_steps(spec: dict) -> dict[str, dict]:
+    return {s["key"]: s for s in _build(spec)["steps"]}
+
+
+def _preview(spec: dict) -> dict:
+    return plan_create_automation(spec).operations[0].preview
+
+
+@pytest.mark.parametrize("flag", [None, False, True])
+def test_loop_is_always_sent_as_an_initiator(patch_live_lookups, flag):
+    """The server stores true on a loop whatever is sent (confirmed live
+    2026-10-27), so the builder sends true and `diff` shows no flip."""
+    steps = _string_loop_steps()
+    if flag is not None:
+        steps[2]["is_branch_group_initiator"] = flag
+    by_key = _built_steps(_authored_loop_spec(steps, record_based=False))
+    assert by_key["each"]["is_branch_group_initiator"] is True
+    assert [k for k, s in by_key.items() if "is_branch_group_initiator" in s] == [
+        "each"
+    ]
+
+
+def test_string_array_loop_spec(patch_live_lookups):
+    spec = _authored_loop_spec(_string_loop_steps(), record_based=False)
+    by_key = _built_steps(spec)
+    assert by_key["each"]["step_loop"] == {
+        "loop_type": "for_each_item",
+        "array_variable": "arr",
+        "item_variable": "arr_item",
+    }
+    assert by_key["item"]["action_initialize_variable"]["sources"] == []
+    assert by_key["after"]["parent_key"] == "next"
+    assert "warnings" not in _preview(spec)
+
+
+def test_record_array_loop_over_search_records(patch_live_lookups):
+    steps = [
+        _var("recs", None, "recs", 0, data_type="entity", is_array=True),
+        _var("rec", "recs", "recs_item", 0, data_type="entity"),
+        _s(
+            "find",
+            "rec",
+            "search_records",
+            0,
+            action_search_records={
+                "custom_object": "patients",
+                "filter_type": "all_records",
+                "destination_variable": "recs",
+            },
+        ),
+        _loop("each", "find", "recs", "recs_item", 0),
+        _s("body", "each", "delay", 0),
+        _s("next", "each", "next_or_finish", 0),
+    ]
+    spec = _authored_loop_spec(steps)
+    by_key = _built_steps(spec)
+    assert by_key["find"]["action_search_records"]["destination_variable"] == {
+        "name": "recs"
+    }
+    assert by_key["each"]["step_loop"]["array_variable"] == "recs"
+    assert "warnings" not in _preview(spec)
+
+
+def test_loop_on_a_condition_yes_branch(patch_live_lookups):
+    steps = _string_loop_steps()[:5]
+    check = _s(
+        "check",
+        "item",
+        "condition",
+        0,
+        step_condition={"type": "custom_filter", "filter_config": NAME_IS_X},
+    )
+    steps[2].update(parent_key="check", parent_branch="yes")
+    other = _s("other", "check", "delay", 0, parent_branch="no")
+    spec = _authored_loop_spec([*steps[:2], check, *steps[2:], other])
+    by_key = _built_steps(spec)
+    assert by_key["each"]["parent_yes_no"] == "yes"
+    assert by_key["each"]["is_branch_group_initiator"] is True
+    assert "warnings" not in _preview(spec)
+
+
+def test_nested_loops_with_an_exit_loop(patch_live_lookups):
+    spec = _authored_loop_spec(_nested_loops(2), record_based=False)
+    by_key = _built_steps(spec)
+    assert by_key["l1"]["parent_key"] == "l0"
+    assert by_key["leave"]["parent_key"] == "l1"
+    assert (by_key["n0"]["parent_key"], by_key["n1"]["parent_key"]) == ("l0", "l1")
+    assert "warnings" not in _preview(spec)
+
+
+def test_loop_with_two_body_lanes_still_warns(patch_live_lookups):
+    steps = [*_string_loop_steps(), _s("other_lane", "each", "delay", 0)]
+    assert _preview(_authored_loop_spec(steps))["warnings"] == [
+        "step 'each' has 2 parallel children but is a 'loop', not a 'branch'; "
+        "put a 'branch' step in front of the fan-out"
+    ]
+
+
+def test_loop_nested_past_three_is_refused(patch_live_lookups):
+    """Kizen's builder holds three levels. The API accepts more, so this is
+    the CLI's own rule, checked at plan time."""
+    assert "warnings" not in _preview(_authored_loop_spec(_nested_loops(3), False))
+    with pytest.raises(PlanError) as e:
+        _build(_authored_loop_spec(_nested_loops(5), False))
+    problems = str(e.value).split("\n  - ")[1:]
+    assert problems == [
+        f"loop 'l{n}' is nested {n + 1} levels deep; Kizen's builder allows at "
+        "most three. The API accepts deeper loops, but the CLI refuses them so "
+        "the automation stays editable in the UI."
+        for n in (3, 4)
+    ]
+
+
+def test_loop_after_a_next_or_finish_is_not_nested_in_that_loop(patch_live_lookups):
+    """`again` follows the innermost loop of three, so it is three deep, not four."""
+    steps = [
+        _var("again_arr", None, "again_arr", 0, is_array=True, sources=_STRINGS),
+        _var("again_item", "again_arr", "again_item", 0),
+        *_nested_loops(3, root_parent="again_item"),
+        _loop("again", "n2", "again_arr", "again_item", 0),
+        _s("again_next", "again", "next_or_finish", 0),
+    ]
+    assert "warnings" not in _preview(_authored_loop_spec(steps, False))
+
+
+def _same_array_problem(key: str, array: str, outer: str) -> str:
+    return (
+        f"loop '{key}' iterates '{array}', which loop '{outer}' around it already "
+        "iterates; Kizen's builder needs a different array variable at each level. "
+        "The API accepts it, but the CLI refuses it so the automation stays "
+        "editable in the UI."
+    )
+
+
+@pytest.mark.parametrize(
+    ("arrays", "problem"),
+    [
+        (["a", "a"], ("l1", "a", "l0")),
+        (["a", "b", "a"], ("l2", "a", "l0")),
+    ],
+    ids=["outer_and_inner", "two_levels_down"],
+)
+def test_nested_loop_over_an_array_already_iterated_is_refused(
+    patch_live_lookups, arrays, problem
+):
+    spec = _authored_loop_spec(_nested_loops(len(arrays), arrays=arrays), False)
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value).split("\n  - ")[1:] == [_same_array_problem(*problem)]
+
+
+def test_loops_over_one_array_in_sequence_build(patch_live_lookups):
+    """The second loop hangs off the first's next_or_finish: not nested."""
+    variables, loop = _string_loop_steps()[:2], _string_loop_steps()[2:]
+    loop[0]["parent_key"] = "again_item"
+    steps = [
+        *variables,
+        _var("again_item", "item", "again_item", 0),
+        *loop,
+        _loop("again", "after", "arr", "again_item", 0),
+        _s("again_body", "again", "delay", 0),
+        _s("again_next", "again", "next_or_finish", 0),
+    ]
+    by_key = _built_steps(_authored_loop_spec(steps, False))
+    assert by_key["again"]["step_loop"]["array_variable"] == "arr"
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -3123,8 +3359,8 @@ def _branching_test_spec() -> dict:
 
 def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatch):
     """The spec reproduces the UI-built graph. What's left is noise any spec
-    shows: server-written descriptions, the plugin app the server fills in
-    for a `kizen/*` model, and a variable definition's null read defaults."""
+    shows: server-written descriptions, and the plugin app the server fills
+    in for a `kizen/*` model."""
     import kizen_builder.tools.planners.automations as ma
 
     raw = load_fixture("automations/branching_test.raw.json")
@@ -3135,11 +3371,6 @@ def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatc
         d
         for d in diff_automation(_branching_test_spec())["diff"]
         if d["path"].rsplit(".", 1)[-1] not in ("description", "business_plugin_app_id")
-        and not (
-            ".action_initialize_variable.variable." in d["path"]
-            and d["before"] in (None, False)
-            and d["after"] == "<absent>"
-        )
     ]
     assert structural == []
 

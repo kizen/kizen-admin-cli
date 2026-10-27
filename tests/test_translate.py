@@ -1328,6 +1328,132 @@ def test_diff_wire_payloads_reads_omitted_step_level_keys_as_defaults(
     }
 
 
+def _step_variables(payload: dict) -> list[dict]:
+    steps = _steps_by_type(payload, "initialize_variable")
+    return [s["action_initialize_variable"]["variable"] for s in steps]
+
+
+def _variable_definitions(payload: dict) -> list[dict]:
+    """Top-level `variables` and each initialize_variable step's definition."""
+    return [*payload["variables"], *_step_variables(payload)]
+
+
+def test_diff_ignores_what_the_server_derives_on_an_item_variable(
+    loops: dict,
+) -> None:
+    """A spec never names `is_array_item_variable`/`source_array_variable`:
+    the server sets both from the loop (confirmed live 2026-10-27)."""
+    assert any(v["is_array_item_variable"] for v in _variable_definitions(loops))
+    spec = copy.deepcopy(loops)
+    for v in _variable_definitions(spec):
+        del v["is_array_item_variable"], v["source_array_variable"]
+    assert diff_wire_payloads(loops, spec) == []
+    assert diff_wire_payloads(spec, loops) == []
+
+
+def test_diff_reads_a_null_variable_key_as_absent(loops: dict) -> None:
+    """A spec can't send null, and an omitted key reads back null."""
+    spec = copy.deepcopy(loops)
+    for v in _variable_definitions(spec):
+        for k in [k for k, x in v.items() if x is None]:
+            del v[k]
+    assert diff_wire_payloads(loops, spec) == []
+
+
+def _top(payload: dict) -> dict:
+    return payload
+
+
+def _init_block(payload: dict) -> dict:
+    return _steps_by_type(payload, "initialize_variable")[0][
+        "action_initialize_variable"
+    ]
+
+
+def _static_list_source(payload: dict) -> dict:
+    return _init_block(payload)["sources"][0]
+
+
+def _update_source(payload: dict) -> dict:
+    (step,) = _steps_by_type(payload, "update_variable")
+    return step["action_update_variable"]["sources"][0]
+
+
+def _step_zero(payload: dict) -> dict:
+    return payload["steps"][0]
+
+
+def _trigger_zero(payload: dict) -> dict:
+    return payload["triggers"][0]
+
+
+# (fixture, where the key lives, key, server default, a non-default value)
+_SERVER_DEFAULTS = {
+    "error_notification_email": ("loops", _top, "", "ops@example.com"),
+    "deduplicate_array": ("loops", _init_block, False, True),
+    "array_separator": ("loops", _static_list_source, "comma", "semicolon"),
+    "value_html": ("branching_test", _update_source, "", "<p>x</p>"),
+    "step description": (
+        "loops",
+        _step_zero,
+        "Initialize Variable",
+        "arr0 = [2 items]",
+    ),
+    "trigger description": ("loops", _trigger_zero, "Manual", "Run by hand"),
+}
+
+
+def _defaults_case(name: str) -> tuple[dict, dict, str, object, object]:
+    fixture, where, default, other = _SERVER_DEFAULTS[name]
+    key = name.split()[-1]
+    live = live_to_payload(load_fixture(f"automations/{fixture}.raw.json"))
+    where(live)[key] = default
+    return live, copy.deepcopy(live), key, default, other
+
+
+@pytest.mark.parametrize("name", sorted(_SERVER_DEFAULTS))
+def test_diff_reads_an_omitted_key_as_its_server_default(name: str) -> None:
+    """Omitted on a PUT, each reads back as its default (confirmed live
+    2026-10-27), so a spec that leaves it out changes nothing."""
+    live, spec, key, _, _ = _defaults_case(name)
+    del _SERVER_DEFAULTS[name][1](spec)[key]
+    assert diff_wire_payloads(live, spec) == []
+    assert diff_wire_payloads(spec, live) == []
+
+
+@pytest.mark.parametrize("name", sorted(_SERVER_DEFAULTS))
+@pytest.mark.parametrize("non_default_side", ["live", "spec"])
+def test_diff_still_shows_a_non_default_value(name: str, non_default_side: str) -> None:
+    """The key is compared as its default, not dropped: a non-default value on
+    either side diffs against an omitted one."""
+    live, spec, key, default, other = _defaults_case(name)
+    where = _SERVER_DEFAULTS[name][1]
+    del where(spec)[key]
+    if non_default_side == "live":
+        where(live)[key] = other
+        expected = [(other, default)]
+    else:
+        where(spec)[key] = other
+        expected = [(default, other)]
+    assert [(e["before"], e["after"]) for e in diff_wire_payloads(live, spec)] == (
+        expected
+    )
+
+
+@pytest.mark.parametrize("top_level", [False, True])
+def test_diff_still_shows_an_item_variable_change(loops: dict, top_level: bool) -> None:
+    spec = copy.deepcopy(loops)
+    item = next(
+        v
+        for v in (spec["variables"] if top_level else _step_variables(spec))
+        if v["is_array_item_variable"]
+    )
+    item["data_type"] = "uuid"
+    assert [(e["before"], e["after"]) for e in diff_wire_payloads(loops, spec)] == [
+        ("string", "uuid")
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Loops: `step_loop` by name, configless closers, and the server's loop rules
 # (each rule a live 400, each accepted shape a live 200, 2026-10-27)
@@ -1522,8 +1648,7 @@ def _accepted_shapes() -> dict[str, list[dict]]:
         _ws("n", "next_or_finish", "l"),
     ]
     shapes["A9-exit-after-body-step"] = _base() + [_ws("x", "exit_loop", "b1")]
-    shapes["B6-nest-4"] = _nest(4)
-    shapes["C1-nest-6"] = _nest(6)
+    shapes["B5-nest-3"] = _nest(3)
     head, p = _head()
     shapes["B7-loop-on-yes-branch"] = head + [
         _ws("c", "condition", p),
@@ -1567,6 +1692,63 @@ _ACCEPTED = _accepted_shapes()
 @pytest.mark.parametrize("name", sorted(_ACCEPTED))
 def test_loop_shapes_the_server_accepts_validate(name: str) -> None:
     assert validate_payload(_graph(copy.deepcopy(_ACCEPTED[name]))) == []
+
+
+@pytest.mark.parametrize("depth", [4, 6])
+def test_deep_nesting_the_server_accepts_fails_only_the_cli_rule(depth: int) -> None:
+    """B6 and C1 saved live; Kizen's builder can't hold them, so the CLI refuses."""
+    assert _problems(_nest(depth)) == [
+        f"loop 'l{d}' is nested {d + 1} levels deep; Kizen's builder allows at "
+        "most three. The API accepts deeper loops, but the CLI refuses them so "
+        "the automation stays editable in the UI."
+        for d in range(3, depth)
+    ]
+
+
+def _nest_through_conditions(depth: int) -> list[dict]:
+    """Like `_nest`, but each inner loop sits on the yes lane of a condition
+    in the outer loop's body."""
+    steps, parent = _head(depth)
+    for d in range(depth):
+        branch = ""
+        if d:
+            steps.append(_ws(f"c{d}", "condition", parent))
+            parent, branch = f"c{d}", "yes"
+        steps.append(_loop(f"l{d}", parent, f"arr{d}", f"arr{d}_item", branch))
+        parent = f"l{d}"
+    steps += [_ws(f"n{d}", "next_or_finish", f"l{d}") for d in reversed(range(depth))]
+    return steps
+
+
+def test_depth_counts_loops_through_a_condition_lane() -> None:
+    """A condition between levels is not a level, and doesn't end the walk."""
+    assert _problems(_nest_through_conditions(3)) == []
+    assert _problems(_nest_through_conditions(4)) == [
+        "loop 'l3' is nested 4 levels deep; Kizen's builder allows at most three. "
+        "The API accepts deeper loops, but the CLI refuses them so the automation "
+        "stays editable in the UI."
+    ]
+
+
+def test_one_array_at_two_levels_the_server_accepts_fails_only_the_cli_rule() -> None:
+    """The API saved one array in an outer and an inner loop, each with its own
+    item variable (confirmed live 2026-10-27). Kizen's builder refuses it, so
+    the CLI does too, and with nothing else wrong."""
+    steps, p = _head()
+    steps += [
+        _var("vb", "inner_item", p),
+        _loop("outer", "vb", "arr0", "arr0_item"),
+        _loop("inner", "outer", "arr0", "inner_item"),
+        _delay("b1", "inner"),
+        _ws("n_in", "next_or_finish", "inner"),
+        _ws("n_out", "next_or_finish", "outer"),
+    ]
+    assert _problems(steps) == [
+        "loop 'inner' iterates 'arr0', which loop 'outer' around it already "
+        "iterates; Kizen's builder needs a different array variable at each "
+        "level. The API accepts it, but the CLI refuses it so the automation "
+        "stays editable in the UI."
+    ]
 
 
 @pytest.mark.parametrize("fixture", ["loops", "ui_loops"])

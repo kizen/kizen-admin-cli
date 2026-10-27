@@ -253,6 +253,16 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Automation specs can author loops.** A spec names the array variable,
+  its item variable, a `loop` step with `step_loop: {array_variable,
+  item_variable}`, the body, a `next_or_finish` closer and any `exit_loop`
+  steps, and `create`, `update` and `diff` handle them like any other step.
+  A loop is always sent as a branch group initiator. `diff` no longer
+  reports the keys Kizen adds to a loop's item variable. The plan preview
+  no longer warns about a fan-out on every loop. The plan refuses a loop
+  nested more than three deep, or one over the same array as a loop around
+  it, as Kizen's builder does. `kizen docs show automation` has a worked
+  example.
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
   dashlets. `--name` names the copy, and `dashboards duplicate` also takes
@@ -495,6 +505,14 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`automations diff` no longer reports Kizen's defaults as changes when a
+  spec leaves them out.** An omitted `error_notification_email`,
+  `deduplicate_array`, `array_separator` (on a static list source),
+  `value_html` (on an `update_variable` source), or `description` on the
+  steps and trigger Kizen gives a fixed one (`kizen docs show automation`
+  lists them) is compared as the value Kizen stores for it. So is a null
+  key in a top-level or `initialize_variable` variable definition. A spec
+  that sets a different value still shows the change.
 - **CLI writes no longer fail on automations with loops, and `show` renders
   loops.** `activate`, `deactivate`, `move`, `steps add|edit|remove` and
   `roundtrip --execute` failed with `HTTP 400: … step_loop must be provided

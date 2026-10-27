@@ -454,12 +454,18 @@ def _branch_group_problems(steps: list[dict[str, Any]]) -> list[str]:
 # A loop may iterate an array of these (records, text or UUIDs).
 _LOOPABLE_DATA_TYPES = frozenset({"entity", "string", "uuid"})
 
+# Kizen's builder holds loops three deep. The API accepts more (six seen,
+# confirmed live 2026-10-27), but the CLI refuses them.
+_MAX_LOOP_DEPTH = 3
+
 
 def _loop_problems(steps: list[dict[str, Any]]) -> list[str]:
-    """The server's loop rules, each one a live 400 (confirmed 2026-10-27).
-    The body hangs off the loop, its one `next_or_finish` child closes it, and
-    what follows the loop hangs off the `next_or_finish`. A graph with no
-    loop, `next_or_finish` or `exit_loop` passes untouched."""
+    """The server's loop rules, each one a live 400 (confirmed 2026-10-27),
+    plus two from Kizen's builder that the API doesn't enforce: nesting depth
+    and one array at two levels. The body hangs off the loop, its one
+    `next_or_finish` child closes it, and what follows the loop hangs off the
+    `next_or_finish`. A graph with no loop, `next_or_finish` or `exit_loop`
+    passes untouched."""
     problems: list[str] = []
     by_key = {s.get("key"): s for s in steps}
     declared: dict[str, dict[str, Any]] = {}
@@ -495,6 +501,7 @@ def _loop_problems(steps: list[dict[str, Any]]) -> list[str]:
                 )
             else:
                 item_owners[item] = key
+            problems.extend(_builder_loop_problems(s, by_key))
         elif step_type == "next_or_finish":
             pk = s.get("parent_key")
             if (by_key.get(pk) or {}).get("type") != "loop":
@@ -547,20 +554,61 @@ def _loop_variable_problems(
     return []
 
 
+def _builder_loop_problems(
+    loop: dict[str, Any], by_key: dict[Any, dict[str, Any]]
+) -> list[str]:
+    """Kizen's builder refuses these, though the API accepts them (confirmed
+    live 2026-10-27), so the CLI refuses them to keep the automation editable."""
+    key = loop.get("key")
+    around = enclosing_loops(loop, by_key)
+    problems: list[str] = []
+    depth = 1 + len(around)
+    if depth > _MAX_LOOP_DEPTH:
+        problems.append(
+            f"loop '{key}' is nested {depth} levels deep; Kizen's builder allows "
+            "at most three. The API accepts deeper loops, but the CLI refuses them "
+            "so the automation stays editable in the UI."
+        )
+    array = (loop.get("step_loop") or {}).get("array_variable")
+    outer = next(
+        (
+            o
+            for o in around
+            if (o.get("step_loop") or {}).get("array_variable") == array
+        ),
+        None,
+    )
+    if array is not None and outer is not None:
+        problems.append(
+            f"loop '{key}' iterates '{array}', which loop '{outer.get('key')}' "
+            "around it already iterates; Kizen's builder needs a different array "
+            "variable at each level. The API accepts it, but the CLI refuses it so "
+            "the automation stays editable in the UI."
+        )
+    return problems
+
+
 def _in_loop_body(step: dict[str, Any], by_key: dict[Any, dict[str, Any]]) -> bool:
-    """Whether walking up from ``step`` reaches a loop through one of its body
-    steps. Arriving through a loop's `next_or_finish` means the step comes
-    after that loop, so the walk carries on to any loop around it."""
-    cur, seen = step, set()
+    return bool(enclosing_loops(step, by_key))
+
+
+def enclosing_loops(
+    step: dict[str, Any], by_key: dict[Any, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The loops ``step`` sits inside, innermost first: walking up, the loops
+    reached through one of their body steps. Arriving through a loop's
+    `next_or_finish` means the step comes after that loop, so it isn't
+    included and the walk carries on to any loop around it."""
+    cur, seen, loops = step, set(), []
     while cur.get("parent_key") and cur.get("key") not in seen:
         seen.add(cur.get("key"))
         parent = by_key.get(cur["parent_key"])
         if parent is None:
-            return False
+            break
         if parent.get("type") == "loop" and cur.get("type") != "next_or_finish":
-            return True
+            loops.append(parent)
         cur = parent
-    return False
+    return loops
 
 
 # ---------------------------------------------------------------------------
@@ -707,6 +755,76 @@ _WIRE_STEP_DEFAULTS = {
     "error_notification_severity_level": "inherit",
 }
 
+# Keys a spec may omit that read back as the server's default (confirmed live
+# 2026-10-27), so an omitted one compares as that default. A non-default value
+# on either side still diffs.
+_WIRE_TOP_DEFAULTS = {"error_notification_email": ""}
+_VARIABLE_BLOCK_DEFAULTS = {"deduplicate_array": False}
+
+# What the server writes when a step or trigger is sent without a
+# `description`, on create and on a PUT that omits it (confirmed live
+# 2026-10-27). A type missing here compares as sent.
+_DEFAULT_DESCRIPTIONS = {
+    "branch": "Branch",
+    "condition": "Condition",
+    "delay": "Delay",
+    "exit_loop": "Exit Loop",
+    "initialize_variable": "Initialize Variable",
+    "loop": "Loop",
+    "manual": "Manual",
+    "merge_branches": "Merge Branches",
+    "next_or_finish": "Next/Finish",
+    "search_records": "Action: Search Records",
+    "stop_execution": "Stop Execution",
+    "update_variable": "Update Variable",
+}
+
+# Set by the server on a loop's item variable, from the loop (confirmed live
+# 2026-10-27). A spec never names them.
+_DERIVED_VARIABLE_KEYS = frozenset({"is_array_item_variable", "source_array_variable"})
+
+
+def _diffable_variable(var: Any) -> Any:
+    """A variable definition as `diff` compares it: without the keys the
+    server derives from a loop, and with a null key the same as an absent
+    one, since a spec can't send null and an omitted key reads back null."""
+    if not isinstance(var, dict):
+        return var
+    return {
+        k: v
+        for k, v in var.items()
+        if k not in _DERIVED_VARIABLE_KEYS and v is not None
+    }
+
+
+def _with_default_description(item: dict[str, Any]) -> dict[str, Any]:
+    default = _DEFAULT_DESCRIPTIONS.get(str(item.get("type")))
+    if default is None or "description" in item:
+        return item
+    return {**item, "description": default}
+
+
+def _diffable_variable_block(step_type: str, block: dict[str, Any]) -> dict[str, Any]:
+    """An initialize_variable/update_variable block with its omitted defaults
+    filled in: `deduplicate_array`, a static list source's `array_separator`,
+    and an update_variable source's `value_html`."""
+    out = {**_VARIABLE_BLOCK_DEFAULTS, **block}
+    if step_type == "initialize_variable" and "variable" in out:
+        out["variable"] = _diffable_variable(out["variable"])
+    if isinstance(out.get("sources"), list):
+        sources = []
+        for src in out["sources"]:
+            if isinstance(src, dict):
+                if src.get("source_type") == "static" and isinstance(
+                    src.get("value"), list
+                ):
+                    src = {"array_separator": "comma", **src}
+                if step_type == "update_variable":
+                    src = {"value_html": "", **src}
+            sources.append(src)
+        out["sources"] = sources
+    return out
+
 
 def _wire_pairs(
     live_items: list[dict[str, Any]], spec_items: list[dict[str, Any]]
@@ -805,6 +923,7 @@ def _normalize_wire_triggers(
         if item is None:
             continue
         norm = {k: v for k, v in item.items() if k not in _WIRE_DIFF_EXCLUDED | {"id"}}
+        norm = _with_default_description(norm)
         # `id` is carried as a normal field, but pinned to the pair's shared
         # canonical value on both sides so a matched pair never diffs on it
         # (position-fallback matches can have an id on only one side) while
@@ -859,7 +978,11 @@ def _normalize_wire_steps(
                     resolved["trigger_key"], resolved["trigger_key"]
                 )
             norm[_GO_TO_BLOCK_FIELD] = resolved
-        out[_wire_pair_label(pair)] = norm
+        for step_type in ("initialize_variable", "update_variable"):
+            field = _block_field_for(step_type)
+            if isinstance(norm.get(field), dict):
+                norm[field] = _diffable_variable_block(step_type, norm[field])
+        out[_wire_pair_label(pair)] = _with_default_description(norm)
     return out
 
 
@@ -897,6 +1020,11 @@ def diff_wire_payloads(
 
     norm_live = {k: v for k, v in live.items() if k not in ("triggers", "steps")}
     norm_spec = {k: v for k, v in spec.items() if k not in ("triggers", "steps")}
+    for norm in (norm_live, norm_spec):
+        for k, default in _WIRE_TOP_DEFAULTS.items():
+            norm.setdefault(k, default)
+        if isinstance(norm.get("variables"), list):
+            norm["variables"] = [_diffable_variable(v) for v in norm["variables"]]
     norm_live["triggers"] = _normalize_wire_triggers(trigger_pairs, 0)
     norm_spec["triggers"] = _normalize_wire_triggers(trigger_pairs, 1)
     norm_live["steps"] = _normalize_wire_steps(step_pairs, trigger_pairs, 0)
