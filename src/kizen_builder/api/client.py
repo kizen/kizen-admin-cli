@@ -1,5 +1,10 @@
-"""Thin httpx wrapper that injects the three Kizen auth headers on every call,
-retries reads, and normalizes errors into a single exception type.
+"""Thin httpx wrapper that authenticates every call, retries reads, and
+normalizes errors into a single exception type.
+
+A profile authenticates with the three ``X-*`` headers. Helper mode sends only
+``Authorization: Bearer``, from :class:`~kizen_builder.auth_helper.BearerHelperAuth`,
+which refreshes the token and resends once on a 401 inside a single attempt;
+the retries below wrap that whole exchange.
 
 A GET is retried on a transport error or a 429/502/503/504. Any method is
 retried when the connection was never made. A write is never retried once it
@@ -14,7 +19,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from kizen_builder.config import EnvConfig
+from kizen_builder.auth_helper import BearerHelperAuth
+from kizen_builder.config import ApiKeyAuth, EnvConfig, HelperAuth
 
 _MAX_ATTEMPTS = 3
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
@@ -39,14 +45,20 @@ class KizenClient:
 
     def __init__(self, config: EnvConfig, timeout: float = 30.0) -> None:
         self._config = config
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        auth: httpx.Auth | None = None
+        match config.auth:
+            case ApiKeyAuth(api_key=api_key):
+                headers = {
+                    "X-API-KEY": api_key,
+                    "X-BUSINESS-ID": config.business_id,
+                    "X-USER-ID": config.user_id,
+                    **headers,
+                }
+            case HelperAuth(argv=argv):
+                auth = BearerHelperAuth(argv)
         self._client = httpx.Client(
-            base_url=config.base_url,
-            headers={
-                **config.auth_headers(),
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            timeout=timeout,
+            base_url=config.base_url, headers=headers, auth=auth, timeout=timeout
         )
 
     # --- context manager ------------------------------------------------
@@ -173,7 +185,9 @@ class KizenClient:
             body = resp.text
 
         message = _extract_error_message(body) or f"{method} {path} failed"
-        if resp.status_code in (401, 403):
+        if isinstance(self._config.auth, HelperAuth):
+            message = _helper_auth_message(message, resp.status_code, body)
+        elif resp.status_code in (401, 403):
             # Auth failure — surface the exact command the user can run to fix.
             label = self._config.name
             message = (
@@ -183,6 +197,27 @@ class KizenClient:
         if write and resp.status_code in (502, 503, 504):
             message = _may_have_applied(message, method)
         return KizenAPIError(resp.status_code, message, body=body)
+
+
+def _helper_auth_message(message: str, status: int, body: Any) -> str:
+    """Helper mode's advice for an auth failure. `kizen init` doesn't apply:
+    app-builder owns the credentials."""
+    if status == 401:
+        return f"{message} — Kizen rejected the token from the auth helper."
+    # DRF gives every PermissionDenied the code `permission_denied`, so the
+    # detail text is what singles out the OAuth-permission check (webapp
+    # apps/oauth_provider/authentication.py).
+    if (
+        status == 403
+        and isinstance(body, dict)
+        and body.get("code") == "permission_denied"
+        and "oauth" in str(body.get("detail", "")).lower()
+    ):
+        return (
+            f"{message} — this Kizen user needs the OAuth authorizations "
+            "permission to use kizen through app-builder."
+        )
+    return message
 
 
 def _may_have_applied(message: str, method: str) -> str:

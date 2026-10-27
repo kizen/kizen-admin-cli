@@ -14,6 +14,29 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **Automation specs can give a Call LLM step an MCP server's tools:**
+  `mcp_server` (api_name or UUID), `run_tools_as` (a service account's name
+  or UUID), `max_sequential_turns` and `tool_failure_policy`. Set the server
+  and the account together; `--dry-run` refuses one without the other. A
+  spec that leaves them out gets no server, so `update` detaches one attached
+  in the UI. `update --dry-run` names those steps (`detaches_mcp_server=`),
+  and `diff` shows the change.
+
+### Fixed
+
+- **Automations with an AI (Call LLM) step can be shown, diffed and edited
+  again.** Since Kizen's 2026-10-26 release every such step carries two
+  settings the CLI refused, so `show`, `diff`, `steps`, `activate`,
+  `deactivate`, `move` and `roundtrip` stopped on any automation with one.
+- **`automations update` from a spec no longer leaves an MCP-attached Call
+  LLM step without its run-as account.** Kizen kept the server and dropped
+  the account when a step's spec left both out, storing a step it then
+  refuses to save.
+
+## [0.3.0] — 2026-10-21
+
 ### Changed
 
 - **Breaking: a step setting the CLI doesn't model now stops every verb that
@@ -253,13 +276,17 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
-- **Automation specs can give a Call LLM step an MCP server's tools:**
-  `mcp_server` (api_name or UUID), `run_tools_as` (a service account's name
-  or UUID), `max_sequential_turns` and `tool_failure_policy`. Set the server
-  and the account together; `--dry-run` refuses one without the other. A
-  spec that leaves them out gets no server, so `update` detaches one attached
-  in the UI. `update --dry-run` names those steps (`detaches_mcp_server=`),
-  and `diff` shows the change.
+- **`kizen` can run under app-builder with no profile.**
+  When `KIZEN_AUTH_HELPER` is set, the environment comes from
+  `KIZEN_BASE_URL`, `KIZEN_BUSINESS_ID` and `KIZEN_USER_ID`, and every request
+  authenticates with a Bearer token printed by the helper command, refreshed
+  once on a 401. `~/.config/kizen/credentials.toml` isn't read, and a pinned
+  directory still refuses a different `business_id`. In this mode `kizen
+  init`, `kizen envs list` and `kizen upgrade` refuse, and `kizen upgrade
+  --check` says the installation is managed by app-builder and exits 0.
+  Profile mode is unchanged. `kizen docs show operating` has the variable
+  contract.
+
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
   dashlets. `--name` names the copy, and `dashboards duplicate` also takes
@@ -502,14 +529,6 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
-- **Automations with an AI (Call LLM) step can be shown, diffed and edited
-  again.** Since Kizen's 2026-10-26 release every such step carries two
-  settings the CLI refused, so `show`, `diff`, `steps`, `activate`,
-  `deactivate`, `move` and `roundtrip` stopped on any automation with one.
-- **`automations update` from a spec no longer leaves an MCP-attached Call
-  LLM step without its run-as account.** Kizen kept the server and dropped
-  the account when a step's spec left both out, storing a step it then
-  refuses to save.
 - **`forms`/`surveys update` and `set-ui` no longer delete fields.** Kizen
   deletes every field that isn't placed on a page whenever a form is saved,
   so updating a form with no layout yet emptied it, and a partial `set-ui`
@@ -1298,5 +1317,6 @@ who isn't its author.
 The tool's history before versioning is recorded in [ROADMAP.md](ROADMAP.md)
 under "Shipped before 0.2.0".
 
-[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kizen/kizen-admin-cli/releases/tag/v0.2.0
