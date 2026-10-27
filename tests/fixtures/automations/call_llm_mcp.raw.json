@@ -1,0 +1,161 @@
+{
+  "id": "9fa618d0-380c-448d-9ed4-7a0d89847e2c",
+  "name": "Call LLM MCP Tools",
+  "api_name": "call_llm_mcp",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+    "name": "tickets",
+    "description": null,
+    "entity_name": "ticket",
+    "object_name": "ticket",
+    "object_class": "custom_objects",
+    "object_type": "pipeline",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "f2aa539d-a9ab-4e29-a746-328a6ee1608d",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "a2ad1433-725d-4ce0-bd2b-857e8bcf3cd1",
+      "step_type": "call_llm",
+      "order": 0,
+      "description": "Call LLM",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_call_llm": {
+        "model_name": "kizen/pro",
+        "business_plugin_app": null,
+        "prompt": "Summarize the record using the available tools.",
+        "html_prompt": "<p>Summarize the record using the available tools.</p>",
+        "merge_field_validation": "error_if_required",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": {
+              "id": "e7f1ddd1-7861-4328-94b3-1f9008c81f24",
+              "name": "long_text",
+              "display_name": "long text",
+              "deleted": false,
+              "field_type": "longtext",
+              "options": [],
+              "relation": null,
+              "rating": null
+            },
+            "variable": null,
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false,
+        "mcp_server": {
+          "id": "bde29351-2a8b-4479-a0d3-c65d8292782e",
+          "name": "Example Tools",
+          "api_name": "example_tools",
+          "is_enabled": true,
+          "deleted": false,
+          "tool_count": 7
+        },
+        "run_tools_as": {
+          "id": "afa714ac-33c3-49a9-87b0-be75430a7ec6",
+          "name": "Automation Runner",
+          "deleted": false
+        },
+        "max_sequential_turns": 10,
+        "tool_failure_policy": "never_fail"
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "d9a0c41d-af54-4390-9079-dff3a2c67c7c",
+      "step_type": "call_llm",
+      "order": 1,
+      "description": "Call LLM",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "a2ad1433-725d-4ce0-bd2b-857e8bcf3cd1",
+      "parent_condition": "",
+      "action_call_llm": {
+        "model_name": "kizen/pro",
+        "business_plugin_app": null,
+        "prompt": "Summarize the record.",
+        "html_prompt": "<p>Summarize the record.</p>",
+        "merge_field_validation": "error_if_required",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": {
+              "id": "e7f1ddd1-7861-4328-94b3-1f9008c81f24",
+              "name": "long_text",
+              "display_name": "long text",
+              "deleted": false,
+              "field_type": "longtext",
+              "options": [],
+              "relation": null,
+              "rating": null
+            },
+            "variable": null,
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false,
+        "mcp_server": null,
+        "run_tools_as": null,
+        "max_sequential_turns": 25,
+        "tool_failure_policy": "never_fail"
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [],
+  "revision": 5,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-27T08:54:34.400081-05:00",
+  "updated": "2026-10-27T08:55:40.471600-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}
