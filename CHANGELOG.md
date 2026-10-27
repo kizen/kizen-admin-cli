@@ -14,6 +14,20 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **CLI writes no longer fail on automations with loops, and `show` renders
+  loops.** `activate`, `deactivate`, `move`, `steps add|edit|remove` and
+  `roundtrip --execute` failed with `HTTP 400: … step_loop must be provided
+  for loop` on any automation with a loop, after a clean `--dry-run`. They
+  now write it back unchanged. `--dry-run` catches a broken loop and names
+  the step. `show` labels each loop with its array and item variables and
+  puts its body under it. `steps add --parent <loop>` puts the new step at
+  the head of the body, `steps add` builds an `exit_loop`, and
+  `steps remove` refuses to leave a loop unclosed.
+
+## [0.3.0] — 2026-10-21
+
 ### Changed
 
 - **Breaking: a step setting the CLI doesn't model now stops every verb that
@@ -252,6 +266,17 @@ called out explicitly under **Changed** or **Removed**.
   that report `completed` without changing `owner`.
 
 ### Added
+
+- **`kizen` can run under app-builder with no profile.**
+  When `KIZEN_AUTH_HELPER` is set, the environment comes from
+  `KIZEN_BASE_URL`, `KIZEN_BUSINESS_ID` and `KIZEN_USER_ID`, and every request
+  authenticates with a Bearer token printed by the helper command, refreshed
+  once on a 401. `~/.config/kizen/credentials.toml` isn't read, and a pinned
+  directory still refuses a different `business_id`. In this mode `kizen
+  init`, `kizen envs list` and `kizen upgrade` refuse, and `kizen upgrade
+  --check` says the installation is managed by app-builder and exits 0.
+  Profile mode is unchanged. `kizen docs show operating` has the variable
+  contract.
 
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
@@ -495,15 +520,6 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
-- **CLI writes no longer fail on automations with loops, and `show` renders
-  loops.** `activate`, `deactivate`, `move`, `steps add|edit|remove` and
-  `roundtrip --execute` failed with `HTTP 400: … step_loop must be provided
-  for loop` on any automation with a loop, after a clean `--dry-run`. They
-  now write it back unchanged. `--dry-run` catches a broken loop and names
-  the step. `show` labels each loop with its array and item variables and
-  puts its body under it. `steps add --parent <loop>` puts the new step at
-  the head of the body, `steps add` builds an `exit_loop`, and
-  `steps remove` refuses to leave a loop unclosed.
 - **`forms`/`surveys update` and `set-ui` no longer delete fields.** Kizen
   deletes every field that isn't placed on a page whenever a form is saved,
   so updating a form with no layout yet emptied it, and a partial `set-ui`
@@ -1292,5 +1308,6 @@ who isn't its author.
 The tool's history before versioning is recorded in [ROADMAP.md](ROADMAP.md)
 under "Shipped before 0.2.0".
 
-[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kizen/kizen-admin-cli/releases/tag/v0.2.0
