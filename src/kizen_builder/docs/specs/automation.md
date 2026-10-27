@@ -116,6 +116,15 @@ plan preview warns about it. Kizen's 2026-09-28 migration inserted a `branch`
 step ahead of every existing fan-out, and an `update` from a spec without one
 removes it again. Confirmed live 2026-09-28.
 
+**Loops** are initiators too. A `loop` step's body hangs off the loop, its one
+`next_or_finish` child closes the body, and the steps after the loop hang off
+the `next_or_finish`. `exit_loop` leaves the loop from inside the body.
+`next_or_finish` and `exit_loop` take no config block. `step_loop` names an
+array variable of records, strings or UUIDs and a separate item variable, each
+declared by an `initialize_variable` step. The item variable is a single
+variable of the array's type. `--dry-run` checks loops against
+the server's rules too. Confirmed live 2026-10-27.
+
 **Skipping a condition or goal** (`should_skip_execution: true`) needs
 `continue_with_branch: "yes"` or `"no"`, the branch the run takes past it. The
 spec is rejected without it. Confirmed live 2026-09-28.
@@ -163,7 +172,7 @@ A `goal` step's `step_goal.triggers` are wait-until triggers with the same
 to wait for a reply. Its `wait_type` is `never`, `delay` or
 `specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
 
-## Wired step types (27)
+## Wired step types (30)
 
 | step_type | config block | purpose |
 |-----------|--------------|---------|
@@ -193,6 +202,9 @@ to wait for a reply. Its `wait_type` is `never`, `delay` or
 | `search_records` | `action_search_records` | search an object, write results into an array variable |
 | `branch` | none | run its children in parallel — see Branch groups |
 | `merge_branches` | none | rejoin a branch group — see Branch groups |
+| `loop` | `step_loop` | run its body once per item of an array variable — see Branch groups |
+| `next_or_finish` | none | close a loop body — see Branch groups |
+| `exit_loop` | none | leave the loop from inside its body |
 
 `search_records` (the automation-builder equivalent of `records list
 --filter`) needs its own `custom_object` — independent of the automation's
@@ -854,7 +866,9 @@ Why a translator is mandatory rather than nice-to-have:
   Derived read-only keys are expected and never sent: `yes_steps`/`no_steps`
   on a condition, and the message fields (`subject`, `content`, `name`, …) a
   `notify_member_via_email`/`_text` read flattens into the block (confirmed
-  live 2026-10-16).
+  live 2026-10-16). A whole non-empty `step_*`/`action_*` block the CLI
+  doesn't read for that step's type stops the same verbs, forwarding types
+  included.
 
 Also: **automation updates need PUT, not PATCH.** PATCH refuses step/trigger
 changes, and PUT requires the current `revision` as `last_revision`.
@@ -904,6 +918,8 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
+| `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` and `exit_loop` are read with no config block, and none is written. Confirmed live 2026-10-27 |
+| A loop's item variable read with `is_array_item_variable: true` and `source_array_variable: <array>` | echoed as read. The server sets both itself from the loop, so sending them is harmless and omitting them changes nothing. Confirmed live 2026-10-27 |
 | Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
 | `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
 
@@ -936,6 +952,19 @@ inconsistent:
   one `merge_branches` child, and every `merge_branches` step's parent is an
   initiator** (400). A skipped condition or goal needs `continue_with_branch`
   `yes` or `no` (400). Confirmed live 2026-09-28.
+- **Loops** (each a 400, confirmed live 2026-10-27):
+  - a `loop` has exactly one `next_or_finish` child;
+  - a `loop` has no `merge_branches` child;
+  - a `next_or_finish` hangs directly off a `loop`;
+  - an `exit_loop` is inside a loop body: walking up its parents, it reaches a
+    loop through a body step, not through that loop's `next_or_finish`;
+  - a loop iterates an array variable of records, strings or UUIDs, declared
+    by an `initialize_variable` step;
+  - its item variable is declared by an `initialize_variable` step as a single
+    variable of the array's type (and, for records, the same object), and no
+    two loops share one.
+
+  There is no nesting limit (6 deep saves) and no limit on body lanes.
 
 ### Unlisted step types
 

@@ -18,6 +18,9 @@ from typing import Any
 from kizen_builder.tools.plans import PlanError
 
 _BRANCHING_TYPES = {"condition", "goal"}
+# Closers stay on the loop or branch group they close: moved under a new
+# step, the server rejects them.
+_CLOSER_TYPES = {"next_or_finish", "merge_branches"}
 
 
 def find_step(payload: dict[str, Any], key: str) -> dict[str, Any]:
@@ -93,6 +96,11 @@ def remove_step(
     dead = find_step(payload, key)
     kids = children_of(payload, key)
 
+    if dead["type"] == "next_or_finish":
+        raise PlanError(
+            f"'{key}' closes loop '{dead.get('parent_key')}' and can't be "
+            "removed on its own. Remove the loop instead."
+        )
     if cascade:
         doomed = set(subtree_keys(payload, key))
     else:
@@ -102,6 +110,14 @@ def remove_step(
                 f"({', '.join(k['key'] for k in kids)}); removing it would "
                 "orphan its yes/no branches. Remove or re-parent them first, "
                 "or pass cascade=True to delete the whole subtree."
+            )
+        if dead["type"] == "loop" and kids:
+            raise PlanError(
+                f"'{key}' is a loop with steps under it "
+                f"({', '.join(k['key'] for k in kids)}); removing it alone would "
+                "leave its next_or_finish without a loop. Remove its body first, "
+                "or pass cascade=True to delete the loop with its body and "
+                "everything after it."
             )
         doomed = {key}
 
@@ -160,8 +176,10 @@ def insert_step(
     (envelope linkage/order fields are overwritten here). With
     ``adopt_children`` (the default) the parent's existing children in the
     target branch move under the new step — i.e. insertion into the chain;
-    without it the new step is a leaf. ``parent_key=None`` inserts a new
-    root above the current one.
+    without it the new step is a leaf. A ``next_or_finish`` or
+    ``merge_branches`` child is never adopted, so under a loop the new step
+    heads the body. ``parent_key=None`` inserts a new root above the current
+    one.
     """
     if any(s["key"] == new_step["key"] for s in payload["steps"]):
         raise PlanError(f"step key '{new_step['key']}' already exists")
@@ -175,6 +193,8 @@ def insert_step(
     report: dict[str, Any] = {"key": new_step["key"], "adopted": []}
     if adopt_children:
         for child in children_of(payload, parent_key, branch if parent else None):
+            if child["type"] in _CLOSER_TYPES:
+                continue
             child["parent_key"] = new_step["key"]
             child["parent_yes_no"] = ""
             child["parent_condition"] = ""

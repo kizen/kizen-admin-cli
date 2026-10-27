@@ -47,6 +47,7 @@ from kizen_builder.tools.planners.automations import (
     _prefix_for,
     _reject_unhonoured_keys,
     _strip,
+    _unwrap_id,
 )
 from kizen_builder.tools.plans import PlanError
 
@@ -150,6 +151,10 @@ def live_to_payload(raw: dict[str, Any]) -> dict[str, Any]:
     return _merge_server_state(payload, raw)
 
 
+# Step-level read keys that share the config blocks' prefixes.
+_STEP_ENVELOPE_KEYS = frozenset({"step_type", "step_error", "action_on_failure"})
+
+
 def _live_step_to_wire(
     step: dict[str, Any],
     step_keys: dict[str, str],
@@ -187,10 +192,26 @@ def _live_step_to_wire(
     if step.get("description"):
         p["description"] = step["description"]
 
-    if step_type in _CONFIGLESS_STEP_TYPES:
+    cfg_key = (
+        None if step_type in _CONFIGLESS_STEP_TYPES else _block_field_for(step_type)
+    )
+    for k, v in step.items():
+        if (
+            v
+            and isinstance(v, dict)
+            and k.startswith(("step_", "action_"))
+            and k not in _STEP_ENVELOPE_KEYS
+            and k != cfg_key
+        ):
+            raise PlanError(
+                f"{where} step '{p['key']}': {k} would be lost on PUT — the CLI "
+                f"doesn't read that block for a '{step_type}' step, so it stopped "
+                "before writing anything. Change this step in the Kizen UI until "
+                "the CLI supports it."
+            )
+    if cfg_key is None:
         return p
 
-    cfg_key = _block_field_for(step_type)
     block = dict(step.get(cfg_key) or {})
 
     where = f"{where} step '{p['key']}' {cfg_key}"
@@ -353,6 +374,7 @@ def validate_payload(payload: dict[str, Any]) -> list[str]:
                 )
 
     problems.extend(_branch_group_problems(steps))
+    problems.extend(_loop_problems(steps))
 
     # Cycle check via parent chain
     for s in steps:
@@ -406,8 +428,8 @@ def _branch_group_problems(steps: list[dict[str, Any]]) -> list[str]:
 
     for s in steps:
         key = s.get("key")
-        # A live loop is also an initiator, closed by `next_or_finish` rather
-        # than a merge step. Loops are unsupported, and still 400 at PUT.
+        # A loop is also an initiator, closed by `next_or_finish` rather than
+        # a merge step (`_loop_problems`).
         if (
             s.get("is_branch_group_initiator")
             and s.get("type") != "loop"
@@ -427,6 +449,118 @@ def _branch_group_problems(steps: list[dict[str, Any]]) -> list[str]:
                 "'yes' or 'no' (server 400s otherwise)"
             )
     return problems
+
+
+# A loop may iterate an array of these (records, text or UUIDs).
+_LOOPABLE_DATA_TYPES = frozenset({"entity", "string", "uuid"})
+
+
+def _loop_problems(steps: list[dict[str, Any]]) -> list[str]:
+    """The server's loop rules, each one a live 400 (confirmed 2026-10-27).
+    The body hangs off the loop, its one `next_or_finish` child closes it, and
+    what follows the loop hangs off the `next_or_finish`. A graph with no
+    loop, `next_or_finish` or `exit_loop` passes untouched."""
+    problems: list[str] = []
+    by_key = {s.get("key"): s for s in steps}
+    declared: dict[str, dict[str, Any]] = {}
+    for s in steps:
+        if s.get("type") == "initialize_variable":
+            var = (s.get("action_initialize_variable") or {}).get("variable")
+            if isinstance(var, dict) and var.get("name"):
+                declared.setdefault(var["name"], var)
+
+    item_owners: dict[Any, Any] = {}
+    for s in steps:
+        key, step_type = s.get("key"), s.get("type")
+        if step_type == "loop":
+            kids = [c for c in steps if c.get("parent_key") == key]
+            closers = sum(c.get("type") == "next_or_finish" for c in kids)
+            if closers != 1:
+                problems.append(
+                    f"loop '{key}' has {closers} next_or_finish children; the "
+                    "server requires exactly one, which closes the loop body "
+                    "(server 400s otherwise)"
+                )
+            if any(c.get("type") == "merge_branches" for c in kids):
+                problems.append(
+                    f"loop '{key}' has a merge_branches child; a loop is closed "
+                    "by next_or_finish, not merge_branches (server 400s otherwise)"
+                )
+            problems.extend(_loop_variable_problems(s, declared))
+            item = (s.get("step_loop") or {}).get("item_variable")
+            if item in item_owners:
+                problems.append(
+                    f"loops '{item_owners[item]}' and '{key}' share item variable "
+                    f"'{item}'; each loop needs its own (server 400s otherwise)"
+                )
+            else:
+                item_owners[item] = key
+        elif step_type == "next_or_finish":
+            pk = s.get("parent_key")
+            if (by_key.get(pk) or {}).get("type") != "loop":
+                problems.append(
+                    f"next_or_finish step '{key}' has parent '{pk}', which is not "
+                    "a loop; it must hang directly off the loop it closes (server "
+                    "400s otherwise)"
+                )
+        elif step_type == "exit_loop" and not _in_loop_body(s, by_key):
+            problems.append(
+                f"exit_loop step '{key}' is not inside a loop body (server 400s "
+                "otherwise)"
+            )
+    return problems
+
+
+def _loop_variable_problems(
+    loop: dict[str, Any], declared: dict[str, dict[str, Any]]
+) -> list[str]:
+    cfg = loop.get("step_loop") or {}
+    key = loop.get("key")
+    array_name, item_name = cfg.get("array_variable"), cfg.get("item_variable")
+    array = declared.get(array_name) if isinstance(array_name, str) else None
+    if (
+        array is None
+        or not array.get("is_array")
+        or array.get("data_type") not in _LOOPABLE_DATA_TYPES
+    ):
+        return [
+            f"loop '{key}' iterates '{array_name}', which is not an array variable "
+            "of records, strings or UUIDs (server 400s otherwise)"
+        ]
+    item = declared.get(item_name) if isinstance(item_name, str) else None
+    data_type = array["data_type"]
+    if (
+        item is None
+        or item.get("is_array")
+        or item.get("data_type") != data_type
+        or (
+            data_type == "entity"
+            and _unwrap_id(item.get("data_subtype"))
+            != _unwrap_id(array.get("data_subtype"))
+        )
+    ):
+        return [
+            f"loop '{key}' item variable '{item_name}' must be declared by an "
+            f"initialize_variable step as a single {data_type} variable, the type "
+            f"of '{array_name}' (server 400s otherwise)"
+        ]
+    return []
+
+
+def _in_loop_body(step: dict[str, Any], by_key: dict[Any, dict[str, Any]]) -> bool:
+    """Whether walking up from ``step`` reaches a loop through one of its body
+    steps. Arriving through a loop's `next_or_finish` means the step comes
+    after that loop, so the walk carries on to any loop around it."""
+    cur, seen = step, set()
+    while cur.get("parent_key") and cur.get("key") not in seen:
+        seen.add(cur.get("key"))
+        parent = by_key.get(cur["parent_key"])
+        if parent is None:
+            return False
+        if parent.get("type") == "loop" and cur.get("type") != "next_or_finish":
+            return True
+        cur = parent
+    return False
 
 
 # ---------------------------------------------------------------------------

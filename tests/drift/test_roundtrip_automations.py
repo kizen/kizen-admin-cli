@@ -107,12 +107,25 @@ ACTIVITY_STEPS = frozenset({"schedule_activity"})
 
 BRANCH_GROUP_STEPS = frozenset({"condition", "merge_branches", "branch", "delay"})
 
+LOOP_STEPS = frozenset(
+    {
+        "initialize_variable",
+        "loop",
+        "delay",
+        "condition",
+        "merge_branches",
+        "exit_loop",
+        "next_or_finish",
+    }
+)
+
 #: Needs an installed plugin that ships steps; skipped when there is none.
 PLUGIN_STEPS = frozenset({"plugin_code_step"})
 
 COVERED_STEP_TYPES = (
     BRANCHING_STEPS
     | BRANCH_GROUP_STEPS
+    | LOOP_STEPS
     | CONTROL_FLOW_STEPS
     | DATA_STEPS
     | RELATED_STEPS
@@ -1310,6 +1323,101 @@ def test_branch_groups_put_back_unchanged(drift_client, drift_branch_groups):
 
 
 # ---------------------------------------------------------------------------
+# Loops: a merged condition with an exit_loop in the body, a second loop after
+# the first, and a step after that
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def drift_loops(drift_client, scratch, drift_object) -> dict[str, Any]:
+    def step(key: str, parent: str | None, step_type: str, **kw: Any) -> dict:
+        return {"key": key, "parent_key": parent, "step_type": step_type, **kw}
+
+    def var(key: str, parent: str | None, is_array: bool) -> dict:
+        block: dict[str, Any] = {
+            "sources": [],
+            "variable": {"name": key, "data_type": "string", "is_array": is_array},
+        }
+        if is_array:
+            block["array_aggregation_mode"] = "add_all"
+            block["sources"] = [
+                {"source_type": "static", "source_subtype": "string", "value": ["a"]}
+            ]
+        return step(
+            key, parent, "initialize_variable", action_initialize_variable=block
+        )
+
+    def loop(key: str, parent: str, array: str) -> dict:
+        block = {"array_variable": array, "item_variable": f"{array}_item"}
+        return step(
+            key, parent, "loop", is_branch_group_initiator=True, step_loop=block
+        )
+
+    def wait(key: str, parent: str, **kw: Any) -> dict:
+        delay = {"days": 1, "value_origin": "static"}
+        return step(key, parent, "delay", step_delay=delay, **kw)
+
+    spec = _base_spec("loops", drift_object)
+    spec["steps"] = [
+        var("arr0", None, True),
+        var("arr0_item", "arr0", False),
+        var("arr1", "arr0_item", True),
+        var("arr1_item", "arr1", False),
+        loop("each", "arr1_item", "arr0"),
+        step(
+            "check",
+            "each",
+            "condition",
+            is_branch_group_initiator=True,
+            step_condition={
+                "type": "custom_filter",
+                "filter_config": {"all": [{"field": "name", "op": "not_blank"}]},
+            },
+        ),
+        wait("wait_yes", "check", parent_branch="yes"),
+        step("leave", "check", "exit_loop", parent_branch="no"),
+        step("merge", "check", "merge_branches"),
+        step("next", "each", "next_or_finish"),
+        loop("each_again", "next", "arr1"),
+        wait("body", "each_again"),
+        step("next_again", "each_again", "next_or_finish"),
+        wait("after", "next_again"),
+    ]
+    for order, s in enumerate(spec["steps"]):
+        s["order"] = order
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_loop_steps_are_accepted(drift_loops):
+    assert _sent_step_types(drift_loops) == set(LOOP_STEPS)
+    assert set(_live_steps_by_type(drift_loops)) == set(LOOP_STEPS)
+
+
+def test_loop_linkage_survives_the_roundtrip(drift_loops):
+    """The body hangs off the loop, its next_or_finish closes it, and what
+    follows the loop hangs off the next_or_finish."""
+    live = _live_steps_by_type(drift_loops)
+    each, each_again = sorted(live["loop"], key=lambda s: s["order"])
+    nxt, nxt_again = sorted(live["next_or_finish"], key=lambda s: s["order"])
+    (check,) = live["condition"]
+    (leave,) = live["exit_loop"]
+    assert each["is_branch_group_initiator"] is True
+    assert each["step_loop"]["array_variable"]["name"] == "arr0"
+    assert each["step_loop"]["item_variable"]["name"] == "arr0_item"
+    assert check["parent_step_id"] == each["id"]
+    assert (leave["parent_step_id"], leave["parent_condition"]) == (check["id"], "no")
+    assert nxt["parent_step_id"] == each["id"]
+    assert each_again["parent_step_id"] == nxt["id"]
+    assert nxt_again["parent_step_id"] == each_again["id"]
+    after = max(live["delay"], key=lambda s: s["order"])
+    assert after["parent_step_id"] == nxt_again["id"]
+
+
+def test_loops_put_back_unchanged(drift_client, drift_loops):
+    _put_back_unchanged(drift_client, drift_loops)
+
+
+# ---------------------------------------------------------------------------
 # Steps: data & variables
 # ---------------------------------------------------------------------------
 
@@ -2480,6 +2588,7 @@ THEMED_AUTOMATIONS = (
     "drift_code_step_automation",
     "drift_control_flow",
     "drift_branch_groups",
+    "drift_loops",
     "drift_data_steps",
     "drift_array_variable_steps",
     "drift_related_steps",

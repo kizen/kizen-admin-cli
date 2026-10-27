@@ -1069,16 +1069,18 @@
 │ edit    Patch one step: top-level keys in the JSON replace the step's.                           │
 │ add     Insert one step. The spec is a single AutomationDef step (step_type +                    │
 │         config block; field_refs welcome); placement comes from the flags, and                   │
-│         by default the parent's existing children move under the new step.                       │
+│         by default the parent's existing children move under the new step, except                │
+│         a next_or_finish or merge_branches, which stays on its loop or group.                    │
 │ remove  Splice one step out of the graph (children adopt its parent, go_to                       │
-│         references retarget). A condition/goal with children needs --cascade.                    │
+│         references retarget). A condition, goal or loop with children needs                      │
+│         --cascade, and a next_or_finish goes only with its loop.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations steps add [OPTIONS] {api_name}                                                  
                                                                                                     
  Insert one step. The spec is a single AutomationDef step (step_type + config block; field_refs     
  welcome); placement comes from the flags, and by default the parent's existing children move under 
- the new step.                                                                                      
+ the new step, except a next_or_finish or merge_branches, which stays on its loop or group.         
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name. [required]                                        │
@@ -1139,7 +1141,8 @@
  Usage: automations steps remove [OPTIONS] {api_name} {key}                                         
                                                                                                     
  Splice one step out of the graph (children adopt its parent, go_to references retarget). A         
- condition/goal with children needs --cascade.                                                      
+ condition, goal or loop with children needs --cascade, and a next_or_finish goes only with its     
+ loop.                                                                                              
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name. [required]                                        │

@@ -242,7 +242,8 @@ def steps_add(
 ) -> None:
     """Insert one step. The spec is a single AutomationDef step (step_type +
     config block; field_refs welcome); placement comes from the flags, and
-    by default the parent's existing children move under the new step."""
+    by default the parent's existing children move under the new step, except
+    a next_or_finish or merge_branches, which stays on its loop or group."""
     if bool(parent) == root:
         err_console.print("[red]error:[/red] pass exactly one of --parent or --root")
         raise typer.Exit(code=2)
@@ -274,7 +275,8 @@ def steps_remove(
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
     """Splice one step out of the graph (children adopt its parent, go_to
-    references retarget). A condition/goal with children needs --cascade."""
+    references retarget). A condition, goal or loop with children needs
+    --cascade, and a next_or_finish goes only with its loop."""
 
     def mutate(payload: dict[str, Any], raw: dict[str, Any]) -> Any:
         return step_tools.remove_step(payload, key, cascade=cascade)

@@ -1178,7 +1178,9 @@ _ACTION_STEP_TYPES = {
 
 
 # Read with no config block at all, so none is written either.
-_CONFIGLESS_STEP_TYPES = frozenset({"branch", "merge_branches"})
+_CONFIGLESS_STEP_TYPES = frozenset(
+    {"branch", "merge_branches", "next_or_finish", "exit_loop"}
+)
 
 
 def _prefix_for(step_type: str) -> str:
@@ -1187,7 +1189,7 @@ def _prefix_for(step_type: str) -> str:
 
 def _block_field_for(step_type: str) -> str:
     """Map step_type to its config field on AutomationStepDef."""
-    if step_type in ("condition", "delay", "goal"):
+    if step_type in ("condition", "delay", "goal", "loop"):
         return f"step_{step_type}"
     return f"action_{step_type}"
 
@@ -1534,6 +1536,19 @@ def _step_goal(
         triggers.append(p)
     out["triggers"] = triggers
     return out
+
+
+@honours("loop_type", "array_variable", "item_variable")
+def _step_loop(
+    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+) -> dict[str, Any]:
+    # Reads expand both variables; the write takes their names, and their ids
+    # are refused (confirmed live 2026-10-27).
+    return {
+        "loop_type": block.get("loop_type") or "for_each_item",
+        "array_variable": _unwrap_variable_name(block.get("array_variable")),
+        "item_variable": _unwrap_variable_name(block.get("item_variable")),
+    }
 
 
 @honours_all
@@ -3058,6 +3073,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "condition": _step_condition,
     "delay": _step_delay,
     "goal": _step_goal,
+    "loop": _step_loop,
     "stop_execution": _step_stop_execution,
     "code_step": _step_code_step,
     "plugin_code_step": _step_plugin_code_step,

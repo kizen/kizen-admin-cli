@@ -2911,7 +2911,9 @@ def test_skipped_condition_without_branch_rejected():
         AutomationDef.model_validate(spec)
 
 
-@pytest.mark.parametrize("step_type", ["branch", "merge_branches"])
+@pytest.mark.parametrize(
+    "step_type", ["branch", "merge_branches", "next_or_finish", "exit_loop"]
+)
 def test_configless_step_with_config_block_rejected(step_type):
     spec = _merged_condition_spec()
     merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")
@@ -2937,6 +2939,86 @@ def test_merge_under_non_initiator_fails_plan(patch_live_lookups):
         plan_create_automation(spec)
     for key in ("merge", "merge_2"):
         assert f"merge_branches step '{key}' has parent 'check'" in str(e.value)
+
+
+def _loop_spec() -> dict:
+    """The shape of fixture `loops`, built from a spec."""
+
+    def var(key: str, parent: str | None, name: str, is_array: bool, order: int):
+        variable = {"name": name, "data_type": "string", "is_array": is_array}
+        block = {"sources": [], "variable": variable}
+        if is_array:
+            block["array_aggregation_mode"] = "add_all"
+        return _s(
+            key, parent, "initialize_variable", order, action_initialize_variable=block
+        )
+
+    def loop(key: str, parent: str, array: str, order: int):
+        block = {"array_variable": array, "item_variable": f"{array}_item"}
+        return _s(
+            key, parent, "loop", order, is_branch_group_initiator=True, step_loop=block
+        )
+
+    return {
+        "api_name": "loops",
+        "name": "Loops",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            var("arr0", None, "arr0", True, 0),
+            var("arr0_item", "arr0", "arr0_item", False, 1),
+            var("arr1", "arr0_item", "arr1", True, 2),
+            var("arr1_item", "arr1", "arr1_item", False, 3),
+            loop("each", "arr1_item", "arr0", 4),
+            _s(
+                "check",
+                "each",
+                "condition",
+                5,
+                is_branch_group_initiator=True,
+                step_condition={"type": "custom_filter", "filter_config": NAME_IS_X},
+            ),
+            _s("wait", "check", "delay", 6, parent_branch="yes"),
+            _s("leave", "check", "exit_loop", 7, parent_branch="no"),
+            _s("merge", "check", "merge_branches", 8),
+            _s("next", "each", "next_or_finish", 9),
+            loop("each_again", "next", "arr1", 10),
+            _s("body", "each_again", "delay", 11),
+            _s("next_again", "each_again", "next_or_finish", 12),
+            _s("tail", "next_again", "delay", 13),
+        ],
+    }
+
+
+def test_loop_spec_payload(patch_live_lookups):
+    by_key = {s["key"]: s for s in _build(_loop_spec())["steps"]}
+    assert by_key["each"]["step_loop"] == {
+        "loop_type": "for_each_item",
+        "array_variable": "arr0",
+        "item_variable": "arr0_item",
+    }
+    assert by_key["each"]["is_branch_group_initiator"] is True
+    for key in ("leave", "next"):
+        assert not [k for k in by_key[key] if k.startswith("step_")]
+        assert [k for k in by_key[key] if k.startswith("action_")] == [
+            "action_on_failure"
+        ]
+
+
+def test_loop_spec_needs_its_step_loop():
+    spec = _loop_spec()
+    del spec["steps"][4]["step_loop"]
+    with pytest.raises(ValueError, match="'loop' requires an 'step_loop' block"):
+        AutomationDef.model_validate(spec)
+
+
+def test_broken_loop_spec_fails_plan(patch_live_lookups):
+    spec = _loop_spec()
+    spec["steps"][9]["parent_key"] = "check"
+    with pytest.raises(PlanError) as e:
+        plan_create_automation(spec)
+    assert "loop 'each' has 0 next_or_finish children" in str(e.value)
+    assert "next_or_finish step 'next' has parent 'check'" in str(e.value)
 
 
 @pytest.mark.parametrize(
@@ -3797,7 +3879,9 @@ def test_stop_execution_maps_to_its_config_block():
     AutomationDef.model_validate(spec)
 
 
-@pytest.mark.parametrize("step_type", ["branch", "merge_branches"])
+@pytest.mark.parametrize(
+    "step_type", ["branch", "merge_branches", "next_or_finish", "exit_loop"]
+)
 def test_configless_step_with_stop_execution_block_rejected(step_type):
     spec = _merged_condition_spec()
     merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")

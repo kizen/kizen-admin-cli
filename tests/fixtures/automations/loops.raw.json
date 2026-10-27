@@ -1,0 +1,632 @@
+{
+  "id": "e25d78f2-4465-4ce4-838a-5e6367e55ffd",
+  "name": "Loops Roundtrip",
+  "api_name": "loops_roundtrip",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+    "name": "object_with_workflow",
+    "description": null,
+    "entity_name": "object with workflow",
+    "object_name": "object with workflow",
+    "object_class": "custom_objects",
+    "object_type": "pipeline",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "88307ffc-c1b9-46b2-8df4-7c29af7583bd",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "fe4d4727-8270-455e-bcb5-63464f32d502",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [
+          {
+            "source_type": "static",
+            "source_subtype": "string",
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": null,
+            "value": [
+              "a",
+              "b"
+            ],
+            "array_separator": "comma"
+          }
+        ],
+        "variable": {
+          "id": "ca08499f-4e1b-4fca-8434-3ee6abe4ff4a",
+          "name": "arr0",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:19:51.305171Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "98eefb3b-7496-4af2-a8d9-b3eeb5f8d354",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "fe4d4727-8270-455e-bcb5-63464f32d502",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "81d4b7aa-176c-47c8-ba06-d0c66d4a3738",
+          "name": "arr0_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:19:51.316710Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": true,
+          "source_array_variable": "arr0"
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "6440ab38-2e0e-4aa6-ac6c-1518880ec2ce",
+      "step_type": "initialize_variable",
+      "order": 2,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "98eefb3b-7496-4af2-a8d9-b3eeb5f8d354",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [
+          {
+            "source_type": "static",
+            "source_subtype": "string",
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": null,
+            "value": [
+              "a",
+              "b"
+            ],
+            "array_separator": "comma"
+          }
+        ],
+        "variable": {
+          "id": "c000eff2-51ad-42ac-bb60-056b5f517630",
+          "name": "arr1",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:19:51.330685Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "75b6ab64-69ef-4e00-8cfe-86cc317b2e94",
+      "step_type": "initialize_variable",
+      "order": 3,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "6440ab38-2e0e-4aa6-ac6c-1518880ec2ce",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "0e55c478-3d05-40e6-a1af-b4be510e9092",
+          "name": "arr1_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:19:51.342228Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": true,
+          "source_array_variable": "arr1"
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "a48d77be-633e-4d54-9e28-ee6638a05832",
+      "step_type": "loop",
+      "order": 4,
+      "description": "Loop",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "75b6ab64-69ef-4e00-8cfe-86cc317b2e94",
+      "parent_condition": "",
+      "step_loop": {
+        "loop_type": "for_each_item",
+        "array_variable": {
+          "id": "ca08499f-4e1b-4fca-8434-3ee6abe4ff4a",
+          "name": "arr0",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": true
+        },
+        "item_variable": {
+          "id": "81d4b7aa-176c-47c8-ba06-d0c66d4a3738",
+          "name": "arr0_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": false
+        }
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "aee408db-665a-4b4e-a52a-18eafffd7a98",
+      "step_type": "condition",
+      "order": 5,
+      "description": "Condition",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": "a48d77be-633e-4d54-9e28-ee6638a05832",
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": false,
+          "query": [
+            {
+              "id": "query-0",
+              "and": false,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": "7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc",
+                  "subtype": "non_custom",
+                  "condition": "=",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "8c3f0149-6915-4370-940f-2e61848d6842"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/fields/dd7e1f05-351d-4b34-9953-478a3be82b79",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "stage",
+                          "relation": {},
+                          "field_type": "dropdown"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "equals"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/stages/7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The stage has been deleted"
+                        }
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Stage' Equals Static Value Stage 1"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [
+          {
+            "id": "180ef686-6ddb-408b-85bd-a27a09f6f11f"
+          }
+        ],
+        "no_steps": [
+          {
+            "id": "2bb8fbdd-c72d-40b6-ba48-2a93f21a5a81"
+          }
+        ],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "180ef686-6ddb-408b-85bd-a27a09f6f11f",
+      "step_type": "delay",
+      "order": 6,
+      "description": "Delay",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "aee408db-665a-4b4e-a52a-18eafffd7a98",
+      "parent_condition": "yes",
+      "step_delay": {
+        "minutes": 1,
+        "hours": 0,
+        "days": 0,
+        "weeks": 0,
+        "months": 0,
+        "years": 0,
+        "time": null,
+        "skip_non_working_days": false,
+        "value_origin": "static",
+        "duration_unit": "minutes",
+        "variable": null
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "2bb8fbdd-c72d-40b6-ba48-2a93f21a5a81",
+      "step_type": "exit_loop",
+      "order": 7,
+      "description": "Exit Loop",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "aee408db-665a-4b4e-a52a-18eafffd7a98",
+      "parent_condition": "no",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "e437e98d-cf99-4f67-95b8-76d83837f76c",
+      "step_type": "merge_branches",
+      "order": 8,
+      "description": "Merge Branches",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "aee408db-665a-4b4e-a52a-18eafffd7a98",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "cbfeaf23-050e-43f2-ab77-71a738d6601a",
+      "step_type": "next_or_finish",
+      "order": 9,
+      "description": "Next/Finish",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "a48d77be-633e-4d54-9e28-ee6638a05832",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "6e3af27e-6f34-462c-b81e-1ea192c36920",
+      "step_type": "loop",
+      "order": 10,
+      "description": "Loop",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "cbfeaf23-050e-43f2-ab77-71a738d6601a",
+      "parent_condition": "",
+      "step_loop": {
+        "loop_type": "for_each_item",
+        "array_variable": {
+          "id": "c000eff2-51ad-42ac-bb60-056b5f517630",
+          "name": "arr1",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": true
+        },
+        "item_variable": {
+          "id": "0e55c478-3d05-40e6-a1af-b4be510e9092",
+          "name": "arr1_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": false
+        }
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "6a81ee88-37ff-4223-a1bc-c6983ba0562e",
+      "step_type": "delay",
+      "order": 11,
+      "description": "Delay",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "6e3af27e-6f34-462c-b81e-1ea192c36920",
+      "parent_condition": "",
+      "step_delay": {
+        "minutes": 1,
+        "hours": 0,
+        "days": 0,
+        "weeks": 0,
+        "months": 0,
+        "years": 0,
+        "time": null,
+        "skip_non_working_days": false,
+        "value_origin": "static",
+        "duration_unit": "minutes",
+        "variable": null
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "ad4924d1-5c10-4c84-8f73-44e6f814bd21",
+      "step_type": "next_or_finish",
+      "order": 12,
+      "description": "Next/Finish",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "6e3af27e-6f34-462c-b81e-1ea192c36920",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "b93bab2e-4f6b-4f03-ab3b-e17da109a9e1",
+      "step_type": "delay",
+      "order": 13,
+      "description": "Delay",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "ad4924d1-5c10-4c84-8f73-44e6f814bd21",
+      "parent_condition": "",
+      "step_delay": {
+        "minutes": 1,
+        "hours": 0,
+        "days": 0,
+        "weeks": 0,
+        "months": 0,
+        "years": 0,
+        "time": null,
+        "skip_non_working_days": false,
+        "value_origin": "static",
+        "duration_unit": "minutes",
+        "variable": null
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "ca08499f-4e1b-4fca-8434-3ee6abe4ff4a",
+      "name": "arr0",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:19:51.305171Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "81d4b7aa-176c-47c8-ba06-d0c66d4a3738",
+      "name": "arr0_item",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:19:51.316710Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": true,
+      "source_array_variable": "arr0"
+    },
+    {
+      "id": "c000eff2-51ad-42ac-bb60-056b5f517630",
+      "name": "arr1",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:19:51.330685Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "0e55c478-3d05-40e6-a1af-b4be510e9092",
+      "name": "arr1_item",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:19:51.342228Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": true,
+      "source_array_variable": "arr1"
+    }
+  ],
+  "revision": 1,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-27T08:19:51.254929-05:00",
+  "updated": "2026-10-27T08:19:51.254939-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

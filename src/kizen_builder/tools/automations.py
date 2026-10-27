@@ -431,8 +431,18 @@ def build_wire_step(
         LiveContext,
         _build_step_payload,
     )
+    from kizen_builder.tools.plans import PlanError
     from kizen_builder.tools.steps import synthesize_key
 
+    counterpart = {"loop": "next_or_finish", "next_or_finish": "loop"}.get(
+        spec.get("step_type", "")
+    )
+    if counterpart:
+        raise PlanError(
+            f"a {spec['step_type']} is added together with its {counterpart} and "
+            "the loop's item variable, which one 'steps add' can't do. Add it "
+            "with 'kizen automations update --spec-file'."
+        )
     spec = dict(spec)
     for linkage in ("parent_key", "parent_branch", "id"):
         spec.pop(linkage, None)

@@ -95,11 +95,20 @@ Consequences worth knowing:
   complete config block, not a partial one.
 - **`add` inserts into the chain by default** — the parent's children move under
   the new step. `--leaf` appends without adopting them, `--branch yes|no` targets
-  a condition/goal branch, `--root` puts the new step first.
+  a condition/goal branch, `--root` puts the new step first. A
+  `next_or_finish` or `merge_branches` child is never adopted, so `--parent
+  <loop>` puts the new step at the head of the loop body, and `--parent
+  <next_or_finish>` puts it right after the loop. An `exit_loop` adds like any
+  step. A `loop` or `next_or_finish` can't be added on its own: add the loop,
+  its closer and its item variable with `kizen automations update
+  --spec-file`.
 - **`remove` splices:** children adopt the removed step's parent and inherit its
   branch position, and `go_to` references retarget to that parent. Removing a
   condition or goal that has children requires `--cascade`, which deletes the
-  whole subtree.
+  whole subtree. So does a loop with steps under it, where the subtree is the
+  body and everything after the loop. A `next_or_finish` can't be removed, even
+  with `--cascade`: remove its loop instead. Removing the last body step leaves
+  an empty body, which is valid.
 - **The post-apply diff is positional**, so a mid-graph change shows up as
   every later step shifting. Verify structure with `show` and treat the diff as
   the audit trail, not as a minimal changeset.

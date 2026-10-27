@@ -25,6 +25,7 @@ from kizen_builder.models.spec.automations_actions_control import (
     StepConditionConfig,
     StepDelayConfig,
     StepGoalConfig,
+    StepLoopConfig,
 )
 from kizen_builder.models.spec.automations_actions_data import (
     ActionChangeFieldValueConfig,
@@ -65,6 +66,7 @@ _STEP_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "delete_scheduled_activity": "action_delete_scheduled_activity",
     "file_content_extraction": "action_file_content_extraction",
     "goal": "step_goal",
+    "loop": "step_loop",
     "go_to_automation_step": "action_go_to_automation_step",
     "http_request": "action_http_request",
     "initialize_variable": "action_initialize_variable",
@@ -88,6 +90,8 @@ _STEP_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "search_records": "action_search_records",
     "branch": None,
     "merge_branches": None,
+    "next_or_finish": None,
+    "exit_loop": None,
 }
 
 
@@ -101,6 +105,7 @@ _STEPS_REQUIRING_CONFIG = {
     "go_to_automation_step",
     "http_request",
     "initialize_variable",
+    "loop",
     "modify_automation",
     "modify_related_entities_automation",
     "notify_member_via_email",
@@ -195,6 +200,7 @@ class AutomationStepDef(BaseModel):
     step_condition: StepConditionConfig | None = None
     step_delay: StepDelayConfig | None = None
     step_goal: StepGoalConfig | None = None
+    step_loop: StepLoopConfig | None = None
     action_assign_team_member: ActionAssignTeamMemberConfig | None = None
     action_audio_transcription: ActionAudioTranscriptionConfig | None = None
     action_call_llm: ActionLlmCallConfig | None = None
@@ -246,7 +252,7 @@ class AutomationStepDef(BaseModel):
             raise ValueError(
                 f"step_type '{self.step_type}' requires an '{config_field}' block"
             )
-        if self.step_type in ("branch", "merge_branches"):
+        if config_field is None:
             given = sorted(
                 f
                 for f in set(_STEP_TYPE_TO_CONFIG_FIELD.values())
