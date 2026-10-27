@@ -4346,7 +4346,8 @@
                                                                                                     
  `--check` is the session-start form: it reports whether a newer version                            
  exists, caches the answer for a day, and always exits 0 — offline, behind a                        
- proxy, or with no remote configured, it just says so quietly.                                      
+ proxy, or with no remote configured, it just says so quietly. Under                                
+ app-builder it says the installation is managed there, and still exits 0.                          
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --check              Only report whether a newer version exists; change nothing.                 │

@@ -10,6 +10,7 @@ from rich.table import Table
 
 from kizen_builder import upgrade as upgrade_mod
 from kizen_builder.cli._shared import app, console, err_console
+from kizen_builder.config import helper_mode, refuse_in_helper_mode
 
 
 def _print_check(result: upgrade_mod.CheckResult, install: upgrade_mod.Install) -> None:
@@ -57,8 +58,15 @@ def upgrade(
 
     `--check` is the session-start form: it reports whether a newer version
     exists, caches the answer for a day, and always exits 0 — offline, behind a
-    proxy, or with no remote configured, it just says so quietly.
+    proxy, or with no remote configured, it just says so quietly. Under
+    app-builder it says the installation is managed there, and still exits 0.
     """
+    if check and helper_mode():
+        # app-builder owns the install, so there is nothing to look up. Keep
+        # --check's exit-0 contract rather than refusing.
+        console.print("[dim]this installation is managed by app-builder.[/dim]")
+        return
+    refuse_in_helper_mode("upgrade", "this installation")
     install = upgrade_mod.detect_install()
 
     if check:

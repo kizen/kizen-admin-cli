@@ -215,6 +215,7 @@ src/kizen_builder/
     init.py                      #   kizen init
     code.py                      #   kizen code test
   config.py                      # Resolves the active env's credentials (chokepoint).
+  auth_helper.py                 # Running under app-builder: runs $KIZEN_AUTH_HELPER, caches the Bearer header, refreshes on 401.
   docs.py                        # Resolves the packaged docs tree (chokepoint) + env stubs.
   profiles.py                    # Central credentials.toml store + .kizen/profile pin.
   upgrade.py                     # Install-shape detection and update planning.
