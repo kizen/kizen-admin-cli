@@ -106,6 +106,7 @@ src/kizen_builder/
     external_refs.py             #   name→UUID lookups for by-name spec references
     files.py                     #   raw file bytes: the S3 upload/download legs (not JSON)
     forms.py                     #   form/survey CRUD (base_path-shared with surveys)
+    integration_secrets.py       #   integration-secret listing (read-only; values never kept)
     layouts.py                   #   record-layout CRUD (field/block arrangement)
     messages.py                  #   automation-scoped message resources (notify_* step content)
     permissions.py               #   roles, permission groups, permissions catalog

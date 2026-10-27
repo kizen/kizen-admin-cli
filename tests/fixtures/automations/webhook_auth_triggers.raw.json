@@ -1,0 +1,175 @@
+{
+  "id": "6d0c3f0e-5b8a-4c6e-9a51-0b5f0a1e2d93",
+  "name": "Webhook Auth Triggers",
+  "api_name": "webhook_auth_triggers",
+  "ai_description": null,
+  "active": false,
+  "type": "global",
+  "custom_object": null,
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "0812ee6e-7fb3-4a32-9e72-2d9fc1b18a50",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    },
+    {
+      "id": "229d6694-f315-4fad-a0f6-40c06bb894f3",
+      "order": 1,
+      "description": "‘webhook_auth_triggers’ Received",
+      "user_description": "Standard webhook auth",
+      "trigger_type": "webhook",
+      "trigger_webhook": {
+        "id": "405006e7-ef0b-4066-8192-313c4d04d244",
+        "name": "webhook_auth_triggers",
+        "http_method": "POST",
+        "content_type": "application/json",
+        "sample_post_body": "",
+        "extract_raw_body_content": false,
+        "extract_url_query_string": true,
+        "auth_type": "kizen_api",
+        "webhook_url": "https://app.example.com/api/automations/webhook_auth_triggers/webhook/webhook_auth_triggers",
+        "extractors": [],
+        "headers": [],
+        "secret": null
+      },
+      "stats": {
+        "number_completed": 0
+      }
+    },
+    {
+      "id": "c6c51a0a-0007-4713-a56c-7ec742378dc2",
+      "order": 2,
+      "description": "‘webhook_auth_triggers_1’ Received",
+      "user_description": "http header",
+      "trigger_type": "webhook",
+      "trigger_webhook": {
+        "id": "0b6e0b7f-e367-464d-a63e-d2120d518de7",
+        "name": "webhook_auth_triggers_1",
+        "http_method": "GET",
+        "content_type": null,
+        "sample_post_body": "",
+        "extract_raw_body_content": false,
+        "extract_url_query_string": true,
+        "auth_type": "http_header",
+        "webhook_url": "https://app.example.com/api/automations/webhook_auth_triggers/webhook/webhook_auth_triggers_1?business_id=00000000-0000-4000-8000-000000000000",
+        "extractors": [],
+        "headers": [
+          {
+            "name": "token-name",
+            "value": "{{ integration_secret.partner_token }} -merge field",
+            "html_value": "<p><span class=\"kzn-merge-field\" data-merge-field-fallback-label=\"partner token (api)\" data-merge-field-relationship=\"integration_secret.partner_token\">{{ integration_secret.partner_token }}</span> -merge field</p>"
+          }
+        ],
+        "secret": null
+      },
+      "stats": {
+        "number_completed": 0
+      }
+    },
+    {
+      "id": "fec8df6f-1018-45e8-81ce-4d1dcdfdb49b",
+      "order": 3,
+      "description": "‘webhook_auth_triggers_2’ Received",
+      "user_description": "basic auth",
+      "trigger_type": "webhook",
+      "trigger_webhook": {
+        "id": "2f561cf3-d85b-47c6-940f-d92c94a25196",
+        "name": "webhook_auth_triggers_2",
+        "http_method": "POST",
+        "content_type": "application/xml",
+        "sample_post_body": "",
+        "extract_raw_body_content": true,
+        "extract_url_query_string": false,
+        "auth_type": "basic_auth",
+        "webhook_url": "https://app.example.com/api/automations/webhook_auth_triggers/webhook/webhook_auth_triggers_2?business_id=00000000-0000-4000-8000-000000000000",
+        "extractors": [],
+        "headers": [],
+        "secret": {
+          "api_name": "partner_basic",
+          "description": "partner basic (api)",
+          "deleted": false
+        }
+      },
+      "stats": {
+        "number_completed": 0
+      }
+    },
+    {
+      "id": "fbcd43b4-293b-4476-b310-e4d9d0b801ff",
+      "order": 4,
+      "description": "‘webhook_auth_triggers_3’ Received",
+      "user_description": "no auth",
+      "trigger_type": "webhook",
+      "trigger_webhook": {
+        "id": "08b26eec-7a5d-4569-8792-0dc3ebaaea14",
+        "name": "webhook_auth_triggers_3",
+        "http_method": "POST",
+        "content_type": "application/json",
+        "sample_post_body": "{\n  \"key\": \"value\"\n}",
+        "extract_raw_body_content": true,
+        "extract_url_query_string": true,
+        "auth_type": "none",
+        "webhook_url": "https://app.example.com/api/automations/webhook_auth_triggers/webhook/webhook_auth_triggers_3?business_id=00000000-0000-4000-8000-000000000000",
+        "extractors": [
+          {
+            "id": "07e955eb-02a3-4a1f-8421-a61e7fd2200e",
+            "value_name": "key",
+            "value_json_path": "$['key']",
+            "order": 0
+          }
+        ],
+        "headers": [],
+        "secret": null
+      },
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "a3cd61b8-a788-4e17-86fe-877553f0378b",
+      "step_type": "stop_execution",
+      "order": 0,
+      "description": "Stop and mark as Successfully Completed and Do Not Notify",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_stop_execution": {
+        "action": "stop_and_complete",
+        "notify": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [],
+  "revision": 3,
+  "error_notification_email": null,
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-27T07:56:22.047574-05:00",
+  "updated": "2026-10-27T08:09:36.060150-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

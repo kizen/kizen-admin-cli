@@ -129,8 +129,13 @@ def autos_get(
         trig_table = Table(title="Triggers")
         trig_table.add_column("type")
         trig_table.add_column("description")
+        trig_table.add_column("auth")
         for t in result["triggers"]:
-            trig_table.add_row(t["trigger_type"] or "", t["description"] or "")
+            trig_table.add_row(
+                t["trigger_type"] or "",
+                t["description"] or "",
+                t.get("auth_type") or "",
+            )
         console.print(trig_table)
 
         step_table = Table(title="Steps")

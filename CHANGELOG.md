@@ -253,6 +253,10 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Webhook trigger specs accept `auth_type`, `headers` and `secret`** (all
+  four auth types), and **`automations get` shows each webhook's auth
+  type**. See `kizen docs show automation`.
+
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
   dashlets. `--name` names the copy, and `dashboards duplicate` also takes
@@ -494,6 +498,12 @@ called out explicitly under **Changed** or **Removed**.
   did.
 
 ### Fixed
+
+- **`automations update` no longer resets a webhook trigger's
+  authentication to Kizen API auth when the spec leaves it out**, and
+  `automations diff` no longer shows that reset. The trigger keeps its live
+  auth, so its URL no longer changes under external callers. Set
+  `auth_type` to change it.
 
 - **`forms`/`surveys update` and `set-ui` no longer delete fields.** Kizen
   deletes every field that isn't placed on a page whenever a form is saved,

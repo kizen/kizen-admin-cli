@@ -158,6 +158,42 @@ Kizen (e.g. `email_interaction`, `email_link_clicked`,
 `contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
 you try to spec them.
 
+### Webhook trigger auth (confirmed live 2026-10-27)
+
+```json
+"trigger_webhook": {
+  "name": "partner_feed",
+  "auth_type": "http_header",
+  "headers": [{"name": "Authorization", "value": "Bearer {{ integration_secret.partner_token }}"}]
+}
+```
+
+- `auth_type` is `kizen_api` (the default), `http_header`, `basic_auth` or
+  `none`. Every type but `kizen_api` adds `?business_id=<uuid>` to
+  `webhook_url`.
+- `http_header` takes `headers: [{name, value}]`: at least one, names 2-100
+  characters, no name twice. A caller must send every header, each matching
+  exactly. Put `{{ integration_secret.<api_name> }}` or
+  `{{ business_variable.<name> }}` in the value. Text around the reference is
+  sent as written, so `Bearer {{ integration_secret.token }}` expects
+  `Bearer <secret>`. A literal value is accepted, but it's stored in plain
+  text and `show --json` prints it, so use a reference. The CLI fills each
+  header's `html_value` the way the UI does.
+- `basic_auth` takes `secret: {api_name}`, an integration secret whose value
+  is `user:pass`. Callers send `Authorization: Basic <base64 of user:pass>`.
+- `none` accepts any request. Kizen API headers don't get past `http_header`
+  or `basic_auth`; a failed check answers 401 `Invalid webhook credentials.`
+- Kizen silently drops `headers` on any type but `http_header`, and `secret`
+  on any type but `basic_auth`, so the spec refuses both. The old
+  `auth_header_name`/`auth_header_value` keys are no longer read and are
+  refused too.
+- On `update`, a webhook trigger that leaves out `auth_type` keeps the live
+  automation's auth. Set `auth_type` to change it. The live trigger is matched
+  by trigger `id`, else by webhook `name`; a renamed trigger without its `id`
+  is a new trigger and gets `kizen_api` (`diff` shows it).
+- `automations duplicate` keeps each webhook's auth and name. The copy's URL
+  uses the copy's api_name.
+
 A `goal` step's `step_goal.triggers` are wait-until triggers with the same
 `trigger_type` names and config blocks as the top level, e.g. `email_received`
 to wait for a reply. Its `wait_type` is `never`, `delay` or
@@ -661,7 +697,9 @@ Other reserved namespaces (not real object fields, no API-queryable
 catalog, never carry `data-merge-field-objectname`): `team_member.<field>`
 (the notified team member's own fields), `business.<field>` (tenant
 settings), `contact.<field>`, `automation_variable.<name>`,
-`automation_history.<field>`, and `entity_record` pseudo-fields like
+`automation_history.<field>`, `integration_secret.<api_name>` and
+`business_variable.<name>` (webhook header values; a secret's label is its
+description), and `entity_record` pseudo-fields like
 `link_url`/`created`/`estimated_close_date`. Any OTHER namespace is treated
 as a real custom object's own api_name, and its span gets
 `data-merge-field-objectname` holding that object's display name.

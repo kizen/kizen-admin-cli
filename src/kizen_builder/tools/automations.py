@@ -132,14 +132,16 @@ def get_automation(api_name: str) -> dict[str, Any]:
             raise LookupError(f"no automation with api_name '{api_name}'")
         detail = auto_api.get_automation(client, match["id"])
 
-    triggers = [
-        {
+    triggers = []
+    for t in detail.get("triggers") or []:
+        row = {
             "id": t.get("id"),
             "trigger_type": t.get("trigger_type"),
             "description": t.get("description"),
         }
-        for t in (detail.get("triggers") or [])
-    ]
+        if t.get("trigger_type") == "webhook":
+            row["auth_type"] = (t.get("trigger_webhook") or {}).get("auth_type")
+        triggers.append(row)
 
     steps = []
     for s in detail.get("steps") or []:

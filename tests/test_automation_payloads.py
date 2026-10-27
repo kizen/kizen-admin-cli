@@ -1826,6 +1826,309 @@ def test_plan_update_strips_variable_ids(patch_live_lookups):
 
 
 # ---------------------------------------------------------------------------
+# Webhook trigger auth: kept on update, typed, mirrored as the UI writes it
+# (confirmed live 2026-10-27)
+# ---------------------------------------------------------------------------
+
+_WEBHOOK_RAW = "automations/webhook_auth_triggers.raw.json"
+_SECRET_DESCRIPTIONS = {
+    "partner_token": "partner token (api)",
+    "partner_basic": "partner basic (api)",
+}
+
+
+@pytest.fixture
+def webhook_live(patch_live_lookups, monkeypatch):
+    """Serve the four-auth-type fixture as a live automation, with the
+    integration secret descriptions the header label resolves against."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture(_WEBHOOK_RAW)
+    listing = [*ma.list_automations(), {"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(
+        ma.LiveContext,
+        "integration_secret_description",
+        lambda self, api_name: _SECRET_DESCRIPTIONS.get(api_name),
+    )
+    return raw
+
+
+def _webhook_spec(raw: dict, *, auth: bool = False, ids: bool = True) -> dict:
+    """A spec reproducing the fixture, with or without the webhook auth keys.
+    With auth, headers carry no `html_value` and `secret` is the read shape."""
+    unspec = {"id", "webhook_url"} | (
+        set() if auth else {"auth_type", "headers", "secret"}
+    )
+    triggers = []
+    for t in raw["triggers"]:
+        spec_t = {"trigger_type": t["trigger_type"], "order": t.get("order", 0)}
+        if ids:
+            spec_t["id"] = t["id"]
+        block = t.get("trigger_webhook")
+        if block is not None:
+            block = {k: v for k, v in block.items() if k not in unspec}
+            if auth and block["headers"]:
+                block["headers"] = [
+                    {k: v for k, v in h.items() if k != "html_value"}
+                    for h in block["headers"]
+                ]
+            spec_t["trigger_webhook"] = block
+        triggers.append(spec_t)
+    stop = raw["steps"][0]
+    return {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "global",
+        "triggers": triggers,
+        "steps": [
+            {
+                "key": "stop",
+                "id": stop["id"],
+                "step_type": "stop_execution",
+                "order": 0,
+                "parent_key": None,
+                "description": stop["description"],
+                "action_on_failure": stop["action_on_failure"],
+                "action_stop_execution": stop["action_stop_execution"],
+            }
+        ],
+    }
+
+
+def _webhook_blocks(payload: dict) -> dict[str, dict]:
+    return {
+        t["trigger_webhook"]["name"]: t["trigger_webhook"]
+        for t in payload["triggers"]
+        if t["type"] == "webhook"
+    }
+
+
+def _auth(block: dict) -> dict:
+    return {k: block[k] for k in ("auth_type", "headers", "secret") if k in block}
+
+
+_LIVE_HTTP_HEADER = {
+    "auth_type": "http_header",
+    "headers": [
+        {
+            "name": "token-name",
+            "value": "{{ integration_secret.partner_token }} -merge field",
+            "html_value": '<p><span class="kzn-merge-field" '
+            'data-merge-field-fallback-label="partner token (api)" '
+            'data-merge-field-relationship="integration_secret.partner_token">'
+            "{{ integration_secret.partner_token }}</span> -merge field</p>",
+        }
+    ],
+}
+
+
+def test_plan_update_omitted_webhook_auth_keeps_live_auth(webhook_live):
+    """Before 2026-10-27 the PUT went out without auth and Kizen reset every
+    webhook to Kizen API auth, changing its URL. The live auth now rides
+    along, with the read-shape secret reduced to its api_name."""
+    (op,) = plan_update_automation(_webhook_spec(webhook_live)).operations
+    blocks = _webhook_blocks(op.payload)
+    assert _auth(blocks["webhook_auth_triggers"]) == {"auth_type": "kizen_api"}
+    assert _auth(blocks["webhook_auth_triggers_1"]) == _LIVE_HTTP_HEADER
+    assert _auth(blocks["webhook_auth_triggers_2"]) == {
+        "auth_type": "basic_auth",
+        "secret": {"api_name": "partner_basic"},
+    }
+    assert _auth(blocks["webhook_auth_triggers_3"]) == {"auth_type": "none"}
+
+
+def test_plan_update_matches_live_webhook_by_name_without_id(webhook_live):
+    (op,) = plan_update_automation(_webhook_spec(webhook_live, ids=False)).operations
+    blocks = _webhook_blocks(op.payload)
+    assert _auth(blocks["webhook_auth_triggers_1"]) == _LIVE_HTTP_HEADER
+    assert blocks["webhook_auth_triggers_2"]["auth_type"] == "basic_auth"
+    assert blocks["webhook_auth_triggers_3"]["auth_type"] == "none"
+
+
+def test_plan_update_matches_renamed_webhook_by_id(webhook_live):
+    """A renamed webhook that keeps its trigger id still keeps the live auth;
+    no live trigger carries the new name, so only the id can match."""
+    spec = _webhook_spec(webhook_live)
+    for t in spec["triggers"]:
+        block = t.get("trigger_webhook")
+        if block:
+            block["name"] = f"renamed_{block['name']}"
+    (op,) = plan_update_automation(spec).operations
+    blocks = _webhook_blocks(op.payload)
+    assert _auth(blocks["renamed_webhook_auth_triggers_1"]) == _LIVE_HTTP_HEADER
+    assert blocks["renamed_webhook_auth_triggers_2"]["auth_type"] == "basic_auth"
+    assert blocks["renamed_webhook_auth_triggers_3"]["auth_type"] == "none"
+
+
+def test_plan_update_explicit_webhook_auth_is_sent_as_written(webhook_live):
+    spec = _webhook_spec(webhook_live)
+    for t in spec["triggers"]:
+        if "trigger_webhook" in t:
+            t["trigger_webhook"]["auth_type"] = "kizen_api"
+    (op,) = plan_update_automation(spec).operations
+    for block in _webhook_blocks(op.payload).values():
+        assert _auth(block) == {"auth_type": "kizen_api"}
+
+
+def test_plan_update_new_webhook_trigger_copies_no_auth(webhook_live):
+    spec = _webhook_spec(webhook_live)
+    spec["triggers"].append(
+        {
+            "trigger_type": "webhook",
+            "order": 5,
+            "trigger_webhook": {"name": "brand_new"},
+        }
+    )
+    (op,) = plan_update_automation(spec).operations
+    assert _auth(_webhook_blocks(op.payload)["brand_new"]) == {}
+
+
+@pytest.mark.parametrize("auth", [False, True], ids=["omitted", "restated"])
+def test_diff_automation_shows_no_webhook_auth_lines(webhook_live, auth):
+    """A spec that leaves auth out, or restates live's auth (headers without
+    `html_value`, `secret` in its read shape), diffs clean on auth."""
+    diff = diff_automation(_webhook_spec(webhook_live, auth=auth))["diff"]
+    auth_lines = [
+        d
+        for d in diff
+        if any(f".{k}" in d["path"] for k in ("auth_type", "headers", "secret"))
+    ]
+    assert auth_lines == []
+
+
+@pytest.mark.parametrize(
+    "block, message",
+    [
+        (
+            {"auth_type": "basic_auth", "headers": [{"name": "X-A", "value": "v"}]},
+            "trigger_webhook.headers only applies when auth_type is 'http_header'; "
+            "Kizen drops it for any other auth type.",
+        ),
+        (
+            {"headers": [{"name": "X-A", "value": "v"}]},
+            "trigger_webhook.headers only applies when auth_type is 'http_header'; "
+            "Kizen drops it for any other auth type.",
+        ),
+        (
+            {"auth_type": "http_header", "secret": {"api_name": "s"}},
+            "trigger_webhook.secret only applies when auth_type is 'basic_auth'; "
+            "Kizen drops it for any other auth type.",
+        ),
+        (
+            {"auth_header_name": "X-A", "auth_header_value": "v"},
+            "trigger_webhook.auth_header_name, auth_header_value and "
+            "html_auth_header_value are no longer read by Kizen. Use auth_type "
+            """'http_header' with headers: [{"name": ..., "value": ...}].""",
+        ),
+    ],
+    ids=["headers", "headers-no-auth-type", "secret", "retired-keys"],
+)
+def test_webhook_auth_validator_messages(block, message):
+    import re
+
+    from pydantic import ValidationError
+
+    from kizen_builder.models.spec import TriggerWebhookConfig
+
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        TriggerWebhookConfig.model_validate({"name": "hook", **block})
+
+
+def test_webhook_auth_models_accept_the_read_shape():
+    from kizen_builder.models.spec import TriggerWebhookConfig
+
+    raw = load_fixture(_WEBHOOK_RAW)
+    for t in raw["triggers"]:
+        if "trigger_webhook" in t:
+            TriggerWebhookConfig.model_validate(t["trigger_webhook"])
+
+
+def test_webhook_header_html_value_matches_the_ui_byte_for_byte():
+    from kizen_builder.tools.planners.automations import _webhook_auth
+
+    live = _LIVE_HTTP_HEADER["headers"][0]
+    block = {
+        "auth_type": "http_header",
+        "headers": [{"name": live["name"], "value": live["value"]}],
+    }
+    out = _webhook_auth(
+        block,
+        lambda ns, path: (
+            _SECRET_DESCRIPTIONS[path] if ns == "integration_secret" else None
+        ),
+    )
+    assert out["headers"][0]["html_value"] == live["html_value"]
+
+
+@pytest.mark.parametrize("html_value", ["<p>kept</p>", "", None])
+def test_webhook_header_present_html_value_is_kept(html_value):
+    from kizen_builder.tools.planners.automations import _webhook_auth
+
+    header = {
+        "name": "X-A",
+        "value": "{{ integration_secret.x }}",
+        "html_value": html_value,
+    }
+
+    def no_lookup(ns, path):
+        raise AssertionError("a present html_value must not be derived")
+
+    out = _webhook_auth({"auth_type": "http_header", "headers": [header]}, no_lookup)
+    assert out["headers"] == [header]
+
+
+def test_live_to_payload_reduces_webhook_auth_without_lookups():
+    """The read path (`translate`, and every `steps`/`activate`/`move` PUT)
+    runs under a context that raises on any lookup; live headers always carry
+    `html_value`, so nothing is derived."""
+    from kizen_builder.translate import live_to_payload
+
+    blocks = _webhook_blocks(live_to_payload(load_fixture(_WEBHOOK_RAW)))
+    assert _auth(blocks["webhook_auth_triggers_1"]) == _LIVE_HTTP_HEADER
+    assert blocks["webhook_auth_triggers_2"]["secret"] == {"api_name": "partner_basic"}
+    assert "headers" not in blocks["webhook_auth_triggers_2"]
+    assert "secret" not in blocks["webhook_auth_triggers_3"]
+
+
+def test_live_to_payload_drops_retired_webhook_auth_keys():
+    from kizen_builder.translate import live_to_payload
+
+    payload = live_to_payload(
+        load_fixture("automations/condition_variable_rhs_pipeline.raw.json")
+    )
+    for block in _webhook_blocks(payload).values():
+        assert not [k for k in block if k.startswith(("auth_header", "html_auth"))]
+
+
+def test_integration_secret_description_is_fetched_once(env_config):
+    import respx
+
+    from kizen_builder.tools.planners.automations import LiveContext
+
+    with respx.mock(base_url=env_config.base_url) as router:
+        route = router.get("/api/integration-secrets").respond(
+            json={
+                "results": [
+                    {
+                        "api_name": "partner_token",
+                        "description": "partner token (api)",
+                        "obfuscated_value": "****",
+                    }
+                ],
+                "next": None,
+            }
+        )
+        ctx = LiveContext()
+        assert (
+            ctx.integration_secret_description("partner_token") == "partner token (api)"
+        )
+        assert ctx.integration_secret_description("missing") is None
+    assert route.call_count == 1
+    assert "****" not in repr(vars(ctx))
+
+
+# ---------------------------------------------------------------------------
 # `active`: preserve-on-omission (the regression the reporter hit)
 # ---------------------------------------------------------------------------
 

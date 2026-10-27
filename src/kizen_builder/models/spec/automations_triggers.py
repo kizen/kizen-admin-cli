@@ -277,6 +277,35 @@ class TriggerNewEntityCreatedConfig(BaseModel):
     )
 
 
+class WebhookAuthHeader(BaseModel):
+    """One header an `http_header` webhook caller must send."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=2, max_length=100)
+    value: str = Field(
+        min_length=1,
+        description="Use a `{{ integration_secret.<api_name> }}` reference.",
+    )
+    html_value: str | None = None
+
+
+class WebhookAuthSecret(BaseModel):
+    """The integration secret a `basic_auth` webhook checks against. A read
+    also carries `description` and `deleted`, which are ignored."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    api_name: str = Field(min_length=1)
+
+
+RETIRED_WEBHOOK_AUTH_KEYS = (
+    "auth_header_name",
+    "auth_header_value",
+    "html_auth_header_value",
+)
+
+
 class TriggerWebhookConfig(BaseModel):
     """Config for `trigger_type: webhook`."""
 
@@ -289,6 +318,36 @@ class TriggerWebhookConfig(BaseModel):
     extract_raw_body_content: bool = False
     extract_url_query_string: bool = True
     extractors: list[dict[str, Any]] = Field(default_factory=list)
+    auth_type: Literal["kizen_api", "http_header", "basic_auth", "none"] | None = Field(
+        default=None,
+        description="Omitted on update: the live webhook keeps its auth.",
+    )
+    headers: list[WebhookAuthHeader] | None = None
+    secret: WebhookAuthSecret | None = None
+
+    # Only the combinations Kizen accepts with a 200 and then drops are
+    # refused here (confirmed live 2026-10-27); the rest it rejects with a
+    # precise 400 of its own.
+    @model_validator(mode="after")
+    def _validate_auth(self) -> Self:
+        if any(k in (self.model_extra or {}) for k in RETIRED_WEBHOOK_AUTH_KEYS):
+            raise ValueError(
+                "trigger_webhook.auth_header_name, auth_header_value and "
+                "html_auth_header_value are no longer read by Kizen. Use "
+                "auth_type 'http_header' with headers: "
+                '[{"name": ..., "value": ...}].'
+            )
+        if self.headers and self.auth_type != "http_header":
+            raise ValueError(
+                "trigger_webhook.headers only applies when auth_type is "
+                "'http_header'; Kizen drops it for any other auth type."
+            )
+        if self.secret is not None and self.auth_type != "basic_auth":
+            raise ValueError(
+                "trigger_webhook.secret only applies when auth_type is "
+                "'basic_auth'; Kizen drops it for any other auth type."
+            )
+        return self
 
 
 class TriggerManualConfig(BaseModel):
