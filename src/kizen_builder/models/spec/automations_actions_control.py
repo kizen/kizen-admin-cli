@@ -57,6 +57,20 @@ class StepDelayConfig(BaseModel):
     variable: str | None = None
 
 
+class StepLoopConfig(BaseModel):
+    """Config for `step_type: loop`. Both variables are named, and each must be
+    declared by an `initialize_variable` step: the array, and a single variable
+    of the array's type that holds the current item."""
+
+    model_config = ConfigDict(extra="allow")
+
+    loop_type: Literal["for_each_item"] = "for_each_item"
+    array_variable: str = Field(description="Name of the array variable to iterate.")
+    item_variable: str = Field(
+        description="Name of the variable that holds the current item."
+    )
+
+
 class StepGoalConfig(BaseModel):
     """Config for `step_type: goal`."""
 

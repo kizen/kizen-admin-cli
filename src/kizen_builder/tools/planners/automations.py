@@ -585,12 +585,20 @@ def _automation_preview(
     }
 
 
+# A group's closer is a child of its initiator, not a parallel lane.
+_CLOSER_STEP_TYPES = frozenset({"merge_branches", "next_or_finish"})
+
+
 def _fan_out_warnings(auto: AutomationDef) -> dict[str, Any]:
     """Parallel lanes belong under a `branch` step. A plain fan-out still
     saves, but Kizen's 2026-09-28 migration put a `branch` step in front of
     every one, and an update from a spec without it removes it again."""
     lanes = Counter(
-        s.parent_key for s in auto.steps if s.parent_key and s.parent_branch is None
+        s.parent_key
+        for s in auto.steps
+        if s.parent_key
+        and s.parent_branch is None
+        and s.step_type not in _CLOSER_STEP_TYPES
     )
     types = {s.key: s.step_type for s in auto.steps}
     warnings = [
@@ -1178,7 +1186,9 @@ _ACTION_STEP_TYPES = {
 
 
 # Read with no config block at all, so none is written either.
-_CONFIGLESS_STEP_TYPES = frozenset({"branch", "merge_branches"})
+_CONFIGLESS_STEP_TYPES = frozenset(
+    {"branch", "merge_branches", "next_or_finish", "exit_loop"}
+)
 
 
 def _prefix_for(step_type: str) -> str:
@@ -1187,7 +1197,7 @@ def _prefix_for(step_type: str) -> str:
 
 def _block_field_for(step_type: str) -> str:
     """Map step_type to its config field on AutomationStepDef."""
-    if step_type in ("condition", "delay", "goal"):
+    if step_type in ("condition", "delay", "goal", "loop"):
         return f"step_{step_type}"
     return f"action_{step_type}"
 
@@ -1218,7 +1228,9 @@ def _build_step_payload(
     if step.description:
         p["description"] = step.description
     # Emitted only when set, so a spec that predates them builds unchanged.
-    if step.is_branch_group_initiator:
+    # A loop is always an initiator: the server stores true even when false
+    # is sent (confirmed live 2026-10-27).
+    if step.is_branch_group_initiator or step.step_type == "loop":
         p["is_branch_group_initiator"] = True
     if step.continue_with_branch is not None:
         p["continue_with_branch"] = step.continue_with_branch
@@ -1534,6 +1546,19 @@ def _step_goal(
         triggers.append(p)
     out["triggers"] = triggers
     return out
+
+
+@honours("loop_type", "array_variable", "item_variable")
+def _step_loop(
+    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+) -> dict[str, Any]:
+    # Reads expand both variables; the write takes their names, and their ids
+    # are refused (confirmed live 2026-10-27).
+    return {
+        "loop_type": block.get("loop_type") or "for_each_item",
+        "array_variable": _unwrap_variable_name(block.get("array_variable")),
+        "item_variable": _unwrap_variable_name(block.get("item_variable")),
+    }
 
 
 @honours_all
@@ -3058,6 +3083,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "condition": _step_condition,
     "delay": _step_delay,
     "goal": _step_goal,
+    "loop": _step_loop,
     "stop_execution": _step_stop_execution,
     "code_step": _step_code_step,
     "plugin_code_step": _step_plugin_code_step,

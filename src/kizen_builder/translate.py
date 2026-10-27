@@ -47,6 +47,7 @@ from kizen_builder.tools.planners.automations import (
     _prefix_for,
     _reject_unhonoured_keys,
     _strip,
+    _unwrap_id,
 )
 from kizen_builder.tools.plans import PlanError
 
@@ -150,6 +151,10 @@ def live_to_payload(raw: dict[str, Any]) -> dict[str, Any]:
     return _merge_server_state(payload, raw)
 
 
+# Step-level read keys that share the config blocks' prefixes.
+_STEP_ENVELOPE_KEYS = frozenset({"step_type", "step_error", "action_on_failure"})
+
+
 def _live_step_to_wire(
     step: dict[str, Any],
     step_keys: dict[str, str],
@@ -187,10 +192,26 @@ def _live_step_to_wire(
     if step.get("description"):
         p["description"] = step["description"]
 
-    if step_type in _CONFIGLESS_STEP_TYPES:
+    cfg_key = (
+        None if step_type in _CONFIGLESS_STEP_TYPES else _block_field_for(step_type)
+    )
+    for k, v in step.items():
+        if (
+            v
+            and isinstance(v, dict)
+            and k.startswith(("step_", "action_"))
+            and k not in _STEP_ENVELOPE_KEYS
+            and k != cfg_key
+        ):
+            raise PlanError(
+                f"{where} step '{p['key']}': {k} would be lost on PUT — the CLI "
+                f"doesn't read that block for a '{step_type}' step, so it stopped "
+                "before writing anything. Change this step in the Kizen UI until "
+                "the CLI supports it."
+            )
+    if cfg_key is None:
         return p
 
-    cfg_key = _block_field_for(step_type)
     block = dict(step.get(cfg_key) or {})
 
     where = f"{where} step '{p['key']}' {cfg_key}"
@@ -353,6 +374,7 @@ def validate_payload(payload: dict[str, Any]) -> list[str]:
                 )
 
     problems.extend(_branch_group_problems(steps))
+    problems.extend(_loop_problems(steps))
 
     # Cycle check via parent chain
     for s in steps:
@@ -406,8 +428,8 @@ def _branch_group_problems(steps: list[dict[str, Any]]) -> list[str]:
 
     for s in steps:
         key = s.get("key")
-        # A live loop is also an initiator, closed by `next_or_finish` rather
-        # than a merge step. Loops are unsupported, and still 400 at PUT.
+        # A loop is also an initiator, closed by `next_or_finish` rather than
+        # a merge step (`_loop_problems`).
         if (
             s.get("is_branch_group_initiator")
             and s.get("type") != "loop"
@@ -427,6 +449,166 @@ def _branch_group_problems(steps: list[dict[str, Any]]) -> list[str]:
                 "'yes' or 'no' (server 400s otherwise)"
             )
     return problems
+
+
+# A loop may iterate an array of these (records, text or UUIDs).
+_LOOPABLE_DATA_TYPES = frozenset({"entity", "string", "uuid"})
+
+# Kizen's builder holds loops three deep. The API accepts more (six seen,
+# confirmed live 2026-10-27), but the CLI refuses them.
+_MAX_LOOP_DEPTH = 3
+
+
+def _loop_problems(steps: list[dict[str, Any]]) -> list[str]:
+    """The server's loop rules, each one a live 400 (confirmed 2026-10-27),
+    plus two from Kizen's builder that the API doesn't enforce: nesting depth
+    and one array at two levels. The body hangs off the loop, its one
+    `next_or_finish` child closes it, and what follows the loop hangs off the
+    `next_or_finish`. A graph with no loop, `next_or_finish` or `exit_loop`
+    passes untouched."""
+    problems: list[str] = []
+    by_key = {s.get("key"): s for s in steps}
+    declared: dict[str, dict[str, Any]] = {}
+    for s in steps:
+        if s.get("type") == "initialize_variable":
+            var = (s.get("action_initialize_variable") or {}).get("variable")
+            if isinstance(var, dict) and var.get("name"):
+                declared.setdefault(var["name"], var)
+
+    item_owners: dict[Any, Any] = {}
+    for s in steps:
+        key, step_type = s.get("key"), s.get("type")
+        if step_type == "loop":
+            kids = [c for c in steps if c.get("parent_key") == key]
+            closers = sum(c.get("type") == "next_or_finish" for c in kids)
+            if closers != 1:
+                problems.append(
+                    f"loop '{key}' has {closers} next_or_finish children; the "
+                    "server requires exactly one, which closes the loop body "
+                    "(server 400s otherwise)"
+                )
+            if any(c.get("type") == "merge_branches" for c in kids):
+                problems.append(
+                    f"loop '{key}' has a merge_branches child; a loop is closed "
+                    "by next_or_finish, not merge_branches (server 400s otherwise)"
+                )
+            problems.extend(_loop_variable_problems(s, declared))
+            item = (s.get("step_loop") or {}).get("item_variable")
+            if item in item_owners:
+                problems.append(
+                    f"loops '{item_owners[item]}' and '{key}' share item variable "
+                    f"'{item}'; each loop needs its own (server 400s otherwise)"
+                )
+            else:
+                item_owners[item] = key
+            problems.extend(_builder_loop_problems(s, by_key))
+        elif step_type == "next_or_finish":
+            pk = s.get("parent_key")
+            if (by_key.get(pk) or {}).get("type") != "loop":
+                problems.append(
+                    f"next_or_finish step '{key}' has parent '{pk}', which is not "
+                    "a loop; it must hang directly off the loop it closes (server "
+                    "400s otherwise)"
+                )
+        elif step_type == "exit_loop" and not _in_loop_body(s, by_key):
+            problems.append(
+                f"exit_loop step '{key}' is not inside a loop body (server 400s "
+                "otherwise)"
+            )
+    return problems
+
+
+def _loop_variable_problems(
+    loop: dict[str, Any], declared: dict[str, dict[str, Any]]
+) -> list[str]:
+    cfg = loop.get("step_loop") or {}
+    key = loop.get("key")
+    array_name, item_name = cfg.get("array_variable"), cfg.get("item_variable")
+    array = declared.get(array_name) if isinstance(array_name, str) else None
+    if (
+        array is None
+        or not array.get("is_array")
+        or array.get("data_type") not in _LOOPABLE_DATA_TYPES
+    ):
+        return [
+            f"loop '{key}' iterates '{array_name}', which is not an array variable "
+            "of records, strings or UUIDs (server 400s otherwise)"
+        ]
+    item = declared.get(item_name) if isinstance(item_name, str) else None
+    data_type = array["data_type"]
+    if (
+        item is None
+        or item.get("is_array")
+        or item.get("data_type") != data_type
+        or (
+            data_type == "entity"
+            and _unwrap_id(item.get("data_subtype"))
+            != _unwrap_id(array.get("data_subtype"))
+        )
+    ):
+        return [
+            f"loop '{key}' item variable '{item_name}' must be declared by an "
+            f"initialize_variable step as a single {data_type} variable, the type "
+            f"of '{array_name}' (server 400s otherwise)"
+        ]
+    return []
+
+
+def _builder_loop_problems(
+    loop: dict[str, Any], by_key: dict[Any, dict[str, Any]]
+) -> list[str]:
+    """Kizen's builder refuses these, though the API accepts them (confirmed
+    live 2026-10-27), so the CLI refuses them to keep the automation editable."""
+    key = loop.get("key")
+    around = enclosing_loops(loop, by_key)
+    problems: list[str] = []
+    depth = 1 + len(around)
+    if depth > _MAX_LOOP_DEPTH:
+        problems.append(
+            f"loop '{key}' is nested {depth} levels deep; Kizen's builder allows "
+            "at most three. The API accepts deeper loops, but the CLI refuses them "
+            "so the automation stays editable in the UI."
+        )
+    array = (loop.get("step_loop") or {}).get("array_variable")
+    outer = next(
+        (
+            o
+            for o in around
+            if (o.get("step_loop") or {}).get("array_variable") == array
+        ),
+        None,
+    )
+    if array is not None and outer is not None:
+        problems.append(
+            f"loop '{key}' iterates '{array}', which loop '{outer.get('key')}' "
+            "around it already iterates; Kizen's builder needs a different array "
+            "variable at each level. The API accepts it, but the CLI refuses it so "
+            "the automation stays editable in the UI."
+        )
+    return problems
+
+
+def _in_loop_body(step: dict[str, Any], by_key: dict[Any, dict[str, Any]]) -> bool:
+    return bool(enclosing_loops(step, by_key))
+
+
+def enclosing_loops(
+    step: dict[str, Any], by_key: dict[Any, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The loops ``step`` sits inside, innermost first: walking up, the loops
+    reached through one of their body steps. Arriving through a loop's
+    `next_or_finish` means the step comes after that loop, so it isn't
+    included and the walk carries on to any loop around it."""
+    cur, seen, loops = step, set(), []
+    while cur.get("parent_key") and cur.get("key") not in seen:
+        seen.add(cur.get("key"))
+        parent = by_key.get(cur["parent_key"])
+        if parent is None:
+            break
+        if parent.get("type") == "loop" and cur.get("type") != "next_or_finish":
+            loops.append(parent)
+        cur = parent
+    return loops
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +755,76 @@ _WIRE_STEP_DEFAULTS = {
     "error_notification_severity_level": "inherit",
 }
 
+# Keys a spec may omit that read back as the server's default (confirmed live
+# 2026-10-27), so an omitted one compares as that default. A non-default value
+# on either side still diffs.
+_WIRE_TOP_DEFAULTS = {"error_notification_email": ""}
+_VARIABLE_BLOCK_DEFAULTS = {"deduplicate_array": False}
+
+# What the server writes when a step or trigger is sent without a
+# `description`, on create and on a PUT that omits it (confirmed live
+# 2026-10-27). A type missing here compares as sent.
+_DEFAULT_DESCRIPTIONS = {
+    "branch": "Branch",
+    "condition": "Condition",
+    "delay": "Delay",
+    "exit_loop": "Exit Loop",
+    "initialize_variable": "Initialize Variable",
+    "loop": "Loop",
+    "manual": "Manual",
+    "merge_branches": "Merge Branches",
+    "next_or_finish": "Next/Finish",
+    "search_records": "Action: Search Records",
+    "stop_execution": "Stop Execution",
+    "update_variable": "Update Variable",
+}
+
+# Set by the server on a loop's item variable, from the loop (confirmed live
+# 2026-10-27). A spec never names them.
+_DERIVED_VARIABLE_KEYS = frozenset({"is_array_item_variable", "source_array_variable"})
+
+
+def _diffable_variable(var: Any) -> Any:
+    """A variable definition as `diff` compares it: without the keys the
+    server derives from a loop, and with a null key the same as an absent
+    one, since a spec can't send null and an omitted key reads back null."""
+    if not isinstance(var, dict):
+        return var
+    return {
+        k: v
+        for k, v in var.items()
+        if k not in _DERIVED_VARIABLE_KEYS and v is not None
+    }
+
+
+def _with_default_description(item: dict[str, Any]) -> dict[str, Any]:
+    default = _DEFAULT_DESCRIPTIONS.get(str(item.get("type")))
+    if default is None or "description" in item:
+        return item
+    return {**item, "description": default}
+
+
+def _diffable_variable_block(step_type: str, block: dict[str, Any]) -> dict[str, Any]:
+    """An initialize_variable/update_variable block with its omitted defaults
+    filled in: `deduplicate_array`, a static list source's `array_separator`,
+    and an update_variable source's `value_html`."""
+    out = {**_VARIABLE_BLOCK_DEFAULTS, **block}
+    if step_type == "initialize_variable" and "variable" in out:
+        out["variable"] = _diffable_variable(out["variable"])
+    if isinstance(out.get("sources"), list):
+        sources = []
+        for src in out["sources"]:
+            if isinstance(src, dict):
+                if src.get("source_type") == "static" and isinstance(
+                    src.get("value"), list
+                ):
+                    src = {"array_separator": "comma", **src}
+                if step_type == "update_variable":
+                    src = {"value_html": "", **src}
+            sources.append(src)
+        out["sources"] = sources
+    return out
+
 
 def _wire_pairs(
     live_items: list[dict[str, Any]], spec_items: list[dict[str, Any]]
@@ -671,6 +923,7 @@ def _normalize_wire_triggers(
         if item is None:
             continue
         norm = {k: v for k, v in item.items() if k not in _WIRE_DIFF_EXCLUDED | {"id"}}
+        norm = _with_default_description(norm)
         # `id` is carried as a normal field, but pinned to the pair's shared
         # canonical value on both sides so a matched pair never diffs on it
         # (position-fallback matches can have an id on only one side) while
@@ -725,7 +978,11 @@ def _normalize_wire_steps(
                     resolved["trigger_key"], resolved["trigger_key"]
                 )
             norm[_GO_TO_BLOCK_FIELD] = resolved
-        out[_wire_pair_label(pair)] = norm
+        for step_type in ("initialize_variable", "update_variable"):
+            field = _block_field_for(step_type)
+            if isinstance(norm.get(field), dict):
+                norm[field] = _diffable_variable_block(step_type, norm[field])
+        out[_wire_pair_label(pair)] = _with_default_description(norm)
     return out
 
 
@@ -763,6 +1020,11 @@ def diff_wire_payloads(
 
     norm_live = {k: v for k, v in live.items() if k not in ("triggers", "steps")}
     norm_spec = {k: v for k, v in spec.items() if k not in ("triggers", "steps")}
+    for norm in (norm_live, norm_spec):
+        for k, default in _WIRE_TOP_DEFAULTS.items():
+            norm.setdefault(k, default)
+        if isinstance(norm.get("variables"), list):
+            norm["variables"] = [_diffable_variable(v) for v in norm["variables"]]
     norm_live["triggers"] = _normalize_wire_triggers(trigger_pairs, 0)
     norm_spec["triggers"] = _normalize_wire_triggers(trigger_pairs, 1)
     norm_live["steps"] = _normalize_wire_steps(step_pairs, trigger_pairs, 0)

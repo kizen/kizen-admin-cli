@@ -1,0 +1,852 @@
+{
+  "id": "d95e9059-7924-4a45-bddb-ed7235768a9c",
+  "name": "Loops UI Build",
+  "api_name": "loops_ui_build",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+    "name": "object_with_workflow",
+    "description": null,
+    "entity_name": "object with workflow",
+    "object_name": "object with workflow",
+    "object_class": "custom_objects",
+    "object_type": "pipeline",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "0812ee6e-7fb3-4a32-9e72-2d9fc1b18a50",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "ebc6e884-fa7e-4f40-b432-c22a33c3a1e2",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "array_var_obj = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "8a25d92c-10d5-4269-9693-af1a360332a6",
+          "name": "array_var_obj",
+          "data_type": "entity",
+          "data_subtype": {
+            "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+            "name": "object_with_workflow",
+            "description": null,
+            "entity_name": "object with workflow",
+            "object_name": "object with workflow",
+            "object_class": "custom_objects",
+            "object_type": "pipeline",
+            "default_on_activities": true,
+            "deleted": false
+          },
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:04:58.960475Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "e39d5b27-9173-4348-91fd-6adbef60adbf",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "string_arr_var = [5 items]",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "ebc6e884-fa7e-4f40-b432-c22a33c3a1e2",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [
+          {
+            "source_type": "static",
+            "source_subtype": "string",
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": null,
+            "value": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ],
+            "array_separator": "newline"
+          }
+        ],
+        "variable": {
+          "id": "0658231a-cbaf-4815-b6e1-6bf230a29c3d",
+          "name": "string_arr_var",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:04:58.984891Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "fff1c7c2-43f5-4ad9-ba9f-63a7e7f4d9da",
+      "step_type": "initialize_variable",
+      "order": 2,
+      "description": "test = <i>empty</i>",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "e39d5b27-9173-4348-91fd-6adbef60adbf",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "34a3e1ce-f1c2-46d2-ad7d-091e0e9eadd0",
+          "name": "test",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:04:58.998444Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "7bea623a-f922-41f4-a7e2-321e35ee929d",
+      "step_type": "initialize_variable",
+      "order": 3,
+      "description": "Item Reference Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "fff1c7c2-43f5-4ad9-ba9f-63a7e7f4d9da",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "ce262c1a-0488-40da-9ca4-c47efe033d35",
+          "name": "array_var_obj_item",
+          "data_type": "entity",
+          "data_subtype": {
+            "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+            "name": "object_with_workflow",
+            "description": null,
+            "entity_name": "object with workflow",
+            "object_name": "object with workflow",
+            "object_class": "custom_objects",
+            "object_type": "pipeline",
+            "default_on_activities": true,
+            "deleted": false
+          },
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:04:59.019703Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": true,
+          "source_array_variable": "array_var_obj"
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "7484d6ab-564f-4e1c-92f1-97b6ea7c7641",
+      "step_type": "initialize_variable",
+      "order": 4,
+      "description": "Item Reference Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "7bea623a-f922-41f4-a7e2-321e35ee929d",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "0cc78f02-3c3e-428d-a6d4-53f55bb7d2d0",
+          "name": "string_arr_var_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-27T13:04:59.031935Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": true,
+          "source_array_variable": "string_arr_var"
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "2b5b71bc-1a44-4622-aca7-653393aaf7f7",
+      "step_type": "loop",
+      "order": 5,
+      "description": "For each item in 'array_var_obj'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "7484d6ab-564f-4e1c-92f1-97b6ea7c7641",
+      "parent_condition": "",
+      "step_loop": {
+        "loop_type": "for_each_item",
+        "array_variable": {
+          "id": "8a25d92c-10d5-4269-9693-af1a360332a6",
+          "name": "array_var_obj",
+          "data_type": "entity",
+          "data_subtype": "8c3f0149-6915-4370-940f-2e61848d6842",
+          "deleted": false,
+          "is_array": true
+        },
+        "item_variable": {
+          "id": "ce262c1a-0488-40da-9ca4-c47efe033d35",
+          "name": "array_var_obj_item",
+          "data_type": "entity",
+          "data_subtype": "8c3f0149-6915-4370-940f-2e61848d6842",
+          "deleted": false,
+          "is_array": false
+        }
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "5055c290-d89f-499b-ae30-309c3ec5a286",
+      "step_type": "call_llm",
+      "order": 6,
+      "description": "Prompt gpt-6-luna with ‘here's a step that uses tools’",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "2b5b71bc-1a44-4622-aca7-653393aaf7f7",
+      "parent_condition": "",
+      "action_call_llm": {
+        "model_name": "openai/gpt-6-luna",
+        "business_plugin_app": {
+          "id": "a004c895-b827-4432-8b70-b7f6ade0cb84",
+          "plugin_app_api_name": "open_ai",
+          "plugin_app_name": "OpenAI",
+          "disabled": false,
+          "secrets": [
+            {
+              "api_name": "open_ai__api_key",
+              "obfuscated_value": "xx****xx"
+            }
+          ]
+        },
+        "prompt": "here's a step that uses tools",
+        "html_prompt": "<p>here's a step that uses tools</p>",
+        "merge_field_validation": "default_to_unknown",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": null,
+            "variable": {
+              "id": "0658231a-cbaf-4815-b6e1-6bf230a29c3d",
+              "name": "string_arr_var",
+              "data_type": "string",
+              "data_subtype": null,
+              "deleted": false,
+              "is_array": true
+            },
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "5760efa0-0d88-4c21-9268-6dcdf238d033",
+      "step_type": "next_or_finish",
+      "order": 7,
+      "description": "Next item or finish loop and continue",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "2b5b71bc-1a44-4622-aca7-653393aaf7f7",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "059761c7-f2b0-412f-9602-ef0ad4899c8e",
+      "step_type": "file_content_extraction",
+      "order": 8,
+      "description": "Extract Content from ‘File’ field",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "5760efa0-0d88-4c21-9268-6dcdf238d033",
+      "parent_condition": "",
+      "action_file_content_extraction": {
+        "model_name": "openai/gpt-5.2",
+        "business_plugin_app": {
+          "id": "a004c895-b827-4432-8b70-b7f6ade0cb84",
+          "plugin_app_api_name": "open_ai",
+          "plugin_app_name": "OpenAI",
+          "disabled": false,
+          "secrets": [
+            {
+              "api_name": "open_ai__api_key",
+              "obfuscated_value": "xx****xx"
+            }
+          ]
+        },
+        "prompt": "Extract all text from these document pages. Preserve structure, including paragraphs, tables, columns, and headers. Maintain original formatting. Return only the extracted content with no additional commentary.",
+        "html_prompt": "Extract all text from these document pages. Preserve structure, including paragraphs, tables, columns, and headers. Maintain original formatting. Return only the extracted content with no additional commentary.",
+        "merge_field_validation": "default_to_unknown",
+        "destinations": [
+          {
+            "related_object_field": null,
+            "field": null,
+            "variable": {
+              "id": "34a3e1ce-f1c2-46d2-ad7d-091e0e9eadd0",
+              "name": "test",
+              "data_type": "string",
+              "data_subtype": null,
+              "deleted": false,
+              "is_array": false
+            },
+            "conflict_resolution": "overwrite_except_null",
+            "options": [],
+            "confidence_threshold": 0.7,
+            "is_required": false
+          }
+        ],
+        "is_advanced": false,
+        "data_type": "image",
+        "input_field": {
+          "id": "a8a8bbc5-9188-4ea4-be9e-40dafe061639",
+          "name": "audio",
+          "display_name": "audio",
+          "deleted": false,
+          "field_type": "files",
+          "options": [],
+          "relation": null,
+          "rating": null
+        },
+        "input_value_source": {
+          "type": "context_entity_field",
+          "value_custom_object": null,
+          "value_datatype": null,
+          "value": null,
+          "field": {
+            "id": "a8a8bbc5-9188-4ea4-be9e-40dafe061639",
+            "name": "audio",
+            "display_name": "audio",
+            "deleted": false,
+            "field_type": "files",
+            "options": [],
+            "relation": null,
+            "rating": null
+          },
+          "relationship_field": null,
+          "variable": null
+        }
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "9ade9f3d-fdc9-408b-989e-ead912564bab",
+      "step_type": "loop",
+      "order": 9,
+      "description": "For each item in 'string_arr_var'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "059761c7-f2b0-412f-9602-ef0ad4899c8e",
+      "parent_condition": "",
+      "step_loop": {
+        "loop_type": "for_each_item",
+        "array_variable": {
+          "id": "0658231a-cbaf-4815-b6e1-6bf230a29c3d",
+          "name": "string_arr_var",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": true
+        },
+        "item_variable": {
+          "id": "0cc78f02-3c3e-428d-a6d4-53f55bb7d2d0",
+          "name": "string_arr_var_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": false
+        }
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "417ffb8e-4323-4e77-98ee-9fbec1746bf9",
+      "step_type": "condition",
+      "order": 10,
+      "description": "object with workflow Fields 'Stage' Equals Static Value Stage 1",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": "9ade9f3d-fdc9-408b-989e-ead912564bab",
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": false,
+          "query": [
+            {
+              "id": "query-0",
+              "and": false,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": "7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc",
+                  "subtype": "non_custom",
+                  "condition": "=",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "8c3f0149-6915-4370-940f-2e61848d6842"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/fields/dd7e1f05-351d-4b34-9953-478a3be82b79",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "stage",
+                          "relation": {},
+                          "field_type": "dropdown"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "equals"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/stages/7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The stage has been deleted"
+                        }
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Stage' Equals Static Value Stage 1"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [
+          {
+            "id": "6ecd9c02-ef32-48ba-9427-7595a79b7010"
+          }
+        ],
+        "no_steps": [
+          {
+            "id": "849a972e-cf67-4886-9f83-1c4f095ae531"
+          }
+        ],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "c1e24aaa-7c5a-4f0c-b923-c0be2963f9a5",
+      "step_type": "merge_branches",
+      "order": 11,
+      "description": "Merge Branch",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "417ffb8e-4323-4e77-98ee-9fbec1746bf9",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "849a972e-cf67-4886-9f83-1c4f095ae531",
+      "step_type": "code_step",
+      "order": 12,
+      "description": "Run Code on (0 inputs) and set (0 outputs)",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "417ffb8e-4323-4e77-98ee-9fbec1746bf9",
+      "parent_condition": "no",
+      "action_code_step": {
+        "runtime": "python-3-13",
+        "secrets": [],
+        "inputs": [],
+        "outputs": [],
+        "script": "outputs.log(f\"Got input value: {inputs.in_var}\")\noutputs.out_var = \"example output value\""
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "6ecd9c02-ef32-48ba-9427-7595a79b7010",
+      "step_type": "plugin_code_step",
+      "order": 13,
+      "description": "Resolves the given object, reads its fields once, translates the filter text into a server-side query, and searches the object (newest first). Renders one 'Label: value' section per record into the context output (dropdown options and relationships resolved to their names, money and dates formatted), and the same records as JSON into records_json. An unknown field or filter operator raises with a message naming exactly what to fix in the filter text.",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "417ffb8e-4323-4e77-98ee-9fbec1746bf9",
+      "parent_condition": "yes",
+      "action_plugin_code_step": {
+        "plugin_app_api_name": "agentic_os",
+        "action_step_api_name": "gather_context",
+        "notify_plugin_developer_on_failure": true,
+        "secrets": [],
+        "inputs": [
+          {
+            "input_type": "business_plugin_config",
+            "name": "object",
+            "variable": null,
+            "field": null,
+            "related_field": null,
+            "static_value": null,
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "static_value",
+            "name": "filter",
+            "static_value": {
+              "value": null,
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "static_value",
+            "name": "fields",
+            "static_value": {
+              "value": null,
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "string",
+            "is_list": false
+          },
+          {
+            "input_type": "static_value",
+            "name": "limit",
+            "static_value": {
+              "value": null,
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "number",
+            "is_list": false
+          },
+          {
+            "input_type": "static_value",
+            "name": "heading",
+            "static_value": {
+              "value": null,
+              "custom_object": null,
+              "entity_record": null,
+              "employee": null
+            },
+            "data_type": "string",
+            "is_list": false
+          }
+        ],
+        "outputs": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "5a37bd8a-ef12-4ed1-b1f3-dc265d3fb23b",
+      "step_type": "next_or_finish",
+      "order": 14,
+      "description": "Next item or finish loop and continue",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "9ade9f3d-fdc9-408b-989e-ead912564bab",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "8a25d92c-10d5-4269-9693-af1a360332a6",
+      "name": "array_var_obj",
+      "data_type": "entity",
+      "data_subtype": {
+        "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+        "name": "object_with_workflow",
+        "description": null,
+        "entity_name": "object with workflow",
+        "object_name": "object with workflow",
+        "object_class": "custom_objects",
+        "object_type": "pipeline",
+        "default_on_activities": true,
+        "deleted": false
+      },
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:04:58.960475Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "0658231a-cbaf-4815-b6e1-6bf230a29c3d",
+      "name": "string_arr_var",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:04:58.984891Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "34a3e1ce-f1c2-46d2-ad7d-091e0e9eadd0",
+      "name": "test",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:04:58.998444Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "ce262c1a-0488-40da-9ca4-c47efe033d35",
+      "name": "array_var_obj_item",
+      "data_type": "entity",
+      "data_subtype": {
+        "id": "8c3f0149-6915-4370-940f-2e61848d6842",
+        "name": "object_with_workflow",
+        "description": null,
+        "entity_name": "object with workflow",
+        "object_name": "object with workflow",
+        "object_class": "custom_objects",
+        "object_type": "pipeline",
+        "default_on_activities": true,
+        "deleted": false
+      },
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:04:59.019703Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": true,
+      "source_array_variable": "array_var_obj"
+    },
+    {
+      "id": "0cc78f02-3c3e-428d-a6d4-53f55bb7d2d0",
+      "name": "string_arr_var_item",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-27T13:04:59.031935Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": true,
+      "source_array_variable": "string_arr_var"
+    }
+  ],
+  "revision": 3,
+  "error_notification_email": null,
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-27T07:56:22.047574-05:00",
+  "updated": "2026-10-27T08:09:36.060150-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}
