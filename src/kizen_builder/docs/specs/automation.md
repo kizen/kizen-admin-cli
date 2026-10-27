@@ -112,9 +112,11 @@ branches) and 2026-09-29 (goals).
 `merge_branches` child to rejoin them. Lanes can be `branch` steps themselves,
 merged or not, and a `branch` can follow a merge. Put a `branch` step in front
 of any fan-out: a plain step with two or more children still saves, but the
-plan preview warns about it. Kizen's 2026-09-28 migration inserted a `branch`
-step ahead of every existing fan-out, and an `update` from a spec without one
-removes it again. Confirmed live 2026-09-28.
+plan preview warns about it. A group's closer (`merge_branches` or
+`next_or_finish`) isn't a lane, so it doesn't count toward that warning.
+Kizen's 2026-09-28 migration inserted a `branch` step ahead of every existing
+fan-out, and an `update` from a spec without one removes it again. Confirmed
+live 2026-09-28.
 
 **Skipping a condition or goal** (`should_skip_execution: true`) needs
 `continue_with_branch: "yes"` or `"no"`, the branch the run takes past it. The
@@ -131,6 +133,89 @@ sets a step's own severity. Omitted, the step inherits. Confirmed live
 - **Condition `filter_config` `field`** uses the **bare field api_name**
   (`account_region`), *not* object-qualified — it's the filter DSL, same as
   `records list --filter` and saved views.
+
+### Loops
+
+A loop runs its body once per item of an array variable. Loops are branch
+group initiators, closed by `next_or_finish` instead of `merge_branches`. A
+spec names all six parts; `create` and `update` add none of them. `steps add`
+of a loop adds its closer and item variable (see `kizen docs show
+automation-step`):
+
+1. **The array variable:** an `initialize_variable` step with `is_array: true`.
+2. **Its item variable:** an `initialize_variable` step with `sources: []`,
+   declaring a single variable of the array's type (for records, the same
+   `data_subtype`). It needs no sources, though the server accepts one. Each
+   loop needs its own.
+3. **The `loop` step.** `step_loop` names both variables by **name**; their ids
+   are a 400. The CLI always sends a loop as `is_branch_group_initiator: true`,
+   because the server stores true even when false is sent.
+4. **The body**, hanging off the loop.
+5. **One `next_or_finish` child of the loop**, which closes the body. The steps
+   after the loop hang off it.
+6. **Optional `exit_loop` steps** inside the body.
+
+Both variable steps go at the front of the automation, like every
+`initialize_variable`. Confirmed live 2026-10-27.
+
+```json
+{ "name": "Visit every account", "api_name": "visit_every_account",
+  "type": "global",
+  "steps": [
+    { "key": "accounts", "parent_key": null, "step_type": "initialize_variable",
+      "order": 0, "description": "accounts = []",
+      "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
+        "variable": { "name": "accounts", "data_type": "entity", "is_array": true,
+                      "data_subtype": "<accounts object uuid>" } } },
+    { "key": "status", "parent_key": "accounts", "step_type": "initialize_variable",
+      "order": 1, "action_initialize_variable": { "sources": [],
+        "variable": { "name": "status", "data_type": "string" } } },
+    { "key": "account", "parent_key": "status", "step_type": "initialize_variable",
+      "order": 2, "description": "Item Reference Variable",
+      "action_initialize_variable": { "sources": [],
+        "variable": { "name": "accounts_item", "data_type": "entity",
+                      "data_subtype": "<accounts object uuid>" } } },
+    { "key": "find", "parent_key": "account", "step_type": "search_records",
+      "order": 3, "action_search_records": { "custom_object": "accounts",
+        "filter_type": "all_records", "destination_variable": "accounts" } },
+    { "key": "each", "parent_key": "find", "step_type": "loop", "order": 4,
+      "description": "For each item in 'accounts'",
+      "step_loop": { "array_variable": "accounts", "item_variable": "accounts_item" } },
+    { "key": "visit", "parent_key": "each", "step_type": "update_variable", "order": 5,
+      "action_update_variable": { "variable": { "name": "status", "data_type": "string" },
+        "sources": [ { "source_type": "static", "source_subtype": "string",
+                       "value": "visited" } ] } },
+    { "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 6 },
+    { "key": "done", "parent_key": "next", "step_type": "update_variable", "order": 7,
+      "action_update_variable": { "variable": { "name": "status", "data_type": "string" },
+        "sources": [ { "source_type": "static", "source_subtype": "string",
+                       "value": "done" } ] } }
+  ] }
+```
+
+- **Array types:** strings, UUIDs and records (`data_type` `string`, `uuid` or
+  `entity`). Kizen rejects an array of any other type at the
+  `initialize_variable` step. A `search_records` destination can be the loop's
+  array, as above. Confirmed live 2026-10-27.
+- **Descriptions:** a CLI-created loop reads back as "Loop" and its item step as
+  "Initialize Variable". The UI writes "For each item in '<array>'" and "Item
+  Reference Variable". Set `description` to match the UI. Confirmed live
+  2026-10-27.
+- **`diff`** ignores `is_array_item_variable` and `source_array_variable`, which
+  the server adds to the item variable from the loop. It reads a null key in a
+  top-level or `initialize_variable` variable definition as absent. Confirmed
+  live 2026-10-27.
+- **`exit_loop`** ends the innermost loop it sits in, and an outer loop carries
+  on with its next item. It can be the loop's direct child, sit under a
+  condition in the body, or follow an inner loop inside an outer body. After
+  the loop's `next_or_finish` it is a 400. Confirmed live 2026-10-27.
+- **Body lanes:** a body can be empty or have two lanes. Two lanes get the
+  fan-out warning, like any plain fan-out. Confirmed live 2026-10-27.
+- **Nesting:** a loop can sit in another loop's body, up to three levels, and a
+  nested loop needs a different array from every loop around it. Kizen's
+  builder refuses both, so the CLI refuses them at plan time (`--dry-run` shows
+  it). The API accepts both: six levels, and one array at two levels, each
+  confirmed live 2026-10-27.
 
 ---
 
@@ -158,12 +243,48 @@ Kizen (e.g. `email_interaction`, `email_link_clicked`,
 `contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
 you try to spec them.
 
+### Webhook trigger auth (confirmed live 2026-10-27)
+
+```json
+"trigger_webhook": {
+  "name": "partner_feed",
+  "auth_type": "http_header",
+  "headers": [{"name": "Authorization", "value": "Bearer {{ integration_secret.partner_token }}"}]
+}
+```
+
+- `auth_type` is `kizen_api` (the default), `http_header`, `basic_auth` or
+  `none`. Every type but `kizen_api` adds `?business_id=<uuid>` to
+  `webhook_url`.
+- `http_header` takes `headers: [{name, value}]`: at least one, names 2-100
+  characters, no name twice. A caller must send every header, each matching
+  exactly. Put `{{ integration_secret.<api_name> }}` or
+  `{{ business_variable.<name> }}` in the value. Text around the reference is
+  sent as written, so `Bearer {{ integration_secret.token }}` expects
+  `Bearer <secret>`. A literal value is accepted, but it's stored in plain
+  text and `show --json` prints it, so use a reference. The CLI fills each
+  header's `html_value` the way the UI does.
+- `basic_auth` takes `secret: {api_name}`, an integration secret whose value
+  is `user:pass`. Callers send `Authorization: Basic <base64 of user:pass>`.
+- `none` accepts any request. Kizen API headers don't get past `http_header`
+  or `basic_auth`; a failed check answers 401 `Invalid webhook credentials.`
+- Kizen silently drops `headers` on any type but `http_header`, and `secret`
+  on any type but `basic_auth`, so the spec refuses both. The old
+  `auth_header_name`/`auth_header_value` keys are no longer read and are
+  refused too.
+- On `update`, a webhook trigger that leaves out `auth_type` keeps the live
+  automation's auth. Set `auth_type` to change it. The live trigger is matched
+  by trigger `id`, else by webhook `name`; a renamed trigger without its `id`
+  is a new trigger and gets `kizen_api` (`diff` shows it).
+- `automations duplicate` keeps each webhook's auth and name. The copy's URL
+  uses the copy's api_name.
+
 A `goal` step's `step_goal.triggers` are wait-until triggers with the same
 `trigger_type` names and config blocks as the top level, e.g. `email_received`
 to wait for a reply. Its `wait_type` is `never`, `delay` or
 `specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
 
-## Wired step types (27)
+## Wired step types (30)
 
 | step_type | config block | purpose |
 |-----------|--------------|---------|
@@ -174,7 +295,7 @@ to wait for a reply. Its `wait_type` is `never`, `delay` or
 | `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
 | `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
-| `call_llm` | `action_call_llm` | prompt an LLM, write to `destinations` |
+| `call_llm` | `action_call_llm` | prompt an LLM, optionally with an MCP server's tools, write to `destinations` |
 | `file_content_extraction` | `action_file_content_extraction` | extract from a file field on the record, a related record, or in a variable (`input_value_source`) |
 | `audio_transcription` | `action_audio_transcription` | transcribe an audio field on the record, a related record, or in a variable (`input_value_source`) |
 | `change_field_value` | `action_change_field_value` | set/clear a field |
@@ -193,6 +314,9 @@ to wait for a reply. Its `wait_type` is `never`, `delay` or
 | `search_records` | `action_search_records` | search an object, write results into an array variable |
 | `branch` | none | run its children in parallel — see Branch groups |
 | `merge_branches` | none | rejoin a branch group — see Branch groups |
+| `loop` | `step_loop` | run its body once per item of an array variable — see Loops |
+| `next_or_finish` | none | close a loop body — see Loops |
+| `exit_loop` | none | leave the loop from inside its body |
 
 `search_records` (the automation-builder equivalent of `records list
 --filter`) needs its own `custom_object` — independent of the automation's
@@ -538,6 +662,41 @@ still runs fine via the raw API, but its rich-text prompt editor renders
 blank in the builder UI without this. Pass `html_prompt` explicitly to
 override the derivation.
 
+**Tools (MCP server)** — a `call_llm` step can let the model call an MCP
+server's tools. Confirmed live 2026-10-27:
+
+| Spec key | Wire key | Value |
+|---|---|---|
+| `mcp_server` | `mcp_server_id` | the server's `api_name` or UUID |
+| `run_tools_as` | `run_tools_as_id` | the service account's `name` or UUID |
+| `max_sequential_turns` | same | 1–32767, default 25 |
+| `tool_failure_policy` | same | `never_fail`, the only value Kizen accepts |
+
+- Names resolve against the step's own pickers:
+  `GET /api/mcp-servers/step-options` for servers and
+  `GET /api/automation2/automations/run-tools-as-options` for accounts. The
+  second leaves out a plugin's own service account, and a write naming that
+  account is a 400. A service account resolves by `name` because a user-made
+  one has no `api_name`. A name two accounts share is an error; give the UUID.
+  The `*_id` spellings take the same values.
+- Set both `mcp_server` and `run_tools_as`, or neither. Kizen 400s on either
+  alone, and `--dry-run` refuses it first.
+- A model without tool calling 400s with "The selected model does not support
+  tool calling". The model catalog has no flag for it, so the server's 400 is
+  the only check.
+- Reads expand both references (`mcp_server {id, name, api_name, …}`,
+  `run_tools_as {id, name}`), and every `call_llm` step reads
+  `max_sequential_turns` and `tool_failure_policy`, server or not.
+- The planner always sends all four keys. A step that omits them gets no
+  server, no account, 25 turns and `never_fail`, so `update` from a spec
+  without them **detaches a server attached in the UI**. `update --dry-run`
+  names those steps in its preview: `detaches_mcp_server=[<step key>, …]`,
+  and `clears_run_tools_as=[…]` for a run-as account that goes. Steps pair
+  as `diff` pairs them, and `diff` shows each change as
+  `mcp_server_id: '<uuid>' → None` and `run_tools_as_id: '<uuid>' → None`.
+  Kizen itself, given a PUT that omits both ids, keeps the server and clears
+  the account, which leaves a step its own validator rejects.
+
 ### Variable-comparison condition step
 
 A `condition` step's `filter_config` normally uses the record-field filter
@@ -661,7 +820,9 @@ Other reserved namespaces (not real object fields, no API-queryable
 catalog, never carry `data-merge-field-objectname`): `team_member.<field>`
 (the notified team member's own fields), `business.<field>` (tenant
 settings), `contact.<field>`, `automation_variable.<name>`,
-`automation_history.<field>`, and `entity_record` pseudo-fields like
+`automation_history.<field>`, `integration_secret.<api_name>` and
+`business_variable.<name>` (webhook header values; a secret's label is its
+description), and `entity_record` pseudo-fields like
 `link_url`/`created`/`estimated_close_date`. Any OTHER namespace is treated
 as a real custom object's own api_name, and its span gets
 `data-merge-field-objectname` holding that object's display name.
@@ -854,7 +1015,9 @@ Why a translator is mandatory rather than nice-to-have:
   Derived read-only keys are expected and never sent: `yes_steps`/`no_steps`
   on a condition, and the message fields (`subject`, `content`, `name`, …) a
   `notify_member_via_email`/`_text` read flattens into the block (confirmed
-  live 2026-10-16).
+  live 2026-10-16). A whole non-empty `step_*`/`action_*` block the CLI
+  doesn't read for that step's type stops the same verbs, forwarding types
+  included.
 
 Also: **automation updates need PUT, not PATCH.** PATCH refuses step/trigger
 changes, and PUT requires the current `revision` as `last_revision`.
@@ -882,6 +1045,18 @@ changed field is identified by that octet alone; an added or removed
 step/trigger carries the whole step/trigger, full `id` included, in its
 `--json` leaf value.
 
+A key the spec leaves out compares as the value Kizen stores when it's
+omitted, so a spec that leaves out a default shows no change. A non-default
+value on either side still shows. Confirmed live 2026-10-27:
+
+| Key | Omitted reads back as |
+|---|---|
+| `error_notification_email` | `''` |
+| `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
+| `array_separator` on a static source whose `value` is a list | `'comma'` |
+| `value_html` on an `update_variable` source | `''` |
+| `description` on a step or trigger | a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. It is written on create and on a PUT that omits it, so an update from a spec without one replaces a description set in the UI. Other types compare as sent |
+
 ### Read→write transforms
 
 Each of these was discovered via a live 400, 500, or silent data loss:
@@ -900,10 +1075,12 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | Step/trigger orders with gaps or nulls | sequential 0..N |
 | `change_field_value.fields_to_clear` (expanded field objects) | bare field UUIDs |
 | `start_automation.automation_variable_overrides` — flat list, every ref expanded (`target_automation`, `variable_to_override`, plus a `value_source`-specific ref) | grouped by target automation id: `[{automation_id, variable_overrides: [...]}]`, and the unwrapping is non-uniform — `context_entity_field` → bare UUID, `variable_to_override`/`automation_variable` → bare **name**, `specific_value` → passthrough (already a bare scalar on read), `blank` → no key at all |
-| `is_branch_group_initiator` on every step | echoed as read, default `false`. Dropped, every merge step 400s: "Merge step's parent (…) must be a branch group initiator step." Confirmed live 2026-09-28 |
+| `is_branch_group_initiator` on every step | echoed as read, default `false`, and always `true` on a loop (see Loops). Dropped, every merge step 400s: "Merge step's parent (…) must be a branch group initiator step." Confirmed live 2026-09-28 |
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
+| `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` and `exit_loop` are read with no config block, and none is written. Confirmed live 2026-10-27 |
+| A loop's item variable read with `is_array_item_variable: true` and `source_array_variable: <array>` | echoed as read. The server sets both itself from the loop, so sending them is harmless and omitting them changes nothing. `diff` ignores both. Confirmed live 2026-10-27 |
 | Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
 | `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
 
@@ -936,6 +1113,21 @@ inconsistent:
   one `merge_branches` child, and every `merge_branches` step's parent is an
   initiator** (400). A skipped condition or goal needs `continue_with_branch`
   `yes` or `no` (400). Confirmed live 2026-09-28.
+- **Loops** (each a 400, confirmed live 2026-10-27):
+  - a `loop` has exactly one `next_or_finish` child;
+  - a `loop` has no `merge_branches` child;
+  - a `next_or_finish` hangs directly off a `loop`;
+  - an `exit_loop` is inside a loop body: walking up its parents, it reaches a
+    loop through a body step, not through that loop's `next_or_finish`;
+  - a loop iterates an array variable of records, strings or UUIDs, declared
+    by an `initialize_variable` step;
+  - its item variable is declared by an `initialize_variable` step as a single
+    variable of the array's type (and, for records, the same object), and no
+    two loops share one.
+
+  The server has no nesting limit (6 deep saves) and no limit on body lanes.
+  The CLI adds two rules of its own, from Kizen's builder: at most three
+  levels, and no loop over the same array as a loop around it (see Loops).
 
 ### Unlisted step types
 

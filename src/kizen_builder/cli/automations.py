@@ -129,8 +129,13 @@ def autos_get(
         trig_table = Table(title="Triggers")
         trig_table.add_column("type")
         trig_table.add_column("description")
+        trig_table.add_column("auth")
         for t in result["triggers"]:
-            trig_table.add_row(t["trigger_type"] or "", t["description"] or "")
+            trig_table.add_row(
+                t["trigger_type"] or "",
+                t["description"] or "",
+                t.get("auth_type") or "",
+            )
         console.print(trig_table)
 
         step_table = Table(title="Steps")
@@ -380,6 +385,12 @@ def _step_label(step: dict[str, Any]) -> str:
     if len(desc) > 72:
         desc = desc[:69] + "…"
     label = f"[bold]{step['key']}[/bold]"
+    loop = step.get("step_loop")
+    if step.get("type") == "loop" and loop:
+        label += (
+            f" [cyan]\\[for each {escape(str(loop.get('array_variable')))} as "
+            f"{escape(str(loop.get('item_variable')))}][/cyan]"
+        )
     goto = step.get("action_go_to_automation_step")
     if goto:
         target = goto.get("step_key") or goto.get("trigger_key") or "?"
@@ -409,6 +420,16 @@ def _render_step_tree(payload: dict[str, Any]) -> None:
             child_node = node.add(_step_label(child))
             descend(child_node, child)
 
+    def add_loop_children(node: Any, loop_key: str) -> None:
+        kids = step_tools.children_of(payload, loop_key, branch="")
+        body = [k for k in kids if k["type"] != "next_or_finish"]
+        if body:
+            body_node = node.add("[dim]body[/dim]")
+            for child in body:
+                descend(body_node.add(_step_label(child)), child)
+        for closer in (k for k in kids if k["type"] == "next_or_finish"):
+            descend(node.add(_step_label(closer)), closer)
+
     def descend(node: Any, step: dict[str, Any]) -> None:
         for branch, style in (("yes", "green"), ("no", "red")):
             kids = step_tools.children_of(payload, step["key"], branch=branch)
@@ -416,7 +437,10 @@ def _render_step_tree(payload: dict[str, Any]) -> None:
                 branch_node = node.add(f"[{style}]{branch}[/{style}]")
                 for child in kids:
                     descend(branch_node.add(_step_label(child)), child)
-        add_children(node, step["key"])
+        if step["type"] == "loop":
+            add_loop_children(node, step["key"])
+        else:
+            add_children(node, step["key"])
 
     # The leading initialize_variable chain is always linear (the server
     # requires init-vars at the front), so render it flat instead of as a

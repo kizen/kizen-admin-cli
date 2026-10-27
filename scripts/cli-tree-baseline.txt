@@ -32,6 +32,8 @@
 │ team              Look up team members and change their roles.                                   │
 │ roles             Read and manage roles.                                                         │
 │ permissions       Read and manage permission groups + the permissions catalog.                   │
+│ service-accounts  Read and manage integration service accounts (run-tools-as identities). See    │
+│                   `kizen docs show service-account`.                                             │
 │ automations       Read, create, update, and run automations.                                     │
 │ messages          Email templates and automation-scoped messages — the content                   │
 │                   notify_member_via_email steps reference (see `kizen docs show                  │
@@ -50,6 +52,7 @@
 │                   layout (form_ui).                                                              │
 │ surveys           Create, read, update, and delete surveys, their fields, and their visual page  │
 │                   layout (form_ui).                                                              │
+│ mcp-servers       Read, create, update, and delete MCP servers.                                  │
 │ smart-connectors  Build, inspect, and iterate on smart connectors. Read verbs                    │
 │                   (list/get/executions/scripts/events/metadata) are safe. The local SQL loop is  │
 │                   pull → run → push: `pull` builds a working directory, `run` executes           │
@@ -1069,16 +1072,23 @@
 │ edit    Patch one step: top-level keys in the JSON replace the step's.                           │
 │ add     Insert one step. The spec is a single AutomationDef step (step_type +                    │
 │         config block; field_refs welcome); placement comes from the flags, and                   │
-│         by default the parent's existing children move under the new step.                       │
+│         by default the parent's existing children move under the new step, except                │
+│         a next_or_finish or merge_branches, which stays on its loop or group. A                  │
+│         loop comes with its next_or_finish and a new `<array>_item` variable, and                │
+│         the parent's children follow the next_or_finish.                                         │
 │ remove  Splice one step out of the graph (children adopt its parent, go_to                       │
-│         references retarget). A condition/goal with children needs --cascade.                    │
+│         references retarget). A condition or goal with children, or a loop with a                │
+│         body, needs --cascade. A loop with an empty body goes with its                           │
+│         next_or_finish, which goes only with its loop.                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations steps add [OPTIONS] {api_name}                                                  
                                                                                                     
  Insert one step. The spec is a single AutomationDef step (step_type + config block; field_refs     
  welcome); placement comes from the flags, and by default the parent's existing children move under 
- the new step.                                                                                      
+ the new step, except a next_or_finish or merge_branches, which stays on its loop or group. A loop  
+ comes with its next_or_finish and a new `<array>_item` variable, and the parent's children follow  
+ the next_or_finish.                                                                                
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name. [required]                                        │
@@ -1139,7 +1149,8 @@
  Usage: automations steps remove [OPTIONS] {api_name} {key}                                         
                                                                                                     
  Splice one step out of the graph (children adopt its parent, go_to references retarget). A         
- condition/goal with children needs --cascade.                                                      
+ condition or goal with children, or a loop with a body, needs --cascade. A loop with an empty body 
+ goes with its next_or_finish, which goes only with its loop.                                       
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name. [required]                                        │
@@ -2323,6 +2334,143 @@
  Spec shape (a LayoutDef; PUT-replaces the layout): see `kizen docs show layout`                    
                                                                                                     
                                                                                                     
+ Usage: mcp-servers [OPTIONS] COMMAND [ARGS]...                                                     
+                                                                                                    
+ Read, create, update, and delete MCP servers.                                                      
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list     List the MCP servers in the configured env.                                             │
+│ get      Show one MCP server, its endpoint URL and its tools.                                    │
+│ tools    List the tools a server can serve — the valid `tool_names`.                             │
+│ history  Show a server's change history, newest first.                                           │
+│ create   Create an MCP server from a JSON MCPServerDef.                                          │
+│ update   Update an MCP server from a JSON MCPServerDef.                                          │
+│ delete   Delete an MCP server. Kizen deletes it outright, with its history.                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: mcp-servers create [OPTIONS]                                                                
+                                                                                                    
+ Create an MCP server from a JSON MCPServerDef.                                                     
+                                                                                                    
+ `name` and `api_name` are required. Tool names are checked against                                 
+ `kizen mcp-servers tools`. With no `sharing_settings`, every team member                           
+ can view it.                                                                                       
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON MCPServerDef. Default: read from stdin.               │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers delete [OPTIONS] {server}                                                       
+                                                                                                    
+ Delete an MCP server. Kizen deletes it outright, with its history.                                 
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    server      <str>  MCP server UUID or api_name. [required]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers get [OPTIONS] {server}                                                          
+                                                                                                    
+ Show one MCP server, its endpoint URL and its tools.                                               
+                                                                                                    
+ The endpoint URL is what an MCP client connects to; the CLI never calls it.                        
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    server      <str>  MCP server UUID or api_name. [required]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --raw                    Emit the full API response — a valid `mcp-servers update` spec. Implies │
+│                          JSON.                                                                   │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers history [OPTIONS] {server}                                                      
+                                                                                                    
+ Show a server's change history, newest first.                                                      
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    server      <str>  MCP server UUID or api_name. [required]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers list [OPTIONS]                                                                  
+                                                                                                    
+ List the MCP servers in the configured env.                                                        
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers tools [OPTIONS]                                                                 
+                                                                                                    
+ List the tools a server can serve — the valid `tool_names`.                                        
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers update [OPTIONS] {server}                                                       
+                                                                                                    
+ Update an MCP server from a JSON MCPServerDef.                                                     
+                                                                                                    
+ Only the keys the spec sets are compared. `get --raw` output works as a                            
+ spec: its read-only keys are ignored. A Kizen-managed server takes only                            
+ `{"is_default_for_business": true}`, which makes it the default again.                             
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    server      <str>  MCP server UUID or api_name. [required]                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON MCPServerDef. Default: read from stdin.               │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
  Usage: messages [OPTIONS] COMMAND [ARGS]...                                                        
                                                                                                     
  Email templates and automation-scoped messages — the content notify_member_via_email steps         
@@ -3372,6 +3520,126 @@
 │ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: service-accounts [OPTIONS] COMMAND [ARGS]...                                                
+                                                                                                    
+ Read and manage integration service accounts (run-tools-as identities). See `kizen docs show       
+ service-account`.                                                                                  
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list     List service accounts with their groups and key count (previews only).                  │
+│ get      Show one service account and its permission groups.                                     │
+│ history  Show a service account's history events.                                                │
+│ create   Create an integration service account. Its API key is never shown.                      │
+│ update   Update an integration service account. Only the flags you pass change.                  │
+│ delete   Delete (archive) an integration service account. This is permanent.                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: service-accounts create [OPTIONS]                                                           
+                                                                                                    
+ Create an integration service account. Its API key is never shown.                                 
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ *  --name             <str>  Account name; Kizen derives api_name. [required]                    │
+│    --group    -g      <str>  Permission group name or UUID (repeatable). With none, Kizen        │
+│                              creates the account disabled.                                       │
+│    --dry-run                 Show the plan without applying.                                     │
+│    --yes      -y             Skip the y/N confirmation prompt.                                   │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --help                    Show this message and exit.                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts delete [OPTIONS] {account}                                                 
+                                                                                                    
+ Delete (archive) an integration service account. This is permanent.                                
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    account      <str>  Service account name, api_name or UUID. [required]                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts get [OPTIONS] {account}                                                    
+                                                                                                    
+ Show one service account and its permission groups.                                                
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    account      <str>  Service account name, api_name or UUID. [required]                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts history [OPTIONS] {account}                                                
+                                                                                                    
+ Show a service account's history events.                                                           
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    account      <str>  Service account name, api_name or UUID. [required]                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --limit   -n      <int>  Max events to return. [default: 25]                                     │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts list [OPTIONS]                                                             
+                                                                                                    
+ List service accounts with their groups and key count (previews only).                             
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --search  -s      <str>  Filter by name.                                                         │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
+ Usage: service-accounts update [OPTIONS] {account}                                                 
+                                                                                                    
+ Update an integration service account. Only the flags you pass change.                             
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    account      <str>  Service account name, api_name or UUID. [required]                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --name                  <str>  Rename the account (api_name is kept).                            │
+│ --api-name              <str>  Set the api_name.                                                 │
+│ --group         -g      <str>  Replace the account's permission groups with these (name or UUID, │
+│                                repeatable).                                                      │
+│ --clear-groups                 Remove every permission group; Kizen disables the account.        │
+│ --dry-run                      Show the plan without applying.                                   │
+│ --yes           -y             Skip the y/N confirmation prompt.                                 │
+│ --json                         Emit JSON (plan with --dry-run, results otherwise).               │
+│ --help                         Show this message and exit.                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show service-account`                                
+                                                                                                    
+                                                                                                    
  Usage: smart-connectors [OPTIONS] COMMAND [ARGS]...                                                
                                                                                                     
  Build, inspect, and iterate on smart connectors. Read verbs                                        
@@ -4346,7 +4614,8 @@
                                                                                                     
  `--check` is the session-start form: it reports whether a newer version                            
  exists, caches the answer for a day, and always exits 0 — offline, behind a                        
- proxy, or with no remote configured, it just says so quietly.                                      
+ proxy, or with no remote configured, it just says so quietly. Under                                
+ app-builder it says the installation is managed there, and still exits 0.                          
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --check              Only report whether a newer version exists; change nothing.                 │
@@ -4733,6 +5002,30 @@
 ===== layouts update =====
 
 
+===== mcp-servers =====
+
+
+===== mcp-servers create =====
+
+
+===== mcp-servers delete =====
+
+
+===== mcp-servers get =====
+
+
+===== mcp-servers history =====
+
+
+===== mcp-servers list =====
+
+
+===== mcp-servers tools =====
+
+
+===== mcp-servers update =====
+
+
 ===== messages =====
 
 
@@ -4899,6 +5192,27 @@
 
 
 ===== roles update =====
+
+
+===== service-accounts =====
+
+
+===== service-accounts create =====
+
+
+===== service-accounts delete =====
+
+
+===== service-accounts get =====
+
+
+===== service-accounts history =====
+
+
+===== service-accounts list =====
+
+
+===== service-accounts update =====
 
 
 ===== smart-connectors =====

@@ -24,7 +24,7 @@ def level_label(value: Any) -> str:
         return str(value)
 
 
-def _resolve(ref: str, items: list[dict[str, Any]], what: str) -> dict[str, Any]:
+def resolve_by_name(ref: str, items: list[dict[str, Any]], what: str) -> dict[str, Any]:
     """Resolve ``ref`` (a UUID or an exact/case-insensitive name) to one item."""
     from kizen_builder.utils import is_uuid
 
@@ -51,14 +51,14 @@ def resolve_role(ref: str) -> dict[str, Any]:
     """Resolve a role by name or UUID → the role dict (id, name, ...)."""
     config = load_env_config()
     with KizenClient(config) as client:
-        return _resolve(ref, perm_api.list_roles(client), "role")
+        return resolve_by_name(ref, perm_api.list_roles(client), "role")
 
 
 def resolve_group(ref: str) -> dict[str, Any]:
     """Resolve a permission group by name or UUID → the group dict."""
     config = load_env_config()
     with KizenClient(config) as client:
-        return _resolve(
+        return resolve_by_name(
             ref, perm_api.list_permission_groups(client), "permission group"
         )
 
@@ -107,7 +107,7 @@ def describe_role(role_ref: str) -> dict[str, Any]:
     """Resolve a role and expand its permission-group ids to names + summaries."""
     config = load_env_config()
     with KizenClient(config) as client:
-        role = _resolve(role_ref, perm_api.list_roles(client), "role")
+        role = resolve_by_name(role_ref, perm_api.list_roles(client), "role")
         full = perm_api.get_role(client, role["id"])
         names = {
             g["id"]: g.get("name") for g in perm_api.list_permission_groups(client)

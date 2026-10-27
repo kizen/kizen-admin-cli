@@ -588,6 +588,295 @@ def test_call_llm_related_object_field_without_hop_raises(patch_live_lookups):
         _build(spec)
 
 
+# ---------------------------------------------------------------------------
+# call_llm MCP server, run-as account, turn limit, tool failure policy
+# (wire shapes confirmed live 2026-10-27)
+# ---------------------------------------------------------------------------
+
+_SERVER_ID = "bde29351-0000-4000-8000-000000000001"
+_ACCOUNT_ID = "afa714ac-0000-4000-8000-000000000002"
+_TWIN_ID = "afa714ac-0000-4000-8000-000000000003"
+
+
+@pytest.fixture
+def step_pickers(monkeypatch):
+    """Serve the call_llm step's two pickers; count the GETs."""
+    from kizen_builder.api import automations as api
+    from kizen_builder.api import client
+
+    class _Client:
+        def __init__(self, cfg):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    calls = {"servers": 0, "accounts": 0}
+    lists = {
+        "servers": [
+            {"id": _SERVER_ID, "name": "Example Tools", "api_name": "example_tools"}
+        ],
+        "accounts": [
+            {"id": _ACCOUNT_ID, "name": "Automation Runner"},
+            {"id": _TWIN_ID, "name": "Twin"},
+            {"id": "afa714ac-0000-4000-8000-000000000004", "name": "Twin"},
+        ],
+    }
+
+    def serve(which):
+        def fetch(_client):
+            calls[which] += 1
+            return lists[which]
+
+        return fetch
+
+    monkeypatch.setattr(client, "KizenClient", _Client)
+    monkeypatch.setattr(api, "list_mcp_step_options", serve("servers"))
+    monkeypatch.setattr(api, "list_run_tools_as_options", serve("accounts"))
+    return {"calls": calls, "lists": lists}
+
+
+def _llm_spec(*blocks: dict) -> dict:
+    return {
+        "api_name": "call_llm_tools_test",
+        "name": "Call LLM Tools Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": f"llm{i}",
+                "step_type": "call_llm",
+                "order": i,
+                "parent_key": f"llm{i - 1}" if i else None,
+                "action_call_llm": {"model_name": "kizen/pro", "prompt": "Hi", **b},
+            }
+            for i, b in enumerate(blocks)
+        ],
+    }
+
+
+_TOOL_KEYS = (
+    "mcp_server_id",
+    "run_tools_as_id",
+    "max_sequential_turns",
+    "tool_failure_policy",
+)
+
+
+def _tool_keys(payload: dict, i: int = 0) -> tuple:
+    block = payload["steps"][i]["action_call_llm"]
+    return tuple(block[k] for k in _TOOL_KEYS)
+
+
+def test_call_llm_omitted_tool_keys_build_to_explicit_defaults(patch_live_lookups):
+    """Omitting both ids on a PUT keeps the server and clears the account,
+    so the builder always sends the pair, null included."""
+    assert _tool_keys(_build(_llm_spec({}))) == (None, None, 25, "never_fail")
+
+
+def test_call_llm_names_resolve_through_the_step_pickers(
+    patch_live_lookups, step_pickers
+):
+    payload = _build(
+        _llm_spec(
+            {"mcp_server": "example_tools", "run_tools_as": "Automation Runner"},
+            {
+                "mcp_server": "example_tools",
+                "run_tools_as": "Automation Runner",
+                "max_sequential_turns": 10,
+                "tool_failure_policy": "never_fail",
+            },
+        )
+    )
+    assert _tool_keys(payload, 0) == (_SERVER_ID, _ACCOUNT_ID, 25, "never_fail")
+    assert _tool_keys(payload, 1) == (_SERVER_ID, _ACCOUNT_ID, 10, "never_fail")
+    assert step_pickers["calls"] == {"servers": 1, "accounts": 1}
+
+
+def test_call_llm_ids_and_read_objects_need_no_lookup(patch_live_lookups):
+    """A UUID or a read's expanded object never reaches a resolver."""
+    from kizen_builder.translate import _SHIM_CTX
+
+    for block in (
+        {"mcp_server_id": _SERVER_ID, "run_tools_as_id": _ACCOUNT_ID},
+        {"mcp_server": _SERVER_ID, "run_tools_as": _ACCOUNT_ID},
+        {
+            "mcp_server": {"id": _SERVER_ID, "api_name": "example_tools"},
+            "run_tools_as": {"id": _ACCOUNT_ID, "name": "Automation Runner"},
+        },
+    ):
+        out = _STEP_BUILDERS["call_llm"](
+            {"model_name": "kizen/pro", "html_prompt": "<p>Hi</p>", **block},
+            AutomationDef.model_validate(_llm_spec()),
+            _SHIM_CTX,
+        )
+        assert (out["mcp_server_id"], out["run_tools_as_id"]) == (
+            _SERVER_ID,
+            _ACCOUNT_ID,
+        )
+
+
+@pytest.mark.parametrize(
+    "block, message",
+    [
+        (
+            {"mcp_server": "nope", "run_tools_as": "Automation Runner"},
+            "MCP server 'nope' isn't one a Call LLM step can attach in "
+            "'{env}'. Available: example_tools",
+        ),
+        (
+            {"mcp_server": "example_tools", "run_tools_as": "Nobody"},
+            "service account 'Nobody' can't run a Call LLM step's tools in "
+            "'{env}'. Available: Automation Runner, Twin, Twin",
+        ),
+        (
+            {"mcp_server": "example_tools", "run_tools_as": "Twin"},
+            "service account name 'Twin' matches 2 accounts in '{env}': "
+            f"{_TWIN_ID}, afa714ac-0000-4000-8000-000000000004. Use the id instead.",
+        ),
+        (
+            {"mcp_server": "example_tools", "mcp_server_id": _TWIN_ID},
+            "set mcp_server or mcp_server_id, not both",
+        ),
+        (
+            {"run_tools_as": "Automation Runner", "run_tools_as_id": _TWIN_ID},
+            "set run_tools_as or run_tools_as_id, not both",
+        ),
+        (
+            {"mcp_server": "example_tools"},
+            "step 'llm0': mcp_server is set without run_tools_as. Kizen runs an "
+            "MCP server's tools as a service account, so set both or neither.",
+        ),
+        (
+            {"run_tools_as_id": _ACCOUNT_ID},
+            "step 'llm0': run_tools_as is set without mcp_server. Set both or neither.",
+        ),
+    ],
+    ids=[
+        "unknown-server",
+        "unknown-account",
+        "ambiguous-account",
+        "server-twice",
+        "account-twice",
+        "server-alone",
+        "account-alone",
+    ],
+)
+def test_call_llm_tool_reference_errors(
+    patch_live_lookups, step_pickers, block, message
+):
+    env = LiveContext().env
+    with pytest.raises(PlanError) as e:
+        _build(_llm_spec(block))
+    assert message.format(env=env) in str(e.value)
+
+
+def test_call_llm_both_spellings_agreeing_is_fine(patch_live_lookups, step_pickers):
+    payload = _build(
+        _llm_spec(
+            {
+                "mcp_server": "example_tools",
+                "mcp_server_id": _SERVER_ID,
+                "run_tools_as": {"id": _ACCOUNT_ID},
+                "run_tools_as_id": _ACCOUNT_ID,
+            }
+        )
+    )
+    assert _tool_keys(payload)[:2] == (_SERVER_ID, _ACCOUNT_ID)
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("max_sequential_turns", 0),
+        ("max_sequential_turns", 32768),
+        ("tool_failure_policy", "fail_step"),
+    ],
+)
+def test_call_llm_tool_settings_are_bounded_in_the_spec(field, value):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=field):
+        AutomationDef.model_validate(_llm_spec({field: value}))
+
+
+@pytest.fixture
+def live_mcp_automation(monkeypatch, patch_live_lookups):
+    """The captured call_llm_mcp automation as the live one `update` reads:
+    step 0 has a server and account, step 1 has neither."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/call_llm_mcp.raw.json")
+    raw["custom_object"]["name"] = "patients"
+    monkeypatch.setattr(
+        ma, "list_automations", lambda: [{"api_name": raw["api_name"], "id": raw["id"]}]
+    )
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _update_spec(raw: dict, *blocks: dict) -> dict:
+    spec = _llm_spec(*blocks)
+    spec.update(api_name=raw["api_name"], name=raw["name"])
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    for step, live in zip(spec["steps"], steps, strict=True):
+        step["id"] = live["id"]
+    return spec
+
+
+def test_update_dry_run_names_steps_whose_mcp_server_goes(live_mcp_automation):
+    """A spec that omits the keys sends nulls, so the update detaches a server
+    attached in the UI. The preview `--dry-run` prints says which steps."""
+    plan = plan_update_automation(_update_spec(live_mcp_automation, {}, {}))
+    (op,) = plan.operations
+    assert op.preview["detaches_mcp_server"] == ["llm0"]
+    assert op.preview["clears_run_tools_as"] == ["llm0"]
+
+
+def test_update_dry_run_is_quiet_when_the_server_stays(
+    live_mcp_automation, step_pickers
+):
+    step_pickers["lists"]["servers"][0]["id"] = live_mcp_automation["steps"][0][
+        "action_call_llm"
+    ]["mcp_server"]["id"]
+    step_pickers["lists"]["accounts"][0]["id"] = live_mcp_automation["steps"][0][
+        "action_call_llm"
+    ]["run_tools_as"]["id"]
+    tools = {"mcp_server": "example_tools", "run_tools_as": "Automation Runner"}
+    (op,) = plan_update_automation(
+        _update_spec(live_mcp_automation, tools, {})
+    ).operations
+    assert "detaches_mcp_server" not in op.preview
+    assert "clears_run_tools_as" not in op.preview
+
+
+def test_steps_edit_call_llm_names_the_server_by_api_name(
+    patch_live_lookups, step_pickers
+):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    patch = {
+        "action_call_llm": {
+            "model_name": "kizen/pro",
+            "html_prompt": "<p>Hi</p>",
+            "mcp_server": "example_tools",
+            "run_tools_as": "Automation Runner",
+            "max_sequential_turns": 10,
+        }
+    }
+    out = normalize_step_patch(patch, "llm", "call_llm", _LIVE_PAYLOAD, "patients")
+    block = out["action_call_llm"]
+    assert tuple(block[k] for k in _TOOL_KEYS) == (
+        _SERVER_ID,
+        _ACCOUNT_ID,
+        10,
+        "never_fail",
+    )
+
+
 def test_find_relationship_field_auto_detects_unambiguous_hop(monkeypatch):
     """LiveContext.find_relationship_field is the auto-detect fallback used
     when a related_object_field destination omits relationship_field_ref."""
@@ -1826,6 +2115,309 @@ def test_plan_update_strips_variable_ids(patch_live_lookups):
 
 
 # ---------------------------------------------------------------------------
+# Webhook trigger auth: kept on update, typed, mirrored as the UI writes it
+# (confirmed live 2026-10-27)
+# ---------------------------------------------------------------------------
+
+_WEBHOOK_RAW = "automations/webhook_auth_triggers.raw.json"
+_SECRET_DESCRIPTIONS = {
+    "partner_token": "partner token (api)",
+    "partner_basic": "partner basic (api)",
+}
+
+
+@pytest.fixture
+def webhook_live(patch_live_lookups, monkeypatch):
+    """Serve the four-auth-type fixture as a live automation, with the
+    integration secret descriptions the header label resolves against."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture(_WEBHOOK_RAW)
+    listing = [*ma.list_automations(), {"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(
+        ma.LiveContext,
+        "integration_secret_description",
+        lambda self, api_name: _SECRET_DESCRIPTIONS.get(api_name),
+    )
+    return raw
+
+
+def _webhook_spec(raw: dict, *, auth: bool = False, ids: bool = True) -> dict:
+    """A spec reproducing the fixture, with or without the webhook auth keys.
+    With auth, headers carry no `html_value` and `secret` is the read shape."""
+    unspec = {"id", "webhook_url"} | (
+        set() if auth else {"auth_type", "headers", "secret"}
+    )
+    triggers = []
+    for t in raw["triggers"]:
+        spec_t = {"trigger_type": t["trigger_type"], "order": t.get("order", 0)}
+        if ids:
+            spec_t["id"] = t["id"]
+        block = t.get("trigger_webhook")
+        if block is not None:
+            block = {k: v for k, v in block.items() if k not in unspec}
+            if auth and block["headers"]:
+                block["headers"] = [
+                    {k: v for k, v in h.items() if k != "html_value"}
+                    for h in block["headers"]
+                ]
+            spec_t["trigger_webhook"] = block
+        triggers.append(spec_t)
+    stop = raw["steps"][0]
+    return {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "global",
+        "triggers": triggers,
+        "steps": [
+            {
+                "key": "stop",
+                "id": stop["id"],
+                "step_type": "stop_execution",
+                "order": 0,
+                "parent_key": None,
+                "description": stop["description"],
+                "action_on_failure": stop["action_on_failure"],
+                "action_stop_execution": stop["action_stop_execution"],
+            }
+        ],
+    }
+
+
+def _webhook_blocks(payload: dict) -> dict[str, dict]:
+    return {
+        t["trigger_webhook"]["name"]: t["trigger_webhook"]
+        for t in payload["triggers"]
+        if t["type"] == "webhook"
+    }
+
+
+def _auth(block: dict) -> dict:
+    return {k: block[k] for k in ("auth_type", "headers", "secret") if k in block}
+
+
+_LIVE_HTTP_HEADER = {
+    "auth_type": "http_header",
+    "headers": [
+        {
+            "name": "token-name",
+            "value": "{{ integration_secret.partner_token }} -merge field",
+            "html_value": '<p><span class="kzn-merge-field" '
+            'data-merge-field-fallback-label="partner token (api)" '
+            'data-merge-field-relationship="integration_secret.partner_token">'
+            "{{ integration_secret.partner_token }}</span> -merge field</p>",
+        }
+    ],
+}
+
+
+def test_plan_update_omitted_webhook_auth_keeps_live_auth(webhook_live):
+    """Before 2026-10-27 the PUT went out without auth and Kizen reset every
+    webhook to Kizen API auth, changing its URL. The live auth now rides
+    along, with the read-shape secret reduced to its api_name."""
+    (op,) = plan_update_automation(_webhook_spec(webhook_live)).operations
+    blocks = _webhook_blocks(op.payload)
+    assert _auth(blocks["webhook_auth_triggers"]) == {"auth_type": "kizen_api"}
+    assert _auth(blocks["webhook_auth_triggers_1"]) == _LIVE_HTTP_HEADER
+    assert _auth(blocks["webhook_auth_triggers_2"]) == {
+        "auth_type": "basic_auth",
+        "secret": {"api_name": "partner_basic"},
+    }
+    assert _auth(blocks["webhook_auth_triggers_3"]) == {"auth_type": "none"}
+
+
+def test_plan_update_matches_live_webhook_by_name_without_id(webhook_live):
+    (op,) = plan_update_automation(_webhook_spec(webhook_live, ids=False)).operations
+    blocks = _webhook_blocks(op.payload)
+    assert _auth(blocks["webhook_auth_triggers_1"]) == _LIVE_HTTP_HEADER
+    assert blocks["webhook_auth_triggers_2"]["auth_type"] == "basic_auth"
+    assert blocks["webhook_auth_triggers_3"]["auth_type"] == "none"
+
+
+def test_plan_update_matches_renamed_webhook_by_id(webhook_live):
+    """A renamed webhook that keeps its trigger id still keeps the live auth;
+    no live trigger carries the new name, so only the id can match."""
+    spec = _webhook_spec(webhook_live)
+    for t in spec["triggers"]:
+        block = t.get("trigger_webhook")
+        if block:
+            block["name"] = f"renamed_{block['name']}"
+    (op,) = plan_update_automation(spec).operations
+    blocks = _webhook_blocks(op.payload)
+    assert _auth(blocks["renamed_webhook_auth_triggers_1"]) == _LIVE_HTTP_HEADER
+    assert blocks["renamed_webhook_auth_triggers_2"]["auth_type"] == "basic_auth"
+    assert blocks["renamed_webhook_auth_triggers_3"]["auth_type"] == "none"
+
+
+def test_plan_update_explicit_webhook_auth_is_sent_as_written(webhook_live):
+    spec = _webhook_spec(webhook_live)
+    for t in spec["triggers"]:
+        if "trigger_webhook" in t:
+            t["trigger_webhook"]["auth_type"] = "kizen_api"
+    (op,) = plan_update_automation(spec).operations
+    for block in _webhook_blocks(op.payload).values():
+        assert _auth(block) == {"auth_type": "kizen_api"}
+
+
+def test_plan_update_new_webhook_trigger_copies_no_auth(webhook_live):
+    spec = _webhook_spec(webhook_live)
+    spec["triggers"].append(
+        {
+            "trigger_type": "webhook",
+            "order": 5,
+            "trigger_webhook": {"name": "brand_new"},
+        }
+    )
+    (op,) = plan_update_automation(spec).operations
+    assert _auth(_webhook_blocks(op.payload)["brand_new"]) == {}
+
+
+@pytest.mark.parametrize("auth", [False, True], ids=["omitted", "restated"])
+def test_diff_automation_shows_no_webhook_auth_lines(webhook_live, auth):
+    """A spec that leaves auth out, or restates live's auth (headers without
+    `html_value`, `secret` in its read shape), diffs clean on auth."""
+    diff = diff_automation(_webhook_spec(webhook_live, auth=auth))["diff"]
+    auth_lines = [
+        d
+        for d in diff
+        if any(f".{k}" in d["path"] for k in ("auth_type", "headers", "secret"))
+    ]
+    assert auth_lines == []
+
+
+@pytest.mark.parametrize(
+    "block, message",
+    [
+        (
+            {"auth_type": "basic_auth", "headers": [{"name": "X-A", "value": "v"}]},
+            "trigger_webhook.headers only applies when auth_type is 'http_header'; "
+            "Kizen drops it for any other auth type.",
+        ),
+        (
+            {"headers": [{"name": "X-A", "value": "v"}]},
+            "trigger_webhook.headers only applies when auth_type is 'http_header'; "
+            "Kizen drops it for any other auth type.",
+        ),
+        (
+            {"auth_type": "http_header", "secret": {"api_name": "s"}},
+            "trigger_webhook.secret only applies when auth_type is 'basic_auth'; "
+            "Kizen drops it for any other auth type.",
+        ),
+        (
+            {"auth_header_name": "X-A", "auth_header_value": "v"},
+            "trigger_webhook.auth_header_name, auth_header_value and "
+            "html_auth_header_value are no longer read by Kizen. Use auth_type "
+            """'http_header' with headers: [{"name": ..., "value": ...}].""",
+        ),
+    ],
+    ids=["headers", "headers-no-auth-type", "secret", "retired-keys"],
+)
+def test_webhook_auth_validator_messages(block, message):
+    import re
+
+    from pydantic import ValidationError
+
+    from kizen_builder.models.spec import TriggerWebhookConfig
+
+    with pytest.raises(ValidationError, match=re.escape(message)):
+        TriggerWebhookConfig.model_validate({"name": "hook", **block})
+
+
+def test_webhook_auth_models_accept_the_read_shape():
+    from kizen_builder.models.spec import TriggerWebhookConfig
+
+    raw = load_fixture(_WEBHOOK_RAW)
+    for t in raw["triggers"]:
+        if "trigger_webhook" in t:
+            TriggerWebhookConfig.model_validate(t["trigger_webhook"])
+
+
+def test_webhook_header_html_value_matches_the_ui_byte_for_byte():
+    from kizen_builder.tools.planners.automations import _webhook_auth
+
+    live = _LIVE_HTTP_HEADER["headers"][0]
+    block = {
+        "auth_type": "http_header",
+        "headers": [{"name": live["name"], "value": live["value"]}],
+    }
+    out = _webhook_auth(
+        block,
+        lambda ns, path: (
+            _SECRET_DESCRIPTIONS[path] if ns == "integration_secret" else None
+        ),
+    )
+    assert out["headers"][0]["html_value"] == live["html_value"]
+
+
+@pytest.mark.parametrize("html_value", ["<p>kept</p>", "", None])
+def test_webhook_header_present_html_value_is_kept(html_value):
+    from kizen_builder.tools.planners.automations import _webhook_auth
+
+    header = {
+        "name": "X-A",
+        "value": "{{ integration_secret.x }}",
+        "html_value": html_value,
+    }
+
+    def no_lookup(ns, path):
+        raise AssertionError("a present html_value must not be derived")
+
+    out = _webhook_auth({"auth_type": "http_header", "headers": [header]}, no_lookup)
+    assert out["headers"] == [header]
+
+
+def test_live_to_payload_reduces_webhook_auth_without_lookups():
+    """The read path (`translate`, and every `steps`/`activate`/`move` PUT)
+    runs under a context that raises on any lookup; live headers always carry
+    `html_value`, so nothing is derived."""
+    from kizen_builder.translate import live_to_payload
+
+    blocks = _webhook_blocks(live_to_payload(load_fixture(_WEBHOOK_RAW)))
+    assert _auth(blocks["webhook_auth_triggers_1"]) == _LIVE_HTTP_HEADER
+    assert blocks["webhook_auth_triggers_2"]["secret"] == {"api_name": "partner_basic"}
+    assert "headers" not in blocks["webhook_auth_triggers_2"]
+    assert "secret" not in blocks["webhook_auth_triggers_3"]
+
+
+def test_live_to_payload_drops_retired_webhook_auth_keys():
+    from kizen_builder.translate import live_to_payload
+
+    payload = live_to_payload(
+        load_fixture("automations/condition_variable_rhs_pipeline.raw.json")
+    )
+    for block in _webhook_blocks(payload).values():
+        assert not [k for k in block if k.startswith(("auth_header", "html_auth"))]
+
+
+def test_integration_secret_description_is_fetched_once(env_config):
+    import respx
+
+    from kizen_builder.tools.planners.automations import LiveContext
+
+    with respx.mock(base_url=env_config.base_url) as router:
+        route = router.get("/api/integration-secrets").respond(
+            json={
+                "results": [
+                    {
+                        "api_name": "partner_token",
+                        "description": "partner token (api)",
+                        "obfuscated_value": "****",
+                    }
+                ],
+                "next": None,
+            }
+        )
+        ctx = LiveContext()
+        assert (
+            ctx.integration_secret_description("partner_token") == "partner token (api)"
+        )
+        assert ctx.integration_secret_description("missing") is None
+    assert route.call_count == 1
+    assert "****" not in repr(vars(ctx))
+
+
+# ---------------------------------------------------------------------------
 # `active`: preserve-on-omission (the regression the reporter hit)
 # ---------------------------------------------------------------------------
 
@@ -2911,7 +3503,9 @@ def test_skipped_condition_without_branch_rejected():
         AutomationDef.model_validate(spec)
 
 
-@pytest.mark.parametrize("step_type", ["branch", "merge_branches"])
+@pytest.mark.parametrize(
+    "step_type", ["branch", "merge_branches", "next_or_finish", "exit_loop"]
+)
 def test_configless_step_with_config_block_rejected(step_type):
     spec = _merged_condition_spec()
     merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")
@@ -2937,6 +3531,322 @@ def test_merge_under_non_initiator_fails_plan(patch_live_lookups):
         plan_create_automation(spec)
     for key in ("merge", "merge_2"):
         assert f"merge_branches step '{key}' has parent 'check'" in str(e.value)
+
+
+def _loop_spec() -> dict:
+    """The shape of fixture `loops`, built from a spec."""
+
+    def var(key: str, parent: str | None, name: str, is_array: bool, order: int):
+        variable = {"name": name, "data_type": "string", "is_array": is_array}
+        block = {"sources": [], "variable": variable}
+        if is_array:
+            block["array_aggregation_mode"] = "add_all"
+        return _s(
+            key, parent, "initialize_variable", order, action_initialize_variable=block
+        )
+
+    def loop(key: str, parent: str, array: str, order: int):
+        block = {"array_variable": array, "item_variable": f"{array}_item"}
+        return _s(
+            key, parent, "loop", order, is_branch_group_initiator=True, step_loop=block
+        )
+
+    return {
+        "api_name": "loops",
+        "name": "Loops",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            var("arr0", None, "arr0", True, 0),
+            var("arr0_item", "arr0", "arr0_item", False, 1),
+            var("arr1", "arr0_item", "arr1", True, 2),
+            var("arr1_item", "arr1", "arr1_item", False, 3),
+            loop("each", "arr1_item", "arr0", 4),
+            _s(
+                "check",
+                "each",
+                "condition",
+                5,
+                is_branch_group_initiator=True,
+                step_condition={"type": "custom_filter", "filter_config": NAME_IS_X},
+            ),
+            _s("wait", "check", "delay", 6, parent_branch="yes"),
+            _s("leave", "check", "exit_loop", 7, parent_branch="no"),
+            _s("merge", "check", "merge_branches", 8),
+            _s("next", "each", "next_or_finish", 9),
+            loop("each_again", "next", "arr1", 10),
+            _s("body", "each_again", "delay", 11),
+            _s("next_again", "each_again", "next_or_finish", 12),
+            _s("tail", "next_again", "delay", 13),
+        ],
+    }
+
+
+def test_loop_spec_payload(patch_live_lookups):
+    by_key = {s["key"]: s for s in _build(_loop_spec())["steps"]}
+    assert by_key["each"]["step_loop"] == {
+        "loop_type": "for_each_item",
+        "array_variable": "arr0",
+        "item_variable": "arr0_item",
+    }
+    assert by_key["each"]["is_branch_group_initiator"] is True
+    for key in ("leave", "next"):
+        assert not [k for k in by_key[key] if k.startswith("step_")]
+        assert [k for k in by_key[key] if k.startswith("action_")] == [
+            "action_on_failure"
+        ]
+
+
+def test_loop_spec_needs_its_step_loop():
+    spec = _loop_spec()
+    del spec["steps"][4]["step_loop"]
+    with pytest.raises(ValueError, match="'loop' requires an 'step_loop' block"):
+        AutomationDef.model_validate(spec)
+
+
+def test_broken_loop_spec_fails_plan(patch_live_lookups):
+    spec = _loop_spec()
+    spec["steps"][9]["parent_key"] = "check"
+    with pytest.raises(PlanError) as e:
+        plan_create_automation(spec)
+    assert "loop 'each' has 0 next_or_finish children" in str(e.value)
+    assert "next_or_finish step 'next' has parent 'check'" in str(e.value)
+
+
+def _var(key, parent, name, order, data_type="string", is_array=False, sources=()):
+    variable = {"name": name, "data_type": data_type, "is_array": is_array}
+    if data_type == "entity":
+        variable["data_subtype"] = load_fixture("objects/patients.json")["id"]
+    block = {"sources": list(sources), "variable": variable}
+    if is_array:
+        block["array_aggregation_mode"] = "add_all"
+    return _s(
+        key, parent, "initialize_variable", order, action_initialize_variable=block
+    )
+
+
+def _loop(key, parent, array, item, order, **kw):
+    block = {"array_variable": array, "item_variable": item}
+    return _s(key, parent, "loop", order, step_loop=block, **kw)
+
+
+_STRINGS = [{"source_type": "static", "source_subtype": "string", "value": ["a", "b"]}]
+
+
+def _authored_loop_spec(steps: list[dict], record_based: bool = True) -> dict:
+    for i, s in enumerate(steps):
+        s["order"] = i
+    spec = {
+        "api_name": "authored_loop",
+        "name": "Authored Loop",
+        "type": "record_based" if record_based else "global",
+        "steps": steps,
+    }
+    if record_based:
+        spec["target_object"] = "patients"
+    return spec
+
+
+def _string_loop_steps() -> list[dict]:
+    return [
+        _var("arr", None, "arr", 0, is_array=True, sources=_STRINGS),
+        _var("item", "arr", "arr_item", 0),
+        _loop("each", "item", "arr", "arr_item", 0),
+        _s("body", "each", "delay", 0),
+        _s("next", "each", "next_or_finish", 0),
+        _s("after", "next", "delay", 0),
+    ]
+
+
+def _nested_loops(
+    depth: int, root_parent: str | None = None, arrays: list[str] | None = None
+) -> list[dict]:
+    """`depth` loops, each the body of the one before, and an `exit_loop` in
+    the innermost body. Each loop iterates its entry in `arrays` (by default
+    a different array per level) through its own item variable."""
+    arrays = arrays or [f"arr{n}" for n in range(depth)]
+    steps: list[dict] = []
+    parent = root_parent
+    for name in dict.fromkeys(arrays):
+        steps.append(_var(name, parent, name, 0, is_array=True, sources=_STRINGS))
+        parent = name
+    for n in range(depth):
+        steps.append(_var(f"item{n}", parent, f"item{n}", 0))
+        parent = f"item{n}"
+    closers = []
+    for n, name in enumerate(arrays):
+        steps.append(_loop(f"l{n}", parent, name, f"item{n}", 0))
+        closers.append(_s(f"n{n}", f"l{n}", "next_or_finish", 0))
+        parent = f"l{n}"
+    steps.append(_s("leave", parent, "exit_loop", 0))
+    return steps + closers[::-1]
+
+
+def _built_steps(spec: dict) -> dict[str, dict]:
+    return {s["key"]: s for s in _build(spec)["steps"]}
+
+
+def _preview(spec: dict) -> dict:
+    return plan_create_automation(spec).operations[0].preview
+
+
+@pytest.mark.parametrize("flag", [None, False, True])
+def test_loop_is_always_sent_as_an_initiator(patch_live_lookups, flag):
+    """The server stores true on a loop whatever is sent (confirmed live
+    2026-10-27), so the builder sends true and `diff` shows no flip."""
+    steps = _string_loop_steps()
+    if flag is not None:
+        steps[2]["is_branch_group_initiator"] = flag
+    by_key = _built_steps(_authored_loop_spec(steps, record_based=False))
+    assert by_key["each"]["is_branch_group_initiator"] is True
+    assert [k for k, s in by_key.items() if "is_branch_group_initiator" in s] == [
+        "each"
+    ]
+
+
+def test_string_array_loop_spec(patch_live_lookups):
+    spec = _authored_loop_spec(_string_loop_steps(), record_based=False)
+    by_key = _built_steps(spec)
+    assert by_key["each"]["step_loop"] == {
+        "loop_type": "for_each_item",
+        "array_variable": "arr",
+        "item_variable": "arr_item",
+    }
+    assert by_key["item"]["action_initialize_variable"]["sources"] == []
+    assert by_key["after"]["parent_key"] == "next"
+    assert "warnings" not in _preview(spec)
+
+
+def test_record_array_loop_over_search_records(patch_live_lookups):
+    steps = [
+        _var("recs", None, "recs", 0, data_type="entity", is_array=True),
+        _var("rec", "recs", "recs_item", 0, data_type="entity"),
+        _s(
+            "find",
+            "rec",
+            "search_records",
+            0,
+            action_search_records={
+                "custom_object": "patients",
+                "filter_type": "all_records",
+                "destination_variable": "recs",
+            },
+        ),
+        _loop("each", "find", "recs", "recs_item", 0),
+        _s("body", "each", "delay", 0),
+        _s("next", "each", "next_or_finish", 0),
+    ]
+    spec = _authored_loop_spec(steps)
+    by_key = _built_steps(spec)
+    assert by_key["find"]["action_search_records"]["destination_variable"] == {
+        "name": "recs"
+    }
+    assert by_key["each"]["step_loop"]["array_variable"] == "recs"
+    assert "warnings" not in _preview(spec)
+
+
+def test_loop_on_a_condition_yes_branch(patch_live_lookups):
+    steps = _string_loop_steps()[:5]
+    check = _s(
+        "check",
+        "item",
+        "condition",
+        0,
+        step_condition={"type": "custom_filter", "filter_config": NAME_IS_X},
+    )
+    steps[2].update(parent_key="check", parent_branch="yes")
+    other = _s("other", "check", "delay", 0, parent_branch="no")
+    spec = _authored_loop_spec([*steps[:2], check, *steps[2:], other])
+    by_key = _built_steps(spec)
+    assert by_key["each"]["parent_yes_no"] == "yes"
+    assert by_key["each"]["is_branch_group_initiator"] is True
+    assert "warnings" not in _preview(spec)
+
+
+def test_nested_loops_with_an_exit_loop(patch_live_lookups):
+    spec = _authored_loop_spec(_nested_loops(2), record_based=False)
+    by_key = _built_steps(spec)
+    assert by_key["l1"]["parent_key"] == "l0"
+    assert by_key["leave"]["parent_key"] == "l1"
+    assert (by_key["n0"]["parent_key"], by_key["n1"]["parent_key"]) == ("l0", "l1")
+    assert "warnings" not in _preview(spec)
+
+
+def test_loop_with_two_body_lanes_still_warns(patch_live_lookups):
+    steps = [*_string_loop_steps(), _s("other_lane", "each", "delay", 0)]
+    assert _preview(_authored_loop_spec(steps))["warnings"] == [
+        "step 'each' has 2 parallel children but is a 'loop', not a 'branch'; "
+        "put a 'branch' step in front of the fan-out"
+    ]
+
+
+def test_loop_nested_past_three_is_refused(patch_live_lookups):
+    """Kizen's builder holds three levels. The API accepts more, so this is
+    the CLI's own rule, checked at plan time."""
+    assert "warnings" not in _preview(_authored_loop_spec(_nested_loops(3), False))
+    with pytest.raises(PlanError) as e:
+        _build(_authored_loop_spec(_nested_loops(5), False))
+    problems = str(e.value).split("\n  - ")[1:]
+    assert problems == [
+        f"loop 'l{n}' is nested {n + 1} levels deep; Kizen's builder allows at "
+        "most three. The API accepts deeper loops, but the CLI refuses them so "
+        "the automation stays editable in the UI."
+        for n in (3, 4)
+    ]
+
+
+def test_loop_after_a_next_or_finish_is_not_nested_in_that_loop(patch_live_lookups):
+    """`again` follows the innermost loop of three, so it is three deep, not four."""
+    steps = [
+        _var("again_arr", None, "again_arr", 0, is_array=True, sources=_STRINGS),
+        _var("again_item", "again_arr", "again_item", 0),
+        *_nested_loops(3, root_parent="again_item"),
+        _loop("again", "n2", "again_arr", "again_item", 0),
+        _s("again_next", "again", "next_or_finish", 0),
+    ]
+    assert "warnings" not in _preview(_authored_loop_spec(steps, False))
+
+
+def _same_array_problem(key: str, array: str, outer: str) -> str:
+    return (
+        f"loop '{key}' iterates '{array}', which loop '{outer}' around it already "
+        "iterates; Kizen's builder needs a different array variable at each level. "
+        "The API accepts it, but the CLI refuses it so the automation stays "
+        "editable in the UI."
+    )
+
+
+@pytest.mark.parametrize(
+    ("arrays", "problem"),
+    [
+        (["a", "a"], ("l1", "a", "l0")),
+        (["a", "b", "a"], ("l2", "a", "l0")),
+    ],
+    ids=["outer_and_inner", "two_levels_down"],
+)
+def test_nested_loop_over_an_array_already_iterated_is_refused(
+    patch_live_lookups, arrays, problem
+):
+    spec = _authored_loop_spec(_nested_loops(len(arrays), arrays=arrays), False)
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value).split("\n  - ")[1:] == [_same_array_problem(*problem)]
+
+
+def test_loops_over_one_array_in_sequence_build(patch_live_lookups):
+    """The second loop hangs off the first's next_or_finish: not nested."""
+    variables, loop = _string_loop_steps()[:2], _string_loop_steps()[2:]
+    loop[0]["parent_key"] = "again_item"
+    steps = [
+        *variables,
+        _var("again_item", "item", "again_item", 0),
+        *loop,
+        _loop("again", "after", "arr", "again_item", 0),
+        _s("again_body", "again", "delay", 0),
+        _s("again_next", "again", "next_or_finish", 0),
+    ]
+    by_key = _built_steps(_authored_loop_spec(steps, False))
+    assert by_key["again"]["step_loop"]["array_variable"] == "arr"
 
 
 @pytest.mark.parametrize(
@@ -3041,8 +3951,8 @@ def _branching_test_spec() -> dict:
 
 def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatch):
     """The spec reproduces the UI-built graph. What's left is noise any spec
-    shows: server-written descriptions, the plugin app the server fills in
-    for a `kizen/*` model, and a variable definition's null read defaults."""
+    shows: server-written descriptions, and the plugin app the server fills
+    in for a `kizen/*` model."""
     import kizen_builder.tools.planners.automations as ma
 
     raw = load_fixture("automations/branching_test.raw.json")
@@ -3053,11 +3963,6 @@ def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatc
         d
         for d in diff_automation(_branching_test_spec())["diff"]
         if d["path"].rsplit(".", 1)[-1] not in ("description", "business_plugin_app_id")
-        and not (
-            ".action_initialize_variable.variable." in d["path"]
-            and d["before"] in (None, False)
-            and d["after"] == "<absent>"
-        )
     ]
     assert structural == []
 
@@ -3797,7 +4702,9 @@ def test_stop_execution_maps_to_its_config_block():
     AutomationDef.model_validate(spec)
 
 
-@pytest.mark.parametrize("step_type", ["branch", "merge_branches"])
+@pytest.mark.parametrize(
+    "step_type", ["branch", "merge_branches", "next_or_finish", "exit_loop"]
+)
 def test_configless_step_with_stop_execution_block_rejected(step_type):
     spec = _merged_condition_spec()
     merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")

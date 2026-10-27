@@ -55,6 +55,21 @@ def get_metadata(client: KizenClient) -> dict[str, Any]:
     return client.get("/api/automation2/automations/metadata")
 
 
+def list_mcp_step_options(client: KizenClient) -> list[dict[str, Any]]:
+    """GET /api/mcp-servers/step-options: the MCP servers a `call_llm` step
+    can attach, as its picker lists them (`{id, name, api_name, is_enabled,
+    deleted, tool_count}`). Unpaginated; the server ignores `search`."""
+    return client.get("/api/mcp-servers/step-options")
+
+
+def list_run_tools_as_options(client: KizenClient) -> list[dict[str, Any]]:
+    """GET /api/automation2/automations/run-tools-as-options: the service
+    accounts a `call_llm` step can run its MCP tools as (`{id, name}`).
+    Narrower than the service-account typeahead: a plugin's own service
+    account isn't listed, and the write rejects it."""
+    return client.get("/api/automation2/automations/run-tools-as-options")
+
+
 def start_automation(
     client: KizenClient,
     api_name: str,

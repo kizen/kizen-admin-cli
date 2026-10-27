@@ -75,11 +75,14 @@ from kizen_builder.models.spec.automations_triggers import (
     TriggerWebhookConfig,
     TriggerManualConfig,
     AutomationTriggerDef,
+    WebhookAuthHeader,
+    WebhookAuthSecret,
 )
 from kizen_builder.models.spec.automations_actions_control import (
     StepConditionConfig,
     StepDelayConfig,
     StepGoalConfig,
+    StepLoopConfig,
     ActionGoToAutomationStepConfig,
     ActionStopExecutionConfig,
     ActionArchiveRecordConfig,
@@ -130,6 +133,12 @@ from kizen_builder.models.spec.dashboards import (
     QuickFilterDef,
     ColumnTemplateDef,
     LayoutDef,
+)
+from kizen_builder.models.spec.mcp_servers import (
+    MCPServerApiName,
+    SharingBuckets,
+    MCPServerSharing,
+    MCPServerDef,
 )
 from kizen_builder.models.spec.email_templates import (
     ColumnPreset,
@@ -263,11 +272,14 @@ __all__ = [
     "TriggerScheduledActivityOverdueConfig",
     "TriggerNewEntityCreatedConfig",
     "TriggerWebhookConfig",
+    "WebhookAuthHeader",
+    "WebhookAuthSecret",
     "TriggerManualConfig",
     "AutomationTriggerDef",
     "StepConditionConfig",
     "StepDelayConfig",
     "StepGoalConfig",
+    "StepLoopConfig",
     "ActionChangeFieldValueConfig",
     "ActionSendEmailConfig",
     "ActionSendRelatedContactEmailConfig",
@@ -310,6 +322,10 @@ __all__ = [
     "QuickFilterDef",
     "ColumnTemplateDef",
     "LayoutDef",
+    "MCPServerApiName",
+    "SharingBuckets",
+    "MCPServerSharing",
+    "MCPServerDef",
     "ColumnPreset",
     "COLUMN_FRACTIONS",
     "TextBlockDef",

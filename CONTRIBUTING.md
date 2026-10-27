@@ -106,13 +106,16 @@ src/kizen_builder/
     external_refs.py             #   name→UUID lookups for by-name spec references
     files.py                     #   raw file bytes: the S3 upload/download legs (not JSON)
     forms.py                     #   form/survey CRUD (base_path-shared with surveys)
+    integration_secrets.py       #   integration-secret listing (read-only; values never kept)
     layouts.py                   #   record-layout CRUD (field/block arrangement)
+    mcp_servers.py               #   MCP server CRUD, tool catalogue, events history
     messages.py                  #   automation-scoped message resources (notify_* step content)
     permissions.py               #   roles, permission groups, permissions catalog
     pipelines.py                 #   pipeline-stage CRUD + record stage-move
     records.py                   #   record-level reads/writes (custom objects + built-ins)
     saved_views.py               #   filter groups / quick filters / column templates
     schema.py                    #   schema lookups backing the filtering DSL
+    service_accounts.py          #   service-account CRUD + history (strips the key from create)
     smart_connectors.py          #   smart-connector CRUD, scripts, executions
     team.py                      #   team-member reads + role changes
   tools/                         # Tool functions. What the CLI mostly calls.
@@ -125,6 +128,7 @@ src/kizen_builder/
     form_ui.py                   #   build a form/survey's visual, submittable page layout
     forms.py                     #   list/get forms and surveys (base_path-shared)
     layouts.py                   #   list/get, block helpers, inject_layout_ids
+    mcp_servers.py               #   resolve/list/get MCP servers, tool catalogue, history
     messages.py                  #   automation message content (notify_* step templates)
     objects.py                   #   list_objects(), get_object(api_name)
     permission_builder.py        #   enumerate/build/mutate the full permission-group structure
@@ -132,6 +136,7 @@ src/kizen_builder/
     plans.py                     #   Plan / PlanOperation models, apply_plan()
     records.py                   #   get_record(), search_records()
     saved_views.py               #   list/get filter groups, quick filters, column templates
+    service_accounts.py          #   resolve a service account; list/get/history
     smart_connectors/            #   inspection + authoring + local pull/run/push dev loop
       __init__.py                #     re-export facade — `from ... import smart_connectors as sct`
       _common.py                 #     MARKER_NAME, execution-metadata keys, shared helpers
@@ -159,17 +164,20 @@ src/kizen_builder/
       fields.py                  #     plan_create_field, plan_update_field
       forms.py                   #     plan_create/update/delete forms/surveys + fields
       layouts.py                 #     plan_update_layout
+      mcp_servers.py             #     plan_create/update/delete MCP servers
       messages.py                #     plan_create automation message content
       objects.py                 #     plan_create/update_object, plan_create/update_category
       permissions.py             #     plan_create/update/delete roles + permission groups
       pipeline_stages.py         #     plan_create/update/remove stages, record stage-move
       records.py                 #     plan_create/update/delete records (data, not schema)
       saved_views.py             #     plan_create/update/delete the three saved-view kinds
+      service_accounts.py        #     plan_create/update/delete integration service accounts
       team.py                    #     plan_update_team_member_roles
   filtering.py                   # Filter DSL (Field, All/Any, search/filter-config rendering).
   translate.py                   # Automation GET → PUT wire translation.
   models/spec/                   # Pydantic shapes for desired state (spec inputs);
                                   #   package, one module per cluster — see __init__.py.
+    mcp_servers.py               #   MCPServerDef + its sharing block
   output.py                      # Shared table/json/csv output layer for read commands.
   cli/                           # Typer wrappers around tools/. The `kizen` command.
     __init__.py                  #   exports `app`; imports every module below, IN ORDER
@@ -187,6 +195,7 @@ src/kizen_builder/
     filters.py                   #   kizen filters (the operator reference)
     team.py                      #   kizen team
     permissions.py               #   kizen roles + kizen permissions
+    service_accounts.py          #   kizen service-accounts
     automations.py               #   kizen automations — reads, start, diagnostics
     steps.py                     #   kizen automations steps
     messages.py                  #   kizen messages
@@ -203,6 +212,7 @@ src/kizen_builder/
     forms_fields.py              #   …and its `fields` / `fields options` sub-apps
     automations_write.py         #   kizen automations — create/update/lifecycle
     folders.py                   #   kizen automations folders
+    mcp_servers.py               #   kizen mcp-servers
     apply.py                     #   kizen apply
     smart_connectors.py          #   kizen smart-connectors — app, shared helpers, build/configure
     smart_connectors_seeds.py    #   kizen smart-connectors seeds

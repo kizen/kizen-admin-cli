@@ -43,6 +43,13 @@ automation steps).
   `role_detail.json` are still hand-authored and round out the read/resolve
   surface. UUIDs and the group name are replaced with `conftest.py`'s
   `00000000-0000-4000-8000-…` convention and `Sample Group`.
+- `mcp_servers/` — live captures from 2026-10-27, sanitized (server,
+  person and service-account names, emails, host and business id replaced).
+  `list.json` is a `GET /api/mcp-servers` page: the system `readonly` server
+  plus `support_tools`, whose `detail.json` is shared with one service account
+  as a team member. `detail_readonly.json`, `tools.json`, `step_options.json`
+  and `events_history.json` (newest first; three updates and the create) are
+  the matching raw responses.
 
 ## Coverage
 

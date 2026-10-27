@@ -55,7 +55,10 @@ from kizen_builder.models.spec import (
     AutomationStepDef,
     AutomationTriggerDef,
 )
-from kizen_builder.models.spec.automations_triggers import trigger_config_field
+from kizen_builder.models.spec.automations_triggers import (
+    RETIRED_WEBHOOK_AUTH_KEYS,
+    trigger_config_field,
+)
 from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
@@ -83,6 +86,53 @@ class LiveContext:
         # rather than a single value shape.
         self._objects_by_api: dict[str, Any] = {}
         self._automations_by_api: dict[str, dict[str, Any]] | None = None
+        self._secret_descriptions: dict[str, str] | None = None
+        self._step_pickers: dict[str, list[dict[str, Any]]] = {}
+
+    def mcp_server_uuid(self, api_name: str) -> str:
+        """UUID of an MCP server a call_llm step can attach, by api_name."""
+        from kizen_builder.api.automations import list_mcp_step_options
+
+        options = self._step_picker("mcp_servers", list_mcp_step_options)
+        match = next((o for o in options if o.get("api_name") == api_name), None)
+        if match is None:
+            available = ", ".join(str(o.get("api_name")) for o in options)
+            raise PlanError(
+                f"MCP server '{api_name}' isn't one a Call LLM step can attach "
+                f"in '{self.env}'. Available: {available or '(none)'}"
+            )
+        return match["id"]
+
+    def service_account_uuid(self, name: str) -> str:
+        """UUID of a service account a call_llm step can run its tools as,
+        by name: a user-made account has no api_name."""
+        from kizen_builder.api.automations import list_run_tools_as_options
+
+        options = self._step_picker("run_tools_as", list_run_tools_as_options)
+        matches = [o for o in options if o.get("name") == name]
+        if not matches:
+            available = ", ".join(str(o.get("name")) for o in options)
+            raise PlanError(
+                f"service account '{name}' can't run a Call LLM step's tools "
+                f"in '{self.env}'. Available: {available or '(none)'}"
+            )
+        if len(matches) > 1:
+            ids = ", ".join(m["id"] for m in matches)
+            raise PlanError(
+                f"service account name '{name}' matches {len(matches)} accounts "
+                f"in '{self.env}': {ids}. Use the id instead."
+            )
+        return matches[0]["id"]
+
+    def _step_picker(
+        self, name: str, fetch: Callable[[Any], list[dict[str, Any]]]
+    ) -> list[dict[str, Any]]:
+        if name not in self._step_pickers:
+            from kizen_builder.api.client import KizenClient
+
+            with KizenClient(load_env_config()) as client:
+                self._step_pickers[name] = fetch(client)
+        return self._step_pickers[name]
 
     def object_uuid(self, api_name: str) -> str:
         return self.object_data(api_name)["id"]
@@ -152,6 +202,20 @@ class LiveContext:
             self._automations_by_api = {a["api_name"]: a for a in list_automations()}
         rec = self._automations_by_api.get(api_name)
         return rec["id"] if rec else None
+
+    def integration_secret_description(self, api_name: str) -> str | None:
+        """The secret's description, the label the UI gives its merge field.
+        An unknown name returns None; the server's 400 names it."""
+        if self._secret_descriptions is None:
+            from kizen_builder.api.client import KizenClient
+            from kizen_builder.api.integration_secrets import list_integration_secrets
+
+            with KizenClient(load_env_config()) as client:
+                self._secret_descriptions = {
+                    s["api_name"]: s.get("description") or s["api_name"]
+                    for s in list_integration_secrets(client)
+                }
+        return self._secret_descriptions.get(api_name)
 
     def filter_group_uuid(self, object_api_name: str, identifier: str) -> str:
         """UUID of a saved filter group on ``object_api_name`` by name or UUID."""
@@ -285,6 +349,7 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
     preview = _automation_preview(env, auto, live_active=live_active)
     preview["current_revision"] = current.get("revision")
+    preview.update(_llm_tools_dropped(current, payload))
     return Plan.build(
         env=env,
         summary=f"Update automation '{auto.api_name}'",
@@ -397,6 +462,8 @@ def _merge_server_state(
         if current.get(field) is not None:
             server_fields[field] = current[field]
     merged = {**server_fields, **payload}
+    if "triggers" in merged:
+        merged["triggers"] = _carry_webhook_auth(merged["triggers"], current)
     merged["last_revision"] = current.get("revision")
     return merged
 
@@ -585,12 +652,20 @@ def _automation_preview(
     }
 
 
+# A group's closer is a child of its initiator, not a parallel lane.
+_CLOSER_STEP_TYPES = frozenset({"merge_branches", "next_or_finish"})
+
+
 def _fan_out_warnings(auto: AutomationDef) -> dict[str, Any]:
     """Parallel lanes belong under a `branch` step. A plain fan-out still
     saves, but Kizen's 2026-09-28 migration put a `branch` step in front of
     every one, and an update from a spec without it removes it again."""
     lanes = Counter(
-        s.parent_key for s in auto.steps if s.parent_key and s.parent_branch is None
+        s.parent_key
+        for s in auto.steps
+        if s.parent_key
+        and s.parent_branch is None
+        and s.step_type not in _CLOSER_STEP_TYPES
     )
     types = {s.key: s.step_type for s in auto.steps}
     warnings = [
@@ -600,6 +675,31 @@ def _fan_out_warnings(auto: AutomationDef) -> dict[str, Any]:
         if n > 1 and types[key] != "branch"
     ]
     return {"warnings": warnings} if warnings else {}
+
+
+def _llm_tools_dropped(
+    current: dict[str, Any], payload: dict[str, Any]
+) -> dict[str, list[str]]:
+    """Call LLM steps whose live MCP server or run-as account the update
+    clears, by spec step key. A spec that omits the keys sends null, so an
+    `update` detaches a server attached in the UI. Steps pair as `diff`
+    pairs them: by id, then by position."""
+    from kizen_builder.translate import _wire_pairs
+
+    live_steps = sorted(current.get("steps") or [], key=lambda s: s.get("order") or 0)
+    dropped: dict[str, list[str]] = {}
+    for live, built in _wire_pairs(live_steps, payload.get("steps") or []):
+        if live is None or built is None or built.get("type") != "call_llm":
+            continue
+        was = live.get("action_call_llm") or {}
+        now = built.get("action_call_llm") or {}
+        for read_key, wire_key, cell in (
+            ("mcp_server", "mcp_server_id", "detaches_mcp_server"),
+            ("run_tools_as", "run_tools_as_id", "clears_run_tools_as"),
+        ):
+            if was.get(read_key) and now.get(wire_key) is None:
+                dropped.setdefault(cell, []).append(built["key"])
+    return dropped
 
 
 # ---------------------------------------------------------------------------
@@ -968,9 +1068,72 @@ def _trigger_on_or_around_date(
 
 
 @honours_all
-def _trigger_webhook(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
+def _trigger_webhook(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
+    def resolve_label(namespace: str, field_path: str) -> str | None:
+        if namespace == "integration_secret":
+            return ctx.integration_secret_description(field_path)
+        return None
+
     # Drop server-assigned id; pass through the rest as-is.
-    return _strip(block, drop={"id"})
+    return _webhook_auth(_strip(block, drop={"id"}), resolve_label)
+
+
+_WEBHOOK_AUTH_KEYS = ("auth_type", "headers", "secret")
+
+
+def _webhook_auth(
+    block: dict[str, Any], resolve_label: merge_fields.ResolveLabel
+) -> dict[str, Any]:
+    """Reduce a webhook block's auth to the shape the UI writes (confirmed
+    live 2026-10-27). Reads carry `headers: []`, `secret: null`, an expanded
+    `secret` and, on older captures, the retired `auth_header_*` keys. A
+    header without an `html_value` key gets the UI's rich-text mirror, whose
+    merge-field label for a secret is the secret's description."""
+    out = {k: v for k, v in block.items() if k not in RETIRED_WEBHOOK_AUTH_KEYS}
+    if out.get("secret") is None:
+        out.pop("secret", None)
+    else:
+        out["secret"] = {"api_name": out["secret"].get("api_name")}
+    if not out.get("headers"):
+        out.pop("headers", None)
+    else:
+        out["headers"] = [
+            h
+            if "html_value" in h
+            else {
+                **h,
+                "html_value": "<p>"
+                + merge_fields.render(h["value"], resolve_label=resolve_label)
+                + "</p>",
+            }
+            for h in out["headers"]
+        ]
+    return out
+
+
+def _carry_webhook_auth(
+    triggers: list[dict[str, Any]], current: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """A spec webhook block without `auth_type` keeps the live trigger's auth:
+    a PUT without it resets the trigger to Kizen API auth and changes its
+    URL. Matched by trigger id, else by webhook name."""
+    live = [t for t in current.get("triggers") or [] if t.get("trigger_webhook")]
+    by_id = {t["id"]: t["trigger_webhook"] for t in live if t.get("id")}
+    by_name = {t["trigger_webhook"].get("name"): t["trigger_webhook"] for t in live}
+    out = []
+    for t in triggers:
+        block = t.get("trigger_webhook")
+        if t.get("type") != "webhook" or block is None or "auth_type" in block:
+            out.append(t)
+            continue
+        match = by_id.get(t.get("id")) or by_name.get(block.get("name"))
+        if match is None:
+            out.append(t)
+            continue
+        auth = _webhook_auth(match, lambda _ns, _path: None)
+        carried = {k: auth[k] for k in _WEBHOOK_AUTH_KEYS if k in auth}
+        out.append({**t, "trigger_webhook": {**block, **carried}})
+    return out
 
 
 @honours_all
@@ -1178,7 +1341,9 @@ _ACTION_STEP_TYPES = {
 
 
 # Read with no config block at all, so none is written either.
-_CONFIGLESS_STEP_TYPES = frozenset({"branch", "merge_branches"})
+_CONFIGLESS_STEP_TYPES = frozenset(
+    {"branch", "merge_branches", "next_or_finish", "exit_loop"}
+)
 
 
 def _prefix_for(step_type: str) -> str:
@@ -1187,7 +1352,7 @@ def _prefix_for(step_type: str) -> str:
 
 def _block_field_for(step_type: str) -> str:
     """Map step_type to its config field on AutomationStepDef."""
-    if step_type in ("condition", "delay", "goal"):
+    if step_type in ("condition", "delay", "goal", "loop"):
         return f"step_{step_type}"
     return f"action_{step_type}"
 
@@ -1218,7 +1383,9 @@ def _build_step_payload(
     if step.description:
         p["description"] = step.description
     # Emitted only when set, so a spec that predates them builds unchanged.
-    if step.is_branch_group_initiator:
+    # A loop is always an initiator: the server stores true even when false
+    # is sent (confirmed live 2026-10-27).
+    if step.is_branch_group_initiator or step.step_type == "loop":
         p["is_branch_group_initiator"] = True
     if step.continue_with_branch is not None:
         p["continue_with_branch"] = step.continue_with_branch
@@ -1438,6 +1605,24 @@ def _built_block_problem(
         return _scalar_value_resolution_problem(key, block, auto)
     if step_type == "assign_team_member":
         return _assign_team_member_problem(key, block, auto, ctx)
+    if step_type == "call_llm":
+        return _llm_tools_pairing_problem(key, block)
+    return None
+
+
+def _llm_tools_pairing_problem(key: str, block: dict[str, Any]) -> str | None:
+    """The write rejects a call_llm step with only one of the pair."""
+    server, account = block.get("mcp_server_id"), block.get("run_tools_as_id")
+    if server and not account:
+        return (
+            f"step '{key}': mcp_server is set without run_tools_as. Kizen runs "
+            "an MCP server's tools as a service account, so set both or neither."
+        )
+    if account and not server:
+        return (
+            f"step '{key}': run_tools_as is set without mcp_server. "
+            "Set both or neither."
+        )
     return None
 
 
@@ -1534,6 +1719,19 @@ def _step_goal(
         triggers.append(p)
     out["triggers"] = triggers
     return out
+
+
+@honours("loop_type", "array_variable", "item_variable")
+def _step_loop(
+    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+) -> dict[str, Any]:
+    # Reads expand both variables; the write takes their names, and their ids
+    # are refused (confirmed live 2026-10-27).
+    return {
+        "loop_type": block.get("loop_type") or "for_each_item",
+        "array_variable": _unwrap_variable_name(block.get("array_variable")),
+        "item_variable": _unwrap_variable_name(block.get("item_variable")),
+    }
 
 
 @honours_all
@@ -2255,6 +2453,12 @@ def _normalize_variable(v: Any) -> Any:
     "destinations",
     "is_advanced",
     "merge_field_validation",
+    "mcp_server",
+    "mcp_server_id",
+    "run_tools_as",
+    "run_tools_as_id",
+    "max_sequential_turns",
+    "tool_failure_policy",
 )
 def _step_call_llm(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -2289,7 +2493,44 @@ def _step_call_llm(
         out["is_advanced"] = block["is_advanced"]
     if block.get("merge_field_validation"):
         out["merge_field_validation"] = block["merge_field_validation"]
-    return {k: v for k, v in out.items() if v is not None}
+    out = {k: v for k, v in out.items() if v is not None}
+    # Always sent, null included: a PUT that omits both ids keeps the server
+    # and clears the account, a pairing the write itself rejects.
+    out["mcp_server_id"] = _tool_ref_uuid(
+        "mcp_server",
+        block.get("mcp_server_id"),
+        block.get("mcp_server"),
+        ctx.mcp_server_uuid,
+    )
+    out["run_tools_as_id"] = _tool_ref_uuid(
+        "run_tools_as",
+        block.get("run_tools_as_id"),
+        block.get("run_tools_as"),
+        ctx.service_account_uuid,
+    )
+    turns = block.get("max_sequential_turns")
+    out["max_sequential_turns"] = 25 if turns is None else turns
+    out["tool_failure_policy"] = block.get("tool_failure_policy") or "never_fail"
+    return out
+
+
+def _tool_ref_uuid(
+    key: str, id_value: Any, value: Any, resolve: Callable[[str], str]
+) -> str | None:
+    """A call_llm tool reference as the bare UUID the wire takes. A read's
+    expanded object yields its id and a UUID passes through, so translate
+    never reaches ``resolve``; any other string is a name to look up."""
+    resolved: set[str] = set()
+    for v in (id_value, value):
+        if isinstance(v, dict):
+            v = v.get("id")
+        elif v is not None and not is_uuid(v):
+            v = resolve(v)
+        if v is not None:
+            resolved.add(v)
+    if len(resolved) > 1:
+        raise PlanError(f"set {key} or {key}_id, not both")
+    return next(iter(resolved), None)
 
 
 def _normalize_destinations(destinations: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -3058,6 +3299,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "condition": _step_condition,
     "delay": _step_delay,
     "goal": _step_goal,
+    "loop": _step_loop,
     "stop_execution": _step_stop_execution,
     "code_step": _step_code_step,
     "plugin_code_step": _step_plugin_code_step,

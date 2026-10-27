@@ -242,7 +242,10 @@ def steps_add(
 ) -> None:
     """Insert one step. The spec is a single AutomationDef step (step_type +
     config block; field_refs welcome); placement comes from the flags, and
-    by default the parent's existing children move under the new step."""
+    by default the parent's existing children move under the new step, except
+    a next_or_finish or merge_branches, which stays on its loop or group. A
+    loop comes with its next_or_finish and a new `<array>_item` variable, and
+    the parent's children follow the next_or_finish."""
     if bool(parent) == root:
         err_console.print("[red]error:[/red] pass exactly one of --parent or --root")
         raise typer.Exit(code=2)
@@ -250,14 +253,16 @@ def steps_add(
 
     def mutate(payload: dict[str, Any], raw: dict[str, Any]) -> Any:
         target_object = (raw.get("custom_object") or {}).get("name")
+        parent_key, adopt = parent or None, not leaf
+        if spec.get("step_type") == "loop":
+            loop, closer, item = auto_tools.build_wire_loop(
+                spec, payload, target_object
+            )
+            return step_tools.insert_loop(
+                payload, loop, closer, item, parent_key, branch, adopt
+            )
         wire = auto_tools.build_wire_step(spec, payload, target_object)
-        return step_tools.insert_step(
-            payload,
-            wire,
-            parent_key=parent or None,
-            branch=branch,
-            adopt_children=not leaf,
-        )
+        return step_tools.insert_step(payload, wire, parent_key, branch, adopt)
 
     _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
 
@@ -274,7 +279,9 @@ def steps_remove(
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
     """Splice one step out of the graph (children adopt its parent, go_to
-    references retarget). A condition/goal with children needs --cascade."""
+    references retarget). A condition or goal with children, or a loop with a
+    body, needs --cascade. A loop with an empty body goes with its
+    next_or_finish, which goes only with its loop."""
 
     def mutate(payload: dict[str, Any], raw: dict[str, Any]) -> Any:
         return step_tools.remove_step(payload, key, cascade=cascade)

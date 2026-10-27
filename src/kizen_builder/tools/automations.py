@@ -132,14 +132,16 @@ def get_automation(api_name: str) -> dict[str, Any]:
             raise LookupError(f"no automation with api_name '{api_name}'")
         detail = auto_api.get_automation(client, match["id"])
 
-    triggers = [
-        {
+    triggers = []
+    for t in detail.get("triggers") or []:
+        row = {
             "id": t.get("id"),
             "trigger_type": t.get("trigger_type"),
             "description": t.get("description"),
         }
-        for t in (detail.get("triggers") or [])
-    ]
+        if t.get("trigger_type") == "webhook":
+            row["auth_type"] = (t.get("trigger_webhook") or {}).get("auth_type")
+        triggers.append(row)
 
     steps = []
     for s in detail.get("steps") or []:
@@ -424,8 +426,90 @@ def build_wire_step(
     Linkage fields are ignored here — placement belongs to insert_step. Any
     ``id`` on the spec is dropped too: this builds a *new* step, and a spec
     authored by copying an existing step's ``steps get`` output must not
-    carry that step's id along and hijack its identity.
+    carry that step's id along and hijack its identity. A ``loop`` goes
+    through :func:`build_wire_loop` instead.
     """
+    from kizen_builder.tools.plans import PlanError
+
+    if spec.get("step_type") == "next_or_finish":
+        raise PlanError(
+            "a next_or_finish can't be added on its own; 'steps add' of a loop "
+            "adds the loop's next_or_finish with it."
+        )
+    return _build_wire(spec, payload, target_object)
+
+
+def build_wire_loop(
+    spec: dict[str, Any], payload: dict[str, Any], target_object: str | None
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+    """Build a loop, its ``next_or_finish`` and its item variable step, as
+    Kizen's builder does. The item variable is always created, named
+    ``<array>_item`` (``_2``, ``_3``… when taken), with the array's type. It is
+    ``None`` when the payload declares no such array: validation then refuses
+    the loop. Placement belongs to :func:`steps.insert_loop`.
+    """
+    from kizen_builder.tools.planners.automations import _unwrap_variable_name
+    from kizen_builder.tools.plans import PlanError
+
+    block = dict(spec.get("step_loop") or {})
+    array = _unwrap_variable_name(block.get("array_variable"))
+    if "item_variable" in block:
+        raise PlanError(
+            "step_loop.item_variable can't be set in 'steps add': the item "
+            f"variable is created automatically, named '{array}_item'. Remove it "
+            "from the spec."
+        )
+    declared: dict[str, dict[str, Any]] = {}
+    for s in payload["steps"]:
+        var = (s.get("action_initialize_variable") or {}).get("variable")
+        if s["type"] == "initialize_variable" and isinstance(var, dict):
+            declared.setdefault(var.get("name") or "", var)
+    item_name, n = f"{array}_item", 2
+    while item_name in declared:
+        item_name, n = f"{array}_item_{n}", n + 1
+
+    block["item_variable"] = item_name
+    loop = _build_wire(
+        {
+            **spec,
+            "step_loop": block,
+            "description": spec.get("description") or f"For each item in '{array}'",
+        },
+        payload,
+        target_object,
+    )
+    closer = _build_wire(
+        {
+            "step_type": "next_or_finish",
+            "description": "Next item or finish loop and continue",
+        },
+        payload,
+        target_object,
+    )
+    item = None
+    if array in declared:
+        variable = {
+            "name": item_name,
+            "data_type": declared[array].get("data_type"),
+            "is_array": False,
+        }
+        if declared[array].get("data_subtype"):
+            variable["data_subtype"] = declared[array]["data_subtype"]
+        item = _build_wire(
+            {
+                "step_type": "initialize_variable",
+                "description": "Item Reference Variable",
+                "action_initialize_variable": {"sources": [], "variable": variable},
+            },
+            payload,
+            target_object,
+        )
+    return loop, closer, item
+
+
+def _build_wire(
+    spec: dict[str, Any], payload: dict[str, Any], target_object: str | None
+) -> dict[str, Any]:
     from kizen_builder.models.spec import AutomationStepDef
     from kizen_builder.tools.planners.automations import (
         LiveContext,

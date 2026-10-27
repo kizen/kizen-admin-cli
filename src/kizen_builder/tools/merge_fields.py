@@ -52,6 +52,9 @@ MERGE_FIELD_RE = re.compile(r"\{\{\s*([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)\s*\}\}"
 # `automation_history`, whose labels vary by containing automation
 # (`merge-field-markup-captured-live.md`) — it is reserved because it has no
 # queryable live metadata source, not because its labels are stable.
+# `integration_secret` and `business_variable` are the webhook-header
+# namespaces: the UI's 2026-10-27 capture of an `integration_secret` header
+# carries no `objectname`, and its label is the secret's description.
 #
 # This must be an explicit allowlist, not "did a live object lookup for this
 # token succeed" — `contact` is itself a real, live-queryable object api_name
@@ -66,6 +69,8 @@ RESERVED_NAMESPACES = frozenset(
         "contact",
         "automation_variable",
         "automation_history",
+        "integration_secret",
+        "business_variable",
     }
 )
 

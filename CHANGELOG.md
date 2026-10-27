@@ -14,6 +14,73 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-27
+
+### Added
+
+- **Automation specs can author loops.** A spec names the array variable,
+  its item variable, a `loop` step with `step_loop: {array_variable,
+  item_variable}`, the body, a `next_or_finish` closer and any `exit_loop`
+  steps, and `create`, `update` and `diff` handle them like any other step.
+  A loop is always sent as a branch group initiator. `diff` no longer
+  reports the keys Kizen adds to a loop's item variable. The plan preview
+  no longer warns about a fan-out on every loop. The plan refuses a loop
+  nested more than three deep, or one over the same array as a loop around
+  it, as Kizen's builder does. `kizen docs show automation` has a worked
+  example.
+- **`automations steps add` of a `loop` adds its `next_or_finish` and its
+  item variable, as Kizen's builder does.** `steps remove` of a loop with an
+  empty body removes its closer with it and keeps the steps after it.
+- **Webhook trigger specs accept `auth_type`, `headers` and `secret`** (all
+  four auth types), and **`automations get` shows each webhook's auth
+  type**. See `kizen docs show automation`.
+- **Automation specs can give a Call LLM step an MCP server's tools:**
+  `mcp_server` (api_name or UUID), `run_tools_as` (a service account's name
+  or UUID), `max_sequential_turns` and `tool_failure_policy`. Set the server
+  and the account together; `--dry-run` refuses one without the other. A
+  spec that leaves them out gets no server, so `update` detaches one attached
+  in the UI. `update --dry-run` names those steps (`detaches_mcp_server=`),
+  and `diff` shows the change.
+- **`kizen mcp-servers`** lists, creates, updates and deletes MCP servers
+  from a spec, checks tool names against the live catalogue, and shows a
+  server's tools and change history.
+- **`kizen service-accounts`** lists, creates, updates, deletes and shows
+  the history of integration service accounts, with permission groups by
+  name. API keys are never printed.
+
+### Fixed
+
+- **`automations diff` no longer reports Kizen's defaults as changes when a
+  spec leaves them out.** An omitted `error_notification_email`,
+  `deduplicate_array`, `array_separator` (on a static list source),
+  `value_html` (on an `update_variable` source), or `description` on the
+  steps and trigger Kizen gives a fixed one (`kizen docs show automation`
+  lists them) is compared as the value Kizen stores for it. So is a null
+  key in a top-level or `initialize_variable` variable definition. A spec
+  that sets a different value still shows the change.
+- **CLI writes no longer fail on automations with loops, and `show` renders
+  loops.** `activate`, `deactivate`, `move`, `steps add|edit|remove` and
+  `roundtrip --execute` failed with `HTTP 400: … step_loop must be provided
+  for loop` on any automation with a loop, after a clean `--dry-run`. They
+  now write it back unchanged. `--dry-run` catches a broken loop and names
+  the step. `show` labels each loop with its array and item variables and
+  puts its body under it. `steps add --parent <loop>` puts the new step at
+  the head of the body, `steps add` builds an `exit_loop`, and
+  `steps remove` refuses to leave a loop unclosed.
+- **`automations update` no longer resets a webhook trigger's
+  authentication to Kizen API auth when the spec leaves it out**, and
+  `automations diff` no longer shows that reset. The trigger keeps its live
+  auth, so its URL no longer changes under external callers. Set
+  `auth_type` to change it.
+- **Automations with an AI (Call LLM) step can be shown, diffed and edited
+  again.** Since Kizen's 2026-10-26 release every such step carries two
+  settings the CLI refused, so `show`, `diff`, `steps`, `activate`,
+  `deactivate`, `move` and `roundtrip` stopped on any automation with one.
+- **`automations update` from a spec no longer leaves an MCP-attached Call
+  LLM step without its run-as account.** Kizen kept the server and dropped
+  the account when a step's spec left both out, storing a step it then
+  refuses to save.
+
 ## [0.3.0] — 2026-10-21
 
 ### Changed
@@ -1296,6 +1363,7 @@ who isn't its author.
 The tool's history before versioning is recorded in [ROADMAP.md](ROADMAP.md)
 under "Shipped before 0.2.0".
 
-[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kizen/kizen-admin-cli/releases/tag/v0.2.0

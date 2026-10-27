@@ -21,9 +21,11 @@ the wire formats, endpoints, and confirmed quirks together.
 | Activity types, logged & scheduled activities | `activity` |
 | Forms & surveys (incl. `form_ui` pages) | `form` |
 | Dashboards & homepages | `dashboard` |
+| MCP servers (the tools AI steps and MCP clients use) | `mcp-server` |
 | Record layouts | `layout` |
 | Filter groups, quick filters, column templates | `saved-views` |
 | Roles & permission groups | `permission-group` |
+| Service accounts (run-tools-as identities) | `service-account` |
 | Smart connectors (API + local dev loop) | `smart-connectors` |
 | A connector's flow spec (`configure-flow`) | `smart-connector-flow` |
 | Email templates & automation messages | `email-templates` |
