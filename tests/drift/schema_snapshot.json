@@ -2,7 +2,7 @@
   "_meta": {
     "base_url": "https://app.go.kizen.com",
     "captured": "2026-10-14",
-    "contracts_tracked": 69,
+    "contracts_tracked": 72,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
       "title": "Kizen API",
@@ -86,6 +86,19 @@
       ],
       "schema_path": "/api/role/{id}",
       "surface": "permissions"
+    },
+    "DELETE /api/service-accounts/{id}": {
+      "label": "delete service account",
+      "present": true,
+      "query_params": [
+        "ordering"
+      ],
+      "request_schema": null,
+      "responses": [
+        "204"
+      ],
+      "schema_path": "/api/service-accounts/{id}",
+      "surface": "service_accounts"
     },
     "PATCH /api/custom-objects/{object_identifier}": {
       "label": "update custom object",
@@ -274,6 +287,30 @@
       ],
       "schema_path": "/api/role/{id}",
       "surface": "permissions"
+    },
+    "PATCH /api/service-accounts/{id}": {
+      "label": "update service account",
+      "present": true,
+      "query_params": [
+        "ordering"
+      ],
+      "request_body": {
+        "present": true,
+        "properties": {
+          "api_name": "string",
+          "name": "string",
+          "permission_groups": "array[string<uuid>]"
+        },
+        "required": [],
+        "type": "object"
+      },
+      "request_required": false,
+      "request_schema": "PatchedServiceAccountWriteRequest",
+      "responses": [
+        "200"
+      ],
+      "schema_path": "/api/service-accounts/{id}",
+      "surface": "service_accounts"
     },
     "POST /api/automation2/automations": {
       "label": "create automation",
@@ -743,6 +780,30 @@
       ],
       "schema_path": "/api/role",
       "surface": "permissions"
+    },
+    "POST /api/service-accounts": {
+      "label": "create service account",
+      "present": true,
+      "query_params": [
+        "ordering"
+      ],
+      "request_body": {
+        "present": true,
+        "properties": {
+          "api_name": "string",
+          "name": "string",
+          "permission_groups": "array[string<uuid>]"
+        },
+        "required": [],
+        "type": "object"
+      },
+      "request_required": false,
+      "request_schema": "ServiceAccountWriteRequest",
+      "responses": [
+        "201"
+      ],
+      "schema_path": "/api/service-accounts",
+      "surface": "service_accounts"
     },
     "PUT /api/automation2/automations/{automation_identifier}": {
       "label": "replace automation",

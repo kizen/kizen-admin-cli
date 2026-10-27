@@ -113,6 +113,7 @@ src/kizen_builder/
     records.py                   #   record-level reads/writes (custom objects + built-ins)
     saved_views.py               #   filter groups / quick filters / column templates
     schema.py                    #   schema lookups backing the filtering DSL
+    service_accounts.py          #   service-account CRUD + history (strips the key from create)
     smart_connectors.py          #   smart-connector CRUD, scripts, executions
     team.py                      #   team-member reads + role changes
   tools/                         # Tool functions. What the CLI mostly calls.
@@ -132,6 +133,7 @@ src/kizen_builder/
     plans.py                     #   Plan / PlanOperation models, apply_plan()
     records.py                   #   get_record(), search_records()
     saved_views.py               #   list/get filter groups, quick filters, column templates
+    service_accounts.py          #   resolve a service account; list/get/history
     smart_connectors/            #   inspection + authoring + local pull/run/push dev loop
       __init__.py                #     re-export facade — `from ... import smart_connectors as sct`
       _common.py                 #     MARKER_NAME, execution-metadata keys, shared helpers
@@ -165,6 +167,7 @@ src/kizen_builder/
       pipeline_stages.py         #     plan_create/update/remove stages, record stage-move
       records.py                 #     plan_create/update/delete records (data, not schema)
       saved_views.py             #     plan_create/update/delete the three saved-view kinds
+      service_accounts.py        #     plan_create/update/delete integration service accounts
       team.py                    #     plan_update_team_member_roles
   filtering.py                   # Filter DSL (Field, All/Any, search/filter-config rendering).
   translate.py                   # Automation GET → PUT wire translation.
@@ -187,6 +190,7 @@ src/kizen_builder/
     filters.py                   #   kizen filters (the operator reference)
     team.py                      #   kizen team
     permissions.py               #   kizen roles + kizen permissions
+    service_accounts.py          #   kizen service-accounts
     automations.py               #   kizen automations — reads, start, diagnostics
     steps.py                     #   kizen automations steps
     messages.py                  #   kizen messages

@@ -253,6 +253,9 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **`kizen service-accounts`** lists, creates, updates, deletes and shows
+  the history of integration service accounts, with permission groups by
+  name. API keys are never printed.
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
   dashlets. `--name` names the copy, and `dashboards duplicate` also takes

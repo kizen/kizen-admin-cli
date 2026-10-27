@@ -73,6 +73,9 @@ and falls back to `/api/team/typeahead` (name/email search) otherwise.
 sends the whole set, its replace-vs-merge semantics are undocumented, and the
 same body carries `fields` and `permission_groups`.
 
+Service accounts are not team members: `/api/team` and its typeahead exclude
+them (confirmed live 2026-10-27). See [`service-account.md`](service-account.md).
+
 ## See also
 
 - [`permission-group.md`](permission-group.md) — `role -> group -> control`,

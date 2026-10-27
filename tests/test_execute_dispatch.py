@@ -397,6 +397,12 @@ ROWS = [
     *_form_like("form", "/api/forms"),
     *_form_like("survey", "/api/surveys"),
     *_crud("role", "/api/role", f"/api/role/{E}", parent=False),
+    *_crud(
+        "service_account",
+        "/api/service-accounts",
+        f"/api/service-accounts/{E}",
+        parent=False,
+    ),
     _row(
         "team_member",
         "update",

@@ -24,6 +24,7 @@ the wire formats, endpoints, and confirmed quirks together.
 | Record layouts | `layout` |
 | Filter groups, quick filters, column templates | `saved-views` |
 | Roles & permission groups | `permission-group` |
+| Service accounts (run-tools-as identities) | `service-account` |
 | Smart connectors (API + local dev loop) | `smart-connectors` |
 | A connector's flow spec (`configure-flow`) | `smart-connector-flow` |
 | Email templates & automation messages | `email-templates` |
