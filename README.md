@@ -71,8 +71,8 @@ non-secret files:
   `AGENTS.md` is left alone.
 
 For scripted setup, `kizen init --help` lists the flags. The environment needs
-`--base-url`, which has no `KIZEN_*` variable. With nothing on stdin, a missing
-value that has no default exits 2 and names the flag to pass.
+`--base-url`; `kizen init` reads no `KIZEN_*` variable for it. With nothing
+on stdin, a missing value that has no default exits 2 and names the flag to pass.
 
 ## Then talk to it
 
