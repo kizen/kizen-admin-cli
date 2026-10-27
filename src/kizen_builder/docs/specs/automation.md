@@ -138,7 +138,9 @@ sets a step's own severity. Omitted, the step inherits. Confirmed live
 
 A loop runs its body once per item of an array variable. Loops are branch
 group initiators, closed by `next_or_finish` instead of `merge_branches`. A
-spec names all six parts; the CLI adds none of them:
+spec names all six parts; `create` and `update` add none of them. `steps add`
+of a loop adds its closer and item variable (see `kizen docs show
+automation-step`):
 
 1. **The array variable:** an `initialize_variable` step with `is_array: true`.
 2. **Its item variable:** an `initialize_variable` step with `sources: []`,

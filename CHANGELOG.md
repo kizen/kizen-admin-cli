@@ -263,6 +263,9 @@ called out explicitly under **Changed** or **Removed**.
   nested more than three deep, or one over the same array as a loop around
   it, as Kizen's builder does. `kizen docs show automation` has a worked
   example.
+- **`automations steps add` of a `loop` adds its `next_or_finish` and its
+  item variable, as Kizen's builder does.** `steps remove` of a loop with an
+  empty body removes its closer with it and keeps the steps after it.
 - **`activities duplicate <activity>`** copies an activity type, and
   **`dashboards duplicate <dashboard>`** copies a dashboard with its
   dashlets. `--name` names the copy, and `dashboards duplicate` also takes

@@ -99,16 +99,28 @@ Consequences worth knowing:
   `next_or_finish` or `merge_branches` child is never adopted, so `--parent
   <loop>` puts the new step at the head of the loop body, and `--parent
   <next_or_finish>` puts it right after the loop. An `exit_loop` adds like any
-  step. A `loop` or `next_or_finish` can't be added on its own: add the loop,
-  its closer and its item variable with `kizen automations update
-  --spec-file`.
+  step.
+- **`add` of a `loop` adds its `next_or_finish` and its item variable too**, as
+  Kizen's builder does. The spec is `{"step_type": "loop", "step_loop":
+  {"array_variable": "<array>"}}`, and the array must already be declared by
+  an `initialize_variable` step; the CLI never creates it. The item variable is
+  always created, named `<array>_item` (`<array>_item_2`, `_3`… when the name
+  is taken), with the array's type, in a new `initialize_variable` step after
+  the other variable steps. A spec that sets `step_loop.item_variable` is
+  refused. The loop's body starts empty, and the parent's existing children
+  follow the `next_or_finish`, so they run once, after the loop (`--leaf`
+  leaves them on the parent). A `next_or_finish` can't be added on its own.
+  Confirmed live 2026-10-27, with `roundtrip --execute` clean after each add
+  and remove.
 - **`remove` splices:** children adopt the removed step's parent and inherit its
   branch position, and `go_to` references retarget to that parent. Removing a
   condition or goal that has children requires `--cascade`, which deletes the
-  whole subtree. So does a loop with steps under it, where the subtree is the
-  body and everything after the loop. A `next_or_finish` can't be removed, even
-  with `--cascade`: remove its loop instead. Removing the last body step leaves
-  an empty body, which is valid.
+  whole subtree. So does a loop with body steps, where the subtree is the body
+  and everything after the loop. A loop with an empty body is removed with its
+  `next_or_finish`, the steps after it move up, and its item variable step
+  stays. A `next_or_finish` can't be removed, even with `--cascade`: remove its
+  loop instead. Removing the last body step leaves an empty body, which is
+  valid.
 - **The post-apply diff is positional**, so a mid-graph change shows up as
   every later step shifting. Verify structure with `show` and treat the diff as
   the audit trail, not as a minimal changeset.

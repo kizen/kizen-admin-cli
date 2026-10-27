@@ -88,7 +88,9 @@ def remove_step(
     Without cascade: children adopt the removed step's parent (inheriting
     its branch position), and go_to steps targeting it are retargeted to the
     same parent. Refuses to splice a condition/goal that still has children
-    — their yes/no positions have no meaning under a different parent.
+    — their yes/no positions have no meaning under a different parent — or a
+    loop with a body. A loop with an empty body goes with its
+    next_or_finish, whose children take the loop's place.
 
     Returns a report: removed keys, (child, new_parent) re-parentings, and
     retargeted go_to keys.
@@ -111,15 +113,19 @@ def remove_step(
                 "orphan its yes/no branches. Remove or re-parent them first, "
                 "or pass cascade=True to delete the whole subtree."
             )
-        if dead["type"] == "loop" and kids:
-            raise PlanError(
-                f"'{key}' is a loop with steps under it "
-                f"({', '.join(k['key'] for k in kids)}); removing it alone would "
-                "leave its next_or_finish without a loop. Remove its body first, "
-                "or pass cascade=True to delete the loop with its body and "
-                "everything after it."
-            )
         doomed = {key}
+        if dead["type"] == "loop":
+            body = [k["key"] for k in kids if k["type"] != "next_or_finish"]
+            if body:
+                raise PlanError(
+                    f"'{key}' is a loop with steps under it ({', '.join(body)}); "
+                    "removing it alone would leave its next_or_finish without a "
+                    "loop. Remove its body first, or pass cascade=True to delete "
+                    "the loop with its body and everything after it."
+                )
+            closers = [k["key"] for k in kids]
+            doomed.update(closers)
+            kids = [c for k in closers for c in children_of(payload, k)]
 
     new_parent = dead.get("parent_key")
     gotos = _gotos_pointing_at(payload, doomed)
@@ -207,6 +213,43 @@ def insert_step(
     payload["steps"].append(new_step)
     renumber_steps(payload)
     return report
+
+
+def insert_loop(
+    payload: dict[str, Any],
+    loop: dict[str, Any],
+    closer: dict[str, Any],
+    item: dict[str, Any] | None,
+    parent_key: str | None = None,
+    branch: str = "",
+    adopt_children: bool = True,
+) -> dict[str, Any]:
+    """Link a built loop, its ``next_or_finish`` and its item variable step.
+
+    The loop goes where :func:`insert_step` puts any step, with an empty body.
+    With ``adopt_children`` the parent's children follow the closer, so they
+    run once after the loop, as in Kizen's builder. The item variable step goes
+    after the last ``initialize_variable``, since variables come first.
+    """
+    report = insert_step(payload, loop, parent_key, branch, adopt_children)
+    insert_step(payload, closer, loop["key"])
+    out: dict[str, Any] = {
+        "key": loop["key"],
+        "closer": closer["key"],
+        "item_variable": None,
+        "adopted": report["adopted"],
+    }
+    if item is not None:
+        last_var = max(
+            (s for s in payload["steps"] if s["type"] == "initialize_variable"),
+            key=lambda s: s.get("order") or 0,
+        )
+        insert_step(payload, item, last_var["key"])
+        out["item_variable"] = {
+            "name": item["action_initialize_variable"]["variable"]["name"],
+            "key": item["key"],
+        }
+    return out
 
 
 def edit_step(

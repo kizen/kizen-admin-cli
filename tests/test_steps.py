@@ -256,9 +256,8 @@ def test_remove_loop_with_steps_under_it_refuses(loops: dict) -> None:
     with pytest.raises(PlanError) as e:
         remove_step(loops, "s10_loop")
     assert str(e.value) == (
-        "'s10_loop' is a loop with steps under it (s11_delay, "
-        "s12_next_or_finish); removing it alone would leave its next_or_finish "
-        "without a loop. Remove its body first, or pass cascade=True to delete "
+        "'s10_loop' is a loop with steps under it (s11_delay); removing it "
+        "alone would leave its next_or_finish without a loop. Remove its body first, or pass cascade=True to delete "
         "the loop with its body and everything after it."
     )
 
@@ -300,22 +299,223 @@ def test_steps_add_builds_an_exit_loop(loops: dict) -> None:
     assert validate_payload(loops) == []
 
 
-@pytest.mark.parametrize(
-    "step_type, counterpart",
-    [("loop", "next_or_finish"), ("next_or_finish", "loop")],
-)
-def test_steps_add_refuses_half_a_loop(
-    loops: dict, step_type: str, counterpart: str
-) -> None:
+# `steps add` of a loop: the loop, its next_or_finish and its item variable.
+
+
+def _loop_spec(array: str) -> dict:
+    return {"step_type": "loop", "step_loop": {"array_variable": array}}
+
+
+def _chain() -> dict:
+    """arr (String array of three), seen (String), then stops a → b."""
     from kizen_builder.tools.automations import build_wire_step
 
-    spec = {"step_type": step_type}
-    if step_type == "loop":
-        spec["step_loop"] = {"array_variable": "arr0", "item_variable": "arr0_item"}
-    with pytest.raises(PlanError) as e:
-        build_wire_step(spec, loops, "object_with_workflow")
-    assert str(e.value) == (
-        f"a {step_type} is added together with its {counterpart} and the loop's "
-        "item variable, which one 'steps add' can't do. Add it with "
-        "'kizen automations update --spec-file'."
+    payload: dict = {"name": "Chain", "api_name": "chain", "type": "global"}
+    payload.update(steps=[], triggers=[])
+    specs = [
+        {
+            "key": "arr",
+            "step_type": "initialize_variable",
+            "action_initialize_variable": {
+                "variable": {"name": "arr", "data_type": "string", "is_array": True},
+                "sources": [
+                    {
+                        "source_type": "static",
+                        "source_subtype": "string",
+                        "value": ["x", "y", "z"],
+                    }
+                ],
+                "array_aggregation_mode": "add_all",
+            },
+        },
+        {
+            "key": "seen",
+            "step_type": "initialize_variable",
+            "action_initialize_variable": {
+                "variable": {"name": "seen", "data_type": "string"},
+                "sources": [],
+            },
+        },
+        {"key": "a", "step_type": "stop_execution", "action_stop_execution": {}},
+        {"key": "b", "step_type": "stop_execution", "action_stop_execution": {}},
+    ]
+    parent = None
+    for spec in specs:
+        insert_step(payload, build_wire_step(spec, payload, None), parent)
+        parent = spec["key"]
+    return payload
+
+
+def _add_loop(payload: dict, array: str, parent: str, **placement) -> dict:
+    from kizen_builder.tools.automations import build_wire_loop
+    from kizen_builder.tools.steps import insert_loop
+
+    target = "object_with_workflow" if payload["type"] == "record_based" else None
+    loop, closer, item = build_wire_loop(_loop_spec(array), payload, target)
+    return insert_loop(payload, loop, closer, item, parent, **placement)
+
+
+def _chain_keys(payload: dict) -> list[str]:
+    return [s["key"] for s in sorted(payload["steps"], key=lambda s: s["order"])]
+
+
+def _variables_first(payload: dict) -> bool:
+    types = [s["type"] for s in sorted(payload["steps"], key=lambda s: s["order"])]
+    n = types.count("initialize_variable")
+    return set(types[:n]) == {"initialize_variable"}
+
+
+def test_steps_add_loop_mid_chain_follows_with_the_old_children() -> None:
+    payload = _chain()
+    report = _add_loop(payload, "arr", "a")
+    loop, closer = report["key"], report["closer"]
+    item = report["item_variable"]
+    assert item["name"] == "arr_item"
+    assert report["adopted"] == ["b"]
+    assert _chain_keys(payload) == ["arr", "seen", item["key"], "a", loop, closer, "b"]
+    assert find_step(payload, "b")["parent_key"] == closer
+    assert find_step(payload, closer)["parent_key"] == loop
+    assert find_step(payload, loop)["step_loop"]["item_variable"] == "arr_item"
+    assert find_step(payload, loop)["description"] == "For each item in 'arr'"
+    assert find_step(payload, closer)["description"] == (
+        "Next item or finish loop and continue"
     )
+    item_step = find_step(payload, item["key"])
+    assert item_step["description"] == "Item Reference Variable"
+    assert item_step["action_initialize_variable"]["sources"] == []
+    variable = item_step["action_initialize_variable"]["variable"]
+    assert (variable["data_type"], variable["is_array"]) == ("string", False)
+    assert "data_subtype" not in variable
+    assert _variables_first(payload)
+    assert validate_payload(payload) == []
+
+
+def test_steps_add_loop_under_the_last_variable_step() -> None:
+    payload = _chain()
+    report = _add_loop(payload, "arr", "seen")
+    item, loop = report["item_variable"]["key"], report["key"]
+    assert report["adopted"] == ["a"]
+    assert _chain_keys(payload) == [
+        "arr",
+        "seen",
+        item,
+        loop,
+        report["closer"],
+        "a",
+        "b",
+    ]
+    assert find_step(payload, loop)["parent_key"] == item
+    assert find_step(payload, item)["parent_key"] == "seen"
+    assert validate_payload(payload) == []
+
+
+def test_steps_add_loop_as_a_leaf() -> None:
+    payload = _chain()
+    report = _add_loop(payload, "arr", "b", adopt_children=False)
+    assert report["adopted"] == []
+    assert find_step(payload, report["key"])["parent_key"] == "b"
+    assert children_of(payload, report["closer"]) == []
+    assert validate_payload(payload) == []
+
+
+def test_steps_add_loop_in_a_condition_branch(loops: dict) -> None:
+    report = _add_loop(loops, "arr1", "s05_condition", branch="yes")
+    loop = find_step(loops, report["key"])
+    assert (loop["parent_key"], loop["parent_yes_no"]) == ("s05_condition", "yes")
+    assert report["adopted"] == ["s06_delay"]
+    moved = find_step(loops, "s06_delay")
+    assert (moved["parent_key"], moved["parent_yes_no"]) == (report["closer"], "")
+    assert report["item_variable"]["name"] == "arr1_item_2"
+    assert _variables_first(loops)
+    assert validate_payload(loops) == []
+
+
+def test_steps_add_loop_over_records_copies_the_subtype() -> None:
+    payload = live_to_payload(load_fixture("automations/new_features_loops.raw.json"))
+    report = _add_loop(payload, "array_var_obj", "s08_file_content_extraction")
+    assert report["item_variable"]["name"] == "array_var_obj_item_2"
+    variable = find_step(payload, report["item_variable"]["key"])[
+        "action_initialize_variable"
+    ]["variable"]
+    assert variable["data_type"] == "entity"
+    assert variable["data_subtype"] == "8c3f0149-6915-4370-940f-2e61848d6842"
+    assert find_step(payload, "s09_loop")["parent_key"] == report["closer"]
+    assert _variables_first(payload)
+    assert validate_payload(payload) == []
+
+
+def test_steps_add_loop_refuses_an_item_variable(loops: dict) -> None:
+    from kizen_builder.tools.automations import build_wire_loop
+
+    before = [dict(s) for s in loops["steps"]]
+    spec = _loop_spec("arr0")
+    spec["step_loop"]["item_variable"] = "mine"
+    with pytest.raises(PlanError) as e:
+        build_wire_loop(spec, loops, None)
+    assert str(e.value) == (
+        "step_loop.item_variable can't be set in 'steps add': the item variable "
+        "is created automatically, named 'arr0_item'. Remove it from the spec."
+    )
+    assert loops["steps"] == before
+
+
+def test_steps_add_loop_takes_the_next_free_item_name() -> None:
+    payload = _chain()
+    first = _add_loop(payload, "arr", "a")
+    second = _add_loop(payload, "arr", first["closer"])
+    assert first["item_variable"]["name"] == "arr_item"
+    assert second["item_variable"]["name"] == "arr_item_2"
+    assert find_step(payload, "b")["parent_key"] == second["closer"]
+    assert validate_payload(payload) == []
+
+
+def test_steps_add_loop_over_an_undeclared_array_creates_no_item() -> None:
+    from kizen_builder.tools.automations import build_wire_loop
+
+    payload = _chain()
+    *_, item = build_wire_loop(_loop_spec("nope"), payload, None)
+    assert item is None
+    report = _add_loop(payload, "nope", "a")
+    assert report["item_variable"] is None
+    assert validate_payload(payload) == [
+        f"loop '{report['key']}' iterates 'nope', which is not an array "
+        "variable of records, strings or UUIDs (server 400s otherwise)"
+    ]
+
+
+def test_steps_add_loop_over_the_outer_loops_array_is_refused(loops: dict) -> None:
+    report = _add_loop(loops, "arr0", "s04_loop")
+    assert any(
+        f"loop '{report['key']}' iterates 'arr0', which loop 's04_loop' around it" in p
+        for p in validate_payload(loops)
+    )
+
+
+def test_steps_add_refuses_a_lone_next_or_finish(loops: dict) -> None:
+    from kizen_builder.tools.automations import build_wire_step
+
+    with pytest.raises(PlanError) as e:
+        build_wire_step({"step_type": "next_or_finish"}, loops, "object_with_workflow")
+    assert str(e.value) == (
+        "a next_or_finish can't be added on its own; 'steps add' of a loop adds "
+        "the loop's next_or_finish with it."
+    )
+
+
+def test_remove_empty_loop_takes_its_closer() -> None:
+    payload = _chain()
+    report = _add_loop(payload, "arr", "a")
+    item = report["item_variable"]["key"]
+    removed = remove_step(payload, report["key"])
+    assert removed["removed"] == sorted([report["key"], report["closer"]])
+    assert removed["reparented"] == [("b", "a")]
+    assert _chain_keys(payload) == ["arr", "seen", item, "a", "b"]
+    assert validate_payload(payload) == []
+
+
+def test_remove_empty_loop_in_a_branch_keeps_the_branch(loops: dict) -> None:
+    report = _add_loop(loops, "arr1", "s05_condition", branch="yes")
+    remove_step(loops, report["key"])
+    moved = find_step(loops, "s06_delay")
+    assert (moved["parent_key"], moved["parent_yes_no"]) == ("s05_condition", "yes")
+    assert validate_payload(loops) == []
