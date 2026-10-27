@@ -55,7 +55,10 @@ from kizen_builder.models.spec import (
     AutomationStepDef,
     AutomationTriggerDef,
 )
-from kizen_builder.models.spec.automations_triggers import trigger_config_field
+from kizen_builder.models.spec.automations_triggers import (
+    RETIRED_WEBHOOK_AUTH_KEYS,
+    trigger_config_field,
+)
 from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
@@ -83,6 +86,7 @@ class LiveContext:
         # rather than a single value shape.
         self._objects_by_api: dict[str, Any] = {}
         self._automations_by_api: dict[str, dict[str, Any]] | None = None
+        self._secret_descriptions: dict[str, str] | None = None
 
     def object_uuid(self, api_name: str) -> str:
         return self.object_data(api_name)["id"]
@@ -152,6 +156,20 @@ class LiveContext:
             self._automations_by_api = {a["api_name"]: a for a in list_automations()}
         rec = self._automations_by_api.get(api_name)
         return rec["id"] if rec else None
+
+    def integration_secret_description(self, api_name: str) -> str | None:
+        """The secret's description, the label the UI gives its merge field.
+        An unknown name returns None; the server's 400 names it."""
+        if self._secret_descriptions is None:
+            from kizen_builder.api.client import KizenClient
+            from kizen_builder.api.integration_secrets import list_integration_secrets
+
+            with KizenClient(load_env_config()) as client:
+                self._secret_descriptions = {
+                    s["api_name"]: s.get("description") or s["api_name"]
+                    for s in list_integration_secrets(client)
+                }
+        return self._secret_descriptions.get(api_name)
 
     def filter_group_uuid(self, object_api_name: str, identifier: str) -> str:
         """UUID of a saved filter group on ``object_api_name`` by name or UUID."""
@@ -397,6 +415,8 @@ def _merge_server_state(
         if current.get(field) is not None:
             server_fields[field] = current[field]
     merged = {**server_fields, **payload}
+    if "triggers" in merged:
+        merged["triggers"] = _carry_webhook_auth(merged["triggers"], current)
     merged["last_revision"] = current.get("revision")
     return merged
 
@@ -976,9 +996,72 @@ def _trigger_on_or_around_date(
 
 
 @honours_all
-def _trigger_webhook(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
+def _trigger_webhook(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
+    def resolve_label(namespace: str, field_path: str) -> str | None:
+        if namespace == "integration_secret":
+            return ctx.integration_secret_description(field_path)
+        return None
+
     # Drop server-assigned id; pass through the rest as-is.
-    return _strip(block, drop={"id"})
+    return _webhook_auth(_strip(block, drop={"id"}), resolve_label)
+
+
+_WEBHOOK_AUTH_KEYS = ("auth_type", "headers", "secret")
+
+
+def _webhook_auth(
+    block: dict[str, Any], resolve_label: merge_fields.ResolveLabel
+) -> dict[str, Any]:
+    """Reduce a webhook block's auth to the shape the UI writes (confirmed
+    live 2026-10-27). Reads carry `headers: []`, `secret: null`, an expanded
+    `secret` and, on older captures, the retired `auth_header_*` keys. A
+    header without an `html_value` key gets the UI's rich-text mirror, whose
+    merge-field label for a secret is the secret's description."""
+    out = {k: v for k, v in block.items() if k not in RETIRED_WEBHOOK_AUTH_KEYS}
+    if out.get("secret") is None:
+        out.pop("secret", None)
+    else:
+        out["secret"] = {"api_name": out["secret"].get("api_name")}
+    if not out.get("headers"):
+        out.pop("headers", None)
+    else:
+        out["headers"] = [
+            h
+            if "html_value" in h
+            else {
+                **h,
+                "html_value": "<p>"
+                + merge_fields.render(h["value"], resolve_label=resolve_label)
+                + "</p>",
+            }
+            for h in out["headers"]
+        ]
+    return out
+
+
+def _carry_webhook_auth(
+    triggers: list[dict[str, Any]], current: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """A spec webhook block without `auth_type` keeps the live trigger's auth:
+    a PUT without it resets the trigger to Kizen API auth and changes its
+    URL. Matched by trigger id, else by webhook name."""
+    live = [t for t in current.get("triggers") or [] if t.get("trigger_webhook")]
+    by_id = {t["id"]: t["trigger_webhook"] for t in live if t.get("id")}
+    by_name = {t["trigger_webhook"].get("name"): t["trigger_webhook"] for t in live}
+    out = []
+    for t in triggers:
+        block = t.get("trigger_webhook")
+        if t.get("type") != "webhook" or block is None or "auth_type" in block:
+            out.append(t)
+            continue
+        match = by_id.get(t.get("id")) or by_name.get(block.get("name"))
+        if match is None:
+            out.append(t)
+            continue
+        auth = _webhook_auth(match, lambda _ns, _path: None)
+        carried = {k: auth[k] for k in _WEBHOOK_AUTH_KEYS if k in auth}
+        out.append({**t, "trigger_webhook": {**block, **carried}})
+    return out
 
 
 @honours_all

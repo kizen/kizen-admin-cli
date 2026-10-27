@@ -29,6 +29,9 @@ called out explicitly under **Changed** or **Removed**.
 - **`automations steps add` of a `loop` adds its `next_or_finish` and its
   item variable, as Kizen's builder does.** `steps remove` of a loop with an
   empty body removes its closer with it and keeps the steps after it.
+- **Webhook trigger specs accept `auth_type`, `headers` and `secret`** (all
+  four auth types), and **`automations get` shows each webhook's auth
+  type**. See `kizen docs show automation`.
 
 ### Fixed
 
@@ -49,6 +52,11 @@ called out explicitly under **Changed** or **Removed**.
   puts its body under it. `steps add --parent <loop>` puts the new step at
   the head of the body, `steps add` builds an `exit_loop`, and
   `steps remove` refuses to leave a loop unclosed.
+- **`automations update` no longer resets a webhook trigger's
+  authentication to Kizen API auth when the spec leaves it out**, and
+  `automations diff` no longer shows that reset. The trigger keeps its live
+  auth, so its URL no longer changes under external callers. Set
+  `auth_type` to change it.
 
 ## [0.3.0] — 2026-10-21
 

@@ -75,6 +75,8 @@ from kizen_builder.models.spec.automations_triggers import (
     TriggerWebhookConfig,
     TriggerManualConfig,
     AutomationTriggerDef,
+    WebhookAuthHeader,
+    WebhookAuthSecret,
 )
 from kizen_builder.models.spec.automations_actions_control import (
     StepConditionConfig,
@@ -264,6 +266,8 @@ __all__ = [
     "TriggerScheduledActivityOverdueConfig",
     "TriggerNewEntityCreatedConfig",
     "TriggerWebhookConfig",
+    "WebhookAuthHeader",
+    "WebhookAuthSecret",
     "TriggerManualConfig",
     "AutomationTriggerDef",
     "StepConditionConfig",

@@ -33,6 +33,7 @@ from tests.conftest import (
     FAKE_BUSINESS_ID,
     OTHER_BUSINESS_ID,
     load_fixture,
+    mock_automation_lookup,
     plain,
 )
 
@@ -362,6 +363,25 @@ def test_automations_get_raw_emits_full_response(monkeypatch):
     )
     assert result.exit_code == 0
     assert json.loads(result.stdout) == raw
+
+
+def test_automations_get_shows_webhook_auth_type():
+    """Webhook rows carry their auth type; other trigger rows don't get the key."""
+    raw = load_fixture("automations/webhook_auth_triggers.raw.json")
+    with respx.mock:
+        mock_automation_lookup(raw)
+        rows = auto_tools.get_automation(raw["api_name"])["triggers"]
+        result = runner.invoke(cli.app, ["automations", "get", raw["api_name"]])
+    assert [r.get("auth_type") for r in rows] == [
+        None,
+        "kizen_api",
+        "http_header",
+        "basic_auth",
+        "none",
+    ]
+    assert "auth_type" not in rows[0]
+    assert result.exit_code == 0, result.output
+    assert "auth" in result.stdout and "basic_auth" in result.stdout
 
 
 def test_records_list_csv_flattens_fields(monkeypatch):

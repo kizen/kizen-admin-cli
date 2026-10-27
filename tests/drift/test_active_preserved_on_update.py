@@ -74,3 +74,89 @@ def test_update_omitting_active_preserves_live_active_automation(drift_client, s
         "an update spec that omitted `active` deactivated a live automation "
         "— this is the regression First-Use Feedback §7/§9 row #12 reported"
     )
+
+
+def test_update_omitting_webhook_auth_preserves_live_auth(drift_client, scratch):
+    """Same guard for webhook trigger auth: a PUT without `auth_type` resets a
+    trigger to Kizen API auth and changes its URL. References an existing
+    integration secret by name rather than creating one, so it never writes
+    a secret."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.api.integration_secrets import list_integration_secrets
+    from kizen_builder.models.spec import AutomationDef
+    from kizen_builder.tools.planners.automations import (
+        LiveContext,
+        _build_automation_payload,
+    )
+
+    secrets = list_integration_secrets(drift_client)
+    if not secrets:
+        pytest.skip("the drift environment has no integration secret to reference")
+    secret = secrets[0]["api_name"]
+
+    api_name = debris_api_name("webhook_auth")
+    name = debris_name("webhook auth")
+    hooks = {
+        f"{api_name}_header": {
+            "auth_type": "http_header",
+            "headers": [
+                {
+                    "name": "X-Drift-Token",
+                    "value": f"{{{{ integration_secret.{secret} }}}}",
+                }
+            ],
+        },
+        f"{api_name}_basic": {
+            "auth_type": "basic_auth",
+            "secret": {"api_name": secret},
+        },
+    }
+
+    def spec(with_auth: bool) -> dict:
+        return {
+            "api_name": api_name,
+            "name": name,
+            "type": "global",
+            "active": False,
+            "triggers": [
+                {
+                    "trigger_type": "webhook",
+                    "order": i + 1,
+                    "trigger_webhook": {"name": hook, **(auth if with_auth else {})},
+                }
+                for i, (hook, auth) in enumerate(hooks.items())
+            ],
+            "steps": [],
+        }
+
+    payload = _build_automation_payload(
+        AutomationDef.model_validate(spec(True)), LiveContext()
+    )
+    created = auto_api.create_automation(drift_client, payload)
+    scratch.track(
+        "automation",
+        created["id"],
+        lambda: auto_api.delete_automation(drift_client, created["id"]),
+    )
+
+    def auth_of(raw: dict) -> dict:
+        return {
+            t["trigger_webhook"]["name"]: (
+                t["trigger_webhook"]["auth_type"],
+                [(h["name"], h["value"]) for h in t["trigger_webhook"]["headers"]],
+                (t["trigger_webhook"]["secret"] or {}).get("api_name"),
+                t["trigger_webhook"]["webhook_url"],
+            )
+            for t in raw["triggers"]
+            if t["trigger_type"] == "webhook"
+        }
+
+    before = auth_of(get_automation(api_name)["raw"])
+    assert before[f"{api_name}_header"][0] == "http_header"
+    assert before[f"{api_name}_basic"][2] == secret
+
+    result = apply_plan(plan_update_automation(spec(False)))
+    assert result.all_ok, [r.message for r in result.results if r.status != "ok"]
+    assert auth_of(get_automation(api_name)["raw"]) == before, (
+        "an update spec that omitted webhook auth reset it on the live automation"
+    )
