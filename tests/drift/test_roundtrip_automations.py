@@ -135,7 +135,7 @@ COVERED_STEP_TYPES = (
     | PLUGIN_STEPS
 )
 
-#: Nine of the eleven wired trigger types ride on one record-based automation.
+#: Nine of the twelve wired trigger types ride on one record-based automation.
 RECORD_TRIGGER_TYPES = frozenset(
     {
         "manual",
@@ -156,8 +156,14 @@ GLOBAL_TRIGGER_TYPES = frozenset({"manual", "schedule"})
 #: `email_received` is Contact-only, so it needs one too.
 CONTACT_TRIGGER_TYPES = frozenset({"manual", "email_received"})
 
+#: `stage_updated` needs a pipeline object, which the drift object isn't.
+PIPELINE_TRIGGER_TYPES = frozenset({"manual", "stage_updated"})
+
 COVERED_TRIGGER_TYPES = (
-    RECORD_TRIGGER_TYPES | GLOBAL_TRIGGER_TYPES | CONTACT_TRIGGER_TYPES
+    RECORD_TRIGGER_TYPES
+    | GLOBAL_TRIGGER_TYPES
+    | CONTACT_TRIGGER_TYPES
+    | PIPELINE_TRIGGER_TYPES
 )
 
 
@@ -569,7 +575,7 @@ def test_variable_comparison_survives_the_roundtrip(drift_variable_condition):
 
 
 # ---------------------------------------------------------------------------
-# Triggers — all ten on one automation
+# Triggers
 # ---------------------------------------------------------------------------
 
 
@@ -583,7 +589,7 @@ def drift_triggers(
     drift_form,
     drift_survey,
 ) -> dict[str, Any]:
-    """One automation carrying nine of the eleven wired trigger types.
+    """One automation carrying nine of the twelve wired trigger types.
 
     Directly analogous to the offline ``kitchen_sink_triggers.raw.json``
     capture, which is the evidence that many triggers on one automation is a
@@ -596,7 +602,8 @@ def drift_triggers(
     outright (*"Trigger type 'schedule' is only available for global agentic
     workflows"*, confirmed live 2026-08-06), so it gets its own global
     automation in :func:`drift_schedule_trigger`. ``email_received`` is
-    Contact-only, so it gets :func:`drift_email_received_trigger`.
+    Contact-only, so it gets :func:`drift_email_received_trigger`, and
+    ``stage_updated`` needs a pipeline, so it gets :func:`drift_stage_trigger`.
     """
     activity_id = drift_activity_type["id"]
     spec = _base_spec("trigs", drift_object)
@@ -754,8 +761,48 @@ def drift_email_received_trigger(drift_client, scratch) -> dict[str, Any]:
     return _create_automation(drift_client, scratch, spec)
 
 
+@pytest.fixture(scope="session")
+def drift_stage_trigger(drift_client, scratch) -> dict[str, Any]:
+    """`stage_updated` by stage name, as a trigger and as a goal's wait-until
+    trigger, on a pipeline object of its own."""
+    obj = _create_drift_object(
+        drift_client, scratch, "pipeline_object", stages=["Stage A", "Stage B"]
+    )
+    spec = _base_spec("stage", obj)
+    spec["triggers"] = [
+        {"trigger_type": "manual", "order": 0, "trigger_manual": {}},
+        {
+            "trigger_type": "stage_updated",
+            "order": 1,
+            "trigger_stage_updated": {"from_stage": "Stage A", "to_stage": "stage b"},
+        },
+    ]
+    spec["steps"] = [
+        {
+            "key": "goal",
+            "step_type": "goal",
+            "order": 0,
+            "parent_key": None,
+            "step_goal": {
+                "wait_type": "never",
+                "triggers": [
+                    {
+                        "trigger_type": "stage_updated",
+                        "trigger_stage_updated": {"to_stage": "Stage B"},
+                    }
+                ],
+            },
+        }
+    ]
+    stages = {s["name"]: s["id"] for s in obj["live"]["pipeline"]["stages"]}
+    return {**_create_automation(drift_client, scratch, spec), "stages": stages}
+
+
 def test_every_wired_trigger_type_is_accepted(
-    drift_triggers, drift_schedule_trigger, drift_email_received_trigger
+    drift_triggers,
+    drift_schedule_trigger,
+    drift_email_received_trigger,
+    drift_stage_trigger,
 ):
     """The write half: every wired type goes out and the POST succeeds."""
     sent = {t["type"] for t in drift_triggers["sent"]["triggers"]}
@@ -770,7 +817,9 @@ def test_every_wired_trigger_type_is_accepted(
     assert scheduled == set(GLOBAL_TRIGGER_TYPES)
     contact = {t["type"] for t in drift_email_received_trigger["sent"]["triggers"]}
     assert contact == set(CONTACT_TRIGGER_TYPES)
-    assert sent | scheduled | contact == set(COVERED_TRIGGER_TYPES)
+    pipeline = {t["type"] for t in drift_stage_trigger["sent"]["triggers"]}
+    assert pipeline == set(PIPELINE_TRIGGER_TYPES)
+    assert sent | scheduled | contact | pipeline == set(COVERED_TRIGGER_TYPES)
 
 
 def test_schedule_trigger_is_flat_in_both_dialects(drift_schedule_trigger):
@@ -827,6 +876,33 @@ def test_email_received_puts_back_unchanged(drift_client, drift_email_received_t
     )
     after = auto_api.get_automation(drift_client, drift_email_received_trigger["uuid"])
     assert list(semantic_diff(before, after)) == []
+
+
+def test_stage_updated_reads_back_as_sent(drift_stage_trigger):
+    """Names go out as stage UUIDs, both keys always present, and the read
+    matches, on the trigger and the goal alike."""
+    record = drift_stage_trigger
+    stages = record["stages"]
+    sent = next(t for t in record["sent"]["triggers"] if t["type"] == "stage_updated")
+    live = next(
+        t for t in record["live"]["triggers"] if t["trigger_type"] == "stage_updated"
+    )
+    expected = {
+        "from_stage": stages["Stage A"],
+        "to_stage": stages["Stage B"],
+        "fire_on_create": False,
+    }
+    assert sent["trigger_stage_updated"] == expected
+    assert live["trigger_stage_updated"] == expected
+    assert live["description"] == "Stage Update from 'Stage A' to 'Stage B'"
+
+    (goal,) = _live_steps_by_type(record)["goal"]
+    (nested,) = goal["step_goal"]["triggers"]
+    assert nested["trigger_stage_updated"] == {**expected, "from_stage": None}
+
+
+def test_stage_updated_puts_back_unchanged(drift_client, drift_stage_trigger):
+    _put_back_unchanged(drift_client, drift_stage_trigger)
 
 
 def test_every_wired_trigger_type_survives_the_roundtrip(drift_triggers):
@@ -2650,6 +2726,7 @@ THEMED_AUTOMATIONS = (
     "drift_triggers",
     "drift_schedule_trigger",
     "drift_email_received_trigger",
+    "drift_stage_trigger",
     "drift_startable_automation",
     "drift_code_step_automation",
     "drift_control_flow",

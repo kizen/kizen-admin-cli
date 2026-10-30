@@ -27,6 +27,9 @@ called out explicitly under **Changed** or **Removed**.
   by UUID. That includes a pipeline's `stage`, which is how an automation
   moves a record to a stage. An unknown label is refused before anything is
   written, in `steps edit` too.
+- **Automations can start when a record changes stage.** The
+  `stage_updated` trigger takes from/to stage names (or any stage), on
+  pipeline automations and as a goal step's wait condition.
 
 ### Changed
 

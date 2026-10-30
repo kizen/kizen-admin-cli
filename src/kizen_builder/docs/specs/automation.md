@@ -219,11 +219,11 @@ Both variable steps go at the front of the automation, like every
 
 ---
 
-## Wired trigger types (11)
+## Wired trigger types (12)
 
 `manual`, `new_entity_created`, `activity_logged`, `on_or_around_date`,
 `webhook`, `field_updated`, `schedule`, `scheduled_activity_overdue`,
-`form_submitted`, `survey_submitted`, `email_received`.
+`form_submitted`, `survey_submitted`, `email_received`, `stage_updated`.
 
 Each requiring config sets a `trigger_<name>` block matching `trigger_type`
 (e.g. `field_updated` → `trigger_field_updated: { field_ref, fire_on_create, … }`).
@@ -242,6 +242,27 @@ a full RFC 5545 string including `DTSTART`). Other trigger types exist in
 Kizen (e.g. `email_interaction`, `email_link_clicked`,
 `contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
 you try to spec them.
+
+`stage_updated` → `trigger_stage_updated: {from_stage, to_stage,
+fire_on_create}` fires when a record moves between stages, on pipeline
+objects only:
+
+```json
+{"trigger_type": "stage_updated", "trigger_stage_updated": {"to_stage": "Closed Won"}}
+```
+
+`from_stage` and `to_stage` each take a stage name or UUID, and null or
+omitted means any stage. The block itself is required, so any stage to any
+stage is `"trigger_stage_updated": {}`. An unknown stage, or a target that
+isn't a pipeline, is a plan error. `fire_on_create` (default false) also fires
+it when a record is created in `to_stage`. A move made by another automation
+fires it too, and the same block works as a goal step's wait-until trigger.
+As a goal, it counts only a move made while the run is waiting at the goal.
+A move made before the run gets there is missed, and the goal stays pending
+with the record already in `to_stage`. Without a `description`, or with one in the UI's form, the
+trigger gets the UI's text for its current stages, e.g. "Stage Update from
+'Any Stage' to 'Closed Won'"; any other description is kept. Confirmed live
+2026-10-30.
 
 ### Webhook trigger auth (confirmed live 2026-10-27)
 
@@ -283,6 +304,9 @@ A `goal` step's `step_goal.triggers` are wait-until triggers with the same
 `trigger_type` names and config blocks as the top level, e.g. `email_received`
 to wait for a reply. Its `wait_type` is `never`, `delay` or
 `specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
+A goal counts only an event that happens while the run is waiting at it, so a
+`stage_updated` goal misses a move made before the run reaches the goal, and
+stays pending (confirmed live 2026-10-30).
 
 ## Wired step types (30)
 
@@ -464,6 +488,7 @@ builder doesn't offer one, and the CLI refuses it.
   option label does. An unknown name is a plan error that lists the stages.
 - The move writes the same timeline entry and stage history as a manual move
   (confirmed live 2026-10-30).
+- To react to a move, use the `stage_updated` trigger (see Wired trigger types).
 
 ### `modify_related_entities` — field shape
 
@@ -1151,9 +1176,8 @@ inconsistent:
 ### Unlisted step types
 
 A step type with no dedicated builder falls through a generic pass-through that
-strips volatile keys. Some survive it — `http_request` round-trips clean, and
-`stage_updated` (a trigger) does too, since its read shape is
-write-compatible. A 400 or 500 on PUT means the type needs a real builder.
+strips volatile keys. Some survive it — `http_request` round-trips clean. A
+400 or 500 on PUT means the type needs a real builder.
 
 ## Wire keys that differ from the obvious guess
 
@@ -1165,6 +1189,7 @@ Beyond the step/trigger tables above:
 | `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object` |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}` |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
+| `stage_updated` trigger | `from_stage`/`to_stage` (bare stage UUIDs, both required, null = any); the spec's stage name resolves; `stage_field` is ignored by Kizen and never sent |
 | `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see [Extraction input](#extraction-input) |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string, or a list of them for checkboxes; a spec label resolves to it |
