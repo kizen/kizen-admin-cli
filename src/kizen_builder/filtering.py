@@ -17,12 +17,18 @@ client that implements the small lookup surface of
 client rides thread-local state so operator overloading (``==``, ``in``)
 works; pass ``client=`` explicitly in tests.
 
+Automation condition and search steps also need the Kizen workflow editor's
+``view_model`` on each rule, or the editor can't show it. The automation
+planner asks for it with ``filter_context(..., view_model=True)``; records
+search, dashlets and filter groups never carry one.
+
 Ported from the internal ``kznclient`` library (kizen/filtering.py) — the
 UI-parity tests in tests/test_*_parity.py are the captured spec for the
 payload shapes this module emits.
 """
 
 import contextlib
+import copy
 import threading
 from datetime import UTC, date, datetime
 from uuid import UUID
@@ -52,9 +58,18 @@ def set_default_client(client):
 
 
 @contextlib.contextmanager
-def filter_context(obj_id, client=None):
+def filter_context(obj_id, client=None, view_model=False):
+    """Resolve field names against ``obj_id`` for the conditions serialized
+    inside the block.
+
+    ``view_model=True`` (automation condition and search steps only) also
+    writes the Kizen workflow editor's ``view_model`` on each field rule
+    whose layout has been captured (``_EDITOR_RULES``). Other filter
+    surfaces carry none.
+    """
     prev_client = getattr(_local_filter_cx, "client", None)
     prev_obj_id = getattr(_local_filter_cx, "obj_id", None)
+    prev_view_model = getattr(_local_filter_cx, "view_model", False)
     if client is None:
         client = get_default_client()
 
@@ -70,11 +85,13 @@ def filter_context(obj_id, client=None):
 
     _local_filter_cx.client = client
     _local_filter_cx.obj_id = obj_id
+    _local_filter_cx.view_model = view_model
     try:
         yield
     finally:
         _local_filter_cx.client = prev_client
         _local_filter_cx.obj_id = prev_obj_id
+        _local_filter_cx.view_model = prev_view_model
 
 
 def get_cx_client():
@@ -245,6 +262,175 @@ def _check_ui_supported(field, condition):
         )
 
 
+# The Kizen workflow editor's layout for a literal field rule, by (field kind,
+# wire condition, qualifier). The qualifier is the value of a blank check and
+# the comparison of a stage-time rule. Each row maps to (editor condition,
+# value entry, editor comparison). Only rows seen in UI-built automations are
+# here, each citing its capture: rules[i] of tests/fixtures/automations/
+# condition_literal_rules.json (2026-10-30), or another automation fixture.
+# A rule with no row is written without a view_model.
+_EDITOR_RULES = {
+    # rules[0]
+    ("text", "=", None): ("equals", "literal", None),
+    # update_variable_goto_branching.raw.json
+    ("dropdown", "=", None): ("equals", "option", None),
+    # rules[6]
+    ("stage", "=", None): ("equals", "stage", None),
+    # rules[1]
+    ("datetime", ">=", None): ("later_than_or_on", "literal", None),
+    # rules[2], rules[5]
+    ("relationship", "is_blank", True): ("is_blank", None, None),
+    ("relationship", "is_blank", False): ("is_not_blank", None, None),
+    # rules[4], rules[3]
+    ("stage", "time_in_stage", ">"): ("time_in_stage", "stage", "more_than"),
+    ("stage", "entered_stage", "<"): ("entered_stage", "stage", "earlier_than"),
+}
+
+# How the editor looks up a dropdown rule's option names, verbatim from the
+# capture; the request body is `{"option_ids": [<option id>]}`.
+_OPTION_DISPLAY_NAMES = {
+    "url": "/records/display-names",
+    "method": "POST",
+    "result_path": [],
+    "result_transform": [
+        "xf_hoist",
+        [
+            "xf_concat",
+            [
+                "xf_map",
+                "@result_path/results/options",
+                {
+                    "id": ["xf_pick", "$", ["id"]],
+                    "code": ["xf_pick", "$", ["code"]],
+                    "name": ["xf_pick", "$", ["display_name"]],
+                },
+            ],
+            [
+                "xf_map",
+                "@result_path/not_found/options",
+                {
+                    "id": ["xf_pick", "$", ["id"]],
+                    "name": [
+                        "xf_join",
+                        "[",
+                        "Deleted",
+                        "] ",
+                        ["xf_pick", "$", ["display_name"]],
+                    ],
+                    "not_found": True,
+                    "error_message": "The option has been deleted",
+                },
+            ],
+            [
+                "xf_map",
+                "@result_path/not_allowed/options",
+                {
+                    "id": ["xf_pick", "$", ["id"]],
+                    "name": [
+                        "xf_join",
+                        "[",
+                        "No Access",
+                        "] ",
+                        ["xf_pick", "$", ["display_name"]],
+                    ],
+                    "not_allowed": True,
+                    "error_message": "Required field",
+                },
+            ],
+        ],
+    ],
+}
+
+
+def _view_model_head(field, client, obj_id, obj):
+    """The ``filter_type`` and ``field_id`` entries every field rule's
+    ``view_model`` opens with. The vars name the target object and the
+    Contacts ``tags`` field."""
+    tags = client.get_field("client_client", "tags")
+    prefix = "pipelines" if obj.get("fetch_url") == "pipeline" else "custom-objects"
+    relation = field.get("relation") or {}
+    return [
+        [
+            "filter_type",
+            {
+                "vars": [
+                    ["fields_settings_search", True],
+                    ["custom_object_id", obj_id],
+                    ["object_type", obj.get("object_type")],
+                    ["client_tag_field_id", tags["id"] if tags else None],
+                ],
+                "filter_type": "fields",
+            },
+        ],
+        [
+            "field_id",
+            {
+                "url": f"/{prefix}/{obj_id}/fields/{field['id']}",
+                "method": "GET",
+                "error_message": {"404": "The field has been deleted"},
+                "error_response": {
+                    "name": field["name"],
+                    "relation": {
+                        k: relation[k]
+                        for k in ("fetch_url", "related_object")
+                        if k in relation
+                    },
+                    "field_type": field["field_type"],
+                },
+            },
+        ],
+    ]
+
+
+def _with_view_model(clause, field, client, obj_id):
+    """``clause`` plus the editor's ``view_model``, when the context asks for
+    one and ``_EDITOR_RULES`` has the rule's layout; otherwise unchanged."""
+    if not getattr(_local_filter_cx, "view_model", False):
+        return clause
+    is_stage = field["is_default"] and field["name"] == "stage"
+    kind = "stage" if is_stage else field["field_type"]
+    condition = clause["condition"]
+    if condition == "is_blank":
+        qualifier = clause["value"]
+    else:
+        qualifier = clause.get("comparison_condition")
+    rule = _EDITOR_RULES.get((kind, condition, qualifier))
+    if rule is None:
+        return clause
+    obj = client.custom_object(obj_id)
+    if obj.get("fetch_url") == "client":
+        # No Contacts rule has been captured, and the field URL differs by
+        # object family.
+        return clause
+    token, entry, comparison = rule
+    view_model = [*_view_model_head(field, client, obj_id, obj), ["condition", token]]
+    value = clause["value"]
+    if entry is not None and comparison is None:
+        view_model.append(["value_type", "static"])
+    if entry == "literal":
+        view_model.append(["value", value])
+    elif entry == "option":
+        recipe = copy.deepcopy(_OPTION_DISPLAY_NAMES)
+        view_model.append(["value", {**recipe, "body": {"option_ids": [value]}}])
+    elif entry == "stage":
+        view_model.append(
+            [
+                "value",
+                {
+                    "url": f"/pipelines/{obj_id}/stages/{value}",
+                    "method": "GET",
+                    "error_message": {"404": "The stage has been deleted"},
+                },
+            ]
+        )
+    if comparison is not None:
+        view_model.append(["comparison_condition", comparison])
+        view_model.append(["comparison_value", clause["comparison_value"]])
+        if "comparison_type" in clause:
+            view_model.append(["comparison_type", clause["comparison_type"]])
+    return {**clause, "view_model": view_model}
+
+
 class FilterCondition:
     def __init__(self, field, condition, value, extra=None, variable=None):
         self.field = field
@@ -319,7 +505,7 @@ class FilterCondition:
                 value = [opt_id(v) for v in value]
             else:
                 value = opt_id(value)
-            return {
+            clause = {
                 "type": "fields_v2",
                 "subtype": "non_custom",
                 "field": "stage",
@@ -328,6 +514,7 @@ class FilterCondition:
                 "value": value,
                 **extra,
             }
+            return _with_view_model(clause, field, client, obj_id)
 
         if field["is_default"]:
             field_identifier = self.field
@@ -390,7 +577,7 @@ class FilterCondition:
             if condition == "=":
                 value = value in {"yes", True, "checked"}
 
-        return {
+        clause = {
             "type": type,
             "subtype": subtype,
             "field": field_identifier,
@@ -398,14 +585,16 @@ class FilterCondition:
             "value": value,
             **extra,
         }
+        return _with_view_model(clause, field, client, obj_id)
 
     def _variable_clause(self, field, client, obj_id):
         """The clause the UI writes for "<field> <op> Variable '<name>'".
 
         The UI won't open the step without the full ``view_model``: with none
         it errors, and with a partial one the rule shows empty (checked
-        2026-10-14). Its ``filter_type`` vars name the target object and the
-        Contacts ``tags`` field.
+        2026-10-14). It opens with the same head as a literal rule's
+        (``_view_model_head``), so it is written whatever the context's
+        ``view_model`` flag says.
         """
         obj = client.custom_object(obj_id)
         if obj.get("fetch_url") == "client":
@@ -457,8 +646,6 @@ class FilterCondition:
                 "field": f'"custom"::{field["id"]}',
             }
 
-        tags = client.get_field("client_client", "tags")
-        prefix = "pipelines" if obj.get("fetch_url") == "pipeline" else "custom-objects"
         var_vm = {"name": name, "is_array": is_array, "data_type": data_type}
         if subtype is not None:
             var_vm["data_subtype"] = {
@@ -471,35 +658,7 @@ class FilterCondition:
                 "object_type": subtype.get("object_type"),
             }
         view_model = [
-            [
-                "filter_type",
-                {
-                    "vars": [
-                        ["fields_settings_search", True],
-                        ["custom_object_id", obj_id],
-                        ["object_type", obj.get("object_type")],
-                        ["client_tag_field_id", tags["id"] if tags else None],
-                    ],
-                    "filter_type": "fields",
-                },
-            ],
-            [
-                "field_id",
-                {
-                    "url": f"/{prefix}/{obj_id}/fields/{field['id']}",
-                    "method": "GET",
-                    "error_message": {"404": "The field has been deleted"},
-                    "error_response": {
-                        "name": field["name"],
-                        "relation": {
-                            k: relation[k]
-                            for k in ("fetch_url", "related_object")
-                            if k in relation
-                        },
-                        "field_type": field_type,
-                    },
-                },
-            ],
+            *_view_model_head(field, client, obj_id, obj),
             ["condition", condition],
             ["value_type", "variable"],
             ["variable", var_vm],
@@ -1470,6 +1629,9 @@ class Options:
 #   records search body:      {"query": [groups], "and": bool}
 #   condition filter_config:  {"and": bool, "query": [groups+ids], "invalid": False}
 #   dashlet custom_filters:   {"custom_filters": {"and": bool, "query": [groups+ids]}}
+#
+# Only condition filter_configs, built inside filter_context(view_model=True),
+# carry the editor's view_model on their rules.
 # ---------------------------------------------------------------------------
 
 

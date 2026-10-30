@@ -2753,6 +2753,125 @@ def test_condition_raw_filter_config_null_value_rejected(patch_live_lookups):
         _build(_condition_spec(raw))
 
 
+def test_compiled_rules_carry_the_editor_layout(
+    patch_live_lookups, patients_filter_schema
+):
+    mrn_is = {"all": [{"field": "mrn", "op": "=", "value": "A-1"}]}
+    condition = _build(_condition_spec(mrn_is))["steps"][0]["step_condition"]
+    search = _build(
+        _search_records_spec(
+            {
+                "custom_object": "patients",
+                "filter_type": "custom_filter",
+                "filter_config": mrn_is,
+                "destination_variable": "found",
+            }
+        )
+    )["steps"][0]["action_search_records"]
+    for block in (condition, search):
+        (clause,) = block["filter_config"]["query"][0]["filters"]
+        assert clause["view_model"][2:] == [
+            ["condition", "equals"],
+            ["value_type", "static"],
+            ["value", "A-1"],
+        ]
+
+
+def test_preview_warns_about_rules_saved_without_the_editor_layout(
+    patch_live_lookups, patients_filter_schema
+):
+    patients = load_fixture("objects/patients.json")
+    mrn = next(f for f in patients["fields"] if f["api_name"] == "mrn")
+    spec = _condition_spec(
+        {
+            "all": [
+                {"field": "mrn", "op": "=", "value": "A-1"},
+                {"field": "mrn", "op": "contains", "value": "A"},
+            ]
+        }
+    )
+    raw_rule = {
+        "type": "fields_v2",
+        "subtype": "custom",
+        "field": f'"custom"::{mrn["id"]}',
+        "condition": "=",
+        "value": "A-1",
+    }
+    spec["steps"].append(
+        {
+            "key": "find",
+            "step_type": "search_records",
+            "order": 1,
+            "parent_key": "check",
+            "parent_branch": "yes",
+            "action_search_records": {
+                "custom_object": "patients",
+                "filter_type": "custom_filter",
+                "filter_config": {"query": [{"filters": [raw_rule]}]},
+                "destination_variable": "found",
+            },
+        }
+    )
+    assert plan_create_automation(spec).operations[0].preview["warnings"] == [
+        "step 'check': the rule on 'mrn' (text, contains) is saved without the "
+        "Kizen editor's layout, so the editor may not show it. It still runs.",
+        "step 'check': the Kizen editor uses a step's rule layouts only when "
+        "every rule has one, so it ignores the layout on this step's other 1 "
+        "rule(s) too; a rule on a default field such as 'created' or 'owner' "
+        "then shows no field.",
+        f"step 'find': the rule on '\"custom\"::{mrn['id']}' (text, =) is saved "
+        "without the Kizen editor's layout, so the editor may not show it. It "
+        "still runs.",
+    ]
+
+
+@pytest.mark.parametrize("rhs_value", [True, False], ids=["unchanged", "changed"])
+def test_update_keeps_the_ui_description_of_an_unchanged_rule(
+    patch_live_lookups, rhs_value
+):
+    """A spec never writes a rule's card text. `update` keeps the live one
+    while the rule is as it was live, and `diff` agrees with what it sends."""
+    raw = load_fixture("automations/form_submission.raw.json")
+    live = next(s for s in raw["steps"] if s["step_type"] == "condition")
+    (live_rule,) = live["step_condition"]["filter_config"]["query"][0]["filters"]
+    rule = {k: v for k, v in live_rule.items() if k != "description"}
+    spec = {
+        "api_name": "form_submission",
+        "name": "Form Submission",
+        "type": "global",
+        "steps": [
+            {
+                "key": "check",
+                "id": live["id"],
+                "step_type": "condition",
+                "order": 0,
+                "parent_key": None,
+                "step_condition": {
+                    "type": "custom_filter",
+                    "filter_config": {
+                        "query": [{"filters": [{**rule, "rhs_value": rhs_value}]}]
+                    },
+                },
+            }
+        ],
+    }
+    (op,) = plan_update_automation(spec).operations
+    (sent,) = op.payload["steps"][0]["step_condition"]["filter_config"]["query"][0][
+        "filters"
+    ]
+    dropped = [
+        d
+        for d in diff_automation(spec)["diff"]
+        if d["path"].endswith(".filters[0].description")
+    ]
+    if rhs_value is True:
+        assert sent["description"] == live_rule["description"]
+        assert dropped == []
+    else:
+        assert "description" not in sent
+        assert [d["after"] for d in dropped] == ["<absent>"]
+
+
 def _variable_spec(rule, *declarations):
     """A condition step comparing to a variable, after root-chain steps that
     declare variables."""
@@ -3690,6 +3809,11 @@ def _preview(spec: dict) -> dict:
     return plan_create_automation(spec).operations[0].preview
 
 
+def _fan_out_lines(preview: dict) -> list[str]:
+    """The preview's warnings minus the ones about raw condition rules."""
+    return [w for w in preview.get("warnings", []) if "parallel children" in w]
+
+
 @pytest.mark.parametrize("flag", [None, False, True])
 def test_loop_is_always_sent_as_an_initiator(patch_live_lookups, flag):
     """The server stores true on a loop whatever is sent (confirmed live
@@ -3760,7 +3884,7 @@ def test_loop_on_a_condition_yes_branch(patch_live_lookups):
     by_key = _built_steps(spec)
     assert by_key["each"]["parent_yes_no"] == "yes"
     assert by_key["each"]["is_branch_group_initiator"] is True
-    assert "warnings" not in _preview(spec)
+    assert _fan_out_lines(_preview(spec)) == []
 
 
 def test_nested_loops_with_an_exit_loop(patch_live_lookups):
@@ -3993,7 +4117,8 @@ def test_fan_out_without_branch_step_warns(patch_live_lookups):
     "spec", [_merged_condition_spec(), BRANCHING_SPEC], ids=["merged", "yes_no"]
 )
 def test_no_fan_out_warning_for_branch_or_condition_children(patch_live_lookups, spec):
-    assert "warnings" not in plan_create_automation(spec).operations[0].preview
+    preview = plan_create_automation(spec).operations[0].preview
+    assert _fan_out_lines(preview) == []
 
 
 # ---------------------------------------------------------------------------

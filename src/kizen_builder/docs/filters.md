@@ -86,6 +86,23 @@ Rules:
   `subtype: "non_custom"`.
 - **`value` may never be null** — use `false` for a blank check, `""` for an
   empty-text check.
+- **Automation rules carry the editor's layout.** A condition or
+  `search_records` rule the CLI compiles from a filter spec also carries a
+  `view_model`: the layout the Kizen workflow editor reads to show the rule.
+  Other surfaces don't use it; UI-built filter groups carry none (confirmed
+  live 2026-10-30). The CLI writes it for text `=`, dropdown `=`, stage `=`,
+  date-time `>=`, and relationship `is_blank`/`not_blank`, on any object but
+  Contacts. The editor uses a step's layouts only when every rule in the
+  step has one. Otherwise it rebuilds each rule from its keys, which shows
+  most rules but not one on a default field such as `created` or `owner`
+  (no field shown), and not a list of options, stages or records. The
+  `automations create` and `update` dry run warns about each field rule in a
+  condition or search step that has no `view_model`, raw ones included, and
+  about a step whose other layouts the editor will ignore for that reason; a
+  raw rule that carries its own `view_model` doesn't warn. `steps add`
+  and `steps edit` write the same layout but don't warn. A rule without one
+  still runs. `update` keeps the card text (`description`) the editor saved
+  on a rule the spec leaves as it is.
 
 ### Record-field operators
 
@@ -122,10 +139,10 @@ the DSL doesn't cover it — write the raw dict:
   "type": "variable",
   "subtype": "automation_variable",
   "lhs_variable_name": "<variable_name>",
-  "condition": "<=",
+  "condition": ">=",
   "rhs_value": "5.5",
   "rhs_value_type": "static",
-  "description": "Variable Value '<variable_name>' Less Than Or Equal To Static Value 5.5",
+  "description": "Variable Value '<variable_name>' More Than Or Equal To Static Value 5.5",
   "view_model": [
     ["filter_type", { "vars": [
         ["fields_settings_search", true],
@@ -134,7 +151,7 @@ the DSL doesn't cover it — write the raw dict:
         ["client_tag_field_id", "<client-tag-field-uuid>"]
       ], "filter_type": "variable" }],
     ["lhs_variable", { "name": "<variable_name>", "data_type": "number" }],
-    ["condition", "less_than_or_equal_to"],
+    ["condition", "more_than_or_equal_to"],
     ["value_type", "static"],
     ["value", "5.5"]
   ]
@@ -149,11 +166,16 @@ Operator mapping (the `condition` key vs its `view_model` string):
 
 | API `condition` | `view_model` string | label |
 |---|---|---|
-| `<=` | `less_than_or_equal_to` | Less Than Or Equal To |
-| `>=` | `greater_than_or_equal_to` | Greater Than Or Equal To |
-| `<` | `less_than` | Less Than |
-| `>` | `greater_than` | Greater Than |
-| `=` | `equal_to` | Equal To |
+| `>=` | `more_than_or_equal_to` | More Than Or Equal To |
+| `=` | `equals` | Equals |
+| `=` on a boolean | `is_yes` (`rhs_value: true`) / `is_no` (`false`) | Is Yes / Is No |
+| `<=` | `less_than_or_equal_to` (not confirmed) | Less Than Or Equal To |
+| `<` | `less_than` (not confirmed) | Less Than |
+| `>` | `greater_than` (not confirmed) | Greater Than |
+
+`>=`, `=` and the boolean pair are from UI-built clauses. A boolean rule's
+`view_model` stops after its `condition` entry, with no `value_type` or
+`value`. The other three rows have not been seen in a UI-built clause.
 
 For a blank check **on a variable**, `condition` is `is_blank` or
 `is_not_blank` — a distinct pair of tokens from the record-field
@@ -171,10 +193,10 @@ best guess.
 Conditions were read in two businesses, one on 2026-10-05 and one on
 2026-10-16. Record-field clauses mostly carried the `tags` id in both. Variable
 clauses carried it in the second and a different id in the first. A condition
-with no `view_model` still executes, so a wrong value probably changes only how
-the builder UI shows the condition (not tested). A field-vs-variable rule
-written with the filter spec's `variable` key doesn't need it: the CLI resolves
-it per business (see [Comparing a field to an array
+with no `view_model` still executes, so a wrong value in a raw clause probably
+changes only how the builder UI shows it (not tested). A rule the CLI compiles
+from a filter spec doesn't need it: the CLI writes the layout itself and
+resolves the id per business (see [Comparing a field to an array
 variable](#comparing-a-field-to-an-array-variable-condition-steps-only)).
 
 ## Comparing a field to an array variable (condition steps only)

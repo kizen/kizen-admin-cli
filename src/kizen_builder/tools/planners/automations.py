@@ -307,7 +307,7 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
                 action="create",
                 kind="automation",
                 key=auto.api_name,
-                preview=_automation_preview(env, auto),
+                preview=_automation_preview(env, auto, payload, ctx),
                 payload=payload,
             )
         ],
@@ -347,7 +347,8 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     auto = auto.model_copy(update={"active": resolved_active})
 
     payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
-    preview = _automation_preview(env, auto, live_active=live_active)
+    _keep_rule_descriptions(payload, current)
+    preview = _automation_preview(env, auto, payload, ctx, live_active=live_active)
     preview["current_revision"] = current.get("revision")
     preview.update(_llm_tools_dropped(current, payload))
     return Plan.build(
@@ -374,8 +375,8 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     Fetches the live automation exactly once and derives both comparison
     sides from that single `current`: the live side via
     `translate.live_to_payload`, the spec side via the same
-    `_build_automation_payload` + `_merge_server_state` calls
-    `plan_update_automation` itself makes (not by calling
+    `_build_automation_payload` + `_merge_server_state` +
+    `_keep_rule_descriptions` calls `plan_update_automation` itself makes (not by calling
     `plan_update_automation`/building a `Plan` a second time, which would
     re-fetch `current` and admit a race). This also guarantees
     `last_revision` matches on both sides by construction. Mirrors
@@ -415,6 +416,7 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
 
     live_payload = live_to_payload(current)
     spec_payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    _keep_rule_descriptions(spec_payload, current)
 
     return {
         "env": env,
@@ -466,6 +468,38 @@ def _merge_server_state(
         merged["triggers"] = _carry_webhook_auth(merged["triggers"], current)
     merged["last_revision"] = current.get("revision")
     return merged
+
+
+def _keep_rule_descriptions(payload: dict[str, Any], current: dict[str, Any]) -> None:
+    """Carry each live filter rule's ``description`` (the editor's card text,
+    which a spec never writes) onto the outgoing rule in the same place of
+    the same step, when the spec leaves the rule as it is."""
+    live_steps = {s["id"]: s for s in current.get("steps") or []}
+    for step in payload.get("steps") or []:
+        live = live_steps.get(step.get("id"))
+        if live is None or live.get("step_type") != step["type"]:
+            continue
+        cfg_field = _block_field_for(step["type"])
+        fc = (step.get(cfg_field) or {}).get("filter_config")
+        live_fc = (live.get(cfg_field) or {}).get("filter_config")
+        if not fc or not live_fc:
+            continue
+        live_groups = live_fc.get("query") or []
+        for group, live_group in zip(fc.get("query") or [], live_groups, strict=False):
+            rules = group["filters"] = list(group.get("filters") or [])
+            live_rules = live_group.get("filters") or []
+            for j, (rule, live_rule) in enumerate(zip(rules, live_rules, strict=False)):
+                if (
+                    "description" in live_rule
+                    and "description" not in rule
+                    and _rule_core(rule) == _rule_core(live_rule)
+                ):
+                    rules[j] = {**rule, "description": live_rule["description"]}
+
+
+def _rule_core(rule: dict[str, Any]) -> dict[str, Any]:
+    # The CLI's and the UI's view_model for the same rule can differ in ids.
+    return {k: v for k, v in rule.items() if k not in ("description", "view_model")}
 
 
 # ---------------------------------------------------------------------------
@@ -619,7 +653,12 @@ def plan_delete_folder(identifier: str) -> Plan:
 
 
 def _automation_preview(
-    env: str, auto: AutomationDef, *, live_active: bool | None = None
+    env: str,
+    auto: AutomationDef,
+    payload: dict[str, Any],
+    ctx: LiveContext,
+    *,
+    live_active: bool | None = None,
 ) -> dict[str, Any]:
     """Build the `--dry-run` preview cell for one automation.
 
@@ -639,6 +678,7 @@ def _automation_preview(
             else "ACTIVATES an inactive automation"
         )
         active_display = f"{live_active} → {auto.active} ({direction})"
+    warnings = [*_fan_out_warnings(auto), *_unlaid_rule_warnings(auto, payload, ctx)]
     return {
         "env": env,
         "api_name": auto.api_name,
@@ -648,7 +688,7 @@ def _automation_preview(
         "active": active_display,
         "trigger_count": len(auto.triggers),
         "step_count": len(auto.steps),
-        **_fan_out_warnings(auto),
+        **({"warnings": warnings} if warnings else {}),
     }
 
 
@@ -656,7 +696,7 @@ def _automation_preview(
 _CLOSER_STEP_TYPES = frozenset({"merge_branches", "next_or_finish"})
 
 
-def _fan_out_warnings(auto: AutomationDef) -> dict[str, Any]:
+def _fan_out_warnings(auto: AutomationDef) -> list[str]:
     """Parallel lanes belong under a `branch` step. A plain fan-out still
     saves, but Kizen's 2026-09-28 migration put a `branch` step in front of
     every one, and an update from a spec without it removes it again."""
@@ -668,13 +708,83 @@ def _fan_out_warnings(auto: AutomationDef) -> dict[str, Any]:
         and s.step_type not in _CLOSER_STEP_TYPES
     )
     types = {s.key: s.step_type for s in auto.steps}
-    warnings = [
+    return [
         f"step '{key}' has {n} parallel children but is a '{types[key]}', not a "
         "'branch'; put a 'branch' step in front of the fan-out"
         for key, n in lanes.items()
         if n > 1 and types[key] != "branch"
     ]
-    return {"warnings": warnings} if warnings else {}
+
+
+def _unlaid_rule_warnings(
+    auto: AutomationDef, payload: dict[str, Any], ctx: LiveContext
+) -> list[str]:
+    """One line per outgoing field rule in a condition or search step that
+    has no ``view_model``: the Kizen editor may not show it. A compiled spec
+    rule lacks one when its kind has no captured layout; a raw rule, when
+    whoever wrote it left it out.
+
+    The editor uses a step's stored layouts only if every rule in the step
+    has one. Otherwise it rebuilds them all from the rules' keys, which
+    can't resolve a default field such as ``created`` or ``owner``. So a
+    step that mixes the two gets one more line for the ignored layouts."""
+    spec_steps = {s.key: s for s in auto.steps}
+    warnings = []
+    for step in payload.get("steps") or []:
+        if step["type"] not in ("condition", "search_records"):
+            continue
+        cfg_field = _block_field_for(step["type"])
+        fc = (step.get(cfg_field) or {}).get("filter_config")
+        if not fc:
+            continue
+        spec_block = _to_dict(getattr(spec_steps.get(step["key"]), cfg_field, None))
+        authored = spec_block.get("filter_config") or {}
+        compiled = "all" in authored or "any" in authored
+        if step["type"] == "condition":
+            obj = auto.target_object
+        else:
+            ref = spec_block.get("custom_object")
+            obj = _api_name_of(ref) or _unwrap_id(ref)
+        clauses = [c for g in fc.get("query") or [] for c in g.get("filters") or []]
+        for clause in clauses:
+            if (
+                clause.get("type") not in ("fields", "fields_v2")
+                or "view_model" in clause
+            ):
+                continue
+            wire_field = clause.get("field")
+            field = _rule_field(ctx, obj, wire_field)
+            name = field["api_name"] if compiled and field else wire_field
+            field_type = field["field_type"] if field else "unknown type"
+            warnings.append(
+                f"step '{step['key']}': the rule on '{name}' ({field_type}, "
+                f"{clause.get('condition')}) is saved without the Kizen "
+                "editor's layout, so the editor may not show it. It still runs."
+            )
+        laid_out = sum("view_model" in c for c in clauses)
+        if 0 < laid_out < len(clauses):
+            warnings.append(
+                f"step '{step['key']}': the Kizen editor uses a step's rule "
+                "layouts only when every rule has one, so it ignores the layout "
+                f"on this step's other {laid_out} rule(s) too; a rule on a "
+                "default field such as 'created' or 'owner' then shows no field."
+            )
+    return warnings
+
+
+def _rule_field(
+    ctx: LiveContext, obj: str | None, wire_field: Any
+) -> dict[str, Any] | None:
+    """The live field a rule's wire ``field`` names (``"custom"::<uuid>`` or
+    a default field's api_name), or None if it can't be found."""
+    if not obj or not isinstance(wire_field, str):
+        return None
+    ref = wire_field.removeprefix('"custom"::')
+    try:
+        fields = ctx.object_data(obj)["fields"]
+    except PlanError:
+        return None
+    return next((f for f in fields if ref in (f["id"], f["api_name"])), None)
 
 
 def _llm_tools_dropped(
@@ -1640,6 +1750,9 @@ def _render_filter_config(
     ``variables`` (condition steps only) are the automation's declared
     variables, which a spec condition's ``"variable"`` may name.
 
+    A compiled spec writes the Kizen editor's ``view_model`` on each rule
+    whose layout has been captured; see ``filtering._EDITOR_RULES``.
+
     ``object_api_name`` is the condition/search step's own target object —
     the automation's ``target_object`` for a condition step, but a
     search_records step's own ``custom_object`` (which may differ, e.g. on a
@@ -1655,7 +1768,7 @@ def _render_filter_config(
                 "automations must provide a raw filter_config instead."
             )
         try:
-            with filtering.filter_context(object_api_name):
+            with filtering.filter_context(object_api_name, view_model=True):
                 return filtering.as_filter_config(filtering.from_spec(fc, variables))
         except filtering.VariableReferenceError:
             raise
