@@ -88,6 +88,36 @@ documentation.
 Tests marked `live` need a real environment; `conftest` skips them
 unconditionally, so they record an expectation rather than running.
 
+### Doc examples tied to fixtures
+
+A JSON example in a shipped doc can be tied to a committed fixture, so the
+default suite fails if the two disagree and a drift test can apply the fixture
+knowing a reader saw that exact JSON.
+`tests/test_examples_doc_matches_fixtures.py` checks every `*.md` under
+`src/kizen_builder/docs/`. Unmarked blocks stay legal and unchecked.
+
+1. Write the example as a strict-JSON ```` ```json ```` block: not `jsonc`, no
+   comments, no `…`. Put the marker on its own line, directly above the fence.
+2. To show a whole file, mark it `<!-- fixture: examples/<set>/<file>.json -->`
+   and keep the block byte-identical to the file.
+3. To show part of a file, mark it
+   `<!-- fixture: examples/<set>/<file>.json#/steps/3 -->`. The part after `#`
+   is an RFC 6901 JSON pointer, so write `~0` for `~` and `~1` for `/`. The
+   block must parse to JSON equal to the value at that pointer; key order and
+   whitespace are free.
+4. Put each set in its own directory under `tests/fixtures/examples/`, and make
+   every file in it a complete `--spec-file` input that applies as is. Every
+   file there must be referenced by some marker.
+5. Write a UUID that exists only after an earlier step as a quoted placeholder
+   token, like `"<deals_object_uuid>"` or `"<deals.call_outcome_field_uuid>"`,
+   and name the command that yields it in the prose around the example. Prefer
+   by-name references (`field_ref`, `activity` by api_name) wherever the
+   planner resolves them, so tokens stay rare.
+6. If no marker shows a fixture whole, show every element of its top-level
+   `steps`, `triggers` and `fields` arrays in a fragment, pointing at the
+   element or at its array. Top-level scalars (`name`, `api_name`,
+   `target_object`, `active`, `folder`) need no marker.
+
 ## Source tree
 
 Regenerate this from `git ls-files 'src/kizen_builder/**/*.py'
