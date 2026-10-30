@@ -41,7 +41,8 @@ An automation is triggers + a step graph, sent as one atomic POST/PUT.
         "specific_field_value": true
       } },
     { "key": "done", "parent_key": "check", "parent_branch": "no",
-      "step_type": "stop_execution", "order": 2 }
+      "step_type": "stop_execution", "order": 2,
+      "action_stop_execution": { "action": "stop_and_complete" } }
   ]
 }
 ```
@@ -105,7 +106,8 @@ branches) and 2026-09-29 (goals).
 { "key": "small", "parent_key": "check", "parent_branch": "no",
   "step_type": "delay", "order": 2, "step_delay": { "minutes": 5 } },
 { "key": "rejoin", "parent_key": "check", "step_type": "merge_branches", "order": 3 },
-{ "key": "after", "parent_key": "rejoin", "step_type": "stop_execution", "order": 4 }
+{ "key": "after", "parent_key": "rejoin", "step_type": "stop_execution", "order": 4,
+  "action_stop_execution": { "action": "stop_and_complete" } }
 ```
 
 **Parallel branches** are the children of a `branch` step, none with a
@@ -316,7 +318,7 @@ stays pending (confirmed live 2026-10-30).
 | `condition` | `step_condition` | branch on a filter / group membership / LLM decision |
 | `delay` | `step_delay` | wait a duration or until a time |
 | `goal` | `step_goal` | wait for a condition/event |
-| `stop_execution` | `action_stop_execution` | end this branch — the "Action Options" choice below is required in the UI |
+| `stop_execution` | `action_stop_execution` | end this branch. `action` sets the run's final status (see the options below); omitted, the CLI sends `stop_and_complete` |
 | `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
 | `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
@@ -944,13 +946,16 @@ as a real custom object's own api_name, and its span gets
   | Pause | `pause` | **pauses** (doesn't stop) |
 
   Pair any of these with `"notify": true` to also fire the corresponding
-  notification (the UI's separate "Send Notification" toggle). The API
-  still accepts an omitted/`null` `action` (a bare `{}` block, or no block
-  at all) and reads back `null` — but nothing built through the UI leaves
-  it unset, so pick one explicitly if the run's final status matters
-  rather than relying on whatever `null` defaults to. Previously this
-  entire option set was undocumented and untyped, so specs always left it
-  unset even when e.g. "stop and mark as failed" was the intent.
+  notification (the UI's separate "Send Notification" toggle). Kizen
+  accepts a block without `action` and reads it back `null`, but that step
+  never finishes. The run stays active while the step retries ("unexpected
+  failure"), and the editor shows the action as "Unknown" (confirmed live
+  2026-10-30). So the CLI never sends one. A new step without `action` gets
+  `stop_and_complete`. On `update` and `steps edit`, a step whose `id`
+  matches keeps its live `action` and `notify` when you leave them out, and
+  a live `null` becomes `stop_and_complete`. `translate`, `steps get` and
+  `roundtrip` show and resend a saved `null` as it is. Fix one with
+  `steps edit`.
 - **`change_field_value.specific_field_value` is a bare scalar** — not
   `{value: …}`. The planner wraps it in the `actions: [...]` array. For an
   option field (dropdown, radio, status, checkboxes, choices, yesnomaybe, a
@@ -1000,10 +1005,11 @@ as a real custom object's own api_name, and its span gets
     `is_advanced` (on a condition, `llm_decision.merge_field_validation`),
     and on `call_llm` also its MCP server and run-as account (as a pair),
     `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
-    server)**).
+    server)**). On a `stop_execution` whose `id` matches, its `action` and
+    `notify`.
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
-    A Kizen PUT without them resets each to its default (confirmed live
-    2026-10-30).
+    A Kizen PUT without them resets each to its default, except the stop's,
+    which Kizen keeps when the block is empty (confirmed live 2026-10-30).
   - A step or trigger without `id` is new to Kizen, so what its spec leaves
     out gets Kizen's defaults: the type's default description, an empty
     note, not skipped.

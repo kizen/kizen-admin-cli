@@ -533,7 +533,9 @@ def normalize_step_patch(
     doesn't read is refused, and an initialize_variable's `variable` must pass
     `AutomationVariableConfig`. The patched block then gets the same checks
     `automations create`/`update` and `steps add` apply
-    (`_resolve_llm_plugin_app`, `_built_block_problem`).
+    (`_resolve_llm_plugin_app`, `_built_block_problem`). A `stop_execution`
+    block keeps the live step's `action` and `notify` where it leaves them
+    out, and gets `stop_and_complete` when neither has an action.
     """
     from pydantic import ValidationError
     from pydantic_core import InitErrorDetails
@@ -542,6 +544,7 @@ def normalize_step_patch(
     from kizen_builder.models.spec import AutomationVariableConfig
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
+        _STOP_EXECUTION_DEFAULT_ACTION,
         LiveContext,
         _block_field_for,
         _built_block_problem,
@@ -550,6 +553,7 @@ def normalize_step_patch(
         _resolve_llm_plugin_app,
     )
     from kizen_builder.tools.plans import PlanError
+    from kizen_builder.tools.steps import find_step
 
     cfg_key = _block_field_for(step_type)
     builder = _STEP_BUILDERS.get(step_type)
@@ -577,9 +581,19 @@ def normalize_step_patch(
         ctx = LiveContext()
         try:
             block = _resolve_goal_trigger_stages(step_type, patch[cfg_key], auto, ctx)
-            patch[cfg_key] = builder(dict(block), auto, ctx)
+            built = builder(dict(block), auto, ctx)
         except (PlanError, VariableReferenceError) as e:
             raise PlanError(f"step '{key}': {e}") from e
+        if step_type == "stop_execution":
+            live = find_step(payload, key).get(cfg_key) or {}
+            kept = {
+                k: live[k]
+                for k in ("action", "notify")
+                if k not in patch[cfg_key] and live.get(k) is not None
+            }
+            built = {**kept, **built}
+            built.setdefault("action", _STOP_EXECUTION_DEFAULT_ACTION)
+        patch[cfg_key] = built
         _resolve_llm_plugin_app(step_type, key, patch[cfg_key], ctx)
         problem = _built_block_problem(step_type, key, patch[cfg_key], auto, ctx)
         if problem:

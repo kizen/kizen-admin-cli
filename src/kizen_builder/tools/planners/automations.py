@@ -543,7 +543,9 @@ _KEPT_LLM_PROMPT_KEYS = (
 )
 
 # Config-block keys a PUT resets the same way, by step type (confirmed live
-# 2026-10-30).
+# 2026-10-30). `stop_execution` is the exception: Kizen keeps a live action
+# when the block is left out, but carrying both keys sends them together and
+# keeps `diff` from reporting the action as removed.
 _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
     "schedule_activity": (
         _KeptBlockKeys(("target_variable",), write=lambda v: _unwrap_variable_name(v)),
@@ -569,6 +571,11 @@ _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
             within="llm_decision",
             default="error_if_required",
         ),
+    ),
+    # Both go, so nothing rests on what Kizen does with a partial block.
+    "stop_execution": (
+        _KeptBlockKeys(("action",)),
+        _KeptBlockKeys(("notify",), default=False),
     ),
 }
 
@@ -1849,6 +1856,11 @@ def _block_field_for(step_type: str) -> str:
     return f"action_{step_type}"
 
 
+# Kizen saves a stop without an action, but a run that reaches it never
+# finishes (confirmed live 2026-10-30), so the spec path never sends one.
+_STOP_EXECUTION_DEFAULT_ACTION = "stop_and_complete"
+
+
 def _build_step_payload(
     step: AutomationStepDef, auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1909,6 +1921,8 @@ def _build_step_payload(
         wire_block = builder(block_dict, auto, ctx)
     except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
+    if step.step_type == "stop_execution":
+        wire_block.setdefault("action", _STOP_EXECUTION_DEFAULT_ACTION)
     _resolve_llm_plugin_app(step.step_type, step.key, wire_block, ctx)
     problem = _built_block_problem(step.step_type, step.key, wire_block, auto, ctx)
     if problem:
@@ -2277,9 +2291,10 @@ def _step_loop(
 def _step_stop_execution(
     block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
 ) -> dict[str, Any]:
-    # Block can carry {action, notify}; default empty is also accepted.
-    # Drop nulls — the API rejects null for `action` even though live responses
-    # contain it.
+    # Block can carry {action, notify}. Drop nulls — the API rejects null for
+    # `action` even though live responses contain it. Reads use this builder
+    # too and must resend a saved null as it is, so the default for an omitted
+    # `action` lives in `_build_step_payload`, the spec path.
     cleaned = _strip(block)
     return {k: v for k, v in cleaned.items() if v is not None}
 
