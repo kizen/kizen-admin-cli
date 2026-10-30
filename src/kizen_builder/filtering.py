@@ -31,6 +31,7 @@ import contextlib
 import copy
 import threading
 from datetime import UTC, date, datetime
+from typing import NamedTuple
 from uuid import UUID
 
 _local_filter_cx = threading.local()
@@ -263,31 +264,84 @@ def _check_ui_supported(field, condition):
 
 
 # The Kizen workflow editor's layout for a literal field rule, by (field kind,
-# wire condition, qualifier). The qualifier is the value of a blank check and
-# the comparison of a stage-time rule. Each row maps to (editor condition,
-# value entry, editor comparison). Only rows seen in UI-built automations are
-# here, each citing its capture: rules[i] of tests/fixtures/automations/
-# condition_literal_rules.json (2026-10-30), or another automation fixture.
+# wire condition, qualifier). The qualifier is the value of a blank check, a
+# checkbox `=` or an Is Me, and the comparison of a stage-time rule. Only rows
+# seen in UI-built automations are here, each citing its capture in
+# tests/fixtures/automations/ (all 2026-10-30): rules[i] of
+# condition_literal_rules.json, q<group>[i] of the "UI Capture" step in
+# condition_literal_rules_ui_capture.raw.json, the Contacts steps of
+# condition_literal_rules_contacts.raw.json, or another automation fixture.
 # A rule with no row is written without a view_model.
+class _Layout(NamedTuple):
+    token: str  # the editor's condition
+    entry: str | None = None  # how the value is shown; None = no value
+    comparison: str | None = None  # a stage-time rule's editor comparison
+    # "stage": the editor's Stage picker, which has no field_id entry.
+    picker: str = "fields"
+
+
 _EDITOR_RULES = {
     # rules[0]
-    ("text", "=", None): ("equals", "literal", None),
+    ("text", "=", None): _Layout("equals", "literal"),
+    # q1[0], q1[1]
+    ("text", "contains", None): _Layout("contains", "literal"),
+    ("text", "!=", None): _Layout("does_not_equal", "literal"),
+    # Contacts search step, Contacts condition step
+    ("email", "=", None): _Layout("equals", "literal"),
+    ("email", "contains", None): _Layout("contains", "literal"),
     # update_variable_goto_branching.raw.json
-    ("dropdown", "=", None): ("equals", "option", None),
-    # rules[6]
-    ("stage", "=", None): ("equals", "stage", None),
-    # rules[1]
-    ("datetime", ">=", None): ("later_than_or_on", "literal", None),
+    ("dropdown", "=", None): _Layout("equals", "option"),
+    # q0[0] to q0[3]
+    ("dropdown", "is_any_of", None): _Layout("is_any_of", "options"),
+    ("dropdown", "is_none_of", None): _Layout("is_none_of", "options"),
+    ("dropdown", "!=", None): _Layout("does_not_equal", "option"),
+    ("dropdown", "is_blank", True): _Layout("is_blank"),
+    # q0[18], q0[19]
+    ("status", "=", None): _Layout("equals", "option"),
+    ("yesnomaybe", "=", None): _Layout("equals", "option"),
+    # q0[10], q0[11]
+    ("checkboxes", "has", None): _Layout("has", "options"),
+    ("checkboxes", "!has_any", None): _Layout("!has_any", "options"),
+    # q0[8], q0[9]: the value is shown by the rating's option ids.
+    ("rating", ">=", None): _Layout("more_than_or_equal_to", "option"),
+    ("rating", "is_any_of", None): _Layout("is_any_of", "options"),
+    # q0[17]
+    ("checkbox", "=", True): _Layout("is_checked"),
+    # q0[14], q0[15]
+    ("integer", ">=", None): _Layout("more_than_or_equal_to", "number"),
+    ("decimal", "<", None): _Layout("less_than", "number"),
+    # q0[13] (the owner field), q0[16]
+    ("team_selector", "=", "is_me"): _Layout("is_me"),
+    ("team_selector", "is_any_of", None): _Layout("is_any_of", "employees"),
+    # q0[7]: the editor's relationship "Contains"
+    ("relationship", "is_any_of", None): _Layout("is_any_of", "records"),
     # rules[2], rules[5]
-    ("relationship", "is_blank", True): ("is_blank", None, None),
-    ("relationship", "is_blank", False): ("is_not_blank", None, None),
-    # rules[4], rules[3]
-    ("stage", "time_in_stage", ">"): ("time_in_stage", "stage", "more_than"),
-    ("stage", "entered_stage", "<"): ("entered_stage", "stage", "earlier_than"),
+    ("relationship", "is_blank", True): _Layout("is_blank"),
+    ("relationship", "is_blank", False): _Layout("is_not_blank"),
+    # rules[1], q1[3], q1[2]
+    ("datetime", ">=", None): _Layout("later_than_or_on", "literal"),
+    ("datetime", "<", None): _Layout("earlier_than", "literal"),
+    ("date", "between", None): _Layout("between", "untyped_literal"),
+    # rules[6]
+    ("stage", "=", None): _Layout("equals", "stage"),
+    # q0[4] to q0[6]
+    ("stage", "is_any_of", None): _Layout("is_any_of", "stage_options", picker="stage"),
+    ("stage", "is_none_of", None): _Layout(
+        "is_none_of", "stage_options", picker="stage"
+    ),
+    ("stage", "!=", None): _Layout("!=", "stage", picker="stage"),
+    # rules[4], rules[3], q1[5]
+    ("stage", "time_in_stage", ">"): _Layout("time_in_stage", "stage", "more_than"),
+    ("stage", "entered_stage", "<"): _Layout("entered_stage", "stage", "earlier_than"),
+    ("stage", "left_stage", ">="): _Layout("left_stage", "stage", "later_than_or_on"),
 }
 
-# How the editor looks up a dropdown rule's option names, verbatim from the
-# capture; the request body is `{"option_ids": [<option id>]}`.
+# Value entries the editor writes with no `value_type`.
+_UNTYPED_ENTRIES = {"untyped_literal", "stage_options"}
+
+# How the editor looks up one option's name (entry "option"), verbatim from
+# the capture; the body is `{"option_ids": [<option id>]}`. Entry "options"
+# drops the outer `xf_hoist` and lists several ids.
 _OPTION_DISPLAY_NAMES = {
     "url": "/records/display-names",
     "method": "POST",
@@ -342,30 +396,107 @@ _OPTION_DISPLAY_NAMES = {
 }
 
 
-def _view_model_head(field, client, obj_id, obj):
-    """The ``filter_type`` and ``field_id`` entries every field rule's
-    ``view_model`` opens with. The vars name the target object and the
-    Contacts ``tags`` field."""
+# The Stage picker's lookup of stage names, verbatim from the capture; the
+# body is `{"option_ids": [<stage id>, ...]}`.
+_STAGE_DISPLAY_NAMES = {
+    "url": "/records/display-names",
+    "method": "POST",
+    "result_path": [],
+    "result_transform": [
+        "xf_concat",
+        [
+            "xf_map",
+            "@result_path/not_found/options",
+            {
+                "id": ["xf_pick", "$", ["id"]],
+                "name": ["xf_join", "[Deleted] ", ["xf_pick", "$", ["display_name"]]],
+                "not_found": True,
+                "error_message": "The stage has been deleted",
+            },
+        ],
+        [
+            "xf_map",
+            "@result_path/results/options",
+            {
+                "id": ["xf_pick", "$", ["id"]],
+                "name": ["xf_pick", "$", ["display_name"]],
+            },
+        ],
+    ],
+}
+
+
+def _display_names(kind, deleted_message):
+    """The editor's lookup of record or team-member names (``kind`` is
+    ``records`` or ``employees``), as captured; the body is
+    ``{"record_ids" | "employee_ids": [...]}``."""
+
+    def flagged(key, label, flag, message):
+        return [
+            "xf_map",
+            f"@result_path/{key}/{kind}",
+            {
+                "id": ["xf_pick", "$", ["id"]],
+                flag: True,
+                "display_name": [
+                    "xf_join",
+                    "[",
+                    label,
+                    "] ",
+                    ["xf_pick", "$", ["display_name"]],
+                ],
+                "error_message": message,
+            },
+        ]
+
+    return {
+        "url": "/records/display-names",
+        "method": "POST",
+        "result_path": [],
+        "result_transform": [
+            "xf_concat",
+            f"@result_path/results/{kind}",
+            flagged("not_found", "Deleted", "not_found", deleted_message),
+            flagged("not_allowed", "No Access", "not_allowed", "Required field"),
+        ],
+    }
+
+
+def _view_model_head(field, client, obj_id, obj, picker="fields"):
+    """The entries every field rule's ``view_model`` opens with:
+    ``filter_type`` (its vars name the target object and the Contacts
+    ``tags`` field), then ``field_id``. The Stage picker's rules have no
+    ``field_id``."""
     tags = client.get_field("client_client", "tags")
-    prefix = "pipelines" if obj.get("fetch_url") == "pipeline" else "custom-objects"
-    relation = field.get("relation") or {}
-    return [
+    if obj.get("fetch_url") == "client":
+        object_type = "client_client"
+        field_url = f"/client/fields/{field['id']}"
+    else:
+        object_type = obj.get("object_type")
+        prefix = "pipelines" if obj.get("fetch_url") == "pipeline" else "custom-objects"
+        field_url = f"/{prefix}/{obj_id}/fields/{field['id']}"
+    head = [
         [
             "filter_type",
             {
                 "vars": [
                     ["fields_settings_search", True],
                     ["custom_object_id", obj_id],
-                    ["object_type", obj.get("object_type")],
+                    ["object_type", object_type],
                     ["client_tag_field_id", tags["id"] if tags else None],
                 ],
-                "filter_type": "fields",
+                "filter_type": picker,
             },
-        ],
+        ]
+    ]
+    if picker == "stage":
+        return head
+    relation = field.get("relation") or {}
+    head.append(
         [
             "field_id",
             {
-                "url": f"/{prefix}/{obj_id}/fields/{field['id']}",
+                "url": field_url,
                 "method": "GET",
                 "error_message": {"404": "The field has been deleted"},
                 "error_response": {
@@ -378,40 +509,72 @@ def _view_model_head(field, client, obj_id, obj):
                     "field_type": field["field_type"],
                 },
             },
-        ],
-    ]
+        ]
+    )
+    return head
 
 
 def _with_view_model(clause, field, client, obj_id):
     """``clause`` plus the editor's ``view_model``, when the context asks for
-    one and ``_EDITOR_RULES`` has the rule's layout; otherwise unchanged."""
+    one and ``_EDITOR_RULES`` has the rule's layout; otherwise unchanged.
+    A number rule's value is written as a string, as the editor writes it."""
     if not getattr(_local_filter_cx, "view_model", False):
         return clause
     is_stage = field["is_default"] and field["name"] == "stage"
     kind = "stage" if is_stage else field["field_type"]
     condition = clause["condition"]
-    if condition == "is_blank":
-        qualifier = clause["value"]
+    value = clause["value"]
+    if (
+        condition == "is_blank"
+        or kind == "checkbox"
+        or (kind == "team_selector" and value == "is_me")
+    ):
+        qualifier = value
     else:
         qualifier = clause.get("comparison_condition")
-    rule = _EDITOR_RULES.get((kind, condition, qualifier))
-    if rule is None:
+    layout = _EDITOR_RULES.get((kind, condition, qualifier))
+    if layout is None:
         return clause
     obj = client.custom_object(obj_id)
-    if obj.get("fetch_url") == "client":
-        # No Contacts rule has been captured, and the field URL differs by
-        # object family.
-        return clause
-    token, entry, comparison = rule
-    view_model = [*_view_model_head(field, client, obj_id, obj), ["condition", token]]
-    value = clause["value"]
-    if entry is not None and comparison is None:
+    entry = layout.entry
+    view_model = [
+        *_view_model_head(field, client, obj_id, obj, layout.picker),
+        ["condition", layout.token],
+    ]
+    typed = entry is not None and entry not in _UNTYPED_ENTRIES
+    if typed and layout.comparison is None:
         view_model.append(["value_type", "static"])
-    if entry == "literal":
+    if entry == "number":
+        value = str(value)
+        clause = {**clause, "value": value}
+    if entry in {"literal", "untyped_literal", "number"}:
         view_model.append(["value", value])
-    elif entry == "option":
+    elif entry in {"option", "options"}:
+        ids = [value] if entry == "option" else value
+        if kind == "rating":
+            # The wire holds the rating's codes; the editor looks it up by
+            # the options' ids.
+            by_code = {o["code"]: o["id"] for o in field.get("options") or []}
+            unknown = [v for v in ids if v not in by_code]
+            if unknown:
+                raise ValueError(
+                    f"rating field {field['name']!r} has no option {unknown[0]!r}. "
+                    f"Valid options: {', '.join(by_code)}"
+                )
+            ids = [by_code[v] for v in ids]
         recipe = copy.deepcopy(_OPTION_DISPLAY_NAMES)
-        view_model.append(["value", {**recipe, "body": {"option_ids": [value]}}])
+        if entry == "options":
+            recipe["result_transform"] = recipe["result_transform"][1]
+        view_model.append(["value", {**recipe, "body": {"option_ids": ids}}])
+    elif entry == "stage_options":
+        recipe = copy.deepcopy(_STAGE_DISPLAY_NAMES)
+        view_model.append(["value", {**recipe, "body": {"option_ids": value}}])
+    elif entry == "records":
+        recipe = _display_names("records", "The record has been deleted")
+        view_model.append(["value", {**recipe, "body": {"record_ids": value}}])
+    elif entry == "employees":
+        recipe = _display_names("employees", "The team member has been deleted")
+        view_model.append(["value", {**recipe, "body": {"employee_ids": value}}])
     elif entry == "stage":
         view_model.append(
             [
@@ -423,8 +586,8 @@ def _with_view_model(clause, field, client, obj_id):
                 },
             ]
         )
-    if comparison is not None:
-        view_model.append(["comparison_condition", comparison])
+    if layout.comparison is not None:
+        view_model.append(["comparison_condition", layout.comparison])
         view_model.append(["comparison_value", clause["comparison_value"]])
         if "comparison_type" in clause:
             view_model.append(["comparison_type", clause["comparison_type"]])
@@ -597,13 +760,6 @@ class FilterCondition:
         ``view_model`` flag says.
         """
         obj = client.custom_object(obj_id)
-        if obj.get("fetch_url") == "client":
-            # The field URL in the view_model differs by object family, and no
-            # Contacts rule has been captured to show it.
-            raise VariableReferenceError(
-                "comparing a field to a variable isn't supported on Contacts "
-                "automations yet; build the rule in the Kizen UI"
-            )
         field_type = field["field_type"]
         var = self.variable
         name, data_type = var["name"], var["data_type"]

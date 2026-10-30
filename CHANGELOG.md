@@ -14,6 +14,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Automation rules on an integer field with `>=` or a decimal field with
+  `<` now send the value as a string** (`"90"`), as the editor writes it.
+  Other number rules, and number rules on other filter surfaces, still send
+  the number.
+
 ### Fixed
 
 - **Condition and search rules written by the CLI now carry the layout the
@@ -25,6 +32,12 @@ called out explicitly under **Changed** or **Removed**.
   update` with its spec. `automations update` also keeps the rule text
   Kizen's editor stores on a rule the spec leaves as it is, instead of
   dropping it.
+- **More rule kinds now carry the Kizen editor's layout,** among them
+  number, checkbox, multi-option, team-member and relationship rules, and
+  rules on Contacts automations.
+  Contacts automations can compare a field to an array variable. `kizen
+  docs show filters` lists the rule kinds that still have no layout, and
+  the ones whose layout is inferred rather than captured.
 
 ## [0.4.0] — 2026-10-27
 
