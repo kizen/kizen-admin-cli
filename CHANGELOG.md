@@ -23,6 +23,11 @@ called out explicitly under **Changed** or **Removed**.
   in the builder were lost. `--dry-run` names the steps as `keeps_live`.
   The automation's `skip_non_working_days` is kept the same way; an update
   that left it out used to turn it off.
+- **Automations with a Schedule Activity step work again with `show`,
+  `steps`, `activate`, `deactivate`, `move`, `diff` and `roundtrip`.**
+  Kizen's 2026-10-26 release added a setting the CLI refused to drop.
+  Specs can now set `target_variable` and `variable_field_resolution` on the
+  step, and `update` keeps them when a spec leaves them out.
 
 ## [0.4.0] — 2026-10-27
 

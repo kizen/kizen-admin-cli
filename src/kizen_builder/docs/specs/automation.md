@@ -956,6 +956,9 @@ as a real custom object's own api_name, and its span gets
     (only with a kept skip), `action_on_failure` and
     `error_notification_severity_level`. On a trigger whose `id` matches:
     `description`, `user_description` and `should_skip_execution`.
+    On a `schedule_activity` step whose `id` matches, its block's
+    `target_variable` and `variable_field_resolution` too
+    ([below](#schedule_activitytarget_variable-and-variable_field_resolution)).
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
     A Kizen PUT without them resets each to its default (confirmed live
     2026-10-30).
@@ -1198,6 +1201,26 @@ global automation doesn't have at all.
 Kizen stores the two separately, and a PUT without `html_note` clears it
 while `note` survives. Set both when you want the note in both forms.
 Confirmed live 2026-10-06.
+
+### `schedule_activity.target_variable` and `variable_field_resolution`
+
+`target_variable` names a String or UUID automation variable that receives
+the scheduled activity's id. Write it as the variable's name; a read expands
+it to `{id, name, data_type, …}`, and `steps get` prints the name again.
+`variable_field_resolution` is `overwrite` (the default) or
+`update_if_blank`, which leaves a variable that already holds a value alone
+(the activity is still scheduled).
+A step that binds no variable reads `target_variable: null` with
+`overwrite`. Confirmed live 2026-10-30, including runs: `overwrite` replaced a
+seeded value with the new activity's id, and `update_if_blank` kept it.
+
+A PUT that leaves either key out resets it to `null`/`overwrite`. `steps edit`,
+`activate` and the other read-back verbs send both from the live read, and
+`update` keeps the live values when the spec omits them. An explicit
+`"target_variable": null` unbinds the variable. If an update removes the
+bound variable from `variables`, send that `null` too: otherwise the kept name
+points at a variable that no longer exists, and Kizen refuses the PUT with
+`HTTP 400 … variable '<name>' does not exist.`
 
 ### `schedule_activity.association_configs`
 
