@@ -1597,6 +1597,22 @@
       "surface": "automations",
       "type": "object"
     },
+    "schema:WriteTriggerRequest.trigger_stage_updated": {
+      "label": "trigger config: stage_updated",
+      "present": true,
+      "properties": {
+        "fire_on_create": "boolean",
+        "from_stage": "string<uuid>?",
+        "stage_field": "string<uuid>?",
+        "to_stage": "string<uuid>?"
+      },
+      "required": [
+        "from_stage",
+        "to_stage"
+      ],
+      "surface": "automations",
+      "type": "object"
+    },
     "schema:WriteTriggerRequest.trigger_survey_submitted": {
       "label": "trigger config: survey_submitted",
       "present": true,

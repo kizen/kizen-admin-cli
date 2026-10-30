@@ -43,6 +43,7 @@ keys it reads with :func:`honours` (or :func:`honours_all`), add it to
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -992,6 +993,97 @@ def _qualify_trigger_field_ref(
     return {**block, "field_ref": ".".join(_split_field_ref(ref, auto))}
 
 
+# The server's default and the UI's text. A description in either form names
+# no user intent, only (possibly old) stages, so it is rewritten from the
+# stages being sent: a spec copied from a read would otherwise label a changed
+# trigger with its previous stages.
+_GENERATED_STAGE_DESCRIPTION = re.compile(
+    r"Stage Updated|Stage Update from '.*' to '.*'", re.DOTALL
+)
+
+
+def _resolve_trigger_stages(
+    trigger_type: str,
+    key: str,
+    block: dict[str, Any],
+    description: str | None,
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> tuple[dict[str, Any], str | None]:
+    """A `stage_updated` block with its stage names resolved to UUIDs, and its
+    description: the UI's text unless the spec wrote its own. Other trigger
+    types pass through.
+
+    Kizen refuses a name, and answers a stage of another pipeline with a
+    message that doesn't name the stage (confirmed live 2026-10-30).
+    """
+    if trigger_type != "stage_updated":
+        return block, description
+    where = f"trigger '{key}'"
+    if not auto.target_object:
+        raise PlanError(
+            f"{where}: stage_updated needs a pipeline object, and the "
+            "automation has no target_object."
+        )
+    obj = ctx.object_data(auto.target_object)
+    if obj.get("object_type") != "pipeline":
+        raise PlanError(
+            f"{where}: stage_updated needs a pipeline object, and "
+            f"'{auto.target_object}' isn't one."
+        )
+    stages = obj.get("stages") or []
+    out = dict(block)
+    names = {}
+    for k in ("from_stage", "to_stage"):
+        value = block.get(k)
+        if value is None:
+            names[k] = "Any Stage"
+            continue
+        match = match_option(stages, value)
+        if match is None:
+            raise PlanError(
+                f"{where}: stage '{value}' isn't a stage of "
+                f"'{obj.get('display_name') or auto.target_object}'. "
+                f"Stages: {', '.join(str(s.get('name')) for s in stages)}"
+            )
+        out[k] = match["id"]
+        names[k] = match["name"]
+    if description and not _GENERATED_STAGE_DESCRIPTION.fullmatch(description):
+        return out, description
+    return out, f"Stage Update from '{names['from_stage']}' to '{names['to_stage']}'"
+
+
+def _goal_trigger_key(t: dict[str, Any], i: int) -> str:
+    return t.get("key") or f"goal_trigger_{i}"
+
+
+def _resolve_goal_trigger_stages(
+    step_type: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """A goal block whose `stage_updated` wait-until triggers have stage UUIDs
+    and a description. Runs before the goal builder, which translate also
+    calls, so the builder never needs a lookup."""
+    if step_type != "goal" or not block.get("triggers"):
+        return block
+    triggers = []
+    for i, t in enumerate(block["triggers"]):
+        trigger_type = t.get("trigger_type") or t.get("type")
+        if trigger_type != "stage_updated":
+            triggers.append(t)
+            continue
+        cfg_field = trigger_config_field(trigger_type)
+        resolved, description = _resolve_trigger_stages(
+            trigger_type,
+            _goal_trigger_key(t, i),
+            dict(t.get(cfg_field) or {}),
+            t.get("description"),
+            auto,
+            ctx,
+        )
+        triggers.append({**t, cfg_field: resolved, "description": description})
+    return {**block, "triggers": triggers}
+
+
 def _build_trigger_payload(
     t: AutomationTriggerDef, auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1021,6 +1113,11 @@ def _build_trigger_payload(
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
     block_dict = _qualify_trigger_field_ref(t.trigger_type, block_dict, auto)
+    block_dict, description = _resolve_trigger_stages(
+        t.trigger_type, p["key"], block_dict, p.get("description"), auto, ctx
+    )
+    if description:
+        p["description"] = description
     p[cfg_field] = builder(block_dict, ctx)
     problem = _inbox_selection_problem([p])
     if problem:
@@ -1229,6 +1326,18 @@ def _trigger_scheduled_activity_overdue(
     return out
 
 
+@honours("from_stage", "to_stage", "fire_on_create")
+def _trigger_stage_updated(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
+    # Stage names were resolved before dispatch (_resolve_trigger_stages).
+    # Both stage keys are required, null meaning Any Stage; Kizen accepts and
+    # ignores `stage_field`, so it's never sent (confirmed live 2026-10-30).
+    return {
+        "from_stage": block.get("from_stage"),
+        "to_stage": block.get("to_stage"),
+        "fire_on_create": bool(block.get("fire_on_create", False)),
+    }
+
+
 @honours("receiving_inbox", "selected_integrated_inboxes")
 def _trigger_email_received(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
     # Contact automations only: a custom object gets 400 "only client custom
@@ -1255,6 +1364,7 @@ _TRIGGER_BUILDERS: dict[str, Any] = {
     "form_submitted": _trigger_form_submitted,
     "survey_submitted": _trigger_survey_submitted,
     "email_received": _trigger_email_received,
+    "stage_updated": _trigger_stage_updated,
 }
 
 
@@ -1422,6 +1532,7 @@ def _build_step_payload(
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
     try:
+        block_dict = _resolve_goal_trigger_stages(step.step_type, block_dict, auto, ctx)
         wire_block = builder(block_dict, auto, ctx)
     except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
@@ -1715,7 +1826,7 @@ def _step_goal(
         if not trigger_type:
             raise PlanError(f"goal trigger {i} has no trigger_type")
         p: dict[str, Any] = {
-            "key": t.get("key") or f"goal_trigger_{i}",
+            "key": _goal_trigger_key(t, i),
             "type": trigger_type,
             "prefix": "trigger",
             "user_description": t.get("user_description") or "",

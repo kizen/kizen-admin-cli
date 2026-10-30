@@ -409,6 +409,12 @@ KNOWN_UNSENT_SCHEMA_KEYS: dict[str, dict[str, str]] = {
         ),
         "no_step_ids": "same as yes_step_ids",
     },
+    "schema:WriteTriggerRequest.trigger_stage_updated": {
+        "stage_field": (
+            "accepted and ignored, even a non-stage field's UUID, and never read "
+            "back; the target's stages are what match (confirmed live 2026-10-30)"
+        ),
+    },
 }
 
 

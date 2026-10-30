@@ -1785,15 +1785,15 @@ def test_unsupported_trigger_type_raises_with_supported_list(patch_live_lookups)
         "type": "global",
         "triggers": [
             {
-                "trigger_type": "stage_updated",
+                "trigger_type": "email_link_clicked",
                 "order": 0,
-                "trigger_stage_updated": {},
+                "trigger_email_link_clicked": {"email_template_name": "Welcome"},
             }
         ],
         "steps": [],
     }
     with pytest.raises(
-        PlanError, match="trigger type 'stage_updated' not yet supported"
+        PlanError, match="trigger type 'email_link_clicked' not yet supported"
     ):
         _build(spec)
 
@@ -1919,6 +1919,233 @@ def test_trigger_email_received_from_contact_is_not_a_type():
     spec["triggers"][0]["trigger_type"] = "email_received_from_contact"
     with pytest.raises(ValueError, match="unknown trigger_type.*'email_received'"):
         AutomationDef.model_validate(spec)
+
+
+_PROSPECTING = "aaaaaaaa-0000-4000-8000-000000000001"
+_NEGOTIATION = "aaaaaaaa-0000-4000-8000-000000000002"
+_CLOSED_WON = "aaaaaaaa-0000-4000-8000-000000000003"
+
+
+def _stage_spec(block: dict | None, target: str | None = "deals") -> dict:
+    trigger: dict = {"trigger_type": "stage_updated", "order": 1}
+    if block is not None:
+        trigger["trigger_stage_updated"] = block
+    spec: dict = {
+        "api_name": "stage_updated_test",
+        "name": "Stage Updated Test",
+        "type": "record_based" if target else "global",
+        "triggers": [trigger],
+        "steps": [],
+    }
+    if target:
+        spec["target_object"] = target
+    return spec
+
+
+def _stage_trigger(payload: dict) -> dict:
+    return next(t for t in payload["triggers"] if t["type"] == "stage_updated")
+
+
+@pytest.mark.parametrize(
+    "block, wire, description",
+    [
+        (
+            {"from_stage": "negotiation", "to_stage": "Closed Won"},
+            {"from_stage": _NEGOTIATION, "to_stage": _CLOSED_WON},
+            "Stage Update from 'Negotiation' to 'Closed Won'",
+        ),
+        (
+            {"to_stage": "Closed Won"},
+            {"from_stage": None, "to_stage": _CLOSED_WON},
+            "Stage Update from 'Any Stage' to 'Closed Won'",
+        ),
+        (
+            {"from_stage": None, "to_stage": None, "fire_on_create": True},
+            {"from_stage": None, "to_stage": None, "fire_on_create": True},
+            "Stage Update from 'Any Stage' to 'Any Stage'",
+        ),
+        (
+            {"from_stage": _PROSPECTING, "to_stage": _NEGOTIATION},
+            {"from_stage": _PROSPECTING, "to_stage": _NEGOTIATION},
+            "Stage Update from 'Prospecting' to 'Negotiation'",
+        ),
+    ],
+)
+def test_trigger_stage_updated(patch_live_lookups, block, wire, description):
+    """Names resolve to stage UUIDs, null or omitted is Any Stage, and the
+    description is the one the UI writes. Both stage keys are always sent,
+    and `stage_field` never is (confirmed live 2026-10-30)."""
+    trigger = _stage_trigger(_build(_stage_spec(block)))
+    assert trigger["trigger_stage_updated"] == {"fire_on_create": False, **wire}
+    assert trigger["description"] == description
+
+
+@pytest.mark.parametrize(
+    "given, expected",
+    [
+        ("Deal won", "Deal won"),
+        ("Stage Updated", "Stage Update from 'Any Stage' to 'Negotiation'"),
+        (
+            "Stage Update from 'Any Stage' to 'Closed Won'",
+            "Stage Update from 'Any Stage' to 'Negotiation'",
+        ),
+    ],
+)
+def test_trigger_stage_updated_description(patch_live_lookups, given, expected):
+    """A written description is kept. The server's default and the UI's text
+    are rewritten for the stages sent, so a spec copied from a read and then
+    given a new stage isn't labelled with the old one."""
+    spec = _stage_spec({"to_stage": "Negotiation"})
+    spec["triggers"][0]["description"] = given
+    assert _stage_trigger(_build(spec))["description"] == expected
+
+
+@pytest.mark.parametrize(
+    "target, block, message",
+    [
+        (
+            "deals",
+            {"to_stage": "Lost"},
+            "trigger 'trigger.stage_updated.1': stage 'Lost' isn't a stage of "
+            "'Deals'. Stages: Prospecting, Negotiation, Closed Won",
+        ),
+        (
+            "deals",
+            {"from_stage": "fe19470a-9e23-4be6-871a-f6ad10f244f6"},
+            "trigger 'trigger.stage_updated.1': stage "
+            "'fe19470a-9e23-4be6-871a-f6ad10f244f6' isn't a stage of 'Deals'. "
+            "Stages: Prospecting, Negotiation, Closed Won",
+        ),
+        (
+            "encounters",
+            {"to_stage": "Closed Won"},
+            "trigger 'trigger.stage_updated.1': stage_updated needs a pipeline "
+            "object, and 'encounters' isn't one.",
+        ),
+        (
+            None,
+            {},
+            "trigger 'trigger.stage_updated.1': stage_updated needs a pipeline "
+            "object, and the automation has no target_object.",
+        ),
+    ],
+)
+def test_trigger_stage_updated_refusals(patch_live_lookups, target, block, message):
+    with pytest.raises(PlanError) as e:
+        _build(_stage_spec(block, target))
+    assert str(e.value) == message
+
+
+def test_trigger_stage_updated_stage_field_is_refused(patch_live_lookups):
+    with pytest.raises(PlanError, match="stage_field would be silently dropped"):
+        _build(_stage_spec({"stage_field": "deals.stage"}))
+
+
+def _stage_goal(to_stage: str) -> dict:
+    return {
+        "key": "wait_won",
+        "step_type": "goal",
+        "step_goal": {
+            "wait_type": "never",
+            "triggers": [
+                {
+                    "key": "won",
+                    "trigger_type": "stage_updated",
+                    "trigger_stage_updated": {"to_stage": to_stage},
+                }
+            ],
+        },
+    }
+
+
+def test_goal_trigger_stage_updated_resolves_by_name(patch_live_lookups):
+    spec = _stage_spec({})
+    spec["steps"] = [{**_stage_goal("closed won"), "order": 0, "parent_key": None}]
+    (goal,) = _build(spec)["steps"][0]["step_goal"]["triggers"]
+    assert goal["trigger_stage_updated"] == {
+        "from_stage": None,
+        "to_stage": _CLOSED_WON,
+        "fire_on_create": False,
+    }
+    assert goal["description"] == "Stage Update from 'Any Stage' to 'Closed Won'"
+    spec["steps"][0]["step_goal"]["triggers"][0]["trigger_stage_updated"] = {
+        "to_stage": "Lost"
+    }
+    with pytest.raises(PlanError, match="step 'wait_won': trigger 'won': stage 'Lost'"):
+        _build(spec)
+
+
+def test_steps_add_and_edit_goal_stage_updated_by_name(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step, normalize_step_patch
+
+    wire = build_wire_step(_stage_goal("Negotiation"), _LIVE_PAYLOAD, "deals")
+    (goal,) = wire["step_goal"]["triggers"]
+    assert goal["trigger_stage_updated"]["to_stage"] == _NEGOTIATION
+    # `steps get` → change the stage → `steps edit`: the read's label follows.
+    goal["trigger_stage_updated"]["to_stage"] = "Closed Won"
+    patch = normalize_step_patch(dict(wire), "wait_won", "goal", _LIVE_PAYLOAD, "deals")
+    (goal,) = patch["step_goal"]["triggers"]
+    assert goal["trigger_stage_updated"]["to_stage"] == _CLOSED_WON
+    assert goal["description"] == "Stage Update from 'Any Stage' to 'Closed Won'"
+    with pytest.raises(
+        PlanError,
+        match="step 'wait_won': trigger 'won': stage_updated needs a pipeline",
+    ):
+        build_wire_step(_stage_goal("Negotiation"), _LIVE_PAYLOAD, "encounters")
+    with pytest.raises(PlanError, match="step 'wait_won': trigger 'won': stage 'Lost'"):
+        normalize_step_patch(
+            {"step_goal": _stage_goal("Lost")["step_goal"]},
+            "wait_won",
+            "goal",
+            _LIVE_PAYLOAD,
+            "deals",
+        )
+
+
+def test_diff_stage_updated_spec_matches_its_live_read(patch_live_lookups, monkeypatch):
+    """A by-name spec diffs clean against the read of what it created."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    raw["custom_object"] = {**raw["custom_object"], "name": "deals"}
+    manual = next(t for t in raw["triggers"] if t["trigger_type"] == "manual")
+    stage = {
+        "id": "2b0c3c4e-55a1-4a43-9d3a-6f1e0c1d2e3f",
+        "order": 1,
+        "description": "Stage Update from 'Any Stage' to 'Closed Won'",
+        "user_description": "",
+        "trigger_type": "stage_updated",
+        "trigger_stage_updated": {
+            "from_stage": None,
+            "to_stage": _CLOSED_WON,
+            "fire_on_create": False,
+        },
+        "stats": {"number_completed": 0},
+    }
+    raw["triggers"] = [manual, stage]
+    raw["steps"] = []
+    monkeypatch.setattr(
+        ma, "get_automation", lambda api: {"id": raw["id"], "raw": raw, **raw}
+    )
+    monkeypatch.setattr(
+        ma, "list_automations", lambda: [{"api_name": raw["api_name"], "id": raw["id"]}]
+    )
+    spec = {
+        **_stage_spec({"to_stage": "Closed Won"}),
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+    }
+    spec["triggers"][0]["id"] = stage["id"]
+    spec["triggers"].insert(
+        0,
+        {
+            "trigger_type": "manual",
+            "order": 0,
+            "id": manual["id"],
+            "description": manual["description"],
+        },
+    )
+    assert [d for d in diff_automation(spec)["diff"] if "trigger" in d["path"]] == []
 
 
 def test_unsupported_step_type_raises_with_supported_list(patch_live_lookups):
