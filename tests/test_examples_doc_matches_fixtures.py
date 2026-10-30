@@ -11,7 +11,8 @@ Every `*.md` under the packaged docs tree, `specs/` included, is scanned for
 
 Every fixture in a set directory under `tests/fixtures/examples/` must be
 referenced by some marker, and one shown only in fragments must show every
-element of its top-level `steps`, `triggers` and `fields` arrays. The drift
+element of its top-level `steps`, `triggers`, `fields`, `visibility_rules`
+(activities) and `sections` (email templates) arrays. The drift
 tests (`tests/drift/test_worked_examples.py`) apply those same files against a
 real environment, so this check is what makes "the doc shows what the drift
 test applies" a guarantee rather than a convention. Unmarked blocks are not
@@ -37,7 +38,7 @@ FIXTURES_ROOT = REPO_ROOT / "tests" / "fixtures"
 _MARKER_RE = re.compile(r"^\s*<!--\s*fixture:\s*(?P<target>\S+?)\s*-->\s*$")
 _MARKER_START_RE = re.compile(r"<!--\s*fixture:")
 _MARKER_PATH_RE = re.compile(r"^examples/[^/]+/[^/]+\.json$")
-_COVERED_ARRAYS = ("steps", "triggers", "fields")
+_COVERED_ARRAYS = ("steps", "triggers", "fields", "visibility_rules", "sections")
 _MISSING = object()
 
 
@@ -216,7 +217,7 @@ def orphan_problems(blocks: list[MarkedBlock], fixtures_root: Path) -> list[str]
 
 
 def coverage_problems(blocks: list[MarkedBlock], fixtures_root: Path) -> list[str]:
-    """Fragment-only fixtures with a ``steps``/``triggers``/``fields`` element no doc shows."""
+    """Fragment-only fixtures with an element of a ``_COVERED_ARRAYS`` array no doc shows."""
     pointers: dict[str, set[str | None]] = {}
     for b in blocks:
         pointers.setdefault(b.fixture, set()).add(b.pointer)
@@ -278,7 +279,7 @@ def test_every_example_fixture_is_referenced():
     assert not problems, "\n".join(problems)
 
 
-def test_fragment_only_fixtures_show_every_step_trigger_and_field():
+def test_fragment_only_fixtures_show_every_covered_array_element():
     blocks, _ = _shipped()
     problems = coverage_problems(blocks, FIXTURES_ROOT)
     assert not problems, "\n".join(problems)
@@ -393,3 +394,27 @@ def test_a_marker_sharing_its_line_with_text_is_reported(tmp_path):
         tmp_path, "Text <!-- fixture: examples/demo/auto.json -->\n```json\n{}\n```\n"
     )
     assert problems == ["specs/demo.md:1: a fixture marker must be on its own line."]
+
+
+def test_uncovered_visibility_rules_and_template_sections_are_named(tmp_path):
+    fixture = {
+        "name": "Call",
+        "fields": [{"name": "Outcome"}],
+        "visibility_rules": [{"show": ["a"]}, {"show": ["b"]}],
+        "sections": [{"rows": []}],
+    }
+    field = _fragment("/fields/0", '{"name": "Outcome"}')
+    rules = _fragment("/visibility_rules", '[{"show": ["a"]}, {"show": ["b"]}]')
+    section = _fragment("/sections/0", '{"rows": []}')
+
+    blocks, _, fixtures = _tree(tmp_path / "bare", field)
+    (fixtures / "examples" / "demo" / "auto.json").write_text(json.dumps(fixture))
+    [problem] = coverage_problems(blocks, fixtures)
+    assert "no marker shows visibility_rules[0], visibility_rules[1], sections[0]." in (
+        problem
+    )
+
+    blocks, _, fixtures = _tree(tmp_path / "covered", field + rules + section)
+    (fixtures / "examples" / "demo" / "auto.json").write_text(json.dumps(fixture))
+    assert [p for b in blocks for p in block_problems(b, fixtures)] == []
+    assert coverage_problems(blocks, fixtures) == []

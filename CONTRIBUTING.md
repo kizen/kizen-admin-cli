@@ -114,7 +114,8 @@ knowing a reader saw that exact JSON.
    by-name references (`field_ref`, `activity` by api_name) wherever the
    planner resolves them, so tokens stay rare.
 6. If no marker shows a fixture whole, show every element of its top-level
-   `steps`, `triggers` and `fields` arrays in a fragment, pointing at the
+   `steps`, `triggers`, `fields`, `visibility_rules` (an activity's) and
+   `sections` (an email template's) arrays in a fragment, pointing at the
    element or at its array. Top-level scalars (`name`, `api_name`,
    `target_object`, `active`, `folder`) need no marker.
 
