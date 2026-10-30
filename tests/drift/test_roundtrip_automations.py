@@ -568,6 +568,49 @@ def test_variable_comparison_survives_the_roundtrip(drift_variable_condition):
     assert {k: live[k] for k in sent} == sent
 
 
+@pytest.fixture(scope="session")
+def drift_laid_out_conditions(drift_client, scratch) -> dict[str, Any]:
+    """A text `=` and a stage `=` rule compiled from a spec, on a pipeline
+    object of its own."""
+    obj = _create_drift_object(drift_client, scratch, "laid_out_object", "pipeline")
+    stage = obj["live"]["pipeline"]["stages"][0]
+    spec = _base_spec("laid_out", obj)
+    spec["steps"] = [
+        {
+            "key": "check",
+            "step_type": "condition",
+            "order": 0,
+            "parent_key": None,
+            "step_condition": {
+                "type": "custom_filter",
+                "filter_config": {
+                    "any": [
+                        {"field": "name", "op": "=", "value": "drift"},
+                        {"field": "stage", "op": "=", "value": stage["id"]},
+                    ]
+                },
+            },
+        },
+    ]
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_editor_layout_survives_the_roundtrip(drift_laid_out_conditions):
+    """The `view_model` the CLI writes on a literal rule comes back as sent."""
+
+    def rules(steps, kind_key):
+        (step,) = [s for s in steps if s[kind_key] == "condition"]
+        return step["step_condition"]["filter_config"]["query"][0]["filters"]
+
+    sent = rules(drift_laid_out_conditions["sent"]["steps"], "type")
+    live = rules(drift_laid_out_conditions["live"]["steps"], "step_type")
+    assert [r["view_model"][2] for r in sent] == [
+        ["condition", "equals"],
+        ["condition", "equals"],
+    ]
+    assert [{k: r[k] for k in s} for r, s in zip(live, sent, strict=True)] == sent
+
+
 # ---------------------------------------------------------------------------
 # Triggers — all ten on one automation
 # ---------------------------------------------------------------------------

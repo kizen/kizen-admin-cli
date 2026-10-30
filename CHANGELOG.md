@@ -14,6 +14,18 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Condition and search rules written by the CLI now carry the layout the
+  Kizen workflow editor uses to show them,** for text, dropdown, stage,
+  date-time and blank-relationship rules. The editor uses these layouts only
+  in a step where every rule has one. The dry run warns about rules it can't
+  lay out yet, and about a step whose other layouts the editor will ignore
+  because of them. To fix an existing automation, re-run `automations
+  update` with its spec. `automations update` also keeps the rule text
+  Kizen's editor stores on a rule the spec leaves as it is, instead of
+  dropping it.
+
 ## [0.4.0] — 2026-10-27
 
 ### Added

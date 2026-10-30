@@ -780,6 +780,23 @@ def test_ui_built_variable_comparison_survives_translation(path: str) -> None:
     assert diff_wire_payloads(live, _rekey(live_to_payload(raw), "authored_")) == []
 
 
+def _first_rule(payload: dict) -> dict:
+    (cond,) = _steps_by_type(payload, "condition")
+    return cond["step_condition"]["filter_config"]["query"][0]["filters"][0]
+
+
+def test_diff_wire_payloads_reports_a_dropped_rule_description() -> None:
+    """The payload `update` sends is what `diff` compares, so a description
+    missing from it shows (the planner keeps it on an unchanged rule)."""
+    raw = load_fixture("automations/condition_variable_rhs_pipeline.raw.json")
+    live = live_to_payload(raw)
+    spec = copy.deepcopy(live)
+    del _first_rule(spec)["description"]
+    (change,) = diff_wire_payloads(live, spec)
+    assert change["path"].endswith(".filters[0].description")
+    assert change["after"] == "<absent>"
+
+
 def test_diff_wire_payloads_ignores_go_to_key_resynthesis() -> None:
     """A `go_to_automation_step` reference must resolve by matched identity,
     same as `parent_key` — re-keying it to point at the *same* target under

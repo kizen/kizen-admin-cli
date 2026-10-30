@@ -263,8 +263,10 @@ def create_field_on(
     return created
 
 
-def _create_drift_object(drift_client, scratch: Scratch, what: str) -> dict[str, Any]:
-    """Create one throwaway standard custom object from the planner payload."""
+def _create_drift_object(
+    drift_client, scratch: Scratch, what: str, object_type: str = "standard"
+) -> dict[str, Any]:
+    """Create one throwaway custom object from the planner payload."""
     from kizen_builder.api import custom_objects as co_api
     from kizen_builder.models.spec import ObjectDef
     from kizen_builder.tools.planners.objects import _build_object_payload
@@ -272,7 +274,7 @@ def _create_drift_object(drift_client, scratch: Scratch, what: str) -> dict[str,
     spec = ObjectDef(
         name=debris_name(what),
         api_name=debris_api_name(what),
-        object_type="standard",
+        object_type=object_type,
         description="Created by the kizen-builder drift suite. Safe to delete.",
     )
     payload = _build_object_payload(spec)

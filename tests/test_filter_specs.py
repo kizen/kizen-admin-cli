@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from kizen_builder.filtering import (
+    Field,
     VariableReferenceError,
     as_filter_config,
     field_type_ops,
@@ -461,3 +462,171 @@ def test_variable_rule_refused_on_contacts():
     spec = {"field": "tags", "op": "is_any_of", "variable": "strs"}
     with pytest.raises(VariableReferenceError, match="isn't supported on Contacts"):
         _compile(spec, "client_client", _STRINGS)
+
+
+# ---------------------------------------------------------------------------
+# The Kizen editor's view_model on literal rules (automation steps only)
+#
+# The expected clauses are the UI's own (see the fixtures); the lookups are
+# faked from the same objects.
+# ---------------------------------------------------------------------------
+
+_FIRST_NAMES = "ceed733b-9dd9-4bf9-8c52-8ba1ac41da45"
+_ASSESSMENTS = "e8093798-e46c-4306-852f-d3be48c1dc3f"
+_CLASSIFIED = "8fa0a1cb-8d96-4ec4-9bbf-7ace6dd5a574"
+_STAGE_1 = "7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc"
+_STAGE_2 = "fe19470a-9e23-4be6-871a-f6ad10f244f6"
+
+
+def _with_options(field, **options):
+    return {**field, "options": [{"name": n, "id": i} for n, i in options.items()]}
+
+
+class _LiteralRuleSchema(_CapturedSchema):
+    OBJECTS = {
+        **_CapturedSchema.OBJECTS,
+        _FIRST_NAMES: {"name": "first_names", "object_type": "standard"},
+        _ASSESSMENTS: {"name": "assessments", "object_type": "standard"},
+        _CLASSIFIED: {"name": "classified", "object_type": "standard"},
+    }
+    FIELDS = {
+        **_CapturedSchema.FIELDS,
+        _FIRST_NAMES: [
+            _field("patient_first_name", "107925a9-19f0-41b5-8f44-28badfa44e58", "text")
+        ],
+        _PIPELINE: [
+            *_CapturedSchema.FIELDS[_PIPELINE],
+            _field("created", "ab8db33d-19df-4587-9307-fadb7e67a1da", "datetime", True),
+            _with_options(
+                _field(
+                    "stage", "dd7e1f05-351d-4b34-9953-478a3be82b79", "dropdown", True
+                ),
+                **{"Stage 1": _STAGE_1, "Stage 2": _STAGE_2},
+            ),
+        ],
+        _ASSESSMENTS: [
+            _field(
+                "primary_assessment_area_record",
+                "6347d056-19da-46e2-8720-cfd95dfaf96c",
+                "relationship",
+                related_object="afcf03d1-11bf-4aaf-8691-b9d34e75ee63",
+            )
+        ],
+        _CLASSIFIED: [
+            _with_options(
+                _field(
+                    "classification_schema_flag",
+                    "1602aaf8-cf1e-40e5-bd21-6a1d24fd127e",
+                    "dropdown",
+                ),
+                **{"Schema 1": "d632c602-f223-4506-802b-5b366fbcba26"},
+            )
+        ],
+        "contacts-object-id": [
+            _field("first_name", "0e7a8d55-4bd8-4b07-9d0e-1a1a8a1a1a1a", "text", True)
+        ],
+    }
+
+    def __init__(self, tags_field_id="f6a89dd0-7e37-42fb-92f6-eef59ddade10"):
+        self.tags_field_id = tags_field_id
+
+    def get_field(self, obj, name):
+        if obj in ("client_client", "contacts-object-id") and name == "tags":
+            return {"id": self.tags_field_id, "name": "tags"}
+        return super().get_field(obj, name)
+
+
+def _laid_out(rule, obj, schema=None, view_model=True):
+    """Compile one rule (a spec, or a callable building a DSL condition) the
+    way the automation planner does."""
+    with filter_context(
+        obj, client=schema or _LiteralRuleSchema(), view_model=view_model
+    ):
+        expr = rule() if callable(rule) else from_spec({"all": [rule]})
+        (clause,) = as_filter_config(expr)["query"][0]["filters"]
+    return clause
+
+
+def _without_description(clause):
+    return {k: v for k, v in clause.items() if k != "description"}
+
+
+_LITERAL_RULES = [
+    ({"field": "patient_first_name", "op": "=", "value": "j"}, _FIRST_NAMES),
+    ({"field": "created", "op": ">=", "value": "2026-06-01T04:00:00.000Z"}, _PIPELINE),
+    ({"field": "primary_assessment_area_record", "op": "is_blank"}, _ASSESSMENTS),
+    # The UI's unpadded date, passed through as written.
+    (
+        lambda: Field("stage").entered_stage("Stage 1", earlier_than="2026-7-14"),
+        _PIPELINE,
+    ),
+    (lambda: Field("stage").time_in_stage("Stage 2", more_than=4), _PIPELINE),
+    ({"field": "related_branch_records", "op": "not_blank"}, _PIPELINE),
+    ({"field": "stage", "op": "=", "value": "Stage 1"}, _PIPELINE),
+]
+
+
+@pytest.mark.parametrize(
+    ("rule", "obj", "captured"),
+    [
+        (rule, obj, captured["clause"])
+        for (rule, obj), captured in zip(
+            _LITERAL_RULES,
+            load_fixture("automations/condition_literal_rules.json")["rules"],
+            strict=True,
+        )
+    ],
+    ids=[
+        "text",
+        "datetime",
+        "is_blank",
+        "entered_stage",
+        "time_in_stage",
+        "not_blank",
+        "stage",
+    ],
+)
+def test_literal_rules_match_the_ui_capture(rule, obj, captured):
+    assert _laid_out(rule, obj) == _without_description(captured)
+
+
+def test_dropdown_rule_matches_the_ui_capture():
+    raw = load_fixture("automations/update_variable_goto_branching.raw.json")
+    (captured,) = [
+        c
+        for s in raw["steps"]
+        if s["step_type"] == "condition"
+        for g in s["step_condition"]["filter_config"]["query"]
+        for c in g["filters"]
+        if c["type"] == "fields_v2"
+    ]
+    spec = {"field": "classification_schema_flag", "op": "=", "value": "Schema 1"}
+    schema = _LiteralRuleSchema("b2c26f96-abe0-46e5-afcd-0f6fbb3a9029")
+    assert _laid_out(spec, _CLASSIFIED, schema) == _without_description(captured)
+
+
+def test_view_model_only_when_the_context_asks():
+    rule = {"field": "patient_first_name", "op": "=", "value": "j"}
+    assert "view_model" not in _laid_out(rule, _FIRST_NAMES, view_model=False)
+    assert render_search_filters(
+        {"all": [rule]}, _FIRST_NAMES, client=_LiteralRuleSchema()
+    )[0]["filters"] == [_laid_out(rule, _FIRST_NAMES, view_model=False)]
+
+
+@pytest.mark.parametrize(
+    ("rule", "obj"),
+    [
+        ({"field": "patient_first_name", "op": "contains", "value": "j"}, _FIRST_NAMES),
+        ({"field": "created", "op": "<", "value": "2026-06-01T04:00Z"}, _PIPELINE),
+        ({"field": "stage", "op": "is_any_of", "value": ["Stage 1"]}, _PIPELINE),
+        (lambda: Field("stage").time_in_stage("Stage 2", less_than=4), _PIPELINE),
+    ],
+    ids=["text contains", "datetime <", "stage is_any_of", "time_in_stage <"],
+)
+def test_uncaptured_rule_kinds_get_no_view_model(rule, obj):
+    assert "view_model" not in _laid_out(rule, obj)
+
+
+def test_no_view_model_on_a_contacts_rule():
+    rule = {"field": "first_name", "op": "=", "value": "j"}
+    assert "view_model" not in _laid_out(rule, "client_client")
