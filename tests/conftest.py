@@ -111,6 +111,16 @@ def fake_get_object(api_name: str) -> dict[str, Any]:
     """get_object() stand-in serving tests/fixtures/objects/<api_name>.json."""
     path = FIXTURES / "objects" / f"{api_name}.json"
     if not path.exists():
+        # A planner may hold the object's UUID (e.g. a resolved object_to_modify).
+        path = next(
+            (
+                p
+                for p in (FIXTURES / "objects").glob("*.json")
+                if f'"id": "{api_name}"' in p.read_text()[:200]
+            ),
+            path,
+        )
+    if not path.exists():
         raise LookupError(f"object '{api_name}' not found (no fixture)")
     obj = json.loads(path.read_text())
     obj.setdefault("raw", None)  # CLI --json output strips this key
@@ -188,7 +198,7 @@ def patch_live_lookups(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         ma.LiveContext,
         "_fields_with_options",
-        lambda self, object_api_name: fake_get_object(object_api_name)["fields"],
+        lambda self, object_ref: fake_get_object(object_ref)["fields"],
     )
     return fake_get_object
 

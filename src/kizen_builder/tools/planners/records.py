@@ -19,6 +19,7 @@ from typing import Any, cast
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Action, Plan, PlanError, PlanOperation
+from kizen_builder.utils import match_option
 
 # Field types whose value is one option chosen from a fixed set.
 _SINGLE_SELECT = {"dropdown", "radio", "status", "choices", "selector", "yesnomaybe"}
@@ -42,19 +43,18 @@ def _resolve_option(field: dict[str, Any], value: Any) -> Any:
     """Resolve one option value to a wire form.
 
     A dict is passed through untouched (the caller already gave a wire ref).
-    A string is matched against the field's option ``name`` then ``code``
-    (case-insensitively); a hit becomes ``{"id": <option_uuid>}``. A miss
-    falls back to ``{"name": value}`` so the server can still try to match by
-    label rather than the tool rejecting a value it simply doesn't recognise.
+    A string is matched against the field's option ``id``, then ``name``,
+    then ``code`` (case-insensitively); a hit becomes ``{"id": <option_uuid>}``.
+    A miss falls back to ``{"name": value}`` so the server can still try to
+    match by label rather than the tool rejecting a value it simply doesn't
+    recognise.
     """
     if isinstance(value, dict):
         return value
     label = str(value)
-    for opt in field.get("options") or []:
-        if (opt.get("name") or "").lower() == label.lower() or (
-            opt.get("code") or ""
-        ).lower() == label.lower():
-            return {"id": opt["id"]}
+    match = match_option(field.get("options"), label)
+    if match is not None:
+        return {"id": match["id"]}
     return {"name": label}
 
 

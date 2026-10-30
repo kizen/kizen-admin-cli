@@ -54,6 +54,9 @@ def move_record(
 ) -> dict[str, Any]:
     """PATCH /api/records/{object_identifier}/{entity_id}/move.
 
+    ``object_identifier`` must be the object UUID; the api_name answers 500
+    (confirmed live 2026-10-30).
+
     ``payload`` carries ``stage_id`` (and optionally ``move_before_record_id`` /
     ``move_after_record_id`` for board-order placement within the stage).
     """

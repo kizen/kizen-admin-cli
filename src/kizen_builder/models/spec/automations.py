@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -21,7 +21,6 @@ from kizen_builder.models.spec.automations_actions_control import (
     ActionModifyAutomationConfig,
     ActionStartAutomationConfig,
     ActionStopExecutionConfig,
-    ActionUpdatePipelineStatusConfig,
     StepConditionConfig,
     StepDelayConfig,
     StepGoalConfig,
@@ -112,7 +111,6 @@ _STEPS_REQUIRING_CONFIG = {
     "notify_member_via_text",
     "plugin_code_step",
     "start_automation",
-    "update_pipeline_status",
     "update_variable",
     "search_records",
 }
@@ -231,7 +229,14 @@ class AutomationStepDef(BaseModel):
     action_send_text: ActionSendTextConfig | None = None
     action_send_related_contact_text: ActionSendRelatedContactTextConfig | None = None
     action_start_automation: ActionStartAutomationConfig | None = None
-    action_update_pipeline_status: ActionUpdatePipelineStatusConfig | None = None
+    action_update_pipeline_status: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Refused at plan time: Kizen's automation builder has no move-stage "
+            "step. Move a record with a change_field_value step on its stage "
+            "field, giving the stage name."
+        ),
+    )
     action_update_variable: ActionUpdateVariableConfig | None = None
     action_archive_record: ActionArchiveRecordConfig | None = None
     action_search_records: ActionSearchRecordsConfig | None = None
