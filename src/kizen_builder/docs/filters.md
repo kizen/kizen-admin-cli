@@ -52,6 +52,9 @@ re-run through the DSL.
   cover (below): pass a raw wire dict. A **field compared to an array
   variable** is in the DSL: give `"variable"` instead of `"value"`, in a
   condition step only (below).
+- A pipeline's `stage` field also takes `time_in_stage`, `entered_stage` and
+  `left_stage`, which test how long a record has been in a stage and when it
+  entered or left one. See [Pipeline stage conditions](#pipeline-stage-conditions).
 
 ## The wire format
 
@@ -109,8 +112,37 @@ or this CLI produce; treat `is_not_blank` on a *record field* as
 legacy/unconfirmed and use `is_blank` + `false`.
 
 Do not confuse that with the genuinely distinct `is_not_blank` token used by
-**variable** conditions, immediately below — a different clause type with a
-different token set.
+**variable** conditions, below — a different clause type with a different
+token set.
+
+#### Pipeline stage conditions
+
+A pipeline's `stage` field takes `=`, `!=`, `is_any_of` and `not_any_of`, plus
+three ops of its own. Each of the three takes one stage in `value`, by name
+(case-insensitive) or UUID, and exactly one comparison key:
+
+```json
+{ "all": [
+    { "field": "stage", "op": "time_in_stage", "value": "Negotiation",
+      "more_than": 14, "units": "days" },
+    { "field": "stage", "op": "entered_stage", "value": "Qualified",
+      "later_than_or_on": "2026-10-01" }
+] }
+```
+
+| op | comparison key | its value |
+|---|---|---|
+| `time_in_stage` | `more_than` or `less_than` | a whole number, with `units` of `days` (the default), `hours` or `weeks` |
+| `entered_stage`, `left_stage` | `on`, `not_on`, `earlier_than`, `earlier_than_or_on`, `later_than` or `later_than_or_on` | a fixed date, `YYYY-MM-DD` |
+
+- The dates are fixed. There is no "in the last N days" form, so
+  `time_in_stage` is the only relative one.
+- **`time_in_stage X` also matches records that have since left X.** "Stuck in
+  X for more than N days" needs the current stage as well (confirmed live
+  2026-10-30):
+  `{"all": [{"field": "stage", "op": "=", "value": "X"}, {"field": "stage", "op": "time_in_stage", "value": "X", "more_than": N}]}`.
+- A stage name that isn't on the object is a plan error, for every stage op,
+  rather than a 400 or a 500 from the server.
 
 ## Variable-comparison clauses (automations only)
 

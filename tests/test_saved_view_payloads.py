@@ -163,6 +163,45 @@ def test_create_filter_group_renders_filter_spec_via_dsl(
     assert clause["value"] == "A-1"
 
 
+def test_create_filter_group_compiles_a_stage_time_op(no_existing_views):
+    from tests.filter_stub import StubClient
+
+    filtering.set_default_client(StubClient())
+    try:
+        plan = sv_planners.plan_create_filter_group(
+            "patients",
+            {
+                "name": "Stuck in Stage 1",
+                "config": {
+                    "all": [
+                        {"field": "stage", "op": "=", "value": "Stage 1"},
+                        {
+                            "field": "stage",
+                            "op": "time_in_stage",
+                            "value": "Stage 1",
+                            "more_than": 7,
+                        },
+                    ]
+                },
+            },
+        )
+    finally:
+        filtering.set_default_client(None)
+    (op,) = plan.operations
+    _, clause = op.payload["config"]["query"][0]["filters"]
+    assert clause == {
+        "type": "fields_v2",
+        "subtype": "non_custom",
+        "field": "stage",
+        "overwrite": {"type": "stage"},
+        "condition": "time_in_stage",
+        "value": "a82570ce-c4e4-4548-bbb7-8b77f94bbb9a",
+        "comparison_condition": ">",
+        "comparison_value": "7",
+        "comparison_type": "days",
+    }
+
+
 def test_create_filter_group_invalid_filter_spec_raises(
     no_existing_views, filter_schema
 ):
