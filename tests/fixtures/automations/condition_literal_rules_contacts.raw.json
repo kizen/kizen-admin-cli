@@ -1,0 +1,328 @@
+{
+  "id": "94ed5d8b-ba01-4637-b016-477d54f988ec",
+  "name": "Contacts rule capture",
+  "api_name": "contacts_rule_capture",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+    "name": "client_client",
+    "description": null,
+    "entity_name": "Contact",
+    "object_name": "Contacts",
+    "object_class": "contacts",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "d83a87ec-5755-46ef-a198-0ee4a7d8e1af",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "a2644a67-2ad4-4e43-ba10-3939f73138da",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "var1 = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "2f282b4e-a7db-4b41-b2ff-12cfb6499e9d",
+          "name": "var1",
+          "data_type": "entity",
+          "data_subtype": {
+            "id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+            "name": "client_client",
+            "description": null,
+            "entity_name": "Contact",
+            "object_name": "Contacts",
+            "object_class": "contacts",
+            "object_type": "standard",
+            "default_on_activities": true,
+            "deleted": false
+          },
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-30T17:23:32.797959Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "6bd05d3d-4f95-41c4-86c3-d08598f3ef56",
+      "step_type": "search_records",
+      "order": 1,
+      "description": "Overwrite Array 'var1' Where Contact Fields 'Email' Equals Static Value person@example.com",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "a2644a67-2ad4-4e43-ba10-3939f73138da",
+      "parent_condition": "",
+      "action_search_records": {
+        "custom_object": {
+          "id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+          "name": "client_client",
+          "object_name": "Contacts",
+          "entity_name": "Contact",
+          "deleted": false
+        },
+        "filter_type": "custom_filter",
+        "filter_config": {
+          "and": false,
+          "query": [
+            {
+              "id": "query-0",
+              "and": false,
+              "filters": [
+                {
+                  "type": "fields",
+                  "field": "email",
+                  "value": "person@example.com",
+                  "subtype": "non_custom",
+                  "condition": "=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce"
+                          ],
+                          [
+                            "object_type",
+                            "client_client"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/client/fields/b80bcdf9-76ba-4f45-9258-35a9b2f4dede",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "email",
+                          "relation": {},
+                          "field_type": "email"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "equals"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      "person@example.com"
+                    ]
+                  ],
+                  "description": "Fields 'Email' Equals Static Value person@example.com"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "filter_groups": [],
+        "destination_variable": {
+          "name": "var1",
+          "deleted": false
+        },
+        "destination_variable_resolution": "overwrite"
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "666c7cc2-9fb8-4c6d-b535-942181a13528",
+      "step_type": "condition",
+      "order": 2,
+      "description": "Contact Fields 'Email' Contains Static Value @",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": "6bd05d3d-4f95-41c4-86c3-d08598f3ef56",
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": false,
+          "query": [
+            {
+              "id": "query-0",
+              "and": false,
+              "filters": [
+                {
+                  "type": "fields",
+                  "field": "email",
+                  "value": "@",
+                  "subtype": "non_custom",
+                  "condition": "contains",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce"
+                          ],
+                          [
+                            "object_type",
+                            "client_client"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/client/fields/b80bcdf9-76ba-4f45-9258-35a9b2f4dede",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "email",
+                          "relation": {},
+                          "field_type": "email"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "contains"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      "@"
+                    ]
+                  ],
+                  "description": "Fields 'Email' Contains Static Value @"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [],
+        "no_steps": [],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "2f282b4e-a7db-4b41-b2ff-12cfb6499e9d",
+      "name": "var1",
+      "data_type": "entity",
+      "data_subtype": {
+        "id": "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce",
+        "name": "client_client",
+        "description": null,
+        "entity_name": "Contact",
+        "object_name": "Contacts",
+        "object_class": "contacts",
+        "object_type": "standard",
+        "default_on_activities": true,
+        "deleted": false
+      },
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-30T17:23:32.797959Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    }
+  ],
+  "revision": 2,
+  "error_notification_email": null,
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-30T12:21:41.677498-05:00",
+  "updated": "2026-10-30T12:23:32.750885-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

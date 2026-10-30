@@ -763,7 +763,7 @@ To test a record field against a variable's values, put `"variable"` in
 place of `"value"` in the condition's filter spec. The variable must be
 declared in the same automation, as an array (a team-member field also takes
 a single `employee` variable). For a dropdown the array holds option names or
-option UUIDs; a test run matched with each. Not on Contacts automations.
+option UUIDs; a test run matched with each.
 
 ```json
 { "key": "allowed", "parent_key": null, "step_type": "initialize_variable",

@@ -458,12 +458,6 @@ def test_variable_declaration_errors(spec, variables, message):
     assert str(e.value) == message
 
 
-def test_variable_rule_refused_on_contacts():
-    spec = {"field": "tags", "op": "is_any_of", "variable": "strs"}
-    with pytest.raises(VariableReferenceError, match="isn't supported on Contacts"):
-        _compile(spec, "client_client", _STRINGS)
-
-
 # ---------------------------------------------------------------------------
 # The Kizen editor's view_model on literal rules (automation steps only)
 #
@@ -616,17 +610,247 @@ def test_view_model_only_when_the_context_asks():
 @pytest.mark.parametrize(
     ("rule", "obj"),
     [
-        ({"field": "patient_first_name", "op": "contains", "value": "j"}, _FIRST_NAMES),
-        ({"field": "created", "op": "<", "value": "2026-06-01T04:00Z"}, _PIPELINE),
-        ({"field": "stage", "op": "is_any_of", "value": ["Stage 1"]}, _PIPELINE),
+        (
+            {"field": "patient_first_name", "op": "starts_with", "value": "j"},
+            _FIRST_NAMES,
+        ),
+        ({"field": "created", "op": ">", "value": "2026-06-01T04:00Z"}, _PIPELINE),
+        (
+            {"field": "related_branch_records", "op": "contains", "value": "r"},
+            _PIPELINE,
+        ),
         (lambda: Field("stage").time_in_stage("Stage 2", less_than=4), _PIPELINE),
     ],
-    ids=["text contains", "datetime <", "stage is_any_of", "time_in_stage <"],
+    ids=["text starts_with", "datetime >", "relationship contains", "time_in_stage <"],
 )
 def test_uncaptured_rule_kinds_get_no_view_model(rule, obj):
     assert "view_model" not in _laid_out(rule, obj)
 
 
-def test_no_view_model_on_a_contacts_rule():
-    rule = {"field": "first_name", "op": "=", "value": "j"}
-    assert "view_model" not in _laid_out(rule, "client_client")
+# The "UI Capture" step's rules and the Contacts rules, saved in the editor
+# (see the fixtures).
+
+_RULE_KINDS = "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+_CONTACTS = "9305ce04-f8c5-405c-a9fc-5eaa50dcb7ce"
+_RELATED_REC = "2420676a-42c5-4ca8-8bda-56deeff34ec7"
+_MEMBERS = [
+    "beca2db6-6bb7-410d-b5a2-03320ded085a",
+    "916dac1b-5640-4268-9324-06132f342488",
+]
+
+
+def _coded(field, **options):
+    return {
+        **field,
+        "options": [{"code": c, "name": c, "id": i} for c, i in options.items()],
+    }
+
+
+class _RuleKindsSchema(_LiteralRuleSchema):
+    OBJECTS = {
+        **_LiteralRuleSchema.OBJECTS,
+        _RULE_KINDS: {
+            "name": "rule_kinds",
+            "object_type": "pipeline",
+            "fetch_url": "pipeline",
+        },
+    }
+    FIELDS = {
+        **_LiteralRuleSchema.FIELDS,
+        _RULE_KINDS: [
+            _coded(
+                _field(
+                    "rk_dropdown", "6f0f110a-2ff7-4bc4-abcd-a7343d022987", "dropdown"
+                ),
+                Alpha="b3446d7c-5ef3-4a4e-9945-06298946d76e",
+                Gamma="1d333880-ef20-44fb-90bd-0bcdaf3abf02",
+            ),
+            _with_options(
+                _field(
+                    "stage", "28548924-eac7-452b-be16-c12a24ee35fb", "dropdown", True
+                ),
+                Open="d24dad28-e667-4507-978b-790785812c62",
+            ),
+            _field(
+                "rk_rel",
+                "b1561707-d434-47de-8320-7f7f70f8ccfc",
+                "relationship",
+                related_object="b2d4c620-f837-4451-bf9f-29376172338c",
+            ),
+            _coded(
+                _field("rk_rating", "e87d12c5-00e4-4257-aba4-5cc94cd40c2d", "rating"),
+                **{
+                    "2": "3343c85e-4adf-3ff0-a99e-1fc9b251ce7d",
+                    "3": "f5acfe25-f7ab-3a74-b655-0b3acf3d1d84",
+                },
+            ),
+            _coded(
+                _field(
+                    "rk_checkboxes",
+                    "232a4c40-9089-46d5-8dc1-28a2a75bdb3d",
+                    "checkboxes",
+                ),
+                C1="0c8dbfda-e098-47e4-8560-9735d66569a0",
+                C2="51182733-6ac3-427f-a46f-97e3fca674b2",
+            ),
+            _field(
+                "owner", "0c706850-8f6c-4f14-8222-fcc8f4f3e633", "team_selector", True
+            ),
+            _field("rk_integer", "5e7ddf4a-5f0a-46f1-8d8b-e9b8fb597405", "integer"),
+            _field("rk_decimal", "62bee8c0-9dd0-4988-92cc-0fdf60d5ffa7", "decimal"),
+            _field(
+                "rk_member", "d4fd668e-71be-4d35-ae7e-a4c33c694943", "team_selector"
+            ),
+            _field("rk_checkbox", "b36878da-0512-4e4b-b10a-e9aaa4843a01", "checkbox"),
+            _coded(
+                _field("rk_status", "9ccebea8-dab6-4ba8-ab84-6478f6b87e8e", "status"),
+                Open="398a6aab-1ea7-48fb-8008-1a2535dcc3be",
+            ),
+            _coded(
+                _field("rk_ynm", "5a7519ea-1f44-49ac-ba3c-5ecddd30aea7", "yesnomaybe"),
+                Yes="887e1f91-af03-415e-baaf-eafffb81ae2c",
+            ),
+            _field("rk_text", "20ec6f12-3876-4281-a9d4-62ba71f592ca", "text"),
+            _field("rk_date", "faee370e-9c3b-4405-bb15-9b3ddf5d7b3f", "date"),
+            _field("rk_datetime", "7f5b4455-cac2-4f0e-b51e-2877c1689f63", "datetime"),
+        ],
+        _CONTACTS: [
+            _field("email", "b80bcdf9-76ba-4f45-9258-35a9b2f4dede", "email", True),
+            _field(
+                "special_arrangements",
+                "e70a46ea-dac6-4e75-8896-0c8ce972ea95",
+                "checkboxes",
+            ),
+        ],
+    }
+
+    def custom_object(self, ref):
+        if ref in ("client_client", _CONTACTS):
+            return {
+                "id": _CONTACTS,
+                "name": "client_client",
+                "object_type": "standard",
+                "fetch_url": "client",
+            }
+        return super().custom_object(ref)
+
+
+# Spec for each rule of the "UI Capture" step, by position. None: a rule the
+# CLI writes another way. q0[12] is the Owner picker's (`fields_v2` with an
+# owner overwrite); the CLI's `owner` rule is the Fields picker's, q0[13].
+# q1[4] is the Stage picker's time_in_stage; the CLI writes the Fields
+# picker's (test_literal_rules_match_the_ui_capture).
+_UI_CAPTURE_SPECS = [
+    [
+        {"field": "rk_dropdown", "op": "is_any_of", "value": ["Alpha"]},
+        {"field": "rk_dropdown", "op": "not_any_of", "value": ["Gamma"]},
+        {"field": "rk_dropdown", "op": "!=", "value": "Alpha"},
+        {"field": "rk_dropdown", "op": "is_blank"},
+        {"field": "stage", "op": "is_any_of", "value": ["Open"]},
+        {"field": "stage", "op": "not_any_of", "value": ["Open"]},
+        {"field": "stage", "op": "!=", "value": "Open"},
+        {"field": "rk_rel", "op": "is_any_of", "value": [_RELATED_REC]},
+        {"field": "rk_rating", "op": ">=", "value": 3},
+        {"field": "rk_rating", "op": "is_any_of", "value": [2, 3]},
+        {"field": "rk_checkboxes", "op": "contains", "value": "C1"},
+        {"field": "rk_checkboxes", "op": "not_any_of", "value": ["C2"]},
+        None,
+        {"field": "owner", "op": "is_me"},
+        {"field": "rk_integer", "op": ">=", "value": 90},
+        {"field": "rk_decimal", "op": "<", "value": 40},
+        {"field": "rk_member", "op": "is_any_of", "value": _MEMBERS},
+        {"field": "rk_checkbox", "op": "is_checked"},
+        {"field": "rk_status", "op": "=", "value": "Open"},
+        {"field": "rk_ynm", "op": "=", "value": "Yes"},
+    ],
+    [
+        {"field": "rk_text", "op": "contains", "value": "j"},
+        {"field": "rk_text", "op": "!=", "value": "x"},
+        {"field": "rk_date", "op": "between", "value": ["2026-10-14", "2026-10-16"]},
+        {"field": "rk_datetime", "op": "<", "value": "2026-10-14T04:00:00.000Z"},
+        None,
+        lambda: Field("stage").left_stage("Open", later_than_or_on="2026-10-14"),
+    ],
+]
+
+
+def _ui_capture_rules():
+    raw = load_fixture("automations/condition_literal_rules_ui_capture.raw.json")
+    (step,) = [s for s in raw["steps"] if s["user_description"] == "UI Capture"]
+    groups = step["step_condition"]["filter_config"]["query"]
+    return [
+        pytest.param(spec, clause, id=f"q{g}[{i}]")
+        for g, (specs, group) in enumerate(zip(_UI_CAPTURE_SPECS, groups, strict=True))
+        for i, (spec, clause) in enumerate(zip(specs, group["filters"], strict=True))
+        if spec is not None
+    ]
+
+
+@pytest.mark.parametrize(("rule", "captured"), _ui_capture_rules())
+def test_ui_capture_rules_match(rule, captured):
+    clause = _laid_out(rule, _RULE_KINDS, _RuleKindsSchema())
+    assert clause == _without_description(captured)
+
+
+def _contacts_rules():
+    raw = load_fixture("automations/condition_literal_rules_contacts.raw.json")
+    search, condition = (
+        s for s in raw["steps"] if s["step_type"] in ("search_records", "condition")
+    )
+    ((found,),) = [
+        g["filters"] for g in search["action_search_records"]["filter_config"]["query"]
+    ]
+    ((checked,),) = [
+        g["filters"] for g in condition["step_condition"]["filter_config"]["query"]
+    ]
+    return found, checked
+
+
+def test_contacts_rules_match_the_ui_capture():
+    found, checked = _contacts_rules()
+    schema = _RuleKindsSchema()
+    spec = {"field": "email", "op": "=", "value": "person@example.com"}
+    assert _laid_out(spec, "client_client", schema) == _without_description(found)
+    spec = {"field": "email", "op": "contains", "value": "@"}
+    assert _laid_out(spec, "client_client", schema) == _without_description(checked)
+
+
+def test_contacts_variable_rule_takes_the_contacts_head():
+    _, checked = _contacts_rules()
+    spec = {"field": "special_arrangements", "op": "is_any_of", "variable": "strs"}
+    with filter_context("client_client", client=_RuleKindsSchema()):
+        (clause,) = as_filter_config(from_spec({"all": [spec]}, _STRINGS))["query"][0][
+            "filters"
+        ]
+    head = checked["view_model"][:2]
+    field_id = head[1][1]
+    expected_head = [
+        head[0],
+        [
+            "field_id",
+            {
+                **field_id,
+                "url": "/client/fields/e70a46ea-dac6-4e75-8896-0c8ce972ea95",
+                "error_response": {
+                    "name": "special_arrangements",
+                    "relation": {},
+                    "field_type": "checkboxes",
+                },
+            },
+        ],
+    ]
+    assert clause["view_model"][:2] == expected_head
+    assert clause["condition"] == "has_any"
+    assert clause["value_type"] == "variable"
+
+
+def test_rating_value_with_no_option_is_refused():
+    rule = {"field": "rk_rating", "op": ">=", "value": 7}
+    with pytest.raises(ValueError, match="no option '7'. Valid options: 2, 3"):
+        _laid_out(rule, _RULE_KINDS, _RuleKindsSchema())
+
+
+def test_number_values_stay_numbers_outside_automations():
+    rule = {"field": "rk_integer", "op": ">=", "value": 90}
+    clause = _laid_out(rule, _RULE_KINDS, _RuleKindsSchema(), view_model=False)
+    assert clause["value"] == 90

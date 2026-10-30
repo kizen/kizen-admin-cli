@@ -90,11 +90,10 @@ Rules:
   `search_records` rule the CLI compiles from a filter spec also carries a
   `view_model`: the layout the Kizen workflow editor reads to show the rule.
   Other surfaces don't use it; UI-built filter groups carry none (confirmed
-  live 2026-10-30). The CLI writes it for text `=`, dropdown `=`, stage `=`,
-  date-time `>=`, and relationship `is_blank`/`not_blank`, on any object but
-  Contacts. The editor uses a step's layouts only when every rule in the
-  step has one. Otherwise it rebuilds each rule from its keys, which shows
-  most rules but not one on a default field such as `created` or `owner`
+  live 2026-10-30). [The table below](#which-automation-rules-carry-the-editors-layout)
+  lists the rule kinds it's written for, on every object, Contacts included.
+  The editor uses a step's layouts only when every rule in the step has
+  one. Otherwise it rebuilds each rule from its keys, which shows most rules but not one on a default field such as `created` or `owner`
   (no field shown), and not a list of options, stages or records. The
   `automations create` and `update` dry run warns about each field rule in a
   condition or search step that has no `view_model`, raw ones included, and
@@ -103,6 +102,66 @@ Rules:
   and `steps edit` write the same layout but don't warn. A rule without one
   still runs. `update` keeps the card text (`description`) the editor saved
   on a rule the spec leaves as it is.
+
+### Which automation rules carry the editor's layout
+
+The CLI writes the layout for the kinds in the "laid out" column. Unless
+the inferred list below names it, each was saved in the editor and read
+back (confirmed live 2026-10-30), and the CLI writes the same layout. Every
+other op on that field type is not yet captured; the dry run warns. A kind
+that the editor can show without a layout still counts as not captured,
+because one bare rule makes the editor drop every layout in its step. Ops
+are the filter spec's.
+
+| field type | laid out | not yet captured; the dry run warns |
+|---|---|---|
+| text | `=`, `!=`, `contains` | `starts_with`, `ends_with`, `not_contains`, `not_starts_with`, `not_ends_with`, `is_blank`, `not_blank` |
+| email | `=`, `contains` | `!=`, `starts_with`, `ends_with`, `not_contains`, `not_starts_with`, `not_ends_with`, `is_blank`, `not_blank` |
+| dropdown | `=`, `!=`, `is_any_of`, `not_any_of`, `is_blank` | `not_blank` |
+| status, yesnomaybe | `=` | `!=`, `is_any_of`, `not_any_of`, `is_blank`, `not_blank` |
+| checkboxes | `=` and `contains` (both the editor's "Contains"), `not_any_of` | `!=`, `is_any_of`, `has_any`, `not_contains`, `is_blank`, `not_blank` |
+| checkbox | `is_checked` (`=` true) | `not_checked` (`=` false) |
+| rating | `>=`, `is_any_of` | `=`, `!=`, `<`, `<=`, `>`, `not_any_of`, `is_blank`, `not_blank` |
+| integer | `>=` | `=`, `!=`, `<`, `<=`, `>`, `between`, `is_blank`, `not_blank` |
+| decimal | `<` | `=`, `!=`, `<=`, `>`, `>=`, `between`, `is_blank`, `not_blank` |
+| date | `between` | `=`, `!=`, `<`, `<=`, `>`, `>=`, `month_equals`, `is_blank`, `not_blank` |
+| datetime (`created` too) | `<`, `>=` | `=`, `!=`, `<=`, `>`, `between`, `month_equals`, `is_blank`, `not_blank` |
+| team_selector (`owner` too) | `is_me`, `is_any_of` | `=`, `!=`, `not_any_of`, `is_blank`, `not_blank` |
+| relationship | Contains (`is_any_of`), `is_blank`, `not_blank` | Does Not Contain (`not_any_of`), `contains`, `not_contains` |
+| stage | `=`, `!=`, `is_any_of`, `not_any_of` | none |
+| money, radio, timezone, phonenumber, longtext, files, dynamictags | none | every op |
+
+Laid out but inferred, not saved in the editor. Each takes the layout
+captured for the same field type on another field or object:
+
+| inferred kind | layout taken from |
+|---|---|
+| `created` `<` | a custom date-time field's `<` |
+| `>=` on a custom date-time field | `created`'s `>=` |
+| `owner` `is_any_of` | a custom team-member field's `is_any_of` |
+| `is_me` on a custom team-member field | `owner`'s `is_me` |
+| email `=`, `contains` on any object but Contacts | Contacts' `email` |
+| every row but email on Contacts | the same row on a custom object, with the Contacts field URL |
+| to-many relationship Contains (`is_any_of`) | a to-one relationship's Contains |
+
+They carry a layout rather than none because a bare rule makes the editor
+rebuild the whole step, which can't show `created`, `owner` or a list of
+records, and drops the captured layouts beside it. They don't warn.
+
+- **A relationship field has two operators in the editor: Contains and
+  Does Not Contain.** There is no "Is Any Of" on a relationship. Contains is
+  spec op `is_any_of`, wire `is_any_of`. Does Not Contain is spec op
+  `not_any_of`, wire `is_none_of`; that wire value is read from the editor's
+  code, not from a saved rule. The spec's `contains`/`not_contains` write
+  the `contains` token, which the editor never writes.
+- **Laid-out number rules send the value as a string** (`"90"`), as the
+  editor writes it: integer `>=` and decimal `<`. Every other number rule,
+  money included, still sends the number. Other filter surfaces always keep
+  the number. Kizen compares the string form numerically (tested
+  2026-10-30).
+- The stage-time rules (Python DSL only) are laid out for `time_in_stage`
+  with `more_than`, `entered_stage` with `earlier_than` and `left_stage` with
+  `later_than_or_on`. Their other comparisons aren't captured.
 
 ### Record-field operators
 
@@ -220,9 +279,8 @@ automation variable instead of a literal. In the DSL, name the variable:
   open the step.
 - For a dropdown, the array can hold option names or option UUIDs: a test
   run on 2026-10-14 matched with each. The other field types were not run.
-- Not on Contacts automations yet: no UI-built Contacts rule has been
-  captured. Every other filter surface rejects `"variable"`,
-  `search_records` included.
+- Every other filter surface rejects `"variable"`, `search_records`
+  included.
 
 Which variables the UI offers for each field type (confirmed live
 2026-10-14):

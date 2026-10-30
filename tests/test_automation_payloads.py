@@ -2786,7 +2786,7 @@ def test_preview_warns_about_rules_saved_without_the_editor_layout(
         {
             "all": [
                 {"field": "mrn", "op": "=", "value": "A-1"},
-                {"field": "mrn", "op": "contains", "value": "A"},
+                {"field": "mrn", "op": "starts_with", "value": "A"},
             ]
         }
     )
@@ -2813,7 +2813,7 @@ def test_preview_warns_about_rules_saved_without_the_editor_layout(
         }
     )
     assert plan_create_automation(spec).operations[0].preview["warnings"] == [
-        "step 'check': the rule on 'mrn' (text, contains) is saved without the "
+        "step 'check': the rule on 'mrn' (text, starts_with) is saved without the "
         "Kizen editor's layout, so the editor may not show it. It still runs.",
         "step 'check': the Kizen editor uses a step's rule layouts only when "
         "every rule has one, so it ignores the layout on this step's other 1 "
