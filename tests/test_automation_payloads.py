@@ -27,7 +27,7 @@ from kizen_builder.tools.planners.automations import (
 )
 from kizen_builder.tools.plans import PlanError
 from tests import builder_keys
-from tests.conftest import FIXTURES, load_fixture
+from tests.conftest import FIXTURES, fake_get_automation, load_fixture
 
 
 def _build(spec: dict) -> dict:
@@ -2074,7 +2074,8 @@ def test_plan_update_payload_is_the_full_put_body(patch_live_lookups):
     plan = plan_update_automation(spec)
     (op,) = plan.operations
     assert op.payload["last_revision"] == raw["revision"]
-    assert op.payload["folder"] == raw["folder"]
+    assert "folder_id" not in op.payload
+    assert "folder" not in op.payload
     assert op.payload["priority_rank"] == raw["priority_rank"]
 
 
@@ -3708,46 +3709,135 @@ def test_plan_update_schedule_activity_association_keeps_its_object(
 
 
 # ---------------------------------------------------------------------------
-# move_to_folder — regression for ticket 20260720-174419: the write dialect
-# is a bare `folder_id`, not the `folder: {id, name}` shape a live read
-# returns (that shape PUTs fine but the server silently ignores it — the
-# folder never actually changes; confirmed live 2026-07-22).
+# `folder` in a spec
 # ---------------------------------------------------------------------------
 
+ROOT_FOLDER = {"id": "44b300c0-ce2c-4c49-a427-44a25f85bfad", "name": "<business_root>"}
+INTAKE_FOLDER = {"id": "6f0e8a52-2c1d-4b7e-9a3f-0d5c8e1b7a64", "name": "Intake"}
 
-def test_move_to_folder_sends_folder_id_not_folder(monkeypatch):
-    from kizen_builder.api import automations as auto_api
-    from kizen_builder.tools import automations as auto_tools
 
-    raw = dict(load_fixture("automations/two_code_steps.raw.json"))
-    captured: dict = {}
+@pytest.fixture
+def live_folders(patch_live_lookups, monkeypatch):
+    """Two folders. The fixture `two_code_steps` sits at the root."""
+    import kizen_builder.tools.planners.automations as ma
 
-    monkeypatch.setattr(
-        auto_api,
-        "list_automations",
-        lambda client: [{"api_name": raw["api_name"], "id": raw["id"]}],
-    )
-    monkeypatch.setattr(auto_api, "get_automation", lambda client, automation_id: raw)
+    folders = [ROOT_FOLDER, INTAKE_FOLDER]
+    monkeypatch.setattr(ma, "_live_folders", lambda: folders)
+    return folders
 
-    def fake_update_automation(client, automation_id, payload, last_revision=None):
-        captured.update(payload)
-        return {}
 
-    monkeypatch.setattr(auto_api, "update_automation", fake_update_automation)
-
-    result = auto_tools.move_to_folder(
-        raw["api_name"],
-        "22222222-2222-4222-8222-222222222222",
-        "Target Folder",
-        execute=True,
-    )
-
-    assert captured["folder_id"] == "22222222-2222-4222-8222-222222222222"
-    assert "folder" not in captured
-    assert result["after"] == {
-        "id": "22222222-2222-4222-8222-222222222222",
-        "name": "Target Folder",
+def _two_code_steps_spec(**extra) -> dict:
+    return {
+        "api_name": "test_two_code_steps",
+        "name": "Test Two Code Steps",
+        "type": "global",
+        "steps": [],
+        **extra,
     }
+
+
+@pytest.mark.parametrize("folder", ["Intake", INTAKE_FOLDER["id"]])
+def test_plan_create_puts_the_automation_in_the_spec_folder(live_folders, folder):
+    spec = {"api_name": "new_in_folder", "name": "New", "type": "global"}
+    (op,) = plan_create_automation({**spec, "folder": folder}).operations
+    assert op.payload["folder_id"] == INTAKE_FOLDER["id"]
+    assert op.preview["folder"] == "Intake"
+
+
+def test_plan_create_without_a_folder_reads_no_folders(patch_live_lookups, monkeypatch):
+    import kizen_builder.tools.planners.automations as ma
+
+    monkeypatch.setattr(ma, "_live_folders", lambda: pytest.fail("folders read"))
+    (op,) = plan_create_automation(
+        {"api_name": "new_at_root", "name": "New", "type": "global"}
+    ).operations
+    assert "folder_id" not in op.payload
+    assert "folder" not in op.preview
+
+
+def test_plan_update_without_a_folder_sends_none(live_folders):
+    """A PUT without `folder_id` keeps the live folder. Sending the one read
+    would undo a move made since, and `folders/move` doesn't bump the
+    revision `last_revision` checks."""
+    (op,) = plan_update_automation(_two_code_steps_spec()).operations
+    assert "folder_id" not in op.payload
+    assert op.preview["folder"] == "<business_root>"
+
+
+def test_plan_update_with_a_folder_moves_it(live_folders):
+    (op,) = plan_update_automation(_two_code_steps_spec(folder="Intake")).operations
+    assert op.payload["folder_id"] == INTAKE_FOLDER["id"]
+    assert op.preview["folder"] == "<business_root> → Intake"
+
+
+@pytest.fixture
+def in_intake(live_folders, monkeypatch):
+    """`two_code_steps`, read back from the Intake folder."""
+    import kizen_builder.tools.planners.automations as ma
+
+    def get_automation(api_name):
+        got = fake_get_automation(api_name)
+        return {**got, "raw": {**got["raw"], "folder": INTAKE_FOLDER}}
+
+    monkeypatch.setattr(ma, "get_automation", get_automation)
+    return live_folders
+
+
+def test_plan_update_to_the_root_moves_it_out_of_its_folder(in_intake):
+    spec = _two_code_steps_spec(folder="<business_root>")
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["folder_id"] == ROOT_FOLDER["id"]
+    assert op.preview["folder"] == "Intake → <business_root>"
+
+
+def test_a_move_between_two_folders_of_one_name_shows_their_ids(in_intake):
+    twin = {"id": "9b1d4c2e-7a8f-4e3b-8c5d-1f2a3b4c5d6e", "name": "Intake"}
+    in_intake.append(twin)
+    (op,) = plan_update_automation(_two_code_steps_spec(folder=twin["id"])).operations
+    assert op.preview["folder"] == "Intake (6f0e8a52) → Intake (9b1d4c2e)"
+
+
+def test_a_folder_name_two_folders_share_is_refused(live_folders):
+    twin = {"id": "9b1d4c2e-7a8f-4e3b-8c5d-1f2a3b4c5d6e", "name": "Intake"}
+    live_folders.append(twin)
+    with pytest.raises(PlanError) as e:
+        plan_update_automation(_two_code_steps_spec(folder="Intake"))
+    assert str(e.value) == (
+        f"folder 'Intake' matches 2 folders; give its UUID: "
+        f"{INTAKE_FOLDER['id']}, {twin['id']}"
+    )
+    (op,) = plan_update_automation(_two_code_steps_spec(folder=twin["id"])).operations
+    assert op.payload["folder_id"] == twin["id"]
+
+
+def test_an_unknown_folder_name_is_refused(live_folders):
+    with pytest.raises(PlanError, match="folder 'Nowhere' not found. Available: "):
+        plan_update_automation(_two_code_steps_spec(folder="Nowhere"))
+
+
+@pytest.mark.parametrize(
+    "folder, changes",
+    [
+        (None, []),
+        ("<business_root>", []),
+        (
+            "Intake",
+            [
+                {
+                    "path": "folder_id",
+                    "before": ROOT_FOLDER["id"],
+                    "after": INTAKE_FOLDER["id"],
+                }
+            ],
+        ),
+    ],
+)
+def test_diff_automation_shows_a_folder_change_only_when_the_spec_moves_it(
+    live_folders, folder, changes
+):
+    spec = _two_code_steps_spec(**({"folder": folder} if folder else {}))
+    diff = diff_automation(spec)["diff"]
+    assert [d for d in diff if "folder" in d["path"]] == changes
 
 
 # ---------------------------------------------------------------------------

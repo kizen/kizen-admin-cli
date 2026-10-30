@@ -186,6 +186,14 @@ def test_no_variable_ids_survive_translation(path: str) -> None:
             assert "id" not in iv["variable"]
 
 
+def test_live_to_payload_carries_no_folder() -> None:
+    """A PUT without `folder_id` keeps the live folder; the read's
+    `folder: {id, name}` is ignored on write anyway."""
+    payload = live_to_payload(load_fixture("automations/two_code_steps.raw.json"))
+    assert "folder_id" not in payload
+    assert "folder" not in payload
+
+
 def test_email_received_rides_under_its_from_contact_key() -> None:
     """The one trigger type whose config key isn't `trigger_<type>`. Sending
     `trigger_email_received` is a 400 on every re-PUT, at the top level and

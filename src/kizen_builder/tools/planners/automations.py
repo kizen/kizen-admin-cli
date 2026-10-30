@@ -86,6 +86,7 @@ class LiveContext:
         # rather than a single value shape.
         self._objects_by_api: dict[str, Any] = {}
         self._automations_by_api: dict[str, dict[str, Any]] | None = None
+        self._folders: list[dict[str, Any]] | None = None
         self._secret_descriptions: dict[str, str] | None = None
         self._step_pickers: dict[str, list[dict[str, Any]]] = {}
 
@@ -203,6 +204,15 @@ class LiveContext:
         rec = self._automations_by_api.get(api_name)
         return rec["id"] if rec else None
 
+    def folder(self, identifier: str) -> dict[str, Any]:
+        """The live automation folder with this name or UUID."""
+        if self._folders is None:
+            self._folders = _live_folders()
+        return _find_folder(identifier, self._folders)
+
+    def folder_uuid(self, identifier: str) -> str:
+        return str(self.folder(identifier)["id"])
+
     def integration_secret_description(self, api_name: str) -> str | None:
         """The secret's description, the label the UI gives its merge field.
         An unknown name returns None; the server's 400 names it."""
@@ -307,7 +317,10 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
                 action="create",
                 kind="automation",
                 key=auto.api_name,
-                preview=_automation_preview(env, auto),
+                preview={
+                    **_automation_preview(env, auto),
+                    **_folder_preview(auto, ctx),
+                },
                 payload=payload,
             )
         ],
@@ -348,6 +361,7 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
 
     payload, keeps_live = _update_payload(auto, ctx, current)
     preview = _automation_preview(env, auto, live_active=live_active)
+    preview.update(_folder_preview(auto, ctx, current))
     preview["current_revision"] = current.get("revision")
     if keeps_live:
         preview["keeps_live"] = keeps_live
@@ -416,6 +430,11 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
 
     live_payload = live_to_payload(current)
     spec_payload, _ = _update_payload(auto, ctx, current)
+    # Neither side carries the live folder, so a spec that names one would
+    # always show a change. Compare against the live folder instead.
+    if current.get("folder"):
+        live_payload["folder_id"] = current["folder"]["id"]
+        spec_payload.setdefault("folder_id", live_payload["folder_id"])
 
     return {
         "env": env,
@@ -553,7 +572,7 @@ def _merge_server_state(
     """Fold live server-managed state into an update payload.
 
     PUT replaces the whole automation, so fields the spec doesn't model
-    (folder, variables, throttles, …) must be carried over from the live
+    (variables, throttles, …) must be carried over from the live
     automation or the API rejects the write / drops them. Spec-provided
     values win over carried-over ones. Also stamps ``last_revision``
     (optimistic concurrency — a concurrent edit between plan and apply
@@ -567,8 +586,9 @@ def _merge_server_state(
     matched by name.
     """
     server_fields: dict[str, Any] = {}
-    if current.get("folder") is not None:
-        server_fields["folder"] = current["folder"]
+    # No folder: a PUT without `folder_id` keeps the live one, and carrying it
+    # would undo a move made after the read (`folders/move` doesn't bump the
+    # revision, so `last_revision` wouldn't catch it).
     if current.get("variables"):
         # Same read→write reduction as step-level variable definitions
         # (expanded data_subtype → bare UUID, ids stripped).
@@ -662,13 +682,19 @@ def _live_folders() -> list[dict[str, Any]]:
 
 
 def _find_folder(identifier: str, folders: list[dict[str, Any]]) -> dict[str, Any]:
-    match = next(
-        (f for f in folders if identifier in (f.get("id"), f.get("name"))), None
-    )
-    if match is None:
+    by_id = next((f for f in folders if f.get("id") == identifier), None)
+    if by_id is not None:
+        return by_id
+    matches = [f for f in folders if f.get("name") == identifier]
+    if not matches:
         available = [f.get("name") for f in folders]
         raise PlanError(f"folder '{identifier}' not found. Available: {available}")
-    return match
+    if len(matches) > 1:
+        ids = ", ".join(str(f.get("id")) for f in matches)
+        raise PlanError(
+            f"folder '{identifier}' matches {len(matches)} folders; give its UUID: {ids}"
+        )
+    return matches[0]
 
 
 def plan_create_folder(name: str, *, parent: str | None = None) -> Plan:
@@ -774,6 +800,33 @@ def _automation_preview(
     }
 
 
+def _folder_preview(
+    auto: AutomationDef, ctx: LiveContext, current: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """The preview's `folder` cell: the spec's folder on create, and on update
+    the live one, as `<old> → <new>` when the spec moves it."""
+    live = (current or {}).get("folder") or {}
+    target = ctx.folder(auto.folder) if auto.folder else live
+    if not target:
+        return {}
+    if live and live.get("id") != target.get("id"):
+        return {"folder": " → ".join(folder_labels(live, target))}
+    return {"folder": target.get("name")}
+
+
+def folder_labels(before: dict[str, Any], after: dict[str, Any]) -> tuple[str, str]:
+    """Two folders by name, with a short id on each when two folders share
+    the name (the server allows it)."""
+    same_name = before.get("name") == after.get("name")
+    twins = same_name and before.get("id") != after.get("id")
+
+    def label(f: dict[str, Any]) -> str:
+        name = str(f.get("name"))
+        return f"{name} ({str(f.get('id'))[:8]})" if twins else name
+
+    return label(before), label(after)
+
+
 # A group's closer is a child of its initiator, not a parallel lane.
 _CLOSER_STEP_TYPES = frozenset({"merge_branches", "next_or_finish"})
 
@@ -840,6 +893,8 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     }
     if auto.target_object:
         payload["custom_object_id"] = ctx.object_uuid(auto.target_object)
+    if auto.folder:
+        payload["folder_id"] = ctx.folder_uuid(auto.folder)
     if auto.user_description:
         payload["user_description"] = auto.user_description
     if auto.error_notification_email is not None:
