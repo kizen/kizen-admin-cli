@@ -145,7 +145,8 @@ kizen envs list              # confirm which environment this folder targets
   without explicit approval in the conversation — even for additive changes.
 - Command syntax: `kizen --help`. The command map: `kizen docs show commands`.
 - Spec-file shapes: `kizen docs list`.
-- API quirks and wire formats: `kizen docs show reference`.
+- API quirks and wire formats: the surface's own topic
+  (`kizen docs show reference` routes to it).
 """
 
 #: Paths that older versions symlinked into env folders, pointing at a repo

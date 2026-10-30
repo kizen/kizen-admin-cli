@@ -128,8 +128,8 @@ sets a step's own severity. Omitted, the step inherits. Confirmed live
 
 **Field references — two forms, don't mix them up:**
 - **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations)
-  uses the object-qualified `"<object_api>.<field_api>"` — resolved to a UUID at
-  apply time, portable across envs. Bare `field_id` UUIDs also work but are env-bound.
+  uses the object-qualified `"<object_api>.<field_api>"`, resolved to this
+  business's UUID at apply time. A bare `field_id` UUID also works.
 - **Condition `filter_config` `field`** uses the **bare field api_name**
   (`account_region`), *not* object-qualified — it's the filter DSL, same as
   `records list --filter` and saved views.
@@ -731,29 +731,9 @@ an **automation variable** to a static value is a different clause shape,
   } }
 ```
 
-- **`view_model` is required** — omit it and the condition renders empty/
-  untyped in the Kizen UI editor, though it still executes correctly via API.
-- **`rhs_value` is always a string**, even for a numeric comparison.
-- **`condition` → `view_model` string mapping**: `<=`→`less_than_or_equal_to`,
-  `>=`→`greater_than_or_equal_to`, `<`→`less_than`, `>`→`greater_than`,
-  `=`→`equal_to`. For blank checks, `condition` is `is_blank`/`is_not_blank`
-  directly (both keys use the same literal string in `view_model`) — this is
-  a distinct token pair from the record-field DSL's single `is_blank`+bool
-  form used elsewhere in `filter_config`.
-- **`custom_object_id`** is the automation's target object UUID;
-  **`client_tag_field_id`** is per business, not a constant: two businesses'
-  contact `tags` field ids differed (confirmed live 2026-10-05). Copy it from
-  the `view_model` of an existing condition in the same business
-  (`kizen automations get <api_name> --raw`). If there is none, use the
-  contact `tags` field's id from `kizen objects get client_client`. That
-  fallback is a best guess. Conditions were read in two businesses, one on 2026-10-05 and one on
-  2026-10-16. Record-field clauses mostly carried the `tags` id in both.
-  Variable clauses carried it in the second and a different id in the first. A
-  condition with no `view_model` still executes, so a wrong value probably
-  changes only how the builder UI shows the condition (not tested). A
-  field-vs-variable rule written with the filter spec's `variable` key doesn't
-  need it: the CLI resolves it per business (see [Field compared to an array
-  variable](#field-compared-to-an-array-variable)).
+The clause's rules — `view_model`, the operator mapping, blank checks,
+`client_tag_field_id` — are in `kizen docs show filters`, 'Variable-comparison
+clauses'.
 
 ### Field compared to an array variable
 
@@ -803,10 +783,9 @@ A merge field is not a bare `{{ <namespace>.<field_api_name> }}` token — the
 planner (and Kizen's builder UI) always wraps it in a
 `<span class="kzn-merge-field" data-merge-field-fallback-label="…"
 data-merge-field-relationship="…" [data-merge-field-objectname="…"]>{{ … }}</span>`
-marker; the bare token by itself is inert text. See
-`src/kizen_builder/tools/merge_fields.py` for the span-building rules this
-planner shares across step types, and `docs/specs/email-templates.md` for the
-same convention in email template `Text` blocks and dashboard static text.
+marker; the bare token by itself is inert text.
+`kizen docs show email-templates` has the same convention for email `Text`
+blocks and dashboard static text.
 
 The namespace token varies **by which step type's content field it's in** —
 this isn't one global convention:
@@ -1300,11 +1279,8 @@ folder's id.
 The error is nested: `{step_key: {action_block_name: {field_name: [message]}}}`.
 Work inside-out — which step, which config block, which wire field. A
 "not a valid choice" rejection for `create_related_entity`,
-`notify_member_via_text`, or `on_or_around_date` now carries the CLI's known
-valid values inline, sourced from
-`tools/planners/automations.py::KNOWN_ENUM_CHOICES` /
-`KNOWN_ENUM_CHOICES_TRIGGERS` — check the registry for what else this repo
-knows about a field before retrying blind. Common causes:
+`notify_member_via_text`, or `on_or_around_date`: the error lists the valid
+values the CLI knows. Common causes:
 
 - `null` for a non-nullable field (often a model default leaking through).
 - `action_on_failure: notify_continue` on a condition step — use `notify_pause`.
