@@ -659,7 +659,7 @@ are usable for which step type in one shot.
 
 | Wire value | UI label |
 |---|---|
-| `error_if_required` | "Error if any merge field is blank" (server default when the key is omitted) |
+| `error_if_required` | "Error if any merge field is blank" (the default for a new step; `update` keeps an existing step's live value) |
 | `default_to_unknown` | "Default to 'Unknown'" — fixed literal text, not a configurable string |
 | `blank` | "Leave Blank" |
 
@@ -696,15 +696,16 @@ server's tools. Confirmed live 2026-10-27:
 - Reads expand both references (`mcp_server {id, name, api_name, …}`,
   `run_tools_as {id, name}`), and every `call_llm` step reads
   `max_sequential_turns` and `tool_failure_policy`, server or not.
-- The planner always sends all four keys. A step that omits them gets no
-  server, no account, 25 turns and `never_fail`, so `update` from a spec
-  without them **detaches a server attached in the UI**. `update --dry-run`
-  names those steps in its preview: `detaches_mcp_server=[<step key>, …]`,
-  and `clears_run_tools_as=[…]` for a run-as account that goes. Steps pair
-  as `diff` pairs them, and `diff` shows each change as
-  `mcp_server_id: '<uuid>' → None` and `run_tools_as_id: '<uuid>' → None`.
-  Kizen itself, given a PUT that omits both ids, keeps the server and clears
-  the account, which leaves a step its own validator rejects.
+- A new step that omits them gets no server, no account, 25 turns and
+  `never_fail`. On `update`, a step whose `id` matches a live one keeps its
+  live server and account when the spec sets none of `mcp_server`,
+  `mcp_server_id`, `run_tools_as` and `run_tools_as_id`, and keeps its live
+  `max_sequential_turns` and `tool_failure_policy` when the spec leaves them
+  out. `--dry-run` names those steps under `keeps_live`. To remove the
+  server, set `mcp_server` (or `run_tools_as`) to `null`: both go. A live
+  step with a server but no account gets neither, because Kizen rejects that
+  pairing. Kizen itself, given a PUT that omits both ids, keeps the server
+  and clears the account, which leaves a step its own validator rejects.
 
 ### Variable-comparison condition step
 
@@ -968,6 +969,11 @@ as a real custom object's own api_name, and its span gets
     On a `schedule_activity` step whose `id` matches, its block's
     `target_variable` and `variable_field_resolution` too
     ([below](#schedule_activitytarget_variable-and-variable_field_resolution)).
+    On an LLM step whose `id` matches, its `merge_field_validation` and
+    `is_advanced` (on a condition, `llm_decision.merge_field_validation`),
+    and on `call_llm` also its MCP server and run-as account (as a pair),
+    `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
+    server)**).
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
     A Kizen PUT without them resets each to its default (confirmed live
     2026-10-30).

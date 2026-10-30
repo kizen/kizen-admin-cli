@@ -823,34 +823,289 @@ def _update_spec(raw: dict, *blocks: dict) -> dict:
     spec.update(api_name=raw["api_name"], name=raw["name"])
     steps = sorted(raw["steps"], key=lambda s: s["order"])
     for step, live in zip(spec["steps"], steps, strict=True):
-        step["id"] = live["id"]
+        step.update(_live_step_keys(live), id=live["id"])
     return spec
 
 
-def test_update_dry_run_names_steps_whose_mcp_server_goes(live_mcp_automation):
-    """A spec that omits the keys sends nulls, so the update detaches a server
-    attached in the UI. The preview `--dry-run` prints says which steps."""
-    plan = plan_update_automation(_update_spec(live_mcp_automation, {}, {}))
-    (op,) = plan.operations
-    assert op.preview["detaches_mcp_server"] == ["llm0"]
-    assert op.preview["clears_run_tools_as"] == ["llm0"]
+def _live_step_keys(live: dict) -> dict:
+    """The step-level keys an update keeps, as the spec would set them, so
+    `keeps_live` names a step only for its block."""
+    return {k: live[k] for k in _KEPT_STEP_KEYS if live.get(k) is not None}
 
 
-def test_update_dry_run_is_quiet_when_the_server_stays(
+def _planned(spec: dict) -> tuple[dict, list]:
+    (op,) = plan_update_automation(spec).operations
+    return op.payload, op.preview.get("keeps_live", [])
+
+
+def _live_tools(raw: dict) -> tuple:
+    block = raw["steps"][0]["action_call_llm"]
+    return (block["mcp_server"]["id"], block["run_tools_as"]["id"], 10, "never_fail")
+
+
+def test_update_omitting_tool_keys_keeps_the_live_ones(live_mcp_automation):
+    """Before 2026-10-30 the PUT detached the server and reset the turns."""
+    payload, keeps_live = _planned(_update_spec(live_mcp_automation, {}, {}))
+    assert _tool_keys(payload, 0) == _live_tools(live_mcp_automation)
+    assert _tool_keys(payload, 1) == (None, None, 25, "never_fail")
+    assert "llm0" in keeps_live
+    assert "llm1" not in keeps_live
+
+
+@pytest.mark.parametrize("key", ["mcp_server", "run_tools_as"])
+def test_update_null_on_either_half_removes_the_pair(live_mcp_automation, key):
+    payload, _ = _planned(_update_spec(live_mcp_automation, {key: None}, {}))
+    assert _tool_keys(payload, 0) == (None, None, 10, "never_fail")
+
+
+def test_update_explicit_turns_win_and_the_pair_still_carries(live_mcp_automation):
+    spec = _update_spec(live_mcp_automation, {"max_sequential_turns": 30}, {})
+    payload, _ = _planned(spec)
+    server, account, _, policy = _live_tools(live_mcp_automation)
+    assert _tool_keys(payload, 0) == (server, account, 30, policy)
+
+
+def test_update_explicit_tool_names_win_over_live(live_mcp_automation, step_pickers):
+    tools = {"mcp_server": "example_tools", "run_tools_as": "Automation Runner"}
+    payload, _ = _planned(_update_spec(live_mcp_automation, tools, {}))
+    assert _tool_keys(payload, 0) == (_SERVER_ID, _ACCOUNT_ID, 10, "never_fail")
+
+
+def test_update_server_without_account_is_still_refused(
     live_mcp_automation, step_pickers
 ):
-    step_pickers["lists"]["servers"][0]["id"] = live_mcp_automation["steps"][0][
-        "action_call_llm"
-    ]["mcp_server"]["id"]
-    step_pickers["lists"]["accounts"][0]["id"] = live_mcp_automation["steps"][0][
-        "action_call_llm"
-    ]["run_tools_as"]["id"]
-    tools = {"mcp_server": "example_tools", "run_tools_as": "Automation Runner"}
-    (op,) = plan_update_automation(
-        _update_spec(live_mcp_automation, tools, {})
-    ).operations
-    assert "detaches_mcp_server" not in op.preview
-    assert "clears_run_tools_as" not in op.preview
+    spec = _update_spec(live_mcp_automation, {"mcp_server": "example_tools"}, {})
+    with pytest.raises(PlanError, match="mcp_server is set without run_tools_as"):
+        plan_update_automation(spec)
+
+
+def test_update_live_half_pair_carries_neither(live_mcp_automation):
+    """Kizen stores a server without an account after a PUT that omits both
+    ids, and rejects that pairing on write."""
+    live_mcp_automation["steps"][0]["action_call_llm"]["run_tools_as"] = None
+    payload, _ = _planned(_update_spec(live_mcp_automation, {}, {}))
+    assert _tool_keys(payload, 0)[:2] == (None, None)
+
+
+def test_update_step_without_an_id_keeps_no_tools(live_mcp_automation):
+    spec = _update_spec(live_mcp_automation, {}, {})
+    del spec["steps"][0]["id"]
+    payload, keeps_live = _planned(spec)
+    assert _tool_keys(payload, 0) == (None, None, 25, "never_fail")
+    assert "llm0" not in keeps_live
+
+
+def test_diff_omitting_tool_keys_shows_no_tool_lines(live_mcp_automation):
+    diff = diff_automation(_update_spec(live_mcp_automation, {}, {}))["diff"]
+    kept = {*_TOOL_KEYS, "merge_field_validation", "is_advanced"}
+    assert [d for d in diff if d["path"].rsplit(".", 1)[-1] in kept] == []
+
+
+def test_update_carries_a_default_prompt_setting_without_naming_the_step(
+    live_mcp_automation,
+):
+    """Kizen stores `error_if_required` when the key is left out, so sending
+    it changes nothing, but keeps `diff` from showing it as dropped."""
+    payload, keeps_live = _planned(_update_spec(live_mcp_automation, {}, {}))
+    block = payload["steps"][1]["action_call_llm"]
+    assert block["merge_field_validation"] == "error_if_required"
+    assert "llm1" not in keeps_live
+
+
+def test_update_omitting_call_llm_prompt_settings_keeps_live(live_mcp_automation):
+    """Before 2026-10-30 the PUT reset both to error_if_required / false."""
+    live = live_mcp_automation["steps"][0]["action_call_llm"]
+    live.update(merge_field_validation="blank", is_advanced=True)
+    payload, _ = _planned(_update_spec(live_mcp_automation, {}, {}))
+    block = payload["steps"][0]["action_call_llm"]
+    assert (block["merge_field_validation"], block["is_advanced"]) == ("blank", True)
+    explicit = {"merge_field_validation": "error_if_required", "is_advanced": False}
+    payload, _ = _planned(_update_spec(live_mcp_automation, explicit, {}))
+    block = payload["steps"][0]["action_call_llm"]
+    assert (block["merge_field_validation"], block["is_advanced"]) == (
+        "error_if_required",
+        False,
+    )
+
+
+@pytest.fixture
+def live_extraction_automation(monkeypatch, patch_live_lookups):
+    """The captured extraction_input_sources automation, its first extraction
+    and its transcription step set to `blank` and advanced."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/extraction_input_sources.raw.json")
+    for step in raw["steps"]:
+        if step["order"] in (1, 2):
+            block = step[_block_field_for(step["step_type"])]
+            block.update(merge_field_validation="blank", is_advanced=True)
+    monkeypatch.setattr(
+        ma, "list_automations", lambda: [{"api_name": raw["api_name"], "id": raw["id"]}]
+    )
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _extraction_update_spec(raw: dict, **blocks: dict) -> dict:
+    steps = {s["order"]: s for s in raw["steps"]}
+    var = steps[0]["action_initialize_variable"]["variable"]["name"]
+    spec_steps: list[dict] = [
+        {
+            "key": "v",
+            "id": steps[0]["id"],
+            "step_type": "initialize_variable",
+            "order": 0,
+            "action_initialize_variable": {
+                "variable": {"name": var, "data_type": "string", "is_array": False},
+                "sources": [],
+            },
+        }
+    ]
+    for key, order in (("extract", 1), ("transcribe", 2)):
+        live = steps[order]
+        spec_steps.append(
+            {
+                **_live_step_keys(live),
+                "key": key,
+                "id": live["id"],
+                "step_type": live["step_type"],
+                "order": order,
+                "parent_key": spec_steps[-1]["key"],
+                _block_field_for(live["step_type"]): {
+                    "model_name": live[_block_field_for(live["step_type"])][
+                        "model_name"
+                    ],
+                    "prompt": "Summarize the file.",
+                    "input_value_source": {
+                        "type": "automation_variable",
+                        "variable": var,
+                    },
+                    **blocks.get(key, {}),
+                },
+            }
+        )
+    return {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": spec_steps,
+    }
+
+
+def _prompt_settings(payload: dict) -> dict[str, tuple]:
+    out = {}
+    for step in payload["steps"]:
+        if step["key"] in ("extract", "transcribe"):
+            block = step[_block_field_for(step["type"])]
+            out[step["key"]] = (
+                block.get("merge_field_validation"),
+                block.get("is_advanced"),
+            )
+    return out
+
+
+def test_update_omitting_extraction_prompt_settings_keeps_live(
+    live_extraction_automation,
+):
+    payload, keeps_live = _planned(_extraction_update_spec(live_extraction_automation))
+    assert _prompt_settings(payload) == {
+        "extract": ("blank", True),
+        "transcribe": ("blank", True),
+    }
+    assert {"extract", "transcribe"} <= set(keeps_live)
+
+
+def test_update_explicit_extraction_prompt_settings_win(live_extraction_automation):
+    explicit = {"merge_field_validation": "error_if_required", "is_advanced": False}
+    spec = _extraction_update_spec(
+        live_extraction_automation, extract=explicit, transcribe=explicit
+    )
+    payload, keeps_live = _planned(spec)
+    assert _prompt_settings(payload) == {
+        "extract": ("error_if_required", False),
+        "transcribe": ("error_if_required", False),
+    }
+    assert not {"extract", "transcribe"} & set(keeps_live)
+
+
+@pytest.fixture
+def live_llm_decision(monkeypatch, patch_live_lookups):
+    """The kitchen-sink automation, whose first llm_decision condition is set
+    to `blank` live."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/kitchen_sink_triggers.raw.json")
+    monkeypatch.setattr(
+        ma, "list_automations", lambda: [{"api_name": raw["api_name"], "id": raw["id"]}]
+    )
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _llm_decision_spec(raw: dict, **decision: object) -> dict:
+    (live,) = [
+        s
+        for s in raw["steps"]
+        if s["step_type"] == "condition"
+        and s["step_condition"]["llm_decision"]
+        and s["step_condition"]["llm_decision"]["merge_field_validation"] == "blank"
+    ]
+    return {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                **_live_step_keys(live),
+                "key": "decide",
+                "id": live["id"],
+                "step_type": "condition",
+                "order": 0,
+                "step_condition": {
+                    "type": "llm_decision",
+                    "llm_decision": {
+                        "model_name": "kizen/pro",
+                        "prompt": "Is this urgent?",
+                        **decision,
+                    },
+                },
+            }
+        ],
+    }
+
+
+def _decision(payload: dict) -> dict:
+    return payload["steps"][0]["step_condition"]["llm_decision"]
+
+
+def test_update_omitting_llm_decision_merge_validation_keeps_live(live_llm_decision):
+    payload, keeps_live = _planned(_llm_decision_spec(live_llm_decision))
+    assert _decision(payload)["merge_field_validation"] == "blank"
+    assert "decide" in keeps_live
+
+
+def test_update_explicit_llm_decision_merge_validation_wins(live_llm_decision):
+    spec = _llm_decision_spec(
+        live_llm_decision, merge_field_validation="error_if_required"
+    )
+    payload, keeps_live = _planned(spec)
+    assert _decision(payload)["merge_field_validation"] == "error_if_required"
+    assert "decide" not in keeps_live
+
+
+def test_update_llm_decision_over_a_live_filter_condition_keeps_nothing(
+    live_llm_decision,
+):
+    spec = _llm_decision_spec(live_llm_decision)
+    (live,) = [
+        s for s in live_llm_decision["steps"] if s["id"] == spec["steps"][0]["id"]
+    ]
+    live["step_condition"]["type"] = "custom_filter"
+    payload, keeps_live = _planned(spec)
+    assert "merge_field_validation" not in _decision(payload)
+    assert "decide" not in keeps_live
 
 
 def test_steps_edit_call_llm_names_the_server_by_api_name(

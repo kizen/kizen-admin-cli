@@ -120,7 +120,8 @@ class ActionLlmCallConfig(BaseModel):
         description=(
             "How to handle a blank merge field in prompt/html_prompt. UI "
             "labels: 'error_if_required' = \"Error if any merge field is "
-            "blank\" (server default when unset), 'default_to_unknown' = "
+            "blank\" (the default for a new step; 'update' keeps the live "
+            "value when unset), 'default_to_unknown' = "
             "\"Default to 'Unknown'\" (fixed literal, not configurable), "
             "'blank' = \"Leave Blank\". Same enum on file_content_extraction, "
             "audio_transcription, and a condition step's llm_decision block."
@@ -132,7 +133,9 @@ class ActionLlmCallConfig(BaseModel):
             "The MCP server whose tools the model may call: its api_name or "
             "UUID, from the Call LLM step's own server picker "
             "(GET /api/mcp-servers/step-options). Needs run_tools_as. Omitted "
-            "means no server, so an update detaches one set in the UI."
+            "on a new step, no server. On update, a step whose id matches "
+            "keeps its live server and account unless the spec sets either; "
+            "null removes both."
         ),
     )
     mcp_server_id: str | None = Field(
@@ -156,7 +159,10 @@ class ActionLlmCallConfig(BaseModel):
         default=None,
         ge=1,
         le=32767,
-        description="How many model turns the step may take in a row. Default 25.",
+        description=(
+            "How many model turns the step may take in a row. Default 25 on "
+            "a new step; update keeps the live value when omitted."
+        ),
     )
     tool_failure_policy: Literal["never_fail"] | None = Field(
         default=None,
