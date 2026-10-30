@@ -31,7 +31,7 @@ class StepConditionConfig(BaseModel):
         description=(
             "Raw dict (not a typed model) for `type: llm_decision`: "
             "'model_name', 'prompt'/'html_prompt', 'business_plugin_app_id' "
-            "(non-native models only — see ActionLlmCallConfig), and "
+            "(optional, filled by the CLI — see ActionLlmCallConfig), and "
             "'merge_field_validation' (see ActionLlmCallConfig) all apply "
             "the same as call_llm."
         ),
