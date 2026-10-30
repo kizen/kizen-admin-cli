@@ -2286,6 +2286,181 @@ def test_diff_automation_shows_no_webhook_auth_lines(webhook_live, auth):
     assert auth_lines == []
 
 
+_KEPT_STEP_KEYS = (
+    "description",
+    "user_description",
+    "should_skip_execution",
+    "continue_with_branch",
+    "action_on_failure",
+    "error_notification_severity_level",
+)
+_KEPT_TRIGGER_KEYS = ("description", "user_description", "should_skip_execution")
+
+
+@pytest.fixture
+def ui_edited_live(patch_live_lookups, monkeypatch):
+    """Fixture `merged_condition_skipped` as the live automation, after a
+    builder named and annotated every step and the trigger in the UI. The
+    condition is skipped down its no branch; the yes-lane delay fails
+    silently with warning severity."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/merged_condition_skipped.raw.json")
+    raw["triggers"][0].update(
+        description="Start by hand",
+        user_description="Run from the record",
+        should_skip_execution=True,
+    )
+    for s in raw["steps"]:
+        s.update(
+            description=f"UI {s['step_type']} {s['order']}",
+            user_description=f"note {s['order']}",
+        )
+    raw["steps"][1]["action_on_failure"] = "silent_continue"
+    listing = [*ma.list_automations(), {"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _bare_spec(raw: dict) -> dict:
+    """The live automation as a spec that carries every id and none of the
+    keys an update keeps."""
+    spec = _merged_condition_spec()
+    spec.update(api_name=raw["api_name"], name=raw["name"])
+    spec["triggers"] = [
+        {"trigger_type": "manual", "order": 0, "id": raw["triggers"][0]["id"]}
+    ]
+    live = sorted(raw["steps"], key=lambda s: s["order"])
+    for step, live_step in zip(spec["steps"], live, strict=True):
+        assert step["step_type"] == live_step["step_type"]
+        step.pop("action_on_failure")
+        step["id"] = live_step["id"]
+    return spec
+
+
+def _update_steps(spec: dict) -> tuple[dict, dict]:
+    (op,) = plan_update_automation(spec).operations
+    return {s["key"]: s for s in op.payload["steps"]}, op.payload["triggers"][0]
+
+
+def test_plan_update_omitted_step_keys_keep_live(ui_edited_live):
+    """Before 2026-10-30 the PUT reset each of these to Kizen's default:
+    descriptions to the type name, notes cleared, the skip and failure
+    handling back to their defaults."""
+    spec = _bare_spec(ui_edited_live)
+    (op,) = plan_update_automation(spec).operations
+    live = sorted(ui_edited_live["steps"], key=lambda s: s["order"])
+    for spec_step, built, live_step in zip(
+        spec["steps"], op.payload["steps"], live, strict=True
+    ):
+        assert built["key"] == spec_step["key"]
+        for k in _KEPT_STEP_KEYS:
+            assert built.get(k) == live_step.get(k), (built["key"], k)
+    trigger = op.payload["triggers"][0]
+    for k in _KEPT_TRIGGER_KEYS:
+        assert trigger[k] == ui_edited_live["triggers"][0][k], k
+    assert op.preview["keeps_live"] == [
+        "trigger.manual.0",
+        *(s["key"] for s in spec["steps"]),
+    ]
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("description", "Wait for a reply"),
+        ("user_description", ""),
+        ("should_skip_execution", False),
+        ("action_on_failure", "notify_continue"),
+        ("error_notification_severity_level", "error"),
+    ],
+)
+def test_plan_update_explicit_step_key_wins(ui_edited_live, key, value):
+    spec = _bare_spec(ui_edited_live)
+    spec["steps"][1][key] = value
+    if key in _KEPT_TRIGGER_KEYS:
+        spec["triggers"][0][key] = value
+    steps, trigger = _update_steps(spec)
+    assert steps["wait_yes"][key] == value
+    if key in _KEPT_TRIGGER_KEYS:
+        assert trigger[key] == value
+
+
+def test_plan_update_explicit_unskip_drops_the_live_branch(ui_edited_live):
+    spec = _bare_spec(ui_edited_live)
+    spec["steps"][0]["should_skip_execution"] = False
+    steps, _ = _update_steps(spec)
+    assert steps["check"]["should_skip_execution"] is False
+    assert "continue_with_branch" not in steps["check"]
+
+
+def test_plan_update_carries_the_branch_with_a_carried_skip(ui_edited_live):
+    """A skipped condition sent without its branch is a 400, so the live
+    branch rides along with the live skip."""
+    steps, _ = _update_steps(_bare_spec(ui_edited_live))
+    assert steps["check"]["should_skip_execution"] is True
+    assert steps["check"]["continue_with_branch"] == "no"
+
+
+@pytest.mark.parametrize("unknown", [False, True], ids=["no_id", "unknown_id"])
+def test_plan_update_step_without_a_live_id_keeps_nothing(ui_edited_live, unknown):
+    spec = _bare_spec(ui_edited_live)
+    for n, item in enumerate((spec["steps"][1], spec["triggers"][0])):
+        item.pop("id")
+        if unknown:
+            item["id"] = f"00000000-0000-4000-8000-00000000000{n}"
+    (op,) = plan_update_automation(spec).operations
+    built = _build({**spec, "active": False})
+    assert op.payload["steps"][1] == built["steps"][1]
+    assert op.payload["triggers"][0] == built["triggers"][0]
+    assert "wait_yes" not in op.preview["keeps_live"]
+    assert "trigger.manual.0" not in op.preview["keeps_live"]
+
+
+def test_plan_update_preview_has_no_keeps_live_when_nothing_is_kept(ui_edited_live):
+    spec = _bare_spec(ui_edited_live)
+    for step in spec["steps"]:
+        step.pop("id")
+    spec["triggers"][0].pop("id")
+    (op,) = plan_update_automation(spec).operations
+    assert "keeps_live" not in op.preview
+
+
+def test_plan_update_keeps_live_skips_a_step_the_carry_leaves_unchanged(
+    ui_edited_live,
+):
+    """A step whose live settings are what the builder sends anyway is kept
+    but not named: the carry changed nothing in its payload."""
+    wait_no = next(s for s in ui_edited_live["steps"] if s["order"] == 2)
+    wait_no.update(
+        description=None, user_description="", error_notification_severity_level=None
+    )
+    (op,) = plan_update_automation(_bare_spec(ui_edited_live)).operations
+    assert "wait_no" not in op.preview["keeps_live"]
+    assert "wait_yes" in op.preview["keeps_live"]
+
+
+@pytest.mark.parametrize(
+    "spec_value, sent", [(None, True), (False, False)], ids=["omitted", "explicit"]
+)
+def test_plan_update_skip_non_working_days_keeps_live(ui_edited_live, spec_value, sent):
+    """Before 2026-10-30 an update from a spec without it turned a live true
+    off."""
+    ui_edited_live["skip_non_working_days"] = True
+    spec = _bare_spec(ui_edited_live)
+    if spec_value is not None:
+        spec["skip_non_working_days"] = spec_value
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["skip_non_working_days"] is sent
+
+
+def test_diff_automation_omitted_ui_description_is_no_change(ui_edited_live):
+    diff = diff_automation(_bare_spec(ui_edited_live))["diff"]
+    kept = set(_KEPT_STEP_KEYS) | set(_KEPT_TRIGGER_KEYS)
+    assert [d for d in diff if d["path"].rsplit(".", 1)[-1] in kept] == []
+
+
 @pytest.mark.parametrize(
     "block, message",
     [

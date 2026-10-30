@@ -762,8 +762,9 @@ _WIRE_TOP_DEFAULTS = {"error_notification_email": ""}
 _VARIABLE_BLOCK_DEFAULTS = {"deduplicate_array": False}
 
 # What the server writes when a step or trigger is sent without a
-# `description`, on create and on a PUT that omits it (confirmed live
-# 2026-10-27). A type missing here compares as sent.
+# `description` (confirmed live 2026-10-27 and 2026-10-30). It applies to a
+# step or trigger the spec adds: one whose `id` matches a live one carries the
+# live description instead. A type missing here compares as sent.
 _DEFAULT_DESCRIPTIONS = {
     "branch": "Branch",
     "condition": "Condition",
@@ -774,6 +775,7 @@ _DEFAULT_DESCRIPTIONS = {
     "manual": "Manual",
     "merge_branches": "Merge Branches",
     "next_or_finish": "Next/Finish",
+    "schedule_activity": "Action: Schedule Activity",
     "search_records": "Action: Search Records",
     "stop_execution": "Stop Execution",
     "update_variable": "Update Variable",

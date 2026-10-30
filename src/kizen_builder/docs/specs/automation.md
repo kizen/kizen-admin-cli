@@ -123,8 +123,8 @@ live 2026-09-28.
 spec is rejected without it. Confirmed live 2026-09-28.
 
 `error_notification_severity_level` (`error`, `warning`, `info`, `inherit`)
-sets a step's own severity. Omitted, the step inherits. Confirmed live
-2026-09-28.
+sets a step's own severity. Omitted, a new step inherits and an `update`
+keeps an existing step's live severity. Confirmed live 2026-09-28.
 
 **Field references — two forms, don't mix them up:**
 - **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations)
@@ -937,14 +937,31 @@ as a real custom object's own api_name, and its span gets
   history against the old id (confirmed live 2026-08-10). Set `id` (copied
   from a live read, e.g. `kizen automations show`) on any step that isn't
   actually new, and it keeps the same id and history across the write.
-- **`active` is the one runtime-state field the full replace does not
-  clobber when the spec is silent.** An update PUT is a full replace, but
-  `automations update` resolves an omitted/`null` `active` to the live
-  automation's current value before building the payload — a spec that
-  doesn't mention `active` never turns a running automation off. An
-  explicit `true`/`false` still wins and is echoed in the `--dry-run`
-  preview as a transition (`True → False (DEACTIVATES a live automation)`)
-  rather than a bare value.
+  Carrying `id` is also what keeps the step's settings below when the spec
+  leaves them out.
+- **What an update keeps when the spec is silent.** An update PUT is a full
+  replace, so `automations update` fills in these live values before
+  building the payload. An explicit value in the spec always wins, `""` and
+  `false` included. A `description: ""` is sent as no description, so
+  Kizen writes the type's default text rather than an empty one.
+  - `active`. A spec that doesn't mention it never turns a running
+    automation off. An explicit `true`/`false` is echoed in the `--dry-run`
+    preview as a transition (`True → False (DEACTIVATES a live automation)`)
+    rather than a bare value.
+  - The automation's `skip_non_working_days`. Without it a PUT turns a live
+    `true` off (confirmed live 2026-10-30).
+  - A webhook trigger's auth ([Webhook trigger auth](#webhook-trigger-auth-confirmed-live-2026-10-27)).
+  - On a step whose `id` matches a live step: `description`,
+    `user_description`, `should_skip_execution`, `continue_with_branch`
+    (only with a kept skip), `action_on_failure` and
+    `error_notification_severity_level`. On a trigger whose `id` matches:
+    `description`, `user_description` and `should_skip_execution`.
+    `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
+    A Kizen PUT without them resets each to its default (confirmed live
+    2026-10-30).
+  - A step or trigger without `id` is new to Kizen, so what its spec leaves
+    out gets Kizen's defaults: the type's default description, an empty
+    note, not skipped.
 - **`condition.filter_config`** uses the filtering DSL (`{"all"|"any": [...]}`,
   single conditions wrapped in `{"all": [...]}`) — same as `saved-views.md`.
   Fields are **bare api_names**; **ops are per field type** (e.g. dropdown uses
@@ -1055,7 +1072,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
 | `value_html` on an `update_variable` source | `''` |
-| `description` on a step or trigger | a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. It is written on create and on a PUT that omits it, so an update from a spec without one replaces a description set in the UI. Other types compare as sent |
+| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ### Read→write transforms
 
