@@ -87,7 +87,7 @@ produce, offline, with `messages templates craft-config --spec-file <f>
     the expected field). `size` omitted defaults to the builder's own
     default span size (`14`px), not "no span" — every live canonical span
     carries an explicit size. `text` may contain `{{ namespace.field }}`
-    merge-field tokens, rendered inline via `tools/merge_fields.py` — see
+    merge-field tokens, rendered inline — see
     "Merge fields in message content" below. `automation_variable.*` tokens
     are rejected at spec-validation time: library templates aren't scoped
     to one automation.
@@ -98,9 +98,7 @@ produce, offline, with `messages templates craft-config --spec-file <f>
     `<span>` at all, and spans with a `<strong>`-wrapped run alongside plain
     text in the same span (bold on part of a run, not the whole paragraph).
     Neither is representable via `paragraphs`, and — because `html` is
-    gone — neither can be authored from this CLI at all. Tracked as a known
-    gap on the engineering board (BCLI-023's follow-on inbox note), not
-    fixed here.
+    gone — neither can be authored from this CLI at all. Not supported.
   - `image`: `{"kind": "image", "file": "<local path>", "alt": "", "link": "", "width": 150,
     "container_width": null, "max_width": null, "max_height": null}`.
     `file` is a **local path**, not a `file_id` — there is no CLI surface to
@@ -172,27 +170,22 @@ produce, offline, with `messages templates craft-config --spec-file <f>
   **Padding follows the same rule.** Each `Section`/`Row`'s own
   `containerPadding{Top,Right,Bottom,Left}` — default uniform `"10"` or an
   explicit `padding` override — is rendered as an inline
-  `padding:Tpx Rpx Bpx Lpx;` (top/right/bottom/left, matching
-  `_render_button`'s existing padding order) on that node's own wrapper
+  `padding:Tpx Rpx Bpx Lpx;` (top/right/bottom/left, the same order as
+  this emitter's `Button` padding) on that node's own wrapper
   `<div class="section-<nodeId>">` in `content`. This applies to every
-  section and row, not only ones that explicitly set the new `padding`
-  field — before this fix, `content` carried **no** padding declaration
-  for `Section`/`Row` at all, on any template, so text always rendered
-  flush against the canvas edge regardless of what `craft_json` said.
+  section and row, not only ones that explicitly set `padding`.
 
-  **`Section.container_width` reaches `content` (BCLI-025), via an outer
+  **`Section.container_width` reaches `content`, via an outer
   mso-conditional background-table wrapper.** An explicit `container_width`
-  gets `_render_section` to wrap the section's own div in `<!--[if mso |
+  wraps the section's own div in `<!--[if mso |
   IE]><table ... width="<containerWidth>" style="width:<containerWidth>px;">
   ...<![endif]-->`, plus a `.section-<sectionId> { max-width:...px; }` rule
   — a *simplified* version of Kizen's own wrapper: this emitter has no
   background-image concept at all (only `background_color`), so it skips the
   VML `<v:rect>`/`<v:fill>` fallback Kizen's compiler always emits alongside
   it, even for a solid colour. Section's own `background_color` is applied
-  via a CSS class rule, as before — this fix only adds the width wrapper.
-  When `container_width` is unset (the common case for an unmodified spec),
-  `content` is unchanged from before this fix — no wrapper at all, matching
-  this surface's existing "`None` means no override" convention.
+  via a CSS class rule. When `container_width` is unset, there is no
+  wrapper ("`None` means no override").
 - `sender_type` and `from_name_type` are not spec keys. They are hard-coded
   to `"business"`/`"default"`, the only values ever observed live — see
   "Other top-level fields" below. There is no `--sender-type` flag.
@@ -250,15 +243,12 @@ settings), `contact`, `automation_variable`, `automation_history`, and
 `custom_objects` (the literal token `call_llm`/`initialize_variable` use for
 the automation's own target_object) — never carry it. No API-queryable
 catalog of namespaces exists; any custom object's api_name can be one. Full
-table and the shared span-building rules: `kizen docs show automation`,
-`src/kizen_builder/tools/merge_fields.py`.
+table and the shared span-building rules: `kizen docs show automation`.
 
 **A `paragraphs`-based `Text` block is one of the places this format is
-authored** (BCLI-023): a `{{ ns.field }}` token inline in a `ParagraphDef.text`
-string is rendered into the span above by `tools/email_craft.py`'s
-`_paragraphs_to_html`, via `merge_fields.render()` — the sole owner of this
-markup; nothing in `email_craft.py`/`email_templates.py` re-implements token
-parsing or the label tables. `automation_variable.*` is rejected at
+authored**: a `{{ ns.field }}` token inline in a `ParagraphDef.text` string is
+rendered into the span above, with the same rules as an automation step's
+merge fields. `automation_variable.*` is rejected at
 spec-validation time for a `Text` block's paragraphs — that namespace only
 exists in an automation-scoped message, not a portable library template.
 
@@ -305,8 +295,8 @@ let it regenerate. A `craft_json`-only update leaves the email that actually
 gets sent out of sync with what the builder shows — silently, since the
 builder only ever reads `craft_json`.
 
-**This emitter's own `content` fidelity against Kizen's own compiler
-(BCLI-025).** All confirmed against the reference template's real compiled
+**This emitter's own `content` fidelity against Kizen's own compiler.** All
+confirmed against the reference template's real compiled
 `content`, not inferred from `craft_json`: `font-family` (see "Text" below),
 `.moz-text-html .mj-column-per-N { ... }` rules (one per distinct column
 class, scoped to `@media (min-width:<mobileBreak>px)`, matching Kizen's own
@@ -381,30 +371,25 @@ Block props confirmed live 2026-08-25:
   `Root.props` (`fontFamily`, `fontSize`, `color` — rgba->hex converted;
   `line-height:1`/`text-align:left` are fixed literals with no controlling
   Root prop in the reference), confirmed against the reference template's
-  compiled `content` (BCLI-025) — before that fix, `content` carried no
-  `font-family` for text at all, so every email rendered in the client's
-  serif fallback. The `.kizen-text-styles` `<style>` rules themselves
+  compiled `content`. The `.kizen-text-styles` `<style>` rules themselves
   (link/paragraph/list/code styling) are static except for `linkColor`.
   Inside `custom.text` itself, the builder's own canonical per-paragraph
   markup **does** carry inline `color` at the `<span>` level — confirmed
-  live 2026-08-26 (BCLI-023), correcting an earlier claim here that it was
-  "not derivable." A per-paragraph `font-family` at the same `<span>` level
+  live 2026-08-26. A per-paragraph `font-family` at the same `<span>` level
   is also real but rarer in the reference template (a likely one-off
   override, not a general pattern) and is not spec-settable in v1 — see
-  `ParagraphDef`/`_paragraphs_to_html` in `tools/email_craft.py`.
+  `ParagraphDef` above.
   `ParagraphDef`'s vocabulary is closed and not exhaustive of what the
   editor itself produces: re-measured 2026-08-26 against all 9 `Text` nodes
   in the reference template, 4 of 31 `<p>` blocks contain a bare `<a>` with
   no `<span>` at all, and 2 spans carry a `<strong>`-wrapped run alongside
   plain text in the same span (partial-run bold). `paragraphs` cannot
   express either shape, and since `TextBlockDef.html` is gone, there is no
-  fallback for authoring one from this CLI — tracked as a known gap on the
-  engineering board (BCLI-023's follow-on inbox note), not fixed here.
-- **`Image`** — `src` is host-absolute, so an image reference is
-  **environment-bound**; moving a template between envs needs `src`
-  rewritten. Two URL schemes are both confirmed live on a plain `Image`
-  node, not just on `Attachments`: `https://<host>/api/files/{fileId}/download`
-  (used by the "All Rows" capture and most templates) and
+  fallback for authoring one from this CLI — not supported.
+- **`Image`** — `src` is host-absolute. Two URL schemes are both
+  confirmed live on a plain `Image` node, not just on `Attachments`:
+  `https://<host>/api/files/{fileId}/download` (used by the "All Rows"
+  capture and most templates) and
   `https://<host>/api/public/s3/{fileId}/download` (seen on one image in
   another template) — either is accepted; `messages templates create`/
   `craft-config` always emit the `/api/files/` form. `naturalWidth`/
@@ -415,14 +400,14 @@ Block props confirmed live 2026-08-25:
   without an authenticated Kizen session — confirmed live 2026-08-25 (`POST
   /api/s3/success`'s own `is_public` field, `GET /api/docs/schema`; both URL
   schemes 200 unauthenticated once set, 404 on both when not). The
-  spec-file emitter's upload path sets it; a raw `upload_file()` call
-  elsewhere in this repo does not unless asked (see `api/files.py`).
+  spec-file emitter's upload path sets it; other uploads in this CLI don't
+  unless asked.
   `position: "center"` (the only value ever hardcoded — not spec-settable,
   no observed alternative) compiles to `align="center"` on the block-level
   `<td>` wrapping the image (see below) — confirmed against the reference
   template; the `<img>` itself carries no centering style of its own.
 
-  **Two sizing modes (BCLI-025), confirmed against the reference template's
+  **Two sizing modes, confirmed against the reference template's
   compiled `content`**, chosen by whether `ImageBlockDef.width` is set:
 
   | `width` | compiled `<img>` `width` attr | `.image-<nodeId>-auto` rule |
@@ -442,7 +427,7 @@ Block props confirmed live 2026-08-25:
   emitter's own prior output. `container_width`/`max_width`/`max_height`
   remain spec-settable (`ImageBlockDef`) but stay **`craft_json`-only** —
   confirmed absent from the reference's compiled `content` in both sizing
-  modes, not merely "no consumer in `_render_image`".
+  modes, not merely unused by this emitter's `Image` output.
 - **`Button`** — `{url, label, action: "url", color, textColor, fontSize,
   fontFamily, alignment, borderSize, borderColor, borderRadius,
   padding{Top,Left,Right,Bottom}, textStyles: [], openLinkInNewTab}` plus the
@@ -450,14 +435,12 @@ Block props confirmed live 2026-08-25:
   hex-converted; `font-weight:normal`/`line-height:120%`/`margin:0`/
   `text-transform:none`/`mso-padding-alt:0px` present, in this order) is
   checked byte-exact against a real Button in a Kizen-authored template,
-  read-only, re-verified 2026-08-26 (BCLI-023) across all five Button nodes
+  read-only, re-verified 2026-08-26 across all five Button nodes
   in that template. The enclosing `<table>`/`<td>` markup is **not**
   byte-exact against that capture — real Kizen puts no `align` attribute on
   the `<table>` at all (`Button.alignment` instead reaches `<td
   align="...">` there) and the `<td>` carries additional attributes/style
-  this emitter doesn't reproduce; recorded as a follow-on finding on the
-  engineering board (`button-table-and-divider-markup-diverge-further`),
-  not fixed here.
+  this emitter doesn't reproduce.
   `borderRadius`/`padding{Left,Right}`/`alignment` are spec-settable
   (`ButtonBlockDef.border_radius`/`padding_left`/`padding_right`/
   `alignment`), defaulting to this emitter's pre-existing hardcoded values
@@ -467,11 +450,11 @@ Block props confirmed live 2026-08-25:
   *this emitter's own* wrapping `<table>` (not Kizen's, per above); without
   it every button renders left-aligned in its cell regardless of the spec.
 - **`Divider`** — `{size, color, width, alignment, borderStyle}` plus the
-  `container*` set. `_render_divider`'s output is **not** verified against a
-  real capture — it pins this emitter's current shape only. A real Kizen
+  `container*` set. This emitter's Divider output is **not** verified against
+  a real capture. A real Kizen
   Divider wraps the rule in a two-level `<table><td>` plus an
-  MSO-conditional fallback `<table>`, none of which this emitter produces;
-  see the follow-on note cited above. `size` (thickness in px) is
+  MSO-conditional fallback `<table>`, none of which this emitter produces.
+  `size` (thickness in px) is
   spec-settable (`DividerBlockDef.size`), defaulting to this emitter's
   pre-existing hardcoded `"3"`; the reference template's divider uses `"1"`,
   set explicitly.
@@ -484,37 +467,20 @@ Block props confirmed live 2026-08-25:
   name and email — treat a captured `Attachments` node as environment-bound
   and as carrying personal data.
 
-### If you build on this
+### Copying and editing a template safely
 
-A **surgical** edit is low-risk and proven: replacing an exact existing
-substring in both `craft_json`'s `custom.text` and the parallel `content` HTML
-round-trips and renders correctly (confirmed live 2026-07-21 by appending a
-merge-field span to an existing `Text` node).
+`kizen messages templates clone` is the safe path for copying an existing
+design: it copies both content fields together, so the copy is internally
+consistent by construction. A source with blank `content` is refused, for the
+reason given under *Automation messages* above. Build the design once in the
+builder UI (or with `create --spec-file`), then clone and surgically edit it.
+A **surgical** edit — replacing an exact existing substring in both
+`craft_json`'s `custom.text` and the parallel `content` HTML — round-trips
+and renders correctly (confirmed live 2026-07-21 by appending a merge-field
+span to an existing `Text` node).
 
-Generating genuinely **new** structure — new Sections/Rows/Images/Buttons from
-scratch, the way forms/layouts/dashboards builders do — additionally requires
-hand-producing matching Outlook-safe compiled HTML for `content`, with the
-node ids threaded through it. **Built** by `tools/email_craft.py`'s
-`build_email_content()`, wired to `messages templates create`/`update
---spec-file`/`craft-config` — see "Building a template from a spec file"
-above. It covers `Text`/`Image`/`Button`/`Divider` and the 4 v1 column
-presets; `Attachments` and the other 5 presets are confirmed live but still
-unbuilt (their `columns`/markup are pre-captured for a follow-on). This
-stayed meaningfully higher-stakes than the other craft.js surfaces even once
-built: a wrong `content` is what real recipients actually receive, not an
-editor-only concern, and nothing offline can substitute for opening a real
-test send in Outlook.
-
-`kizen messages templates clone` is still the safe path for copying an
-existing design: it copies both content fields together, so the copy is
-internally consistent by construction. A source with blank `content` is
-refused, for the reason given under *Automation messages* above. Build the
-design once in the builder UI (or with `create --spec-file`), then clone and
-surgically edit it.
-
-Everything needed to build on the generation slice — node shapes, the
-coupling rule, the compile findings, the spec-file format — is in this
-document. It is deliberately the only home for those facts.
+`Attachments` and five of the nine column presets can't be built from a spec;
+use `clone`.
 
 ## See also
 

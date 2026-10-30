@@ -8,6 +8,9 @@ Command syntax lives in `kizen --help`; the command map in
 `kizen docs show commands`. Everything about one kind of entity — spec shape,
 wire formats, quirks — is in that surface's own topic (`kizen docs list`).
 
+Told to run commands through `npx @kizenapps/cli admin`? Read rule 1's
+app-builder paragraph first.
+
 ## Operating model
 
 **0. Read commands never need approval.** Run `kizen objects get/list`,
@@ -33,9 +36,14 @@ gets pointed at the wrong host by hand; free-text URL entry is still there for
 self-hosted or one-off setups, reached with a deliberate `url` choice, not a
 default.
 
-**Under app-builder, there is no profile.** The wrapper
-launches `kizen` with these variables in the process environment (a `.env`
-file can't supply them):
+**Under app-builder, there is no profile.** App-builder is the npm package
+`@kizenapps/cli` (`appbuilder admin`). Every `kizen <args>` in these docs is
+`npx @kizenapps/cli admin <args>` there. The wrapper reads its own options
+first, so `admin --help` shows the wrapper's help; `admin -- --help` shows
+`kizen --help`, and `admin docs show operating` reaches `kizen` directly.
+
+The wrapper launches `kizen` with these variables in the process environment
+(a `.env` file can't supply them):
 
 | Variable | Value |
 |---|---|
@@ -84,15 +92,9 @@ so quietly, so it's safe to run unconditionally. `kizen upgrade` then applies
 it, using whatever is right for how this CLI was installed. Docs ship with the
 package, so upgrading updates the instructions too.
 
-**6. Confirm rendered output in the browser.** Build and re-apply changes
-through the CLI — it's the source of truth for what got written and it's
-where approval happens. But the CLI has no renderer: it cannot show you a
-dashlet's chart, an email's HTML body, or a condition's resolved option
-labels, so a write it reports as successful can still be wrong on screen.
-Treat the two surfaces as one workflow rather than the browser being a
-fallback for when something looks broken — open it to confirm anything a
-human would look at: a dashboard, a dashlet, an email body, a condition or
-filter's displayed labels.
+**6. Confirm rendered output in the browser.** The CLI has no renderer, so
+open anything a human would look at after writing it; see [Verifying
+rendered output](#verifying-rendered-output).
 
 ## Where to find things
 
@@ -101,9 +103,10 @@ These sources, in this order — don't guess, and don't grep `src/` for any of t
 | You need… | Go to | How |
 |-----------|-------|-----|
 | **Command syntax** — what flags a command takes, what it does | `kizen <group> <cmd> --help` | Authoritative and always current (it's generated from the code). Read-only, no approval. Start here for any command. |
-| **Everything about one kind of entity** — the spec shape a `--spec-file` wants, *and* its wire formats, endpoints and quirks | `kizen docs show <surface>` | One doc per surface: `objects`, `field`, `records`, `automation`, `automation-step`, `automation-runtime`, `activity`, `form`, `dashboard`, `layout`, `saved-views`, `permission-group`, `smart-connectors`, `smart-connector-flow`, `email-templates`, `files`. Each command's `--help` names its topic. |
+| **Everything about one kind of entity** — the spec shape a `--spec-file` wants, *and* its wire formats, endpoints and quirks | `kizen docs show <surface>` | One doc per surface; `kizen docs show reference` routes by task and `kizen docs list` names every topic. Each command's `--help` names its topic. |
 | **Filters** — the DSL, the wire format, per-type operators | `kizen docs show filters` | One shape shared by `records list --filter`, saved views, condition steps, `search_records`, and dashlets. |
 | **Writing a `code_step` script** — the namespace, how inputs are typed, the test loop | `kizen docs show code-steps` | Write → `kizen code test` → wire into an automation. |
+| **A first build, start to finish** — object → activity → automation → dashboard, in build order | `kizen docs show examples` | One worked build across surfaces. |
 | **Which topic do I want?** | `kizen docs show reference` | A router plus the conventions that hold across every surface. |
 | **What commands exist** — the map of the surface | `kizen docs show commands` | A map, not a contract. `--help` is the authority; this can lag. |
 
@@ -127,9 +130,6 @@ wire behavior in one place. **Don't grep for a quirk; open the surface's doc.**
 - **Show, don't paraphrase.** When relaying read results, prefer the actual
   command output (or a tight summary of it) over free-text descriptions. The
   user wants the ground truth.
-- **Don't migrate from this repo.** Cross-env transport has its own
-  project for blast-radius reasons. If the user asks to push something
-  from dev to staging/prod, redirect them rather than scripting it here.
 
 
 ## Verifying rendered output
@@ -162,27 +162,15 @@ provenance against the record the way nothing else does, and the CLI has no
 equivalent view today. Open it even when nothing looks wrong, not only when
 chasing a failure.
 
-For how to confirm a run itself reached a terminal state, see
-`kizen docs show automation-runtime` — that's where the run-verification
-mechanic is documented, whatever form it currently takes.
-
-## What's *not* in the repo (and why)
-
-- **No spec YAML files.** Desired state lives in the conversation; mutations
-  are constructed inline. (Slice 2 will accept Pydantic-equivalent dicts as
-  tool input.)
-- **No state file.** No local `.kizen-state/` mapping spec api_names to
-  Kizen UUIDs. Kizen is the source of truth; tools fetch live each time.
-- **No drift detection.** With no local state, "drift" reduces to "read the
-  live env and reconcile in conversation."
-- **No multi-spec merging.** Each tool call is one entity at a time.
+How to confirm a run reached a terminal state:
+`kizen docs show automation-runtime`.
 
 ## Mutation flow (plan-then-apply)
 
 Every mutation goes through this loop:
 
-1. You construct the desired state inline (a JSON dict for automations,
-   or named flags for fields/objects).
+1. The desired state is a spec file (`--spec-file`, or stdin) or flags; each
+   command's `--help` says which.
 2. Run the mutation verb with `--dry-run`. This pulls live state,
    validates against it (e.g. resolves field_refs, detects collisions),
    and renders the plan — including the exact wire payload for automation
@@ -196,44 +184,38 @@ Every mutation goes through this loop:
 
 Plans are **ephemeral** — there's no on-disk plan store. Re-running the
 verb with `--yes` re-plans against live state, so an approved change applied
-later is still validated against reality at apply time. `kizen apply`
-replays a saved plan's payloads without re-validating them, and refuses a
+later is still validated against reality at apply time. To keep a plan,
+save a verb's `--dry-run --json` output; `kizen apply --plan-file <path>`
+(or stdin) sends its payloads without re-validating them, and refuses a
 plan built for another business. For automation updates, the plan bakes in
 `last_revision` — if someone edits the automation between plan and apply,
 the PUT fails loudly instead of clobbering their change.
 
-### Building automation specs inline
+### Building automation specs
 
 For `kizen automations create` / `update`, the JSON is an `AutomationDef`.
 **The full spec — graph rules (`parent_key`/`parent_branch`), the wired triggers
 and step types, `field_ref` resolution, condition `filter_config`, the GET→PUT
 wire dialect, and the quirks that bite — lives in
 `kizen docs show automation`.** Read that before authoring one; don't grep
-`spec.py`. A few load-bearing reminders:
+the source. A few load-bearing reminders:
 
 - One root (`parent_key: null`); branch entries under a `condition`/`goal` set
   `parent_branch: "yes"|"no"`; rejoin branches with a branch group rather
   than duplicating tails.
-- `field_ref: "<object>.<field>"` resolves to a UUID at apply time (portable
-  across envs); bare `field_id` UUIDs work but are env-bound.
+- `field_ref` resolves at apply time (`kizen docs show automation`, 'Field
+  references').
 - `stop_execution` needs no config block — the planner emits the empty one.
-- A type not in the wired list raises `PlanError` — add a builder following
-  `_STEP_BUILDERS` / `_TRIGGER_BUILDERS`. Config models are `extra="allow"`, so
-  they round-trip the richer shapes returned by `kizen automations get`; a key
-  the type's builder doesn't read is still a plan error.
+- A step or trigger type the CLI doesn't wire is a `PlanError`;
+  `kizen docs show automation` lists the wired and the unwired ones.
 - Condition `filter_config` uses the shared filter DSL — the same one
   `records list --filter` and saved views take. `kizen docs show filters` has
   both layers (the friendly DSL and the wire form it resolves to), the per-type
   operator rules, and the clause for a variable compared to a static value,
   which the DSL doesn't cover.
-
-### Secrets in code steps are env-specific
-
-`code_step.secrets` references API keys / connection strings configured
-per-env. The secret NAMES go in the spec; the actual values live in
-Kizen, attached to the env. If a code step references a secret that
-isn't configured on the env, it'll fail at runtime — surface this to
-the user when authoring any automation that uses secrets.
+- A `code_step` spec names its secrets; their values live in Kizen, and a
+  missing one fails the step at runtime (`kizen docs show automation`). Tell
+  the user when a spec uses one.
 
 ### Step/trigger identity across an update depends on `id`
 
@@ -242,7 +224,7 @@ steps add/edit/remove` and `roundtrip` always echo back the `id` of every
 step/trigger they read from GET, so anything that isn't the one node you're
 touching keeps its identity — and its execution history in the Kizen UI —
 across the write (confirmed live 2026-08-10). A step/trigger built from a
-hand-authored spec (`plan-update-automation`) only keeps its id if the spec
-sets one explicitly; a spec author who didn't seed from a live read gets a
-fresh id for that step, same as before.
+hand-authored spec (`kizen automations update --spec-file`) only keeps its id
+if the spec sets one explicitly; a spec author who didn't seed from a live read
+gets a fresh id for that step.
 

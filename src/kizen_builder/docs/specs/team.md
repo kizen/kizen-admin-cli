@@ -26,9 +26,7 @@ CLI called.
 their write verbs, and both carry a `roles` field on every employee — but the
 list endpoint expands each role to `{id, name, default_for_new_users}` while
 the retrieve endpoint returns bare role UUIDs. **Do not assume the same shape
-from both** — `get_team_member` (`tools/team.py`) resolves the retrieve
-endpoint's ids against `GET /api/role` to attach names, the same pattern
-`describe_role` uses for permission groups.
+from both** — `team get` resolves the role ids to names.
 
 `/api/team?search=<uuid>` does **not** match by id (0 results) — only name/email
 substrings. `team get` therefore takes a UUID straight to `GET /api/team/{id}`,
