@@ -86,11 +86,12 @@ class ActionLlmCallConfig(BaseModel):
 
     model_name: str = Field(
         description=(
-            "A free string, unvalidated client-side. Run `kizen automations "
-            "llm-models` for the live catalog of what this business has "
-            "enabled — each row's model_value is this field's value, paired "
-            "with the business_plugin_app_id it needs (None for kizen/* "
-            "native models). 'gemini/...' and 'openai/...' models need the "
+            "A model_value from `kizen automations llm-models`, the live "
+            "catalog of what this business has enabled, where each row is "
+            "paired with the business_plugin_app_id that runs it. With "
+            "business_plugin_app_id omitted, the plan refuses a model the "
+            "catalog doesn't list. 'gemini/...' and "
+            "'openai/...' models need the "
             "provider prefix; Claude models are bare, e.g. "
             "'claude-3-7-sonnet-20250219' (no 'claude/' prefix)."
         )
@@ -102,13 +103,14 @@ class ActionLlmCallConfig(BaseModel):
     business_plugin_app_id: str | None = Field(
         default=None,
         description=(
-            "Required for any non-native model_name (anything not "
-            "'kizen/...') — the business's installed instance of that "
-            "provider's plugin app. Get it from `kizen automations "
-            "llm-models`, NOT from GET /api/external-integrations/bootstrap "
-            "(that returns the plugin catalog's app-definition id, which is "
-            "identical across every business and is rejected with "
-            "'Business plugin app not found')."
+            "Optional: the CLI fills it from `kizen automations llm-models` "
+            "for model_name, Kizen AI models included. It is the business's "
+            "installed instance of that provider's plugin app, not the "
+            "plugin catalog's app-definition id from GET "
+            "/api/external-integrations/bootstrap (identical across every "
+            "business and rejected with 'Business plugin app not found'). "
+            "An id that belongs to a different provider than model_name's "
+            "is refused."
         ),
     )
     merge_field_validation: (
@@ -118,7 +120,8 @@ class ActionLlmCallConfig(BaseModel):
         description=(
             "How to handle a blank merge field in prompt/html_prompt. UI "
             "labels: 'error_if_required' = \"Error if any merge field is "
-            "blank\" (server default when unset), 'default_to_unknown' = "
+            "blank\" (the default for a new step; 'update' keeps the live "
+            "value when unset), 'default_to_unknown' = "
             "\"Default to 'Unknown'\" (fixed literal, not configurable), "
             "'blank' = \"Leave Blank\". Same enum on file_content_extraction, "
             "audio_transcription, and a condition step's llm_decision block."
@@ -130,7 +133,9 @@ class ActionLlmCallConfig(BaseModel):
             "The MCP server whose tools the model may call: its api_name or "
             "UUID, from the Call LLM step's own server picker "
             "(GET /api/mcp-servers/step-options). Needs run_tools_as. Omitted "
-            "means no server, so an update detaches one set in the UI."
+            "on a new step, no server. On update, a step whose id matches "
+            "keeps its live server and account unless the spec sets either; "
+            "null removes both."
         ),
     )
     mcp_server_id: str | None = Field(
@@ -154,7 +159,10 @@ class ActionLlmCallConfig(BaseModel):
         default=None,
         ge=1,
         le=32767,
-        description="How many model turns the step may take in a row. Default 25.",
+        description=(
+            "How many model turns the step may take in a row. Default 25 on "
+            "a new step; update keeps the live value when omitted."
+        ),
     )
     tool_failure_policy: Literal["never_fail"] | None = Field(
         default=None,

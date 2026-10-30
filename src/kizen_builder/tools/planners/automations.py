@@ -124,6 +124,40 @@ class LiveContext:
             )
         return matches[0]["id"]
 
+    def llm_models(self) -> list[dict[str, Any]]:
+        """The business's LLM catalog, one row per (provider, model)."""
+        from kizen_builder.api.automations import get_metadata, llm_model_rows
+
+        return self._step_picker(
+            "llm_models", lambda client: llm_model_rows(get_metadata(client))
+        )
+
+    def llm_plugin_app_id(self, model_name: str) -> str:
+        """The business plugin app (provider install) that runs ``model_name``."""
+        rows = self.llm_models()
+        row = next((r for r in rows if r["model_value"] == model_name), None)
+        if (
+            row is None
+            and model_name.startswith("kizen/")
+            and not any(r["provider_name"] == "kizen" for r in rows)
+        ):
+            row = {"provider_name": "kizen", "business_plugin_app_id": None}
+        if row is None:
+            raise PlanError(
+                f"model '{model_name}' isn't enabled in '{self.env}'. Run kizen "
+                "automations llm-models for the models this business can use."
+            )
+        if not row["business_plugin_app_id"]:
+            app = (
+                "Kizen AI" if row["provider_name"] == "kizen" else row["provider_name"]
+            )
+            raise PlanError(
+                f"'{model_name}' needs the {app} app, which isn't installed in "
+                f"'{self.env}'. Install {app} from the business's plugin settings, "
+                "then plan again."
+            )
+        return row["business_plugin_app_id"]
+
     def _step_picker(
         self, name: str, fetch: Callable[[Any], list[dict[str, Any]]]
     ) -> list[dict[str, Any]]:
@@ -351,7 +385,6 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     preview["current_revision"] = current.get("revision")
     if keeps_live:
         preview["keeps_live"] = keeps_live
-    preview.update(_llm_tools_dropped(current, payload))
     return Plan.build(
         env=env,
         summary=f"Update automation '{auto.api_name}'",
@@ -454,35 +487,118 @@ _KEPT_STEP_KEYS = (
 )
 _KEPT_TRIGGER_KEYS = ("description", "user_description", "should_skip_execution")
 
-# Config-block keys a PUT resets the same way, by step type, each with how a
-# read's value is written back (confirmed live 2026-10-30).
-_KEPT_BLOCK_KEYS: dict[str, dict[str, Callable[[Any], Any]]] = {
-    "schedule_activity": {
-        "target_variable": lambda v: _unwrap_variable_name(v),
-        "variable_field_resolution": lambda v: v,
-    },
+
+@dataclass(frozen=True)
+class _KeptBlockKeys:
+    """Config-block keys an update keeps live, all or none: when the spec
+    block sets none of ``set_by`` (default: ``keys``) and every ``read`` key
+    (default: ``keys``) is non-null live, each of ``keys`` gets ``write`` of
+    its live value. A live ``default``, what Kizen stores when a PUT leaves
+    the key out, is carried without naming the step in ``keeps_live``.
+    ``within`` names a sub-block holding the keys, used only when the block's
+    ``type`` names it, live and built; there "set" means present in the
+    spec's dict."""
+
+    keys: tuple[str, ...]
+    read: tuple[str, ...] = ()
+    set_by: tuple[str, ...] = ()
+    write: Callable[[Any], Any] = lambda v: v
+    within: str | None = None
+    default: Any = None
+
+
+_KEPT_LLM_PROMPT_KEYS = (
+    _KeptBlockKeys(("merge_field_validation",), default="error_if_required"),
+    _KeptBlockKeys(("is_advanced",)),
+)
+
+# Config-block keys a PUT resets the same way, by step type (confirmed live
+# 2026-10-30).
+_KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
+    "schedule_activity": (
+        _KeptBlockKeys(("target_variable",), write=lambda v: _unwrap_variable_name(v)),
+        _KeptBlockKeys(("variable_field_resolution",)),
+    ),
+    "call_llm": (
+        # Kizen rejects a server without an account, so they carry as a pair.
+        _KeptBlockKeys(
+            ("mcp_server_id", "run_tools_as_id"),
+            read=("mcp_server", "run_tools_as"),
+            set_by=("mcp_server", "mcp_server_id", "run_tools_as", "run_tools_as_id"),
+            write=lambda v: _unwrap_id(v),
+        ),
+        _KeptBlockKeys(("max_sequential_turns",)),
+        _KeptBlockKeys(("tool_failure_policy",)),
+        *_KEPT_LLM_PROMPT_KEYS,
+    ),
+    "file_content_extraction": _KEPT_LLM_PROMPT_KEYS,
+    "audio_transcription": _KEPT_LLM_PROMPT_KEYS,
+    "condition": (
+        _KeptBlockKeys(
+            ("merge_field_validation",),
+            within="llm_decision",
+            default="error_if_required",
+        ),
+    ),
 }
 
 
-def _kept_block_values(
-    spec: AutomationStepDef | AutomationTriggerDef, live: dict[str, Any]
-) -> tuple[str | None, dict[str, Any]]:
-    """The step's config-block field and the live value, as written, of each
-    kept block key its spec block leaves out."""
+def _kept_values(
+    kept: _KeptBlockKeys, set_in_spec: set[str], live_block: dict[str, Any]
+) -> dict[str, Any]:
+    if set_in_spec & set(kept.set_by or kept.keys):
+        return {}
+    live_values = [live_block.get(k) for k in kept.read or kept.keys]
+    if any(v is None for v in live_values):
+        return {}
+    return {k: kept.write(v) for k, v in zip(kept.keys, live_values, strict=True)}
+
+
+def _changes(
+    kept: _KeptBlockKeys, built: dict[str, Any], values: dict[str, Any]
+) -> bool:
+    return any(
+        built.get(k) != v and not (k not in built and v == kept.default)
+        for k, v in values.items()
+    )
+
+
+def _kept_block(
+    spec: AutomationStepDef | AutomationTriggerDef,
+    built: dict[str, Any],
+    live: dict[str, Any],
+) -> tuple[str | None, dict[str, Any], bool]:
+    """The step's config-block field, its built block with the live value,
+    as written, of each kept block key the spec block leaves out, and
+    whether that changed anything Kizen would store."""
     if (
         not isinstance(spec, AutomationStepDef)
         or spec.step_type not in _KEPT_BLOCK_KEYS
     ):
-        return None, {}
+        return None, {}, False
     field = _block_field_for(spec.step_type)
     spec_block = getattr(spec, field)
     set_in_spec = spec_block.model_fields_set if spec_block is not None else set()
     live_block = live.get(field) or {}
-    return field, {
-        k: write(live_block[k])
-        for k, write in _KEPT_BLOCK_KEYS[spec.step_type].items()
-        if k not in set_in_spec and live_block.get(k) is not None
-    }
+    block = dict(built.get(field) or {})
+    changed = False
+    for kept in _KEPT_BLOCK_KEYS[spec.step_type]:
+        if kept.within is None:
+            values = _kept_values(kept, set_in_spec, live_block)
+            changed |= _changes(kept, block, values)
+            block.update(values)
+        elif live_block.get("type") == block.get("type") == kept.within:
+            sub = getattr(spec_block, kept.within, None)
+            values = _kept_values(
+                kept,
+                set(sub) if isinstance(sub, dict) else set(),
+                live_block.get(kept.within) or {},
+            )
+            inner = block.get(kept.within) or {}
+            changed |= _changes(kept, inner, values)
+            if values:
+                block[kept.within] = {**inner, **values}
+    return field, block, changed
 
 
 def _carry_omitted_step_keys(
@@ -517,16 +633,12 @@ def _carry_omitted_step_keys(
         # the skip, so it is kept only with a kept skip.
         if values.get("should_skip_execution") is not True:
             values.pop("continue_with_branch", None)
-        field, block_values = _kept_block_values(spec, live)
-        block = (built.get(field) or {}) if field else {}
-        if all(built.get(k) == v for k, v in values.items()) and all(
-            block.get(k) == v for k, v in block_values.items()
-        ):
-            return built
-        kept.append(built["key"])
+        field, block, block_kept = _kept_block(spec, built, live)
+        if block_kept or any(built.get(k) != v for k, v in values.items()):
+            kept.append(built["key"])
         out = {**built, **values}
-        if field and block_values:
-            out[field] = {**block, **block_values}
+        if field is not None and block != (built.get(field) or {}):
+            out[field] = block
         return out
 
     # Triggers can't pair by index: a manual one is prepended when the spec
@@ -797,31 +909,6 @@ def _fan_out_warnings(auto: AutomationDef) -> dict[str, Any]:
         if n > 1 and types[key] != "branch"
     ]
     return {"warnings": warnings} if warnings else {}
-
-
-def _llm_tools_dropped(
-    current: dict[str, Any], payload: dict[str, Any]
-) -> dict[str, list[str]]:
-    """Call LLM steps whose live MCP server or run-as account the update
-    clears, by spec step key. A spec that omits the keys sends null, so an
-    `update` detaches a server attached in the UI. Steps pair as `diff`
-    pairs them: by id, then by position."""
-    from kizen_builder.translate import _wire_pairs
-
-    live_steps = sorted(current.get("steps") or [], key=lambda s: s.get("order") or 0)
-    dropped: dict[str, list[str]] = {}
-    for live, built in _wire_pairs(live_steps, payload.get("steps") or []):
-        if live is None or built is None or built.get("type") != "call_llm":
-            continue
-        was = live.get("action_call_llm") or {}
-        now = built.get("action_call_llm") or {}
-        for read_key, wire_key, cell in (
-            ("mcp_server", "mcp_server_id", "detaches_mcp_server"),
-            ("run_tools_as", "run_tools_as_id", "clears_run_tools_as"),
-        ):
-            if was.get(read_key) and now.get(wire_key) is None:
-                dropped.setdefault(cell, []).append(built["key"])
-    return dropped
 
 
 # ---------------------------------------------------------------------------
@@ -1531,6 +1618,7 @@ def _build_step_payload(
         wire_block = builder(block_dict, auto, ctx)
     except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
+    _resolve_llm_plugin_app(step.step_type, step.key, wire_block, ctx)
     problem = _built_block_problem(step.step_type, step.key, wire_block, auto, ctx)
     if problem:
         raise PlanError(problem)
@@ -1746,6 +1834,41 @@ def _llm_tools_pairing_problem(key: str, block: dict[str, Any]) -> str | None:
             "Set both or neither."
         )
     return None
+
+
+_LLM_STEP_TYPES = ("call_llm", "file_content_extraction", "audio_transcription")
+
+
+def _resolve_llm_plugin_app(
+    step_type: str, key: str, block: dict[str, Any], ctx: LiveContext
+) -> None:
+    """Fill an LLM block's ``business_plugin_app_id`` from the business's
+    catalog, as the Kizen UI does. The write accepts a block without one,
+    or with another provider's, and stores it that way."""
+    llm: Any = block
+    if step_type == "condition" and block.get("type") == "llm_decision":
+        llm = block.get("llm_decision")
+    elif step_type not in _LLM_STEP_TYPES:
+        return
+    if not isinstance(llm, dict) or not llm.get("model_name"):
+        return
+    model_name, bpa_id = llm["model_name"], llm.get("business_plugin_app_id")
+    try:
+        if not bpa_id:
+            llm["business_plugin_app_id"] = ctx.llm_plugin_app_id(model_name)
+            return
+        rows = ctx.llm_models()
+    except PlanError as e:
+        raise PlanError(f"step '{key}': {e}") from e
+    owner = next((r for r in rows if r["business_plugin_app_id"] == bpa_id), None)
+    expected = next((r for r in rows if r["model_value"] == model_name), None)
+    if owner and expected and expected["business_plugin_app_id"] != bpa_id:
+        raise PlanError(
+            f"step '{key}': business_plugin_app_id {bpa_id} is "
+            f"{owner['provider_name']}'s, but {model_name} is a "
+            f"{expected['provider_name']} model. Leave business_plugin_app_id "
+            "out and the CLI uses this business's own."
+        )
 
 
 def _render_filter_config(

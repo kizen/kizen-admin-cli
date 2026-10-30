@@ -601,30 +601,39 @@ llm-models` for the live catalog (wraps `GET
 /api/automation2/automations/metadata`'s `llm.provider_model_details`):
 every enabled `model_name` this business can use, which of
 call_llm/condition-`llm_decision`/file_content_extraction/audio_transcription
-each one supports, deprecation status + suggested replacement, and —
-critically — the `business_plugin_app_id` each non-native model needs:
+each one supports, deprecation status + suggested replacement, and the
+`business_plugin_app_id` of the provider install that runs each one:
 
 ```
 $ kizen automations llm-models
 provider   model_name                   business_plugin_app_id                 call  decision  extract  transcribe
-kizen      kizen/pro                    —                                       ✓      ✓        ✓         ·
+kizen      kizen/pro                    145fa07b-ffe0-49cb-89af-8f126a0a2f13    ✓      ✓        ✓         ·
 gemini     gemini/gemini-2.5-flash      92dfef31-8b9b-49dc-b54b-3e47cd6b4523    ✓      ✓        ✓         ✓
 anthropic  claude-sonnet-4-5-20250929   96bae762-ad8c-4431-bf21-95aaedadaa08    ✓      ✓        ✓         ·
 ```
 
-`model_name` is a free string, unvalidated client-side — `gemini/...` and
-`openai/...` models need the provider prefix; Claude models are bare (e.g.
-`claude-3-7-sonnet-20250219`, no `claude/` prefix). **Any non-native
-`model_name` (anything not `kizen/...`) needs `business_plugin_app_id` set
-alongside it** — `model_name` alone 400s with `{'business_plugin_app_id':
-['Business plugin app not found']}` even though `model_name` looks
-sufficient on its own. `kizen/*` models don't need one (confirmed live:
-`kizen/pro` works with no extra field).
+`model_name` is a free string — `gemini/...` and `openai/...` models need
+the provider prefix; Claude models are bare (e.g.
+`claude-3-7-sonnet-20250219`, no `claude/` prefix). **`business_plugin_app_id`
+is optional in a spec: the CLI fills it from this catalog for every model,
+Kizen AI included**, so a step reads back with the same `business_plugin_app`
+a step saved in the Kizen UI has. Each business has its own Kizen AI install
+id, as it does for every other provider (confirmed live 2026-10-30). The
+write itself doesn't need it for `kizen/*`, but then stores the step with
+`business_plugin_app: null`, unlike a step saved in the Kizen UI; for any
+other provider, `model_name` alone 400s with
+`{'business_plugin_app_id': ['Business plugin app not found']}`. With
+`business_plugin_app_id` omitted, a `model_name` the catalog doesn't list
+is refused at plan time; with an explicit id, the server decides. An id
+that belongs to a different provider than the model's is refused too: the
+write accepts `kizen/pro` with the OpenAI install's id and stores that
+pairing (confirmed live 2026-10-30).
 
-**Getting `business_plugin_app_id` wrong looks the same as omitting it —
-same 400, so it's easy to think the id itself is bad rather than the
-source it came from.** Two endpoints return something that LOOKS like the
-right id and isn't:
+**If you set `business_plugin_app_id` by hand, take it from the right
+endpoint.** A wrong id gets the same 400 the raw API gives a missing one,
+so it's easy to think the id itself is bad rather than the source it came
+from. Two endpoints return something that LOOKS like the right id and
+isn't:
 - `GET /api/external-integrations/bootstrap` returns each plugin's
   **catalog/app-definition id** — identical across every business (it's the
   "Gemini the product" id, not "your business's installed Gemini
@@ -650,7 +659,7 @@ are usable for which step type in one shot.
 
 | Wire value | UI label |
 |---|---|
-| `error_if_required` | "Error if any merge field is blank" (server default when the key is omitted) |
+| `error_if_required` | "Error if any merge field is blank" (the default for a new step; `update` keeps an existing step's live value) |
 | `default_to_unknown` | "Default to 'Unknown'" — fixed literal text, not a configurable string |
 | `blank` | "Leave Blank" |
 
@@ -687,15 +696,16 @@ server's tools. Confirmed live 2026-10-27:
 - Reads expand both references (`mcp_server {id, name, api_name, …}`,
   `run_tools_as {id, name}`), and every `call_llm` step reads
   `max_sequential_turns` and `tool_failure_policy`, server or not.
-- The planner always sends all four keys. A step that omits them gets no
-  server, no account, 25 turns and `never_fail`, so `update` from a spec
-  without them **detaches a server attached in the UI**. `update --dry-run`
-  names those steps in its preview: `detaches_mcp_server=[<step key>, …]`,
-  and `clears_run_tools_as=[…]` for a run-as account that goes. Steps pair
-  as `diff` pairs them, and `diff` shows each change as
-  `mcp_server_id: '<uuid>' → None` and `run_tools_as_id: '<uuid>' → None`.
-  Kizen itself, given a PUT that omits both ids, keeps the server and clears
-  the account, which leaves a step its own validator rejects.
+- A new step that omits them gets no server, no account, 25 turns and
+  `never_fail`. On `update`, a step whose `id` matches a live one keeps its
+  live server and account when the spec sets none of `mcp_server`,
+  `mcp_server_id`, `run_tools_as` and `run_tools_as_id`, and keeps its live
+  `max_sequential_turns` and `tool_failure_policy` when the spec leaves them
+  out. `--dry-run` names those steps under `keeps_live`. To remove the
+  server, set `mcp_server` (or `run_tools_as`) to `null`: both go. A live
+  step with a server but no account gets neither, because Kizen rejects that
+  pairing. Kizen itself, given a PUT that omits both ids, keeps the server
+  and clears the account, which leaves a step its own validator rejects.
 
 ### Variable-comparison condition step
 
@@ -959,6 +969,11 @@ as a real custom object's own api_name, and its span gets
     On a `schedule_activity` step whose `id` matches, its block's
     `target_variable` and `variable_field_resolution` too
     ([below](#schedule_activitytarget_variable-and-variable_field_resolution)).
+    On an LLM step whose `id` matches, its `merge_field_validation` and
+    `is_advanced` (on a condition, `llm_decision.merge_field_validation`),
+    and on `call_llm` also its MCP server and run-as account (as a pair),
+    `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
+    server)**).
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
     A Kizen PUT without them resets each to its default (confirmed live
     2026-10-30).

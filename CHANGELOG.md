@@ -14,6 +14,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Removed
+
+- `automations update --dry-run` no longer prints `detaches_mcp_server` or
+  `clears_run_tools_as`; those steps now keep their tools and are listed
+  under `keeps_live`.
+
 ### Fixed
 
 - **`automations update` no longer resets what a spec leaves out on an
@@ -28,6 +34,17 @@ called out explicitly under **Changed** or **Removed**.
   Kizen's 2026-10-26 release added a setting the CLI refused to drop.
   Specs can now set `target_variable` and `variable_field_resolution` on the
   step, and `update` keeps them when a spec leaves them out.
+- **Steps that use a Kizen AI model now carry the business's Kizen AI app,
+  as steps saved in the Kizen UI do.** Before, they were stored with no
+  business plugin app, and the Kizen UI reported a missing business plugin
+  app on them. `business_plugin_app_id` is now optional for every model.
+  The plan refuses a value that belongs to a different provider and, when
+  the id is left out, a model the business's catalog doesn't list.
+- **`automations update` keeps an AI step's settings when the spec leaves
+  them out.** Before, it detached a Call LLM step's MCP server and reset its
+  turn limit to 25. It also reset the blank-merge-field handling and the
+  advanced flag on Call LLM, extraction, transcription and AI-decision
+  steps. Set `mcp_server` to `null` to detach a server.
 
 ## [0.4.0] — 2026-10-27
 
