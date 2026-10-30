@@ -16,7 +16,7 @@ from kizen_builder.cli._mutations import (
     _run_mutation,
 )
 from kizen_builder.cli._shared import cli_errors, console
-from kizen_builder.cli.automations import autos_app
+from kizen_builder.cli.automations import autos_app, print_warnings
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.plans import PlanError
@@ -115,6 +115,7 @@ def _run_field_patch(
     with cli_errors(LookupError, PlanError):
         preview = call(False)
 
+    print_warnings(preview)
     if not json_out:
         console.print(
             f"[bold]{api_name}[/bold]  [dim](rev {preview['revision_before']})[/dim]"

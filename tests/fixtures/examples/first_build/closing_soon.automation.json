@@ -1,0 +1,20 @@
+{
+  "name": "Closing Soon",
+  "api_name": "closing_soon",
+  "type": "record_based",
+  "target_object": "deals",
+  "active": false,
+  "triggers": [
+    { "trigger_type": "on_or_around_date", "order": 0,
+      "trigger_on_or_around_date": { "field_ref": "deals.close_date",
+        "date_offset": "days_before", "date_offset_days": 3,
+        "time": "09:00", "period": "am" } }
+  ],
+  "steps": [
+    { "key": "tell_owner", "parent_key": null, "step_type": "notify_member_via_email",
+      "order": 0,
+      "action_notify_member_via_email": {
+        "team_member": { "type": "owner" },
+        "email_template_id": "<closing_soon_message_uuid>" } }
+  ]
+}

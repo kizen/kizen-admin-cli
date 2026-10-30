@@ -216,6 +216,12 @@ is `.results[0].server_uuid`, and the template's is
 kizen messages create <automation> --template <name> --yes --json | jq -r '.results[0].server_uuid'
 ```
 
+A message belongs to its automation and can't be deleted (`DELETE` answers
+405). Deleting the automation leaves the message bound to the deleted id, so a
+recreated automation needs new messages (confirmed live 2026-10-30). The full
+order (template, automation, message, step) is in `kizen docs show automation`,
+"Email steps: build order".
+
 The template must have compiled `content`. The endpoint copies it into the
 message and rejects a blank one (`400 content: This field may not be blank.`,
 confirmed live 2026-09-29), and a template made in the UI can carry a

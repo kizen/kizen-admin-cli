@@ -1,0 +1,29 @@
+{
+  "name": "Daily Deal Summary",
+  "api_name": "daily_deal_summary",
+  "type": "global",
+  "active": false,
+  "triggers": [
+    { "trigger_type": "schedule", "order": 0,
+      "trigger_schedule": {
+        "rrule": "DTSTART:20261102T130000Z\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+        "is_advanced": false } }
+  ],
+  "steps": [
+    { "key": "deals_to_refresh", "parent_key": null, "step_type": "initialize_variable",
+      "order": 0,
+      "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
+        "variable": { "name": "deals_to_refresh", "data_type": "entity", "is_array": true,
+                      "data_subtype": "<deals_object_uuid>" } } },
+    { "key": "find_deals", "parent_key": "deals_to_refresh", "step_type": "search_records",
+      "order": 1,
+      "action_search_records": { "custom_object": "deals", "filter_type": "all_records",
+        "destination_variable": "deals_to_refresh",
+        "destination_variable_resolution": "overwrite" } },
+    { "key": "refresh_each", "parent_key": "find_deals", "step_type": "start_automation",
+      "order": 2,
+      "action_start_automation": { "record_source": "automation_variable",
+        "automation_variable_name": "deals_to_refresh",
+        "automation_ids": ["refresh_deal_brief"] } }
+  ]
+}

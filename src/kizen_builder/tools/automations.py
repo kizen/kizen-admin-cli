@@ -187,6 +187,7 @@ def roundtrip_automation(api_name: str, execute: bool = False) -> dict[str, Any]
             "validation_problems": problems,
             "payload": payload,
             "executed": False,
+            **_inactive_target_warnings(payload, listing),
         }
         if not execute or problems:
             return result
@@ -207,11 +208,29 @@ def roundtrip_automation(api_name: str, execute: bool = False) -> dict[str, Any]
 
 
 def _fetch_raw(client: KizenClient, api_name: str) -> dict[str, Any]:
+    return _fetch_with_listing(client, api_name)[0]
+
+
+def _fetch_with_listing(
+    client: KizenClient, api_name: str
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The automation's raw GET, and the automation listing it was found in."""
     listing = auto_api.list_automations(client)
     match = next((a for a in listing if a.get("api_name") == api_name), None)
     if match is None:
         raise LookupError(f"no automation with api_name '{api_name}'")
-    return auto_api.get_automation(client, match["id"])
+    return auto_api.get_automation(client, match["id"]), listing
+
+
+def _inactive_target_warnings(
+    payload: dict[str, Any], listing: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """`{"warnings": [...]}` when a start_automation target is inactive, which
+    makes Kizen refuse a PUT of the automation as it stands; else `{}`."""
+    from kizen_builder.tools.planners.automations import inactive_start_targets
+
+    warnings = inactive_start_targets(payload.get("steps") or [], listing)
+    return {"warnings": warnings} if warnings else {}
 
 
 def show_automation(api_name: str) -> dict[str, Any]:
@@ -221,7 +240,8 @@ def show_automation(api_name: str) -> dict[str, Any]:
 
     config = load_env_config()
     with KizenClient(config) as client:
-        raw = _fetch_raw(client, api_name)
+        raw, listing = _fetch_with_listing(client, api_name)
+    payload = live_to_payload(raw)
     return {
         "env": config.name,
         "api_name": api_name,
@@ -230,7 +250,8 @@ def show_automation(api_name: str) -> dict[str, Any]:
         "active": raw.get("active"),
         "name": raw.get("name"),
         "custom_object_name": (raw.get("custom_object") or {}).get("name"),
-        "payload": live_to_payload(raw),
+        "payload": payload,
+        **_inactive_target_warnings(payload, listing),
     }
 
 
@@ -299,7 +320,7 @@ def _patch_field(api_name: str, mutate: Any, execute: bool = False) -> dict[str,
 
     config = load_env_config()
     with KizenClient(config) as client:
-        before = _fetch_raw(client, api_name)
+        before, listing = _fetch_with_listing(client, api_name)
         payload = live_to_payload(before)
         field, value_before, value_after = mutate(payload)
         result: dict[str, Any] = {
@@ -312,6 +333,7 @@ def _patch_field(api_name: str, mutate: Any, execute: bool = False) -> dict[str,
             "after": value_after,
             "no_op": value_before == value_after,
             "executed": False,
+            **_inactive_target_warnings(payload, listing),
         }
         if not execute:
             return result

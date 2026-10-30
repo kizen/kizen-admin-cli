@@ -1,0 +1,51 @@
+{
+  "name": "Log Call",
+  "api_name": "log_call",
+  "type": "record_based",
+  "target_object": "deals",
+  "active": false,
+  "triggers": [
+    { "trigger_type": "activity_logged", "order": 0,
+      "trigger_activity_logged": { "activity_type": "call" } }
+  ],
+  "steps": [
+    { "key": "today", "parent_key": null, "step_type": "initialize_variable", "order": 0,
+      "action_initialize_variable": {
+        "sources": [ { "source_type": "trigger_time" } ],
+        "variable": { "name": "today", "data_type": "date" } } },
+    { "key": "account_industry", "parent_key": "today", "step_type": "initialize_variable",
+      "order": 1,
+      "action_initialize_variable": {
+        "sources": [ { "source_type": "field_value",
+                       "source_subtype": "primary_related_object_field",
+                       "relationship_field": "<deals.account_field_uuid>",
+                       "field": "<accounts.industry_field_uuid>" } ],
+        "variable": { "name": "account_industry", "data_type": "string" } } },
+    { "key": "stamp_last_activity", "parent_key": "account_industry",
+      "step_type": "change_field_value", "order": 2,
+      "action_change_field_value": { "field_ref": "deals.last_activity_date",
+        "change_type": "variable", "variable": "today" } },
+    { "key": "rate_health", "parent_key": "stamp_last_activity", "step_type": "call_llm",
+      "order": 3,
+      "action_call_llm": {
+        "model_name": "kizen/lite",
+        "merge_field_validation": "default_to_unknown",
+        "prompt": "Rate this deal's health as On Track, Needs Attention or At Risk. Answer with the rating only.\nAccount industry: {{ automation_variable.account_industry }}\nLatest call notes: {{ custom_objects.call_notes }}",
+        "destinations": [ { "field_ref": "deals.health" } ] } },
+    { "key": "no_conversation", "parent_key": "rate_health", "step_type": "condition",
+      "order": 4,
+      "step_condition": { "type": "custom_filter", "filter_config": { "all": [
+        { "field": "call_outcome", "op": "is_any_of",
+          "value": ["Left Voicemail", "No Answer"] } ] } } },
+    { "key": "schedule_follow_up", "parent_key": "no_conversation", "parent_branch": "yes",
+      "step_type": "schedule_activity", "order": 5,
+      "action_schedule_activity": {
+        "activity_type": "follow_up",
+        "schedule": { "type": "with_delay",
+                      "with_delay": { "delay_type": "day", "delay_value_type": "static",
+                                      "delay_value": 2 },
+                      "skip_non_working_days": true },
+        "assigned_to": { "assignment_type": "owner" },
+        "note": "Try again. Last call: {{ custom_objects.call_notes }}" } }
+  ]
+}

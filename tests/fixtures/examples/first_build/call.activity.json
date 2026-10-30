@@ -1,0 +1,12 @@
+{
+  "name": "Call",
+  "api_name": "call",
+  "association_mode": "selected_objects_associated",
+  "selected_object_ids": ["<deals_object_uuid>"],
+  "fields": [
+    { "name": "Outcome", "field_type": "activity_custom_field", "order": 0,
+      "custom_object_field": "<deals.call_outcome_field_uuid>" },
+    { "name": "Call Notes", "field_type": "activity_custom_field", "order": 1,
+      "custom_object_field": "<deals.call_notes_field_uuid>" }
+  ]
+}

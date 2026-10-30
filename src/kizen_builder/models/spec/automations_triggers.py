@@ -46,12 +46,16 @@ class TriggerActivityLoggedConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    activity_type_id: str | None = Field(
+    activity_type: str | dict[str, Any] | None = Field(
         default=None,
         description=(
-            "Activity type UUID — find it with `kizen activities list`. "
-            "There is no name lookup."
+            "Activity type api_name or UUID (`kizen activities list`), or the "
+            "expanded {id, ...} a live read returns."
         ),
+    )
+    activity_type_id: str | None = Field(
+        default=None,
+        description="Activity type api_name or UUID. Same as `activity_type`.",
     )
 
 
@@ -261,6 +265,13 @@ class TriggerScheduledActivityOverdueConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    activity: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Activity type api_name or UUID (`kizen activities list`), or the "
+            "expanded {id, ...} a live read returns."
+        ),
+    )
     filter_config: dict[str, Any] | None = None
 
 
