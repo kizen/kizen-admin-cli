@@ -3537,6 +3537,176 @@ def test_step_schedule_activity_assigned_to_variable_is_wrapped(patch_live_looku
     }
 
 
+def test_step_schedule_activity_plans_its_variable_binding(patch_live_lookups):
+    payload = _build(
+        _schedule_activity_spec(
+            {
+                "activity_type_id": "11111111-1111-4111-8111-111111111111",
+                "target_variable": "activity_id",
+                "variable_field_resolution": "update_if_blank",
+            }
+        )
+    )
+    action = payload["steps"][0]["action_schedule_activity"]
+    assert action["target_variable"] == "activity_id"
+    assert action["variable_field_resolution"] == "update_if_blank"
+
+
+def test_step_schedule_activity_without_a_binding_sends_neither_key(
+    patch_live_lookups,
+):
+    payload = _build(
+        _schedule_activity_spec(
+            {"activity_type_id": "11111111-1111-4111-8111-111111111111"}
+        )
+    )
+    action = payload["steps"][0]["action_schedule_activity"]
+    assert "target_variable" not in action
+    assert "variable_field_resolution" not in action
+
+
+@pytest.fixture
+def schedule_activity_live(patch_live_lookups, monkeypatch):
+    """Fixture `schedule_activity_target_variable` as a live automation on
+    `patients`: step `sa` binds `act_a` (overwrite), `sb` binds `act_b`
+    (update_if_blank)."""
+    import kizen_builder.tools.planners.automations as ma
+
+    patients = load_fixture("objects/patients.json")
+    raw = load_fixture("automations/schedule_activity_target_variable.raw.json")
+    raw["custom_object"] = {"id": patients["id"], "name": "patients"}
+    for s in raw["steps"]:
+        if s["step_type"] == "schedule_activity":
+            for a in s["action_schedule_activity"]["association_configs"]:
+                a["custom_object"] = {"id": patients["id"], "name": "patients"}
+    listing = [*ma.list_automations(), {"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _schedule_activity_update_spec(raw: dict, **blocks: dict) -> dict:
+    """The live automation's variables and schedule_activity steps as a spec
+    carrying every id; `blocks` adds keys to the named step's block. Its
+    association entry is in the write shape `steps get` prints."""
+    patients = load_fixture("objects/patients.json")
+    live = {
+        s["action_schedule_activity"]["note"]: s
+        for s in raw["steps"]
+        if s["step_type"] == "schedule_activity"
+    }
+    variables = sorted(
+        (s for s in raw["steps"] if s["step_type"] == "initialize_variable"),
+        key=lambda s: s["order"],
+    )
+    steps: list[dict] = [
+        {
+            "key": f"v{n}",
+            "id": s["id"],
+            "parent_key": f"v{n - 1}" if n else None,
+            "order": n,
+            "step_type": "initialize_variable",
+            "action_initialize_variable": {
+                "variable": {
+                    "name": s["action_initialize_variable"]["variable"]["name"],
+                    "data_type": "string",
+                    "is_array": False,
+                },
+                "sources": [],
+            },
+        }
+        for n, s in enumerate(variables)
+    ]
+    for key, note in (("sa", "overwrite"), ("sb", "update_if_blank edited")):
+        live_block = live[note]["action_schedule_activity"]
+        steps.append(
+            {
+                "key": key,
+                "id": live[note]["id"],
+                "parent_key": steps[-1]["key"],
+                "order": len(steps),
+                "step_type": "schedule_activity",
+                "action_schedule_activity": {
+                    "activity_type_id": live_block["activity_type"]["id"],
+                    "assigned_to": {"assignment_type": "owner"},
+                    "association_configs": [
+                        {
+                            "custom_object_id": patients["id"],
+                            "association_source": "context_record",
+                        }
+                    ],
+                    "note": note,
+                    **blocks.get(key, {}),
+                },
+            }
+        )
+    return {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "record_based",
+        "target_object": "patients",
+        "triggers": [
+            {"trigger_type": "manual", "order": 0, "id": raw["triggers"][0]["id"]}
+        ],
+        "steps": steps,
+    }
+
+
+def _planned_schedule_blocks(spec: dict) -> tuple[dict, dict]:
+    (op,) = plan_update_automation(spec).operations
+    steps = {s["key"]: s for s in op.payload["steps"]}
+    return (
+        steps["sa"]["action_schedule_activity"],
+        steps["sb"]["action_schedule_activity"],
+    )
+
+
+def test_plan_update_omitted_variable_binding_keeps_live(schedule_activity_live):
+    """Before 2026-10-30 the PUT cleared `target_variable` and reset the
+    resolution to `overwrite`."""
+    spec = _schedule_activity_update_spec(schedule_activity_live)
+    sa, sb = _planned_schedule_blocks(spec)
+    assert (sa["target_variable"], sa["variable_field_resolution"]) == (
+        "act_a",
+        "overwrite",
+    )
+    assert (sb["target_variable"], sb["variable_field_resolution"]) == (
+        "act_b",
+        "update_if_blank",
+    )
+    (op,) = plan_update_automation(spec).operations
+    assert {"sa", "sb"} <= set(op.preview["keeps_live"])
+
+
+def test_plan_update_explicit_variable_binding_wins(schedule_activity_live):
+    spec = _schedule_activity_update_spec(
+        schedule_activity_live,
+        sa={"target_variable": "act_b", "variable_field_resolution": "update_if_blank"},
+        sb={"target_variable": None, "variable_field_resolution": "overwrite"},
+    )
+    sa, sb = _planned_schedule_blocks(spec)
+    assert (sa["target_variable"], sa["variable_field_resolution"]) == (
+        "act_b",
+        "update_if_blank",
+    )
+    assert "target_variable" not in sb
+    assert sb["variable_field_resolution"] == "overwrite"
+
+
+def test_plan_update_schedule_activity_association_keeps_its_object(
+    schedule_activity_live,
+):
+    """An update from a spec whose association entry carries
+    `custom_object_id` plans that object, not a null the server 400s."""
+    patients = load_fixture("objects/patients.json")
+    for block in _planned_schedule_blocks(
+        _schedule_activity_update_spec(schedule_activity_live)
+    ):
+        assert block["association_configs"] == [
+            {"custom_object_id": patients["id"], "association_source": "context_record"}
+        ]
+
+
 # ---------------------------------------------------------------------------
 # move_to_folder — regression for ticket 20260720-174419: the write dialect
 # is a bare `folder_id`, not the `folder: {id, name}` shape a live read

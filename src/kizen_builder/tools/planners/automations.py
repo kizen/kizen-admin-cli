@@ -454,13 +454,44 @@ _KEPT_STEP_KEYS = (
 )
 _KEPT_TRIGGER_KEYS = ("description", "user_description", "should_skip_execution")
 
+# Config-block keys a PUT resets the same way, by step type, each with how a
+# read's value is written back (confirmed live 2026-10-30).
+_KEPT_BLOCK_KEYS: dict[str, dict[str, Callable[[Any], Any]]] = {
+    "schedule_activity": {
+        "target_variable": lambda v: _unwrap_variable_name(v),
+        "variable_field_resolution": lambda v: v,
+    },
+}
+
+
+def _kept_block_values(
+    spec: AutomationStepDef | AutomationTriggerDef, live: dict[str, Any]
+) -> tuple[str | None, dict[str, Any]]:
+    """The step's config-block field and the live value, as written, of each
+    kept block key its spec block leaves out."""
+    if (
+        not isinstance(spec, AutomationStepDef)
+        or spec.step_type not in _KEPT_BLOCK_KEYS
+    ):
+        return None, {}
+    field = _block_field_for(spec.step_type)
+    spec_block = getattr(spec, field)
+    set_in_spec = spec_block.model_fields_set if spec_block is not None else set()
+    live_block = live.get(field) or {}
+    return field, {
+        k: write(live_block[k])
+        for k, write in _KEPT_BLOCK_KEYS[spec.step_type].items()
+        if k not in set_in_spec and live_block.get(k) is not None
+    }
+
 
 def _carry_omitted_step_keys(
     payload: dict[str, Any], auto: AutomationDef, current: dict[str, Any]
 ) -> tuple[dict[str, Any], list[str]]:
     """Give each spec step and trigger whose `id` matches a live one the live
-    value of every kept key the spec leaves out. Returns the payload and the
-    keys of the steps and triggers whose payload that changed.
+    value of every kept key, and kept block key, the spec leaves out. Returns
+    the payload and the keys of the steps and triggers whose payload that
+    changed.
 
     Matched by id only: a step without one is new to the server, and pairing
     it by position could stamp one step's settings on another."""
@@ -486,10 +517,17 @@ def _carry_omitted_step_keys(
         # the skip, so it is kept only with a kept skip.
         if values.get("should_skip_execution") is not True:
             values.pop("continue_with_branch", None)
-        if all(built.get(k) == v for k, v in values.items()):
+        field, block_values = _kept_block_values(spec, live)
+        block = (built.get(field) or {}) if field else {}
+        if all(built.get(k) == v for k, v in values.items()) and all(
+            block.get(k) == v for k, v in block_values.items()
+        ):
             return built
         kept.append(built["key"])
-        return {**built, **values}
+        out = {**built, **values}
+        if field and block_values:
+            out[field] = {**block, **block_values}
+        return out
 
     # Triggers can't pair by index: a manual one is prepended when the spec
     # has none. The payload carries `id` only from the spec.
@@ -2834,6 +2872,8 @@ def _resolve_llm_destinations(
     "association_configs",
     "note",
     "html_note",
+    "target_variable",
+    "variable_field_resolution",
 )
 def _step_schedule_activity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -2860,6 +2900,10 @@ def _step_schedule_activity(
     for key in ("note", "html_note"):
         if block.get(key) is not None:
             out[key] = block[key]
+    if block.get("target_variable") is not None:
+        out["target_variable"] = _unwrap_variable_name(block["target_variable"])
+    if block.get("variable_field_resolution") is not None:
+        out["variable_field_resolution"] = block["variable_field_resolution"]
     return out
 
 
