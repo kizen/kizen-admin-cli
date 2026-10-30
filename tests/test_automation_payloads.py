@@ -2747,6 +2747,68 @@ def test_condition_raw_filter_config_normalized(patch_live_lookups):
     assert fc["invalid"] is False
 
 
+def test_condition_filter_spec_compiles_a_stage_time_op(patch_live_lookups):
+    """The pipeline stage ops compile through the same spec path; the stub
+    object carries a stage field."""
+    from kizen_builder import filtering
+    from tests.filter_stub import StubClient
+
+    filtering.set_default_client(StubClient())
+    try:
+        payload = _build(
+            _condition_spec(
+                {
+                    "all": [
+                        {
+                            "field": "stage",
+                            "op": "entered_stage",
+                            "value": "Stage 1",
+                            "later_than": "2026-10-01",
+                        }
+                    ]
+                }
+            )
+        )
+    finally:
+        filtering.set_default_client(None)
+    (clause,) = payload["steps"][0]["step_condition"]["filter_config"]["query"][0][
+        "filters"
+    ]
+    assert clause["condition"] == "entered_stage"
+    assert clause["value"] == "a82570ce-c4e4-4548-bbb7-8b77f94bbb9a"
+    assert clause["comparison_condition"] == ">"
+    assert clause["comparison_value"] == "2026-10-01"
+
+
+def test_condition_filter_spec_stage_op_error_is_a_plan_error(patch_live_lookups):
+    from kizen_builder import filtering
+    from tests.filter_stub import StubClient
+
+    filtering.set_default_client(StubClient())
+    try:
+        with pytest.raises(PlanError) as e:
+            _build(
+                _condition_spec(
+                    {
+                        "all": [
+                            {
+                                "field": "stage",
+                                "op": "time_in_stage",
+                                "value": "Stage 1",
+                                "more_than": 1,
+                                "units": "months",
+                            }
+                        ]
+                    }
+                )
+            )
+    finally:
+        filtering.set_default_client(None)
+    assert 'invalid filter spec: op "time_in_stage": units must be one of' in str(
+        e.value
+    )
+
+
 def test_condition_raw_filter_config_null_value_rejected(patch_live_lookups):
     raw = {"query": [{"filters": [{"condition": "is_blank", "value": None}]}]}
     with pytest.raises(PlanError, match="null"):
