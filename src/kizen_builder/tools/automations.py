@@ -89,37 +89,11 @@ def list_llm_models() -> list[dict[str, Any]]:
     """Flatten the automations metadata endpoint's LLM catalog into one row
     per (provider, model) — the live source for `call_llm`'s `model_name` +
     `business_plugin_app_id` pairing (see automation.md "LLM & extraction
-    destinations"). `business_plugin_app_id` is `None` for `kizen/*` native
-    models, which don't need one.
+    destinations").
     """
     config = load_env_config()
     with KizenClient(config) as client:
-        meta = auto_api.get_metadata(client)
-
-    rows: list[dict[str, Any]] = []
-    for provider in (meta.get("llm") or {}).get("provider_model_details") or []:
-        plugin_app = provider.get("plugin_app") or {}
-        provider_name = provider.get("provider_name")
-        bpa_id = plugin_app.get("id") if provider_name != "kizen" else None
-        for model in provider.get("models") or []:
-            usage = model.get("usage") or {}
-            rows.append(
-                {
-                    "provider_name": provider_name,
-                    "model_value": model.get("model_value"),
-                    "model_label": model.get("model_label"),
-                    "business_plugin_app_id": bpa_id,
-                    "supports_call": (usage.get("text") or {}).get("call"),
-                    "supports_decision": (usage.get("text") or {}).get("decision"),
-                    "supports_extraction": (usage.get("image") or {}).get("extraction"),
-                    "supports_transcription": (usage.get("audio") or {}).get(
-                        "transcription"
-                    ),
-                    "is_deprecated": model.get("is_deprecated"),
-                    "suggested_replacement": model.get("suggested_replacement"),
-                }
-            )
-    return rows
+        return auto_api.llm_model_rows(auto_api.get_metadata(client))
 
 
 def get_automation(api_name: str) -> dict[str, Any]:
@@ -559,7 +533,7 @@ def normalize_step_patch(
     doesn't read is refused, and an initialize_variable's `variable` must pass
     `AutomationVariableConfig`. The patched block then gets the same checks
     `automations create`/`update` and `steps add` apply
-    (`_built_block_problem`).
+    (`_resolve_llm_plugin_app`, `_built_block_problem`).
     """
     from pydantic import ValidationError
     from pydantic_core import InitErrorDetails
@@ -572,6 +546,7 @@ def normalize_step_patch(
         _block_field_for,
         _built_block_problem,
         _reject_unhonoured_keys,
+        _resolve_llm_plugin_app,
     )
     from kizen_builder.tools.plans import PlanError
 
@@ -603,6 +578,7 @@ def normalize_step_patch(
             patch[cfg_key] = builder(dict(patch[cfg_key]), auto, ctx)
         except VariableReferenceError as e:
             raise PlanError(f"step '{key}': {e}") from e
+        _resolve_llm_plugin_app(step_type, key, patch[cfg_key], ctx)
         problem = _built_block_problem(step_type, key, patch[cfg_key], auto, ctx)
         if problem:
             raise PlanError(problem)

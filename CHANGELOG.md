@@ -28,6 +28,12 @@ called out explicitly under **Changed** or **Removed**.
   Kizen's 2026-10-26 release added a setting the CLI refused to drop.
   Specs can now set `target_variable` and `variable_field_resolution` on the
   step, and `update` keeps them when a spec leaves them out.
+- **Steps that use a Kizen AI model now carry the business's Kizen AI app,
+  as steps saved in the Kizen UI do.** Before, they were stored with no
+  business plugin app, and the Kizen UI reported a missing business plugin
+  app on them. `business_plugin_app_id` is now optional for every model.
+  The plan refuses a value that belongs to a different provider and, when
+  the id is left out, a model the business's catalog doesn't list.
 
 ## [0.4.0] — 2026-10-27
 

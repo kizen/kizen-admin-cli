@@ -379,7 +379,7 @@ def test_call_llm_derives_html_prompt_from_plain_prompt(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_call_llm": {
-                    "model_name": "gemini/gemini-2.5-flash",
+                    "model_name": "kizen/pro",
                     "prompt": "Summarize MRN {{ custom_objects.mrn }} for the chart.",
                 },
             }
@@ -408,7 +408,7 @@ def test_call_llm_preserves_explicit_html_prompt(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_call_llm": {
-                    "model_name": "gemini/gemini-2.5-flash",
+                    "model_name": "kizen/pro",
                     "prompt": "plain",
                     "html_prompt": "<p>custom <b>markup</b></p>",
                 },
@@ -435,7 +435,7 @@ def test_call_llm_rejects_data_type(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_call_llm": {
-                    "model_name": "gemini/gemini-2.5-flash",
+                    "model_name": "kizen/pro",
                     "prompt": "plain",
                     "data_type": "text",
                 },
@@ -465,7 +465,7 @@ def test_call_llm_destinations_resolve_field_ref(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_call_llm": {
-                    "model_name": "gemini/gemini-2.5-flash",
+                    "model_name": "kizen/pro",
                     "prompt": "Extract the MRN.",
                     "destinations": [{"field_ref": "patients.mrn"}],
                 },
@@ -500,7 +500,7 @@ def test_call_llm_related_object_field_with_explicit_hop(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_call_llm": {
-                    "model_name": "gemini/gemini-2.5-flash",
+                    "model_name": "kizen/pro",
                     "prompt": "Extract the patient's MRN from this encounter.",
                     "destinations": [
                         {
@@ -540,7 +540,7 @@ def test_call_llm_related_object_field_hop_via_field_ref(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_call_llm": {
-                    "model_name": "gemini/gemini-2.5-flash",
+                    "model_name": "kizen/pro",
                     "prompt": "Extract the patient's MRN from this encounter.",
                     "destinations": [
                         {
@@ -575,7 +575,7 @@ def test_call_llm_related_object_field_without_hop_raises(patch_live_lookups):
                 "order": 0,
                 "parent_key": None,
                 "action_call_llm": {
-                    "model_name": "gemini/gemini-2.5-flash",
+                    "model_name": "kizen/pro",
                     "prompt": "Summarize the most recent encounter.",
                     "destinations": [
                         {"related_object_field": "encounters.clinical_notes"}
@@ -875,6 +875,184 @@ def test_steps_edit_call_llm_names_the_server_by_api_name(
         10,
         "never_fail",
     )
+
+
+_KIZEN_AI = "145fa07b-ffe0-49cb-89af-8f126a0a2f13"
+_OPEN_AI = "a004c895-b827-4432-8b70-b7f6ade0cb84"
+
+
+def _serve_llm_catalog(monkeypatch, drop=(), **plugin_app_ids):
+    """Serve the captured LLM catalog, minus the providers in ``drop`` and
+    with each named provider's plugin_app id replaced (None drops its
+    plugin_app). Returns the GET log."""
+    import copy
+
+    from kizen_builder.api import automations as api
+
+    meta = copy.deepcopy(load_fixture("automations/llm_metadata.json"))
+    details = meta["llm"]["provider_model_details"]
+    details[:] = [d for d in details if d["provider_name"] not in drop]
+    for provider, bpa_id in plugin_app_ids.items():
+        row = next(d for d in details if d["provider_name"] == provider)
+        if bpa_id is None:
+            row["plugin_app"] = None
+        else:
+            row["plugin_app"]["id"] = bpa_id
+    calls: list[object] = []
+
+    def get_metadata(client):
+        calls.append(client)
+        return meta
+
+    monkeypatch.setattr(api, "get_metadata", get_metadata)
+    return calls
+
+
+def _every_llm_surface_spec(model_name: str = "kizen/pro") -> dict:
+    llm = {"model_name": model_name, "prompt": "Hi"}
+    file_llm = {**llm, "input_field_id": "00000000-0000-4000-8000-0000000f11e0"}
+    return {
+        "api_name": "llm_surfaces",
+        "name": "LLM Surfaces",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {"key": "call", "step_type": "call_llm", "order": 0,
+             "action_call_llm": llm},
+            {"key": "extract", "step_type": "file_content_extraction", "order": 1,
+             "parent_key": "call", "action_file_content_extraction": file_llm},
+            {"key": "transcribe", "step_type": "audio_transcription", "order": 2,
+             "parent_key": "extract", "action_audio_transcription": file_llm},
+            {"key": "decide", "step_type": "condition", "order": 3,
+             "parent_key": "transcribe",
+             "step_condition": {"type": "llm_decision", "llm_decision": llm}},
+        ],
+    }  # fmt: skip
+
+
+def _llm_plugin_app_ids(payload: dict) -> list:
+    blocks = [
+        s.get("action_call_llm")
+        or s.get("action_file_content_extraction")
+        or s.get("action_audio_transcription")
+        or s["step_condition"]["llm_decision"]
+        for s in payload["steps"]
+    ]
+    return [b.get("business_plugin_app_id") for b in blocks]
+
+
+def test_every_llm_surface_fills_the_kizen_ai_app_from_one_get(
+    patch_live_lookups, monkeypatch
+):
+    gets = _serve_llm_catalog(monkeypatch)
+    payload = _build(_every_llm_surface_spec())
+    assert _llm_plugin_app_ids(payload) == [_KIZEN_AI] * 4
+    assert len(gets) == 1
+
+
+def test_another_providers_model_fills_its_own_app(patch_live_lookups):
+    payload = _build(_every_llm_surface_spec("openai/gpt-5.4-nano"))
+    assert _llm_plugin_app_ids(payload) == [_OPEN_AI] * 4
+
+
+def test_a_plugin_app_id_that_matches_its_model_is_kept(patch_live_lookups):
+    payload = _build(_llm_spec({"business_plugin_app_id": _KIZEN_AI}))
+    assert payload["steps"][0]["action_call_llm"]["business_plugin_app_id"] == (
+        _KIZEN_AI
+    )
+
+
+def test_a_plugin_app_id_outside_the_catalog_passes_through(patch_live_lookups):
+    """The server judges an id the catalog doesn't list."""
+    other = "8127ac02-a10a-4471-9d40-480bf50e3be7"
+    payload = _build(_llm_spec({"business_plugin_app_id": other}))
+    assert payload["steps"][0]["action_call_llm"]["business_plugin_app_id"] == other
+
+
+def test_another_providers_plugin_app_id_is_refused(patch_live_lookups):
+    """The write stores kizen/pro with the OpenAI install, so the plan stops it."""
+    with pytest.raises(PlanError) as e:
+        _build(_llm_spec({"business_plugin_app_id": _OPEN_AI}))
+    assert str(e.value) == (
+        f"step 'llm0': business_plugin_app_id {_OPEN_AI} is open_ai's, but "
+        "kizen/pro is a kizen model. Leave business_plugin_app_id out and the "
+        "CLI uses this business's own."
+    )
+
+
+def test_a_model_outside_the_catalog_is_refused(patch_live_lookups):
+    env = LiveContext().env
+    with pytest.raises(PlanError) as e:
+        _build(_llm_spec({"model_name": "kizen/nope"}))
+    assert str(e.value) == (
+        f"step 'llm0': model 'kizen/nope' isn't enabled in '{env}'. Run kizen "
+        "automations llm-models for the models this business can use."
+    )
+
+
+@pytest.mark.parametrize(
+    "catalog",
+    [{"drop": ("kizen",)}, {"kizen": None}],
+    ids=["no-kizen-row", "no-plugin-app"],
+)
+def test_a_missing_kizen_ai_app_is_refused(patch_live_lookups, monkeypatch, catalog):
+    env = LiveContext().env
+    _serve_llm_catalog(monkeypatch, **catalog)
+    with pytest.raises(PlanError) as e:
+        _build(_llm_spec({}))
+    assert str(e.value) == (
+        f"step 'llm0': 'kizen/pro' needs the Kizen AI app, which isn't installed "
+        f"in '{env}'. Install Kizen AI from the business's plugin settings, then "
+        "plan again."
+    )
+
+
+def test_a_missing_provider_app_names_the_provider(patch_live_lookups, monkeypatch):
+    """With no plugin_app the catalog has no display name, so the key is shown."""
+    env = LiveContext().env
+    _serve_llm_catalog(monkeypatch, open_ai=None)
+    with pytest.raises(PlanError) as e:
+        _build(_llm_spec({"model_name": "openai/gpt-5.4-nano"}))
+    assert str(e.value) == (
+        f"step 'llm0': 'openai/gpt-5.4-nano' needs the open_ai app, which isn't "
+        f"installed in '{env}'. Install open_ai from the business's plugin "
+        "settings, then plan again."
+    )
+
+
+def test_a_plan_without_llm_steps_reads_no_catalog(patch_live_lookups, monkeypatch):
+    gets = _serve_llm_catalog(monkeypatch)
+    _build(
+        {
+            "api_name": "no_llm",
+            "name": "No LLM",
+            "type": "record_based",
+            "target_object": "patients",
+            "steps": [
+                {
+                    "key": "check",
+                    "step_type": "condition",
+                    "order": 0,
+                    "step_condition": {"filter_config": NAME_IS_X},
+                }
+            ],
+        }
+    )
+    assert gets == []
+
+
+def test_steps_add_and_edit_fill_the_kizen_ai_app(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step, normalize_step_patch
+
+    block = {"model_name": "kizen/lite", "html_prompt": "<p>Hi</p>"}
+    added = build_wire_step(
+        {"step_type": "call_llm", "action_call_llm": block}, _LIVE_PAYLOAD, "patients"
+    )
+    edited = normalize_step_patch(
+        {"action_call_llm": dict(block)}, "llm", "call_llm", _LIVE_PAYLOAD, "patients"
+    )
+    for step in (added, edited):
+        assert step["action_call_llm"]["business_plugin_app_id"] == _KIZEN_AI
 
 
 def test_find_relationship_field_auto_detects_unambiguous_hop(monkeypatch):
@@ -4295,19 +4473,21 @@ def _branching_test_spec() -> dict:
 
 
 def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatch):
-    """The spec reproduces the UI-built graph. What's left is noise any spec
-    shows: server-written descriptions, and the plugin app the server fills
-    in for a `kizen/*` model."""
+    """The spec reproduces the UI-built graph, the Kizen AI app included.
+    What's left is noise any spec shows: server-written descriptions."""
     import kizen_builder.tools.planners.automations as ma
 
     raw = load_fixture("automations/branching_test.raw.json")
     monkeypatch.setattr(
         ma, "list_automations", lambda: [{"api_name": raw["api_name"], "id": raw["id"]}]
     )
+    # The fixture's business has its own Kizen AI install.
+    llm = next(s["action_call_llm"] for s in raw["steps"] if s.get("action_call_llm"))
+    _serve_llm_catalog(monkeypatch, kizen=llm["business_plugin_app"]["id"])
     structural = [
         d
         for d in diff_automation(_branching_test_spec())["diff"]
-        if d["path"].rsplit(".", 1)[-1] not in ("description", "business_plugin_app_id")
+        if d["path"].rsplit(".", 1)[-1] != "description"
     ]
     assert structural == []
 

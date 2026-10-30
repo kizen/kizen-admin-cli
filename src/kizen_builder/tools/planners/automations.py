@@ -124,6 +124,40 @@ class LiveContext:
             )
         return matches[0]["id"]
 
+    def llm_models(self) -> list[dict[str, Any]]:
+        """The business's LLM catalog, one row per (provider, model)."""
+        from kizen_builder.api.automations import get_metadata, llm_model_rows
+
+        return self._step_picker(
+            "llm_models", lambda client: llm_model_rows(get_metadata(client))
+        )
+
+    def llm_plugin_app_id(self, model_name: str) -> str:
+        """The business plugin app (provider install) that runs ``model_name``."""
+        rows = self.llm_models()
+        row = next((r for r in rows if r["model_value"] == model_name), None)
+        if (
+            row is None
+            and model_name.startswith("kizen/")
+            and not any(r["provider_name"] == "kizen" for r in rows)
+        ):
+            row = {"provider_name": "kizen", "business_plugin_app_id": None}
+        if row is None:
+            raise PlanError(
+                f"model '{model_name}' isn't enabled in '{self.env}'. Run kizen "
+                "automations llm-models for the models this business can use."
+            )
+        if not row["business_plugin_app_id"]:
+            app = (
+                "Kizen AI" if row["provider_name"] == "kizen" else row["provider_name"]
+            )
+            raise PlanError(
+                f"'{model_name}' needs the {app} app, which isn't installed in "
+                f"'{self.env}'. Install {app} from the business's plugin settings, "
+                "then plan again."
+            )
+        return row["business_plugin_app_id"]
+
     def _step_picker(
         self, name: str, fetch: Callable[[Any], list[dict[str, Any]]]
     ) -> list[dict[str, Any]]:
@@ -1531,6 +1565,7 @@ def _build_step_payload(
         wire_block = builder(block_dict, auto, ctx)
     except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
+    _resolve_llm_plugin_app(step.step_type, step.key, wire_block, ctx)
     problem = _built_block_problem(step.step_type, step.key, wire_block, auto, ctx)
     if problem:
         raise PlanError(problem)
@@ -1746,6 +1781,41 @@ def _llm_tools_pairing_problem(key: str, block: dict[str, Any]) -> str | None:
             "Set both or neither."
         )
     return None
+
+
+_LLM_STEP_TYPES = ("call_llm", "file_content_extraction", "audio_transcription")
+
+
+def _resolve_llm_plugin_app(
+    step_type: str, key: str, block: dict[str, Any], ctx: LiveContext
+) -> None:
+    """Fill an LLM block's ``business_plugin_app_id`` from the business's
+    catalog, as the Kizen UI does. The write accepts a block without one,
+    or with another provider's, and stores it that way."""
+    llm: Any = block
+    if step_type == "condition" and block.get("type") == "llm_decision":
+        llm = block.get("llm_decision")
+    elif step_type not in _LLM_STEP_TYPES:
+        return
+    if not isinstance(llm, dict) or not llm.get("model_name"):
+        return
+    model_name, bpa_id = llm["model_name"], llm.get("business_plugin_app_id")
+    try:
+        if not bpa_id:
+            llm["business_plugin_app_id"] = ctx.llm_plugin_app_id(model_name)
+            return
+        rows = ctx.llm_models()
+    except PlanError as e:
+        raise PlanError(f"step '{key}': {e}") from e
+    owner = next((r for r in rows if r["business_plugin_app_id"] == bpa_id), None)
+    expected = next((r for r in rows if r["model_value"] == model_name), None)
+    if owner and expected and expected["business_plugin_app_id"] != bpa_id:
+        raise PlanError(
+            f"step '{key}': business_plugin_app_id {bpa_id} is "
+            f"{owner['provider_name']}'s, but {model_name} is a "
+            f"{expected['provider_name']} model. Leave business_plugin_app_id "
+            "out and the CLI uses this business's own."
+        )
 
 
 def _render_filter_config(
