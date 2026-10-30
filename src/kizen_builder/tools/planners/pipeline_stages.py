@@ -14,6 +14,7 @@ from typing import Any
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
+from kizen_builder.utils import match_option
 
 _STAGE_STATUSES = {"open", "won", "lost", "disqualified"}
 
@@ -33,9 +34,9 @@ def _require_pipeline(identifier: str) -> dict[str, Any]:
 
 def _match_stage(obj: dict[str, Any], token: str) -> dict[str, Any]:
     stages = obj.get("stages") or []
-    for s in stages:
-        if token == s.get("id") or (s.get("name") or "").lower() == token.lower():
-            return s
+    match = match_option(stages, token)
+    if match is not None:
+        return match
     available = [s.get("name") for s in stages]
     raise PlanError(
         f"stage '{token}' not found on '{obj.get('api_name')}'. Available: {available}"
@@ -209,7 +210,7 @@ def plan_move_record(object_api_name: str, record_id: str, stage: str) -> Plan:
         },
         payload={"stage_id": target["id"]},
         existing_uuid=record_id,
-        parent_object_uuid=object_api_name,
+        parent_object_uuid=obj["id"],
     )
     return Plan.build(
         env=env,

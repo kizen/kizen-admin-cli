@@ -63,7 +63,7 @@ from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
-from kizen_builder.utils import is_uuid
+from kizen_builder.utils import is_uuid, match_option
 
 # ---------------------------------------------------------------------------
 # Live-context cache (fetched once per plan call)
@@ -158,16 +158,25 @@ class LiveContext:
         # Fall back to the object-level data (id/type without options)
         return self._field(object_api_name, field_api_name)
 
-    def _fields_with_options(self, object_api_name: str) -> list[dict[str, Any]]:
-        cache_key = f"__fields__{object_api_name}"
+    def field_by_id(self, object_ref: str, field_id: str) -> dict[str, Any] | None:
+        """The live field with this UUID on an object (api_name or UUID)."""
+        fields = self._fields_with_options(object_ref)
+        return next((f for f in fields if f.get("id") == field_id), None)
+
+    def _fields_with_options(self, object_ref: str) -> list[dict[str, Any]]:
+        cache_key = f"__fields__{object_ref}"
         if cache_key not in self._objects_by_api:
-            obj = self.object_data(object_api_name)
+            obj_id = (
+                object_ref
+                if is_uuid(object_ref)
+                else self.object_data(object_ref)["id"]
+            )
             from kizen_builder.api import custom_objects as co_api
             from kizen_builder.api.client import KizenClient
 
             cfg = load_env_config()
             with KizenClient(cfg) as client:
-                self._objects_by_api[cache_key] = co_api.list_fields(client, obj["id"])
+                self._objects_by_api[cache_key] = co_api.list_fields(client, obj_id)
         return self._objects_by_api[cache_key]
 
     def _field(self, object_api_name: str, field_api_name: str) -> dict[str, Any]:
@@ -1394,6 +1403,13 @@ def _build_step_payload(
 
     if step.step_type in _CONFIGLESS_STEP_TYPES:
         return p
+    if step.step_type == "update_pipeline_status":
+        raise PlanError(
+            f"step '{step.key}': Kizen's automation builder has no move-stage "
+            "step. Move the record with a change_field_value step on the stage "
+            'field: {"step_type": "change_field_value", "action_change_field_value": '
+            '{"field_ref": "stage", "specific_field_value": "<stage name>"}}'
+        )
     builder = _STEP_BUILDERS.get(step.step_type)
     if builder is None:
         raise PlanError(
@@ -2078,12 +2094,22 @@ def _step_change_field_value(
         # Flat → wrap into single-element actions
         flat = {k: v for k, v in block.items() if k != "actions"}
         actions_in = [flat]
-    return {"actions": [_change_field_value_action(a, auto, ctx) for a in actions_in]}
+    return {
+        "actions": [
+            _change_field_value_action(a, auto, ctx, auto.target_object)
+            for a in actions_in
+        ]
+    }
 
 
 def _change_field_value_action(
-    a: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    a: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+    field_object: str | None,
 ) -> dict[str, Any]:
+    """One field change. ``field_object`` is the object the field lives on
+    (api_name or UUID), for finding a field given by UUID."""
     out: dict[str, Any] = {
         "field_resolution": a.get("field_resolution") or "overwrite",
         "update_mode": a.get("update_mode") or "update_fields",
@@ -2128,7 +2154,12 @@ def _change_field_value_action(
                 if k in sfv
             }
         else:
-            out["specific_field_value"] = sfv
+            # A read expands a checkboxes value to [{id, name, deleted}, …].
+            if isinstance(sfv, list):
+                sfv = [(_unwrap_id(v) or v) if isinstance(v, dict) else v for v in sfv]
+            out["specific_field_value"] = _option_labels_to_ids(
+                field, sfv, field_object, auto, ctx
+            )
     if a.get("context_entity_field") is not None:
         # A field on the triggering record (auto.target_object) — a bare
         # name (no dot) resolves against it, same as field_ref elsewhere.
@@ -2158,6 +2189,113 @@ def _change_field_value_action(
     return out
 
 
+# Field types whose values are option UUIDs: a change_field_value write, and
+# the options an LLM destination may fill. A pipeline's `stage` is a dropdown
+# whose options are the stages.
+_OPTION_FIELD_TYPES = {
+    "dropdown",
+    "radio",
+    "status",
+    "checkboxes",
+    "choices",
+    "yesnomaybe",
+}
+
+
+def _is_label(value: Any) -> bool:
+    # Kizen saves "" as a cleared value and reads it back as a bare "".
+    return isinstance(value, str) and value != "" and not is_uuid(value)
+
+
+def _option_labels_to_ids(
+    field: Any,
+    value: Any,
+    field_object: str | None,
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> Any:
+    """Resolve option labels in a `specific_field_value` to option UUIDs.
+
+    Kizen answers a label with a 500, or saves an automation it then can't
+    read (confirmed live 2026-10-30), so an unknown label is refused here.
+    UUIDs and read shapes never need the lookup.
+    """
+    values = value if isinstance(value, list) else [value]
+    labels = [v for v in values if _is_label(v)]
+    if not labels:
+        return value
+    # A read's field object carries its type, and a text value reads back as
+    # a bare string.
+    if isinstance(field, dict) and field.get("field_type") not in (
+        None,
+        *_OPTION_FIELD_TYPES,
+    ):
+        return value
+    obj_ref, data = _change_field(field, field_object, labels[0], auto, ctx)
+    if data.get("field_type") not in _OPTION_FIELD_TYPES:
+        return value
+    options = data.get("options") or []
+    names = ", ".join(str(o.get("name")) for o in options)
+
+    def option_id(v: Any) -> Any:
+        if not _is_label(v):
+            return v
+        match = match_option(options, v)
+        if match is not None:
+            return match["id"]
+        obj = ctx.object_data(obj_ref)
+        obj_api = obj.get("api_name") or obj_ref
+        fld_api = data.get("name") or data.get("api_name")
+        if fld_api == "stage" and obj.get("object_type") == "pipeline":
+            raise PlanError(
+                f"stage '{v}' isn't a stage of "
+                f"'{obj.get('display_name') or obj_api}'. Stages: {names}"
+            )
+        raise PlanError(
+            f"'{v}' isn't an option of '{fld_api}' on '{obj_api}'. Options: {names}"
+        )
+
+    if isinstance(value, list):
+        return [option_id(v) for v in value]
+    return option_id(value)
+
+
+def _change_field(
+    field: Any,
+    field_object: str | None,
+    label: str,
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> tuple[str, dict[str, Any]]:
+    """(object, live field) for a change whose value holds a label.
+
+    A field given by UUID is looked up by id: `steps get` prints the wire
+    shape, and an edit that swaps an option UUID for a label must resolve it
+    like a named field does.
+    """
+    if isinstance(field, str) and not is_uuid(field):
+        obj_api, fld_api = _split_field_ref(field, auto)
+        return obj_api, ctx.field_data(obj_api, fld_api)
+    field_id = _unwrap_id(field)
+    if field_id is None and isinstance(field, dict):
+        api_name = field.get("name") or field.get("api_name")
+        if auto.target_object and api_name:
+            return auto.target_object, ctx.field_data(auto.target_object, api_name)
+    if not field_object or field_id is None:
+        raise PlanError(
+            f"'{label}' looks like an option label, but the field is given as a "
+            "UUID, so its options can't be looked up. Name the field as "
+            '"<object>.<field>", or give the option\'s UUID.'
+        )
+    data = ctx.field_by_id(field_object, field_id)
+    if data is None:
+        raise PlanError(
+            f"field '{field_id}' isn't a field of "
+            f"'{ctx.object_data(field_object).get('api_name') or field_object}'."
+        )
+    return field_object, data
+
+
 @honours(
     "automation_target_relationship_fields",
     "relationship_field_ref",
@@ -2184,13 +2322,14 @@ def _step_modify_related_entities(
     single = block.get("relationship_field_ref") or block.get("relationship_field_id")
     if single:
         rel_fields_in.append(single)
+    object_to_modify = _resolve_object(block.get("object_to_modify"), ctx)
     out: dict[str, Any] = {
-        "object_to_modify": _resolve_object(block.get("object_to_modify"), ctx),
+        "object_to_modify": object_to_modify,
         "automation_target_relationship_fields": [
             r for r in (_resolve_field(r, auto, ctx) for r in rel_fields_in) if r
         ],
         "fields_to_modify": [
-            _change_field_value_action(f, auto, ctx)
+            _change_field_value_action(f, auto, ctx, object_to_modify)
             for f in (block.get("fields_to_modify") or [])
         ],
     }
@@ -2652,9 +2791,6 @@ def _step_file_content_extraction(
     return {k: v for k, v in out.items() if v is not None}
 
 
-_CHOICE_FIELD_TYPES = {"dropdown", "radio", "checkboxes", "choices", "yesnomaybe"}
-
-
 def _resolve_llm_destinations(
     destinations: list[dict[str, Any]],
     auto: AutomationDef,
@@ -2718,7 +2854,7 @@ def _resolve_llm_destinations(
             d["field"] = hop_uuid
             if not d.get("options") and dest_obj_api and dest_fld_api:
                 fdata = ctx.field_data(dest_obj_api, dest_fld_api)
-                if fdata.get("field_type") in _CHOICE_FIELD_TYPES:
+                if fdata.get("field_type") in _OPTION_FIELD_TYPES:
                     d["options"] = [
                         o["id"] for o in (fdata.get("options") or []) if o.get("id")
                     ]
@@ -2729,7 +2865,7 @@ def _resolve_llm_destinations(
             # Auto-populate options for choice-type fields when not already set
             if not d.get("options"):
                 fdata = ctx.field_data(obj_api, fld_api)
-                if fdata.get("field_type") in _CHOICE_FIELD_TYPES:
+                if fdata.get("field_type") in _OPTION_FIELD_TYPES:
                     d["options"] = [
                         o["id"] for o in (fdata.get("options") or []) if o.get("id")
                     ]

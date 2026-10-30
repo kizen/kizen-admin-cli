@@ -21,6 +21,27 @@ called out explicitly under **Changed** or **Removed**.
   `time_in_stage`, `entered_stage` and `left_stage` on a pipeline's `stage`
   field, with stage names. An unknown stage name in any stage filter is now
   an error at plan time instead of a server error.
+- **Automations set option fields by label.** A `change_field_value` step
+  on a dropdown, radio, status, checkboxes, choices or yes/no/maybe field
+  takes option labels as well as UUIDs, whether the field is named or given
+  by UUID. That includes a pipeline's `stage`, which is how an automation
+  moves a record to a stage. An unknown label is refused before anything is
+  written, in `steps edit` too.
+
+### Changed
+
+- An `update_pipeline_status` step in a spec is refused with a pointer to
+  the stage field update.
+
+### Fixed
+
+- `kizen records move` no longer fails with HTTP 500.
+- Saving an automation read back from Kizen with a checkboxes
+  `change_field_value` step no longer fails with a 400.
+- `kizen records update -f stage=` (or any option field set to an empty
+  value) no longer moves the record to the first option when the options
+  have no codes. Kizen now answers "This field may not be blank." and
+  nothing changes. An option field set to an option UUID now matches it.
 
 ## [0.4.0] — 2026-10-27
 

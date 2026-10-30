@@ -298,7 +298,7 @@ to wait for a reply. Its `wait_type` is `never`, `delay` or
 | `call_llm` | `action_call_llm` | prompt an LLM, optionally with an MCP server's tools, write to `destinations` |
 | `file_content_extraction` | `action_file_content_extraction` | extract from a file field on the record, a related record, or in a variable (`input_value_source`) |
 | `audio_transcription` | `action_audio_transcription` | transcribe an audio field on the record, a related record, or in a variable (`input_value_source`) |
-| `change_field_value` | `action_change_field_value` | set/clear a field |
+| `change_field_value` | `action_change_field_value` | set/clear a field — option fields take labels; on a pipeline's stage it moves the record (see [Moving a record to a stage](#moving-a-record-to-a-stage)) |
 | `archive_record` | `action_archive_record` | archive the record |
 | `create_related_entity` | `action_create_related_entity` | create a related record — see [`create_related_entity`](#create_related_entity) |
 | `modify_related_entities` | `action_modify_related_entities` | update related records |
@@ -335,8 +335,7 @@ quirks (custom_object/filter_groups/destination_variable are each
 scalars).
 
 Other step types exist in Kizen (`send_email`, `change_tags`,
-`http_request`, `update_pipeline_status`,
-`modify_automation`, `request_info_via_text`, `delete_scheduled_activity`,
+`http_request`, `modify_automation`, `request_info_via_text`, `delete_scheduled_activity`,
 `modify_related_entities_automation` — not to be confused with the wired
 `modify_related_entities`) but aren't wired here and raise `PlanError` if you
 try to spec them.
@@ -449,6 +448,22 @@ Creates one record on another object and links it to the triggering record.
   values in a following
   [`modify_related_entities`](#modify_related_entities--field-shape) step
   whose hop is the same `context_entity_field`.
+
+### Moving a record to a stage
+
+```json
+{"step_type": "change_field_value",
+ "action_change_field_value": {"field_ref": "stage", "specific_field_value": "<stage name>"}}
+```
+
+This is how an automation moves a record. There is no separate move-stage
+step: Kizen's API lists an `update_pipeline_status` type, but its automation
+builder doesn't offer one, and the CLI refuses it.
+
+- The stage name resolves to the stage's UUID case-insensitively, as any
+  option label does. An unknown name is a plan error that lists the stages.
+- The move writes the same timeline entry and stage history as a manual move
+  (confirmed live 2026-10-30).
 
 ### `modify_related_entities` — field shape
 
@@ -583,10 +598,10 @@ mutually-exclusive options:
   itself produces when you hand-pick "related field" for a destination), but
   `relationship_field_ref` reads clearer in a spec.
 
-For a choice-type destination field (dropdown/radio/checkboxes/yesnomaybe),
-`options` (the field's option UUIDs) auto-populates from live field metadata
-when the destination field is named via `field_ref`/`related_object_field`
-and `options` isn't given explicitly. `is_required` and
+For a choice-type destination field (dropdown, radio, status, checkboxes,
+choices, yesnomaybe), `options` (the field's option UUIDs) auto-populates from
+live field metadata when the destination field is named via
+`field_ref`/`related_object_field` and `options` isn't given explicitly. `is_required` and
 `confidence_threshold` (extraction only) default to `false`/`0.7`.
 
 **Multiple destinations in one step** require `is_advanced: true` — without
@@ -921,9 +936,13 @@ as a real custom object's own api_name, and its span gets
   rather than relying on whatever `null` defaults to. Previously this
   entire option set was undocumented and untyped, so specs always left it
   unset even when e.g. "stop and mark as failed" was the intent.
-- **`change_field_value.specific_field_value` is a bare scalar** (or a UUID
-  string for dropdown/relation fields) — not `{value: …}`. The planner wraps
-  it in the `actions: [...]` array.
+- **`change_field_value.specific_field_value` is a bare scalar** — not
+  `{value: …}`. The planner wraps it in the `actions: [...]` array. For an
+  option field (dropdown, radio, status, checkboxes, choices, yesnomaybe, a
+  pipeline's `stage`) give option labels or UUIDs, with the field by name or
+  by UUID (as `steps get` prints it). The CLI sends UUIDs and refuses an
+  unknown label. Kizen itself answers a label with a 500, or saves an
+  automation it then can't read (confirmed live 2026-10-30).
 - **`notify_member_via_email` content is a separate resource, not inline.** Its
   config points at an `AutomationMessage` by `id`. Create it correctly with
   `kizen messages create <automation> --template <name>` first, then reference
@@ -1148,7 +1167,7 @@ Beyond the step/trigger tables above:
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
 | `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see [Extraction input](#extraction-input) |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
-| `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string |
+| `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string, or a list of them for checkboxes; a spec label resolves to it |
 | `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record` |
 | `archive_record` | `relationship_field_ids` (entries accept `"object.field"` refs), `automation_variable_name` |
 | `assign_team_member` | the `*_id` dialect: `role_id`, `employee_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum — see below |

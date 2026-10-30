@@ -26,6 +26,7 @@ from kizen_builder.tools.planners.automations import (
     plan_update_automation,
 )
 from kizen_builder.tools.plans import PlanError
+from kizen_builder.translate import _NoLookupContext
 from tests import builder_keys
 from tests.conftest import FIXTURES, load_fixture
 
@@ -1413,10 +1414,315 @@ def _cfv_spec(field_to_modify):
 
 
 def test_bare_uuid_field_reference_passes_through(patch_live_lookups):
-    uuid_val = "12345678-1234-4321-8765-123456789abc"
-    payload = _build(_cfv_spec(uuid_val))
+    mrn = "db489b3e-a880-41f7-90b9-312b8cfdd02b"
+    payload = _build(_cfv_spec(mrn))
     action = payload["steps"][0]["action_change_field_value"]["actions"][0]
-    assert action["field_to_modify"] == uuid_val
+    assert action["field_to_modify"] == mrn
+    assert action["specific_field_value"] == "x"
+
+
+def test_label_on_unknown_uuid_field_refused(patch_live_lookups):
+    uuid_val = "12345678-1234-4321-8765-123456789abc"
+    with pytest.raises(PlanError) as e:
+        _build(_cfv_spec(uuid_val))
+    assert str(e.value) == (
+        f"step 'set': field '{uuid_val}' isn't a field of 'patients'."
+    )
+
+
+# ---------------------------------------------------------------------------
+# change_field_value: option labels resolve to option UUIDs
+# ---------------------------------------------------------------------------
+
+
+def _option_id(obj: str, field: str, name: str) -> str:
+    fields = load_fixture(f"objects/{obj}.json")["fields"]
+    (fld,) = [f for f in fields if f["api_name"] == field]
+    return next(o["id"] for o in fld["options"] if o["name"] == name)
+
+
+def _set_field_spec(target: str, field_ref, value) -> dict:
+    return {
+        "api_name": "cfv_label_test",
+        "name": "CFV Label Test",
+        "type": "record_based",
+        "target_object": target,
+        "steps": [
+            {
+                "key": "set",
+                "step_type": "change_field_value",
+                "order": 0,
+                "parent_key": None,
+                "action_change_field_value": {
+                    "field_ref": field_ref,
+                    "specific_field_value": value,
+                },
+            }
+        ],
+    }
+
+
+def _set_value(target: str, field_ref, value):
+    payload = _build(_set_field_spec(target, field_ref, value))
+    action = payload["steps"][0]["action_change_field_value"]["actions"][0]
+    return action["specific_field_value"]
+
+
+@pytest.mark.parametrize(
+    "target, field_ref, value, expected",
+    [
+        ("deals", "stage", "Closed Won", ("deals", "stage", "Closed Won")),
+        ("deals", "deals.stage", "negotiation", ("deals", "stage", "Negotiation")),
+        ("deals", "stage", "closed_won", ("deals", "stage", "Closed Won")),
+        (
+            "encounters",
+            "encounter_priority",
+            "urgent",
+            ("encounters", "encounter_priority", "Urgent"),
+        ),
+        (
+            "patients",
+            "preferred_contact_method",
+            "Email",
+            ("patients", "preferred_contact_method", "Email"),
+        ),
+    ],
+)
+def test_change_field_value_option_label_resolves(
+    patch_live_lookups, target, field_ref, value, expected
+):
+    assert _set_value(target, field_ref, value) == _option_id(*expected)
+
+
+def test_change_field_value_checkboxes_labels_resolve(patch_live_lookups):
+    wheelchair = _option_id("encounters", "special_arrangements", "Wheelchair")
+    interpreter = _option_id("encounters", "special_arrangements", "Interpreter")
+    value = _set_value(
+        "encounters", "special_arrangements", ["wheelchair", interpreter]
+    )
+    assert value == [wheelchair, interpreter]
+    assert _set_value("encounters", "special_arrangements", ["Interpreter"]) == [
+        interpreter
+    ]
+
+
+def test_change_field_value_unknown_stage_refused(patch_live_lookups):
+    with pytest.raises(PlanError) as e:
+        _build(_set_field_spec("deals", "stage", "Closed Lost"))
+    assert str(e.value) == (
+        "step 'set': stage 'Closed Lost' isn't a stage of 'Deals'. "
+        "Stages: Prospecting, Negotiation, Closed Won"
+    )
+
+
+def test_change_field_value_unknown_option_refused(patch_live_lookups):
+    with pytest.raises(PlanError) as e:
+        _build(_set_field_spec("encounters", "special_arrangements", ["Cane"]))
+    assert str(e.value) == (
+        "step 'set': 'Cane' isn't an option of 'special_arrangements' on "
+        "'encounters'. Options: Wheelchair, Walker / Crutches, Interpreter, "
+        "Oxygen, Other"
+    )
+
+
+def test_change_field_value_text_value_unchanged(patch_live_lookups):
+    assert _set_value("patients", "mrn", "Closed Won") == "Closed Won"
+    assert _set_value("deals", "deal_value", "100") == "100"
+
+
+def _no_lookup_action(field, value):
+    from kizen_builder.tools.planners.automations import _change_field_value_action
+    from kizen_builder.translate import _SHIM_CTX
+
+    auto = AutomationDef.model_validate(_set_field_spec("deals", "stage", None))
+    a = {"field_to_modify": field, "specific_field_value": value}
+    return _change_field_value_action(a, auto, _SHIM_CTX, "deals")[
+        "specific_field_value"
+    ]
+
+
+def test_change_field_value_uuids_and_read_shapes_need_no_lookup():
+    stage_field = load_fixture("objects/deals.json")["fields"][0]
+    won = "aaaaaaaa-0000-4000-8000-000000000003"
+    read_field = {**stage_field, "name": "stage"}
+    assert _no_lookup_action(stage_field["id"], won) == won
+    assert _no_lookup_action(read_field, {"id": won, "name": "Closed Won"}) == won
+    picks = [
+        {"id": "5713f483-ce2a-4c7a-bd19-a35f13e5e8a5", "name": "W", "deleted": False},
+        {"id": "271cd77c-0a13-4486-b075-47d808d0528c", "name": "I", "deleted": False},
+    ]
+    assert _no_lookup_action(read_field, picks) == [p["id"] for p in picks]
+
+
+def test_change_field_value_label_on_uuid_field(patch_live_lookups):
+    """`steps get` prints the field as a UUID; editing its value to a label
+    looks the field up by id instead of saving an unreadable automation."""
+    stage = load_fixture("objects/deals.json")["fields"][0]["id"]
+    assert _set_value("deals", stage, "closed won") == _option_id(
+        "deals", "stage", "Closed Won"
+    )
+    with pytest.raises(PlanError, match="stage 'Closed Lost' isn't a stage of"):
+        _set_value("deals", stage, "Closed Lost")
+    spec = _set_field_spec(None, stage, "Closed Won")
+    del spec["target_object"]
+    spec["type"] = "global"
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value) == (
+        "step 'set': 'Closed Won' looks like an option label, but the field is "
+        "given as a UUID, so its options can't be looked up. Name the field as "
+        '"<object>.<field>", or give the option\'s UUID.'
+    )
+
+
+def test_change_field_value_blank_value_is_not_a_label(patch_live_lookups):
+    stage = load_fixture("objects/deals.json")["fields"][0]["id"]
+    assert _set_value("deals", "stage", "") == ""
+    spec = _set_field_spec(None, stage, "")
+    del spec["target_object"]
+    spec["type"] = "global"
+    action = _build(spec)["steps"][0]["action_change_field_value"]["actions"][0]
+    assert action["specific_field_value"] == ""
+
+
+def test_modify_related_entities_fields_to_modify_resolve_labels(patch_live_lookups):
+    spec = {
+        "api_name": "mre_label_test",
+        "name": "MRE Label Test",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "modify",
+                "step_type": "modify_related_entities",
+                "order": 0,
+                "parent_key": None,
+                "action_modify_related_entities": {
+                    "object_to_modify": "encounters",
+                    "relationship_field_ref": "patients.encounters",
+                    "fields_to_modify": [
+                        {
+                            "field_ref": "encounters.encounter_priority",
+                            "value_type": "specific_value",
+                            "specific_field_value": "Emergency",
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+    action = _build(spec)["steps"][0]["action_modify_related_entities"]
+    (change,) = action["fields_to_modify"]
+    assert change["specific_field_value"] == _option_id(
+        "encounters", "encounter_priority", "Emergency"
+    )
+    spec["steps"][0]["action_modify_related_entities"]["fields_to_modify"][0][
+        "specific_field_value"
+    ] = "Someday"
+    with pytest.raises(PlanError, match="'Someday' isn't an option of"):
+        _build(spec)
+    # As `steps get` prints it: both the object and the field by UUID.
+    block = spec["steps"][0]["action_modify_related_entities"]
+    block["object_to_modify"] = load_fixture("objects/encounters.json")["id"]
+    block["fields_to_modify"][0].update(
+        field_ref="b60325b2-2b94-4128-aabe-e1b01c0da0df",
+        specific_field_value="emergency",
+    )
+    action = _build(spec)["steps"][0]["action_modify_related_entities"]
+    assert action["fields_to_modify"][0]["specific_field_value"] == _option_id(
+        "encounters", "encounter_priority", "Emergency"
+    )
+
+
+def test_steps_add_change_field_value_resolves_stage_name(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step
+
+    step = {
+        "key": "escalate",
+        "step_type": "change_field_value",
+        "action_change_field_value": {
+            "field_ref": "stage",
+            "specific_field_value": "Negotiation",
+        },
+    }
+    wire = build_wire_step(step, _LIVE_PAYLOAD, "deals")
+    (action,) = wire["action_change_field_value"]["actions"]
+    assert action["specific_field_value"] == "aaaaaaaa-0000-4000-8000-000000000002"
+
+
+def test_diff_change_field_value_label_matches_its_live_read(
+    patch_live_lookups, monkeypatch
+):
+    """A label spec diffs clean against the read of what it created: the
+    read expands the option, and the label resolves to the same UUID."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    (step,) = [s for s in raw["steps"] if s["id"].startswith("bf8742aa")]
+    block = step["action_change_field_value"]
+    block["actions"] = block["actions"][:1]
+    step.update(parent_step_id=None, order=0)
+    raw["steps"] = [step]
+    raw["triggers"] = [t for t in raw["triggers"] if t["trigger_type"] == "manual"]
+    monkeypatch.setattr(
+        ma, "get_automation", lambda api: {"id": raw["id"], "raw": raw, **raw}
+    )
+    monkeypatch.setattr(
+        ma, "list_automations", lambda: [{"api_name": raw["api_name"], "id": raw["id"]}]
+    )
+    spec = {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "record_based",
+        "target_object": "document_sets",
+        "triggers": [
+            {
+                "trigger_type": "manual",
+                "order": 0,
+                "id": raw["triggers"][0]["id"],
+                "description": raw["triggers"][0]["description"],
+            }
+        ],
+        "steps": [
+            {
+                "key": "classify",
+                "id": step["id"],
+                "step_type": "change_field_value",
+                "order": 0,
+                "parent_key": None,
+                "description": step["description"],
+                "action_on_failure": step["action_on_failure"],
+                "action_change_field_value": {
+                    "field_ref": "document_classification_status",
+                    "specific_field_value": "classified",
+                },
+            }
+        ],
+    }
+    cfv_lines = [
+        d
+        for d in diff_automation(spec)["diff"]
+        if "action_change_field_value" in d["path"]
+    ]
+    assert cfv_lines == []
+
+
+def test_update_pipeline_status_points_at_the_stage_field(patch_live_lookups):
+    spec = _set_field_spec("deals", "stage", "Negotiation")
+    expected = (
+        "step 'set': Kizen's automation builder has no move-stage step. Move "
+        "the record with a change_field_value step on the stage field: "
+        '{"step_type": "change_field_value", "action_change_field_value": '
+        '{"field_ref": "stage", "specific_field_value": "<stage name>"}}'
+    )
+    step = spec["steps"][0]
+    del step["action_change_field_value"]
+    step["step_type"] = "update_pipeline_status"
+    for block in (None, {"to_stage_id": "aaaaaaaa-0000-4000-8000-000000000002"}):
+        step["action_update_pipeline_status"] = block
+        with pytest.raises(PlanError) as e:
+            _build(spec)
+        assert str(e.value) == expected
 
 
 def test_long_api_name_not_mistaken_for_uuid(patch_live_lookups):
@@ -4334,17 +4640,41 @@ def _diff_paths(a: object, b: object, path: str = "") -> set[str]:
     return set() if a == b else {path}
 
 
+class _WireFieldContext(_NoLookupContext):
+    """A wire block's option values are already UUIDs, so a bare string a
+    field-by-id lookup meets in one is a text value."""
+
+    def field_by_id(self, object_ref, field_id):
+        return {"id": field_id, "field_type": "text"}
+
+
 def _rebuild(kind, block_type, wire, payload, target):
-    """The builder call `normalize_step_patch` makes, with no live lookups."""
+    """The builder call `normalize_step_patch` makes, with no other lookups."""
     import copy
 
     from kizen_builder.tools.automations import _payload_auto
-    from kizen_builder.translate import _SHIM_CTX
 
+    ctx = _WireFieldContext()
     if kind == "trigger":
-        return _TRIGGER_BUILDERS[block_type](copy.deepcopy(wire), _SHIM_CTX)
+        return _TRIGGER_BUILDERS[block_type](copy.deepcopy(wire), ctx)
     auto = _payload_auto(payload, target)
-    return _STEP_BUILDERS[block_type](copy.deepcopy(wire), auto, _SHIM_CTX)
+    return _STEP_BUILDERS[block_type](copy.deepcopy(wire), auto, ctx)
+
+
+def test_blank_option_value_reads_and_rebuilds_unchanged():
+    """Kizen saves a cleared option field as "" and reads it back bare."""
+    from kizen_builder.translate import live_to_payload
+
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    (step,) = [s for s in raw["steps"] if s["id"].startswith("bf8742aa")]
+    step["action_change_field_value"]["actions"][0]["specific_field_value"] = ""
+    payload = live_to_payload(raw)
+    live = next(s for s in payload["steps"] if s["id"] == step["id"])
+    block = live["action_change_field_value"]
+    assert block["actions"][0]["specific_field_value"] == ""
+    target = raw["custom_object"]["name"]
+    rebuilt = _rebuild("step", "change_field_value", block, payload, target)
+    assert rebuilt["actions"][0]["specific_field_value"] == ""
 
 
 @pytest.mark.parametrize("kind, block_type, wire, payload, target", _WIRE_BLOCKS)
