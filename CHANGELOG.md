@@ -14,6 +14,16 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`automations update` no longer resets what a spec leaves out on an
+  existing step or trigger.** Its description, note, skip flag, failure
+  handling and error severity keep their live values when the step carries
+  its `id`. Before, they reset to Kizen's defaults, so descriptions written
+  in the builder were lost. `--dry-run` names the steps as `keeps_live`.
+  The automation's `skip_non_working_days` is kept the same way; an update
+  that left it out used to turn it off.
+
 ## [0.4.0] — 2026-10-27
 
 ### Added

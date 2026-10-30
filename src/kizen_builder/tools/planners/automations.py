@@ -346,9 +346,11 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     resolved_active = auto.active if auto.active is not None else live_active
     auto = auto.model_copy(update={"active": resolved_active})
 
-    payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    payload, keeps_live = _update_payload(auto, ctx, current)
     preview = _automation_preview(env, auto, live_active=live_active)
     preview["current_revision"] = current.get("revision")
+    if keeps_live:
+        preview["keeps_live"] = keeps_live
     preview.update(_llm_tools_dropped(current, payload))
     return Plan.build(
         env=env,
@@ -374,10 +376,9 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     Fetches the live automation exactly once and derives both comparison
     sides from that single `current`: the live side via
     `translate.live_to_payload`, the spec side via the same
-    `_build_automation_payload` + `_merge_server_state` calls
-    `plan_update_automation` itself makes (not by calling
-    `plan_update_automation`/building a `Plan` a second time, which would
-    re-fetch `current` and admit a race). This also guarantees
+    `_update_payload` call `plan_update_automation` itself makes (not by
+    calling `plan_update_automation`/building a `Plan` a second time, which
+    would re-fetch `current` and admit a race). This also guarantees
     `last_revision` matches on both sides by construction. Mirrors
     `plan_update_automation`'s `active` resolution (an omitted `active` in
     the spec means "leave live's value alone," not "set False") so `active`
@@ -414,7 +415,7 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     auto = auto.model_copy(update={"active": resolved_active})
 
     live_payload = live_to_payload(current)
-    spec_payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    spec_payload, _ = _update_payload(auto, ctx, current)
 
     return {
         "env": env,
@@ -423,6 +424,89 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
         "revision": current.get("revision"),
         "diff": diff_wire_payloads(live_payload, spec_payload),
     }
+
+
+def _update_payload(
+    auto: AutomationDef, ctx: LiveContext, current: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """The PUT body `update` sends and `diff` compares against live."""
+    payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    # The model defaults this to False, which a PUT would write over a live
+    # true (confirmed live 2026-10-30).
+    if (
+        "skip_non_working_days" not in auto.model_fields_set
+        and current.get("skip_non_working_days") is not None
+    ):
+        payload["skip_non_working_days"] = current["skip_non_working_days"]
+    return _carry_omitted_step_keys(payload, auto, current)
+
+
+# Keys a PUT resets to Kizen's default when they're left out or sent as the
+# model default (confirmed live 2026-10-30), so an update keeps the live value
+# of each one the spec doesn't set.
+_KEPT_STEP_KEYS = (
+    "description",
+    "user_description",
+    "should_skip_execution",
+    "continue_with_branch",
+    "action_on_failure",
+    "error_notification_severity_level",
+)
+_KEPT_TRIGGER_KEYS = ("description", "user_description", "should_skip_execution")
+
+
+def _carry_omitted_step_keys(
+    payload: dict[str, Any], auto: AutomationDef, current: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Give each spec step and trigger whose `id` matches a live one the live
+    value of every kept key the spec leaves out. Returns the payload and the
+    keys of the steps and triggers whose payload that changed.
+
+    Matched by id only: a step without one is new to the server, and pairing
+    it by position could stamp one step's settings on another."""
+    live_steps = {s["id"]: s for s in current.get("steps") or [] if s.get("id")}
+    live_triggers = {t["id"]: t for t in current.get("triggers") or [] if t.get("id")}
+    spec_triggers = {t.id: t for t in auto.triggers if t.id}
+    kept: list[str] = []
+
+    def carry(
+        built: dict[str, Any],
+        spec: AutomationStepDef | AutomationTriggerDef | None,
+        live: dict[str, Any] | None,
+        keys: tuple[str, ...],
+    ) -> dict[str, Any]:
+        if spec is None or live is None:
+            return built
+        values = {
+            k: live[k]
+            for k in keys
+            if k not in spec.model_fields_set and live.get(k) is not None
+        }
+        # The branch a skipped condition or goal runs means nothing without
+        # the skip, so it is kept only with a kept skip.
+        if values.get("should_skip_execution") is not True:
+            values.pop("continue_with_branch", None)
+        if all(built.get(k) == v for k, v in values.items()):
+            return built
+        kept.append(built["key"])
+        return {**built, **values}
+
+    # Triggers can't pair by index: a manual one is prepended when the spec
+    # has none. The payload carries `id` only from the spec.
+    triggers = [
+        carry(
+            t,
+            spec_triggers.get(t.get("id")),
+            live_triggers.get(t.get("id")),
+            _KEPT_TRIGGER_KEYS,
+        )
+        for t in payload["triggers"]
+    ]
+    steps = [
+        carry(built, spec, live_steps.get(spec.id or ""), _KEPT_STEP_KEYS)
+        for spec, built in zip(auto.steps, payload["steps"], strict=True)
+    ]
+    return {**payload, "triggers": triggers, "steps": steps}, kept
 
 
 def _merge_server_state(

@@ -76,7 +76,9 @@ def autos_update(
     """Update an existing automation from a JSON AutomationDef (--spec-file or stdin).
 
     The plan carries the full PUT body including last_revision — a concurrent
-    edit between plan and apply surfaces as an API error.
+    edit between plan and apply surfaces as an API error. Keys the spec leaves
+    out keep their live values on steps that carry their `id`; see `kizen docs
+    show automation`.
     """
     spec_dict, from_stdin = _read_spec(spec_file)
     _run_mutation(
