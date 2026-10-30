@@ -601,30 +601,39 @@ llm-models` for the live catalog (wraps `GET
 /api/automation2/automations/metadata`'s `llm.provider_model_details`):
 every enabled `model_name` this business can use, which of
 call_llm/condition-`llm_decision`/file_content_extraction/audio_transcription
-each one supports, deprecation status + suggested replacement, and —
-critically — the `business_plugin_app_id` each non-native model needs:
+each one supports, deprecation status + suggested replacement, and the
+`business_plugin_app_id` of the provider install that runs each one:
 
 ```
 $ kizen automations llm-models
 provider   model_name                   business_plugin_app_id                 call  decision  extract  transcribe
-kizen      kizen/pro                    —                                       ✓      ✓        ✓         ·
+kizen      kizen/pro                    145fa07b-ffe0-49cb-89af-8f126a0a2f13    ✓      ✓        ✓         ·
 gemini     gemini/gemini-2.5-flash      92dfef31-8b9b-49dc-b54b-3e47cd6b4523    ✓      ✓        ✓         ✓
 anthropic  claude-sonnet-4-5-20250929   96bae762-ad8c-4431-bf21-95aaedadaa08    ✓      ✓        ✓         ·
 ```
 
-`model_name` is a free string, unvalidated client-side — `gemini/...` and
-`openai/...` models need the provider prefix; Claude models are bare (e.g.
-`claude-3-7-sonnet-20250219`, no `claude/` prefix). **Any non-native
-`model_name` (anything not `kizen/...`) needs `business_plugin_app_id` set
-alongside it** — `model_name` alone 400s with `{'business_plugin_app_id':
-['Business plugin app not found']}` even though `model_name` looks
-sufficient on its own. `kizen/*` models don't need one (confirmed live:
-`kizen/pro` works with no extra field).
+`model_name` is a free string — `gemini/...` and `openai/...` models need
+the provider prefix; Claude models are bare (e.g.
+`claude-3-7-sonnet-20250219`, no `claude/` prefix). **`business_plugin_app_id`
+is optional in a spec: the CLI fills it from this catalog for every model,
+Kizen AI included**, so a step reads back with the same `business_plugin_app`
+a step saved in the Kizen UI has. Each business has its own Kizen AI install
+id, as it does for every other provider (confirmed live 2026-10-30). The
+write itself doesn't need it for `kizen/*`, but then stores the step with
+`business_plugin_app: null`, unlike a step saved in the Kizen UI; for any
+other provider, `model_name` alone 400s with
+`{'business_plugin_app_id': ['Business plugin app not found']}`. With
+`business_plugin_app_id` omitted, a `model_name` the catalog doesn't list
+is refused at plan time; with an explicit id, the server decides. An id
+that belongs to a different provider than the model's is refused too: the
+write accepts `kizen/pro` with the OpenAI install's id and stores that
+pairing (confirmed live 2026-10-30).
 
-**Getting `business_plugin_app_id` wrong looks the same as omitting it —
-same 400, so it's easy to think the id itself is bad rather than the
-source it came from.** Two endpoints return something that LOOKS like the
-right id and isn't:
+**If you set `business_plugin_app_id` by hand, take it from the right
+endpoint.** A wrong id gets the same 400 the raw API gives a missing one,
+so it's easy to think the id itself is bad rather than the source it came
+from. Two endpoints return something that LOOKS like the right id and
+isn't:
 - `GET /api/external-integrations/bootstrap` returns each plugin's
   **catalog/app-definition id** — identical across every business (it's the
   "Gemini the product" id, not "your business's installed Gemini

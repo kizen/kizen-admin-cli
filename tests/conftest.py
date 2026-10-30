@@ -190,6 +190,11 @@ def patch_live_lookups(monkeypatch: pytest.MonkeyPatch):
         "_fields_with_options",
         lambda self, object_api_name: fake_get_object(object_api_name)["fields"],
     )
+    # The LLM catalog an LLM step's business_plugin_app_id is filled from.
+    from kizen_builder.api import automations as auto_api
+
+    llm_metadata = load_fixture("automations/llm_metadata.json")
+    monkeypatch.setattr(auto_api, "get_metadata", lambda client: llm_metadata)
     return fake_get_object
 
 

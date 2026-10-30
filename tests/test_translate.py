@@ -420,6 +420,9 @@ class _RefContext:
             ("policies", "policy_document"): _POLICY_DOCUMENT,
         }[(obj, fld)]
 
+    def llm_plugin_app_id(self, model_name: str) -> str:
+        return "145fa07b-ffe0-49cb-89af-8f126a0a2f13"
+
 
 def test_source_dotted_refs_resolve_to_bare_uuids() -> None:
     from kizen_builder.tools.planners.automations import _build_step_payload
