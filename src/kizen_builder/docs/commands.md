@@ -173,6 +173,12 @@ run without approval). `--yes` skips the confirm — use it only after the
 user approved the dry-run output in chat. `--json` emits machine-readable
 output (the plan with `--dry-run`, apply results otherwise).
 
+An apply result is `{plan_id, env, results: [{key, kind, action, status,
+server_uuid, message, raw}]}`, one entry per operation. A created entity's id
+is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. The
+preview goes to stderr and only the JSON to stdout, so don't merge `2>&1` into
+a JSON parse.
+
 ```
 # create
 kizen objects create --name Y [--api-name X] [--object-type standard|pipeline] [--pipeline] [...]   # api_name is derived from --name

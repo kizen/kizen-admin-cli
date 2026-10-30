@@ -61,6 +61,7 @@ kizen automations create --spec-file auto.json --dry-run
 | `type` | enum | `record_based` (default) or `global`. |
 | `target_object` | api_name | **Required for `record_based`.** Resolved to `custom_object_id`. |
 | `active` | bool \| null | On create, an omitted/`null` value resolves to `false` — prefer authoring inactive, then `automations activate`. On update, an omitted/`null` value **preserves whatever the live automation already is**; only an explicit `true`/`false` changes it. |
+| `folder` | string | Folder name or UUID (`kizen automations folders list`). On update, leaving it out keeps the current folder. A name two folders share is refused; give the UUID. |
 | `triggers` | `AutomationTriggerDef[]` | See wired triggers below. |
 | `steps` | `AutomationStepDef[]` | The graph. See wiring rules below. |
 
@@ -927,7 +928,10 @@ as a real custom object's own api_name, and its span gets
 - **`notify_member_via_email` content is a separate resource, not inline.** Its
   config points at an `AutomationMessage` by `id`. Create it correctly with
   `kizen messages create <automation> --template <name>` first, then reference
-  that UUID — a message built from raw content shows as *unselected* in the UI.
+  that message's id — a message built from raw content shows as *unselected*
+  in the UI. With `--json` the id is `.results[0].server_uuid`:
+  `kizen messages create <automation> --template <name> --yes --json | jq -r
+  '.results[0].server_uuid'`.
 - **`code_step.secrets` are env-specific** — the spec carries secret *names*; the
   target env must have each configured or the step fails at runtime. Surface
   this when authoring.
@@ -1027,7 +1031,7 @@ Why a translator is mandatory rather than nice-to-have:
   dropped, not forwarded.
 - **So is a key a live read carries that the builder doesn't model.** Every
   verb that reads an automation back, whether to write it (`activate`,
-  `deactivate`, `move`, `steps add|edit|remove`, `roundtrip --execute`) or to
+  `deactivate`, `steps add|edit|remove`, `roundtrip --execute`) or to
   show or diff it (`show`, `steps get`, `diff`), stops with an error naming
   the automation, the step or trigger and the key, before any PUT.
   Only a non-empty value counts, and the same limits apply: keys inside
@@ -1321,17 +1325,23 @@ assigns anyone:
 The reliable way to set an owner today is `kizen records update <object> <id>
 -f owner=<uuid>`, or a `change_field_value` step on `owner`.
 
-### `move_to_folder` / `automations move`
+### Folders
 
-The write dialect is a bare, nullable `folder_id` — **not** the
-`folder: {id, name}` shape a live read returns. The `folder: {…}` payload PUTs
-fine (200, revision bumps) and is **silently ignored**.
-
-And **`folder_id: null` — the obvious way to say "move to root" — 400s** with
-*"This field may not be null."* Root is itself a real, listable folder
-(`<business_root>`, always present in `kizen automations folders list`), not an
-absent value. `kizen automations move <api>` with no `--folder` resolves to that
-folder's id.
+- **A spec's `folder` goes on the wire as a bare `folder_id`.** A POST with it
+  creates the automation in that folder (confirmed live 2026-10-30). A read
+  returns `folder: {id, name}`, and that shape is **silently ignored** on write:
+  it PUTs fine (200, revision bumps) and the folder doesn't change (confirmed
+  live 2026-07-22). `update` and every verb that writes a read-back automation
+  send the live folder's `folder_id`, unless the spec names another.
+- **Root is a real folder**, `<business_root>`, always present in `kizen
+  automations folders list`, not an absent value. `folder_id: null` 400s with
+  *"This field may not be null."* (confirmed live 2026-07-22).
+- **`automations move` doesn't PUT.** It sends `POST
+  /api/automation2/folders/move` with `{"automation_ids": [<id>], "folder_ids":
+  [], "new_parent_folder_id": <folder id>}`, which answers 200 with an empty
+  body and leaves the revision unchanged (confirmed live 2026-10-30). So it
+  works on automations the CLI can't fully read back. With no `--folder` it
+  targets `<business_root>`.
 
 ## Debugging
 

@@ -15,7 +15,7 @@ from kizen_builder.cli._mutations import (
     _read_spec,
     _run_mutation,
 )
-from kizen_builder.cli._shared import cli_errors, console, err_console
+from kizen_builder.cli._shared import cli_errors, console
 from kizen_builder.cli.automations import autos_app
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools.planners import automations as auto_planners
@@ -96,6 +96,12 @@ def autos_update(
 # ---------------------------------------------------------------------------
 
 
+def _before_after(result: dict[str, Any]) -> tuple[str, str]:
+    if result["field"] == "folder":
+        return auto_planners.folder_labels(result["before"] or {}, result["after"])
+    return repr(result["before"]), repr(result["after"])
+
+
 def _run_field_patch(
     api_name: str,
     call: Callable[[bool], dict[str, Any]],
@@ -113,9 +119,8 @@ def _run_field_patch(
         console.print(
             f"[bold]{api_name}[/bold]  [dim](rev {preview['revision_before']})[/dim]"
         )
-        console.print(
-            f"  {preview['field']}: {preview['before']!r} → {preview['after']!r}"
-        )
+        before, after = _before_after(preview)
+        console.print(f"  {preview['field']}: {before} → {after}")
         if preview["no_op"]:
             console.print("[yellow]no-op — already at the target value[/yellow]")
 
@@ -132,7 +137,7 @@ def _run_field_patch(
         return
 
     _confirm_or_abort(
-        f"Set {preview['field']} to {preview['after']!r}?",
+        f"Set {preview['field']} to {_before_after(preview)[1]}?",
         yes=yes,
         hint="Preview with --dry-run, then re-run with --yes.",
     )
@@ -143,10 +148,8 @@ def _run_field_patch(
     if json_out:
         typer.echo(json.dumps(result, indent=2, default=list))
         return
-    console.print(
-        f"[green]PUT ok[/green] — revision {result['revision_before']} → "
-        f"{result['revision_after']}"
-    )
+    before, after = _before_after(result)
+    console.print(f"[green]done[/green] — {result['field']}: {before} → {after}")
 
 
 @autos_app.command("activate")
@@ -246,28 +249,14 @@ def autos_move(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the y/N confirmation."),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
-    """Move one automation into a folder (or to the root), for organization.
+    """Move one automation into a folder, or to the root when --folder is left out.
 
-    Confirmed wire mechanism (see tools/automations.py's move_to_folder
-    docstring): the write dialect is a bare `folder_id`, and — contrary to
-    what an unset/null folder_id might suggest — "root" is itself a real,
-    listable folder (`<business_root>`, always present), not a null/absent
-    value; the API 400s on a null folder_id ("This field may not be null").
-    Omitting `--folder` here resolves to that root folder's id.
+    The automation itself isn't rewritten, so this works whatever steps it has.
     """
-    target = folder or "<business_root>"
-    with cli_errors():
-        match = next(
-            (
-                f
-                for f in auto_tools.list_folders()
-                if target in (f.get("id"), f.get("name"))
-            ),
-            None,
+    with cli_errors(PlanError):
+        match = auto_planners._find_folder(
+            folder or "<business_root>", auto_tools.list_folders()
         )
-    if match is None:
-        err_console.print(f"[red]error:[/red] folder '{target}' not found.")
-        raise typer.Exit(code=1)
     folder_id, folder_name = match["id"], match.get("name")
     _run_field_patch(
         api_name,

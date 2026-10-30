@@ -215,7 +215,13 @@ accepted by the API and is technically wired into the step, but shows as
 *unselected* in the UI (confirmed live).
 
 So: `kizen messages create <automation> --template <name|uuid>`, then reference
-the returned UUID as the step's `email_template_id`.
+the new message's id as the step's `email_template_id`. With `--json` that id
+is `.results[0].server_uuid`, and the template's is
+`.results[0].raw.base_message_id`:
+
+```bash
+kizen messages create <automation> --template <name> --yes --json | jq -r '.results[0].server_uuid'
+```
 
 The template must have compiled `content`. The endpoint copies it into the
 message and rejects a blank one (`400 content: This field may not be blank.`,
