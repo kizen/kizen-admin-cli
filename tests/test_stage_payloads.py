@@ -155,7 +155,8 @@ def test_move_record_payload(patch_live_lookups):
     assert op.key == "deals#record-uuid-1.move"
     assert op.payload == {"stage_id": CLOSED_WON_ID}
     assert op.existing_uuid == "record-uuid-1"
-    assert op.parent_object_uuid == DEALS
+    # The move route answers 500 on the api_name; it takes the object UUID.
+    assert op.parent_object_uuid == _deals_id()
 
 
 def test_move_record_unknown_stage(patch_live_lookups):

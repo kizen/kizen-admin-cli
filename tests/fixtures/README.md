@@ -14,7 +14,10 @@ automation steps).
   `objects/list.json` is `kizen objects list --json`.
 - `automations/*.raw.json` — `kizen automations get <name> --raw` output
   (the unmodified API response). `automations/list.json` is the tool-level
-  list output.
+  list output. `automations/stage_time_filter_config.json` is one step's
+  `filter_config` from a UI-built search_records step on a pipeline,
+  2026-10-30: `entered_stage` and `time_in_stage` clauses, with the UI's
+  `view_model` and `description`.
 - `records/`, `executions/`, `team/` — tool-level `--json` output.
   Exceptions: `executions/detail_form_submission.json` and
   `executions/history_form_submission.json` are hand-authored to the OpenAPI
@@ -50,6 +53,12 @@ automation steps).
   as a team member. `detail_readonly.json`, `tools.json`, `step_options.json`
   and `events_history.json` (newest first; three updates and the create) are
   the matching raw responses.
+- `automations/llm_metadata.json` — the `llm` key of
+  `GET /api/automation2/automations/metadata`, captured 2026-10-30 and
+  trimmed to the `kizen` row and four `open_ai` models, with `secrets`
+  emptied. Each row's `plugin_app.id` is that provider's install in the
+  business, so the kizen one is a per-business id, not a catalog id.
+  `patch_live_lookups` serves it.
 
 ## Coverage
 

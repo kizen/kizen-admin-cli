@@ -11,7 +11,7 @@ _FAKE_METADATA = {
         "provider_model_details": [
             {
                 "provider_name": "kizen",
-                "plugin_app": {"id": "kizen-catalog-id"},
+                "plugin_app": {"id": "145fa07b-ffe0-49cb-89af-8f126a0a2f13"},
                 "models": [
                     {
                         "model_value": "kizen/pro",
@@ -66,10 +66,10 @@ def _patch_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_kizen_native_models_have_no_business_plugin_app_id():
+def test_kizen_models_carry_the_kizen_ai_install_id():
     rows = auto_tools.list_llm_models()
     kizen_row = next(r for r in rows if r["model_value"] == "kizen/pro")
-    assert kizen_row["business_plugin_app_id"] is None
+    assert kizen_row["business_plugin_app_id"] == "145fa07b-ffe0-49cb-89af-8f126a0a2f13"
 
 
 def test_non_native_models_carry_their_provider_instance_id():

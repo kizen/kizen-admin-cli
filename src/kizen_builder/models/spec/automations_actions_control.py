@@ -31,7 +31,7 @@ class StepConditionConfig(BaseModel):
         description=(
             "Raw dict (not a typed model) for `type: llm_decision`: "
             "'model_name', 'prompt'/'html_prompt', 'business_plugin_app_id' "
-            "(non-native models only — see ActionLlmCallConfig), and "
+            "(optional, filled by the CLI — see ActionLlmCallConfig), and "
             "'merge_field_validation' (see ActionLlmCallConfig) all apply "
             "the same as call_llm."
         ),
@@ -173,20 +173,3 @@ class ActionStartAutomationConfig(BaseModel):
     automation_id: str | None = Field(
         default=None, description="Direct UUID fallback for automation_api_name."
     )
-
-
-class ActionUpdatePipelineStatusConfig(BaseModel):
-    """Config for `step_type: update_pipeline_status`.
-
-    Note: `to_stage_id` takes a Kizen stage UUID directly. Stage name resolution
-    (via pipeline field options) is not currently supported by named references.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    stage_field_ref: str | None = Field(
-        default=None,
-        description="'object.field' for the pipeline status field. Resolved to UUID at apply time.",
-    )
-    stage_field_id: str | None = None
-    to_stage_id: str = Field(description="UUID of the target pipeline stage.")
