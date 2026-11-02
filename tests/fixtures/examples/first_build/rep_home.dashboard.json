@@ -1,0 +1,32 @@
+{
+  "api_name": "rep_home",
+  "name": "Rep Home",
+  "type": "homepage",
+  "dashlets": [
+    { "name": "My open deals", "custom_object": "<deals_object_uuid>",
+      "layout": { "x": 0, "y": 0, "w": 8, "h": 3 },
+      "config": { "entity_type": "custom_object", "report_type": "table_of_records",
+        "chart_type": "table", "metric_type": "records_number",
+        "filters": { "all": [ { "field": "owner", "op": "is_me" } ] },
+        "fe_extra_info": { "columns": [
+          { "id": "<deals.name_field_uuid>", "label": "Name", "display_name": "Name" },
+          { "id": "<deals.health_field_uuid>", "label": "Health", "display_name": "Health" } ] } } },
+    { "name": "My deals by health", "custom_object": "<deals_object_uuid>",
+      "layout": { "x": 8, "y": 0, "w": 4, "h": 3 },
+      "config": { "entity_type": "custom_object", "report_type": "field_metrics",
+        "chart_type": "donut", "metric_type": "fields_value_breakdown",
+        "object_id": "<deals_object_uuid>", "field": "<deals.health_field_uuid>",
+        "filters": { "all": [ { "field": "owner", "op": "is_me" } ] },
+        "metric_type_extra_info": { "include_summary": true, "summary_explanation": "",
+          "fields_value_breakdown": { "type": "custom_values", "buckets": [],
+            "consider_null_values": false } } } },
+    { "name": "My At Risk deals", "custom_object": "<deals_object_uuid>",
+      "layout": { "x": 0, "y": 3, "w": 12, "h": 3 },
+      "config": { "entity_type": "custom_object", "report_type": "table_of_records",
+        "chart_type": "table", "metric_type": "records_number",
+        "filters": { "all": [ { "field": "owner", "op": "is_me" },
+                              { "field": "health", "op": "=", "value": "At Risk" } ] },
+        "fe_extra_info": { "columns": [
+          { "id": "<deals.name_field_uuid>", "label": "Name", "display_name": "Name" } ] } } }
+  ]
+}

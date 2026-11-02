@@ -42,6 +42,12 @@ called out explicitly under **Changed** or **Removed**.
   found, setting a date to today, a prompt that reads a related record, the
   email build order, a nightly run over many records, and branching on what
   someone logged.
+- **Dashlets can be filtered by field name, including to the viewer's own
+  records.** `kizen dashboards dashlet-config --filter` (or `--filter-file`)
+  takes a filter spec such as `{"all": [{"field": "owner", "op": "is_me"}]}`.
+  A dashboard spec's `config.filters` may also be a filter spec; the plan
+  compiles it against the dashlet's object. Filters read back from Kizen
+  pass through unchanged.
 
 ### Changed
 

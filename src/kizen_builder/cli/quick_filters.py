@@ -15,8 +15,8 @@ from kizen_builder.cli._shared import (
     app,
     cli_errors,
     console,
+    load_filter_spec,
 )
-from kizen_builder.cli.filter_groups import _load_filter_spec
 from kizen_builder.cli.permissions import _resolve_role_id
 from kizen_builder.tools import saved_views as sv_tools
 from kizen_builder.tools.planners import saved_views as sv_planners
@@ -110,7 +110,7 @@ def quick_filters_create(
     without having to know the current sharing state.
     """
     spec: dict[str, Any] = {"name": name}
-    fc = _load_filter_spec(filter_json, filter_file)
+    fc = load_filter_spec(filter_json, filter_file)
     if fc is not None:
         spec["filters"] = fc
     if owner:
@@ -153,7 +153,7 @@ def quick_filters_update(
     changes: dict[str, Any] = {}
     if name:
         changes["name"] = name
-    fc = _load_filter_spec(filter_json, filter_file)
+    fc = load_filter_spec(filter_json, filter_file)
     if fc is not None:
         changes["filters"] = fc
     if owner:
