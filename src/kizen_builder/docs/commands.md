@@ -399,11 +399,6 @@ column shows e.g. `clinics (many_to_one)`, and `relation_target` /
 `relation_cardinality` are in the JSON/CSV output (no more hand-resolving the
 `related_object` UUID).
 
-Cross-env transport (`dev → uat → prod` etc.) is intentionally NOT
-part of this repo — it lives in a separate project so the prod-touching
-risk has its own guardrails. If a user asks to migrate, point them at
-that other project.
-
 ### Setup
 
 ```
