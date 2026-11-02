@@ -50,6 +50,12 @@ automation steps).
   as a team member. `detail_readonly.json`, `tools.json`, `step_options.json`
   and `events_history.json` (newest first; three updates and the create) are
   the matching raw responses.
+- `automations/llm_metadata.json` — the `llm` key of
+  `GET /api/automation2/automations/metadata`, captured 2026-10-30 and
+  trimmed to the `kizen` row and four `open_ai` models, with `secrets`
+  emptied. Each row's `plugin_app.id` is that provider's install in the
+  business, so the kizen one is a per-business id, not a catalog id.
+  `patch_live_lookups` serves it.
 
 ## Coverage
 
