@@ -86,6 +86,7 @@ class LiveContext:
         # rather than a single value shape.
         self._objects_by_api: dict[str, Any] = {}
         self._automations_by_api: dict[str, dict[str, Any]] | None = None
+        self._folders: list[dict[str, Any]] | None = None
         self._secret_descriptions: dict[str, str] | None = None
         self._step_pickers: dict[str, list[dict[str, Any]]] = {}
 
@@ -123,6 +124,40 @@ class LiveContext:
                 f"in '{self.env}': {ids}. Use the id instead."
             )
         return matches[0]["id"]
+
+    def llm_models(self) -> list[dict[str, Any]]:
+        """The business's LLM catalog, one row per (provider, model)."""
+        from kizen_builder.api.automations import get_metadata, llm_model_rows
+
+        return self._step_picker(
+            "llm_models", lambda client: llm_model_rows(get_metadata(client))
+        )
+
+    def llm_plugin_app_id(self, model_name: str) -> str:
+        """The business plugin app (provider install) that runs ``model_name``."""
+        rows = self.llm_models()
+        row = next((r for r in rows if r["model_value"] == model_name), None)
+        if (
+            row is None
+            and model_name.startswith("kizen/")
+            and not any(r["provider_name"] == "kizen" for r in rows)
+        ):
+            row = {"provider_name": "kizen", "business_plugin_app_id": None}
+        if row is None:
+            raise PlanError(
+                f"model '{model_name}' isn't enabled in '{self.env}'. Run kizen "
+                "automations llm-models for the models this business can use."
+            )
+        if not row["business_plugin_app_id"]:
+            app = (
+                "Kizen AI" if row["provider_name"] == "kizen" else row["provider_name"]
+            )
+            raise PlanError(
+                f"'{model_name}' needs the {app} app, which isn't installed in "
+                f"'{self.env}'. Install {app} from the business's plugin settings, "
+                "then plan again."
+            )
+        return row["business_plugin_app_id"]
 
     def _step_picker(
         self, name: str, fetch: Callable[[Any], list[dict[str, Any]]]
@@ -211,6 +246,15 @@ class LiveContext:
             self._automations_by_api = {a["api_name"]: a for a in list_automations()}
         rec = self._automations_by_api.get(api_name)
         return rec["id"] if rec else None
+
+    def folder(self, identifier: str) -> dict[str, Any]:
+        """The live automation folder with this name or UUID."""
+        if self._folders is None:
+            self._folders = _live_folders()
+        return _find_folder(identifier, self._folders)
+
+    def folder_uuid(self, identifier: str) -> str:
+        return str(self.folder(identifier)["id"])
 
     def integration_secret_description(self, api_name: str) -> str | None:
         """The secret's description, the label the UI gives its merge field.
@@ -316,7 +360,10 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
                 action="create",
                 kind="automation",
                 key=auto.api_name,
-                preview=_automation_preview(env, auto),
+                preview={
+                    **_automation_preview(env, auto),
+                    **_folder_preview(auto, ctx),
+                },
                 payload=payload,
             )
         ],
@@ -355,10 +402,12 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     resolved_active = auto.active if auto.active is not None else live_active
     auto = auto.model_copy(update={"active": resolved_active})
 
-    payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    payload, keeps_live = _update_payload(auto, ctx, current)
     preview = _automation_preview(env, auto, live_active=live_active)
+    preview.update(_folder_preview(auto, ctx, current))
     preview["current_revision"] = current.get("revision")
-    preview.update(_llm_tools_dropped(current, payload))
+    if keeps_live:
+        preview["keeps_live"] = keeps_live
     return Plan.build(
         env=env,
         summary=f"Update automation '{auto.api_name}'",
@@ -383,10 +432,9 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     Fetches the live automation exactly once and derives both comparison
     sides from that single `current`: the live side via
     `translate.live_to_payload`, the spec side via the same
-    `_build_automation_payload` + `_merge_server_state` calls
-    `plan_update_automation` itself makes (not by calling
-    `plan_update_automation`/building a `Plan` a second time, which would
-    re-fetch `current` and admit a race). This also guarantees
+    `_update_payload` call `plan_update_automation` itself makes (not by
+    calling `plan_update_automation`/building a `Plan` a second time, which
+    would re-fetch `current` and admit a race). This also guarantees
     `last_revision` matches on both sides by construction. Mirrors
     `plan_update_automation`'s `active` resolution (an omitted `active` in
     the spec means "leave live's value alone," not "set False") so `active`
@@ -423,7 +471,12 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     auto = auto.model_copy(update={"active": resolved_active})
 
     live_payload = live_to_payload(current)
-    spec_payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    spec_payload, _ = _update_payload(auto, ctx, current)
+    # Neither side carries the live folder, so a spec that names one would
+    # always show a change. Compare against the live folder instead.
+    if current.get("folder"):
+        live_payload["folder_id"] = current["folder"]["id"]
+        spec_payload.setdefault("folder_id", live_payload["folder_id"])
 
     return {
         "env": env,
@@ -434,13 +487,213 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     }
 
 
+def _update_payload(
+    auto: AutomationDef, ctx: LiveContext, current: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """The PUT body `update` sends and `diff` compares against live."""
+    payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    # The model defaults this to False, which a PUT would write over a live
+    # true (confirmed live 2026-10-30).
+    if (
+        "skip_non_working_days" not in auto.model_fields_set
+        and current.get("skip_non_working_days") is not None
+    ):
+        payload["skip_non_working_days"] = current["skip_non_working_days"]
+    return _carry_omitted_step_keys(payload, auto, current)
+
+
+# Keys a PUT resets to Kizen's default when they're left out or sent as the
+# model default (confirmed live 2026-10-30), so an update keeps the live value
+# of each one the spec doesn't set.
+_KEPT_STEP_KEYS = (
+    "description",
+    "user_description",
+    "should_skip_execution",
+    "continue_with_branch",
+    "action_on_failure",
+    "error_notification_severity_level",
+)
+_KEPT_TRIGGER_KEYS = ("description", "user_description", "should_skip_execution")
+
+
+@dataclass(frozen=True)
+class _KeptBlockKeys:
+    """Config-block keys an update keeps live, all or none: when the spec
+    block sets none of ``set_by`` (default: ``keys``) and every ``read`` key
+    (default: ``keys``) is non-null live, each of ``keys`` gets ``write`` of
+    its live value. A live ``default``, what Kizen stores when a PUT leaves
+    the key out, is carried without naming the step in ``keeps_live``.
+    ``within`` names a sub-block holding the keys, used only when the block's
+    ``type`` names it, live and built; there "set" means present in the
+    spec's dict."""
+
+    keys: tuple[str, ...]
+    read: tuple[str, ...] = ()
+    set_by: tuple[str, ...] = ()
+    write: Callable[[Any], Any] = lambda v: v
+    within: str | None = None
+    default: Any = None
+
+
+_KEPT_LLM_PROMPT_KEYS = (
+    _KeptBlockKeys(("merge_field_validation",), default="error_if_required"),
+    _KeptBlockKeys(("is_advanced",)),
+)
+
+# Config-block keys a PUT resets the same way, by step type (confirmed live
+# 2026-10-30).
+_KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
+    "schedule_activity": (
+        _KeptBlockKeys(("target_variable",), write=lambda v: _unwrap_variable_name(v)),
+        _KeptBlockKeys(("variable_field_resolution",)),
+    ),
+    "call_llm": (
+        # Kizen rejects a server without an account, so they carry as a pair.
+        _KeptBlockKeys(
+            ("mcp_server_id", "run_tools_as_id"),
+            read=("mcp_server", "run_tools_as"),
+            set_by=("mcp_server", "mcp_server_id", "run_tools_as", "run_tools_as_id"),
+            write=lambda v: _unwrap_id(v),
+        ),
+        _KeptBlockKeys(("max_sequential_turns",)),
+        _KeptBlockKeys(("tool_failure_policy",)),
+        *_KEPT_LLM_PROMPT_KEYS,
+    ),
+    "file_content_extraction": _KEPT_LLM_PROMPT_KEYS,
+    "audio_transcription": _KEPT_LLM_PROMPT_KEYS,
+    "condition": (
+        _KeptBlockKeys(
+            ("merge_field_validation",),
+            within="llm_decision",
+            default="error_if_required",
+        ),
+    ),
+}
+
+
+def _kept_values(
+    kept: _KeptBlockKeys, set_in_spec: set[str], live_block: dict[str, Any]
+) -> dict[str, Any]:
+    if set_in_spec & set(kept.set_by or kept.keys):
+        return {}
+    live_values = [live_block.get(k) for k in kept.read or kept.keys]
+    if any(v is None for v in live_values):
+        return {}
+    return {k: kept.write(v) for k, v in zip(kept.keys, live_values, strict=True)}
+
+
+def _changes(
+    kept: _KeptBlockKeys, built: dict[str, Any], values: dict[str, Any]
+) -> bool:
+    return any(
+        built.get(k) != v and not (k not in built and v == kept.default)
+        for k, v in values.items()
+    )
+
+
+def _kept_block(
+    spec: AutomationStepDef | AutomationTriggerDef,
+    built: dict[str, Any],
+    live: dict[str, Any],
+) -> tuple[str | None, dict[str, Any], bool]:
+    """The step's config-block field, its built block with the live value,
+    as written, of each kept block key the spec block leaves out, and
+    whether that changed anything Kizen would store."""
+    if (
+        not isinstance(spec, AutomationStepDef)
+        or spec.step_type not in _KEPT_BLOCK_KEYS
+    ):
+        return None, {}, False
+    field = _block_field_for(spec.step_type)
+    spec_block = getattr(spec, field)
+    set_in_spec = spec_block.model_fields_set if spec_block is not None else set()
+    live_block = live.get(field) or {}
+    block = dict(built.get(field) or {})
+    changed = False
+    for kept in _KEPT_BLOCK_KEYS[spec.step_type]:
+        if kept.within is None:
+            values = _kept_values(kept, set_in_spec, live_block)
+            changed |= _changes(kept, block, values)
+            block.update(values)
+        elif live_block.get("type") == block.get("type") == kept.within:
+            sub = getattr(spec_block, kept.within, None)
+            values = _kept_values(
+                kept,
+                set(sub) if isinstance(sub, dict) else set(),
+                live_block.get(kept.within) or {},
+            )
+            inner = block.get(kept.within) or {}
+            changed |= _changes(kept, inner, values)
+            if values:
+                block[kept.within] = {**inner, **values}
+    return field, block, changed
+
+
+def _carry_omitted_step_keys(
+    payload: dict[str, Any], auto: AutomationDef, current: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Give each spec step and trigger whose `id` matches a live one the live
+    value of every kept key, and kept block key, the spec leaves out. Returns
+    the payload and the keys of the steps and triggers whose payload that
+    changed.
+
+    Matched by id only: a step without one is new to the server, and pairing
+    it by position could stamp one step's settings on another."""
+    live_steps = {s["id"]: s for s in current.get("steps") or [] if s.get("id")}
+    live_triggers = {t["id"]: t for t in current.get("triggers") or [] if t.get("id")}
+    spec_triggers = {t.id: t for t in auto.triggers if t.id}
+    kept: list[str] = []
+
+    def carry(
+        built: dict[str, Any],
+        spec: AutomationStepDef | AutomationTriggerDef | None,
+        live: dict[str, Any] | None,
+        keys: tuple[str, ...],
+    ) -> dict[str, Any]:
+        if spec is None or live is None:
+            return built
+        values = {
+            k: live[k]
+            for k in keys
+            if k not in spec.model_fields_set and live.get(k) is not None
+        }
+        # The branch a skipped condition or goal runs means nothing without
+        # the skip, so it is kept only with a kept skip.
+        if values.get("should_skip_execution") is not True:
+            values.pop("continue_with_branch", None)
+        field, block, block_kept = _kept_block(spec, built, live)
+        if block_kept or any(built.get(k) != v for k, v in values.items()):
+            kept.append(built["key"])
+        out = {**built, **values}
+        if field is not None and block != (built.get(field) or {}):
+            out[field] = block
+        return out
+
+    # Triggers can't pair by index: a manual one is prepended when the spec
+    # has none. The payload carries `id` only from the spec.
+    triggers = [
+        carry(
+            t,
+            spec_triggers.get(t.get("id")),
+            live_triggers.get(t.get("id")),
+            _KEPT_TRIGGER_KEYS,
+        )
+        for t in payload["triggers"]
+    ]
+    steps = [
+        carry(built, spec, live_steps.get(spec.id or ""), _KEPT_STEP_KEYS)
+        for spec, built in zip(auto.steps, payload["steps"], strict=True)
+    ]
+    return {**payload, "triggers": triggers, "steps": steps}, kept
+
+
 def _merge_server_state(
     payload: dict[str, Any], current: dict[str, Any]
 ) -> dict[str, Any]:
     """Fold live server-managed state into an update payload.
 
     PUT replaces the whole automation, so fields the spec doesn't model
-    (folder, variables, throttles, …) must be carried over from the live
+    (variables, throttles, …) must be carried over from the live
     automation or the API rejects the write / drops them. Spec-provided
     values win over carried-over ones. Also stamps ``last_revision``
     (optimistic concurrency — a concurrent edit between plan and apply
@@ -454,8 +707,9 @@ def _merge_server_state(
     matched by name.
     """
     server_fields: dict[str, Any] = {}
-    if current.get("folder") is not None:
-        server_fields["folder"] = current["folder"]
+    # No folder: a PUT without `folder_id` keeps the live one, and carrying it
+    # would undo a move made after the read (`folders/move` doesn't bump the
+    # revision, so `last_revision` wouldn't catch it).
     if current.get("variables"):
         # Same read→write reduction as step-level variable definitions
         # (expanded data_subtype → bare UUID, ids stripped).
@@ -549,13 +803,19 @@ def _live_folders() -> list[dict[str, Any]]:
 
 
 def _find_folder(identifier: str, folders: list[dict[str, Any]]) -> dict[str, Any]:
-    match = next(
-        (f for f in folders if identifier in (f.get("id"), f.get("name"))), None
-    )
-    if match is None:
+    by_id = next((f for f in folders if f.get("id") == identifier), None)
+    if by_id is not None:
+        return by_id
+    matches = [f for f in folders if f.get("name") == identifier]
+    if not matches:
         available = [f.get("name") for f in folders]
         raise PlanError(f"folder '{identifier}' not found. Available: {available}")
-    return match
+    if len(matches) > 1:
+        ids = ", ".join(str(f.get("id")) for f in matches)
+        raise PlanError(
+            f"folder '{identifier}' matches {len(matches)} folders; give its UUID: {ids}"
+        )
+    return matches[0]
 
 
 def plan_create_folder(name: str, *, parent: str | None = None) -> Plan:
@@ -661,6 +921,33 @@ def _automation_preview(
     }
 
 
+def _folder_preview(
+    auto: AutomationDef, ctx: LiveContext, current: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """The preview's `folder` cell: the spec's folder on create, and on update
+    the live one, as `<old> → <new>` when the spec moves it."""
+    live = (current or {}).get("folder") or {}
+    target = ctx.folder(auto.folder) if auto.folder else live
+    if not target:
+        return {}
+    if live and live.get("id") != target.get("id"):
+        return {"folder": " → ".join(folder_labels(live, target))}
+    return {"folder": target.get("name")}
+
+
+def folder_labels(before: dict[str, Any], after: dict[str, Any]) -> tuple[str, str]:
+    """Two folders by name, with a short id on each when two folders share
+    the name (the server allows it)."""
+    same_name = before.get("name") == after.get("name")
+    twins = same_name and before.get("id") != after.get("id")
+
+    def label(f: dict[str, Any]) -> str:
+        name = str(f.get("name"))
+        return f"{name} ({str(f.get('id'))[:8]})" if twins else name
+
+    return label(before), label(after)
+
+
 # A group's closer is a child of its initiator, not a parallel lane.
 _CLOSER_STEP_TYPES = frozenset({"merge_branches", "next_or_finish"})
 
@@ -686,31 +973,6 @@ def _fan_out_warnings(auto: AutomationDef) -> dict[str, Any]:
     return {"warnings": warnings} if warnings else {}
 
 
-def _llm_tools_dropped(
-    current: dict[str, Any], payload: dict[str, Any]
-) -> dict[str, list[str]]:
-    """Call LLM steps whose live MCP server or run-as account the update
-    clears, by spec step key. A spec that omits the keys sends null, so an
-    `update` detaches a server attached in the UI. Steps pair as `diff`
-    pairs them: by id, then by position."""
-    from kizen_builder.translate import _wire_pairs
-
-    live_steps = sorted(current.get("steps") or [], key=lambda s: s.get("order") or 0)
-    dropped: dict[str, list[str]] = {}
-    for live, built in _wire_pairs(live_steps, payload.get("steps") or []):
-        if live is None or built is None or built.get("type") != "call_llm":
-            continue
-        was = live.get("action_call_llm") or {}
-        now = built.get("action_call_llm") or {}
-        for read_key, wire_key, cell in (
-            ("mcp_server", "mcp_server_id", "detaches_mcp_server"),
-            ("run_tools_as", "run_tools_as_id", "clears_run_tools_as"),
-        ):
-            if was.get(read_key) and now.get(wire_key) is None:
-                dropped.setdefault(cell, []).append(built["key"])
-    return dropped
-
-
 # ---------------------------------------------------------------------------
 # Top-level payload builder
 # ---------------------------------------------------------------------------
@@ -727,6 +989,8 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     }
     if auto.target_object:
         payload["custom_object_id"] = ctx.object_uuid(auto.target_object)
+    if auto.folder:
+        payload["folder_id"] = ctx.folder_uuid(auto.folder)
     if auto.user_description:
         payload["user_description"] = auto.user_description
     if auto.error_notification_email is not None:
@@ -1425,6 +1689,7 @@ def _build_step_payload(
         wire_block = builder(block_dict, auto, ctx)
     except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
+    _resolve_llm_plugin_app(step.step_type, step.key, wire_block, ctx)
     problem = _built_block_problem(step.step_type, step.key, wire_block, auto, ctx)
     if problem:
         raise PlanError(problem)
@@ -1640,6 +1905,41 @@ def _llm_tools_pairing_problem(key: str, block: dict[str, Any]) -> str | None:
             "Set both or neither."
         )
     return None
+
+
+_LLM_STEP_TYPES = ("call_llm", "file_content_extraction", "audio_transcription")
+
+
+def _resolve_llm_plugin_app(
+    step_type: str, key: str, block: dict[str, Any], ctx: LiveContext
+) -> None:
+    """Fill an LLM block's ``business_plugin_app_id`` from the business's
+    catalog, as the Kizen UI does. The write accepts a block without one,
+    or with another provider's, and stores it that way."""
+    llm: Any = block
+    if step_type == "condition" and block.get("type") == "llm_decision":
+        llm = block.get("llm_decision")
+    elif step_type not in _LLM_STEP_TYPES:
+        return
+    if not isinstance(llm, dict) or not llm.get("model_name"):
+        return
+    model_name, bpa_id = llm["model_name"], llm.get("business_plugin_app_id")
+    try:
+        if not bpa_id:
+            llm["business_plugin_app_id"] = ctx.llm_plugin_app_id(model_name)
+            return
+        rows = ctx.llm_models()
+    except PlanError as e:
+        raise PlanError(f"step '{key}': {e}") from e
+    owner = next((r for r in rows if r["business_plugin_app_id"] == bpa_id), None)
+    expected = next((r for r in rows if r["model_value"] == model_name), None)
+    if owner and expected and expected["business_plugin_app_id"] != bpa_id:
+        raise PlanError(
+            f"step '{key}': business_plugin_app_id {bpa_id} is "
+            f"{owner['provider_name']}'s, but {model_name} is a "
+            f"{expected['provider_name']} model. Leave business_plugin_app_id "
+            "out and the CLI uses this business's own."
+        )
 
 
 def _render_filter_config(
@@ -2886,6 +3186,8 @@ def _resolve_llm_destinations(
     "association_configs",
     "note",
     "html_note",
+    "target_variable",
+    "variable_field_resolution",
 )
 def _step_schedule_activity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -2912,6 +3214,10 @@ def _step_schedule_activity(
     for key in ("note", "html_note"):
         if block.get(key) is not None:
             out[key] = block[key]
+    if block.get("target_variable") is not None:
+        out["target_variable"] = _unwrap_variable_name(block["target_variable"])
+    if block.get("variable_field_resolution") is not None:
+        out["variable_field_resolution"] = block["variable_field_resolution"]
     return out
 
 

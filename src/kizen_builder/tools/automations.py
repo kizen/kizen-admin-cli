@@ -49,9 +49,15 @@ def list_automations(folder: str | None = None) -> list[dict[str, Any]]:
     ``folder`` filters to automations in one folder, matched by folder name
     or UUID (the root folder is a real folder named `<business_root>`, not
     an absence of one — every automation's `folder` is always populated).
+    A name two folders share is refused.
     """
     config = load_env_config()
+    folder_id = None
     with KizenClient(config) as client:
+        if folder:
+            from kizen_builder.tools.planners.automations import _find_folder
+
+            folder_id = _find_folder(folder, auto_api.list_folders(client))["id"]
         raw = auto_api.list_automations(client)
 
     out: list[dict[str, Any]] = []
@@ -76,12 +82,8 @@ def list_automations(folder: str | None = None) -> list[dict[str, Any]]:
             }
         )
 
-    if folder:
-        matched = [a for a in out if folder in (a["folder_id"], a["folder_name"])]
-        if not matched:
-            available = sorted({a["folder_name"] for a in out if a["folder_name"]})
-            raise LookupError(f"folder '{folder}' not found. Available: {available}")
-        out = matched
+    if folder_id:
+        out = [a for a in out if a["folder_id"] == folder_id]
     return out
 
 
@@ -89,37 +91,11 @@ def list_llm_models() -> list[dict[str, Any]]:
     """Flatten the automations metadata endpoint's LLM catalog into one row
     per (provider, model) — the live source for `call_llm`'s `model_name` +
     `business_plugin_app_id` pairing (see automation.md "LLM & extraction
-    destinations"). `business_plugin_app_id` is `None` for `kizen/*` native
-    models, which don't need one.
+    destinations").
     """
     config = load_env_config()
     with KizenClient(config) as client:
-        meta = auto_api.get_metadata(client)
-
-    rows: list[dict[str, Any]] = []
-    for provider in (meta.get("llm") or {}).get("provider_model_details") or []:
-        plugin_app = provider.get("plugin_app") or {}
-        provider_name = provider.get("provider_name")
-        bpa_id = plugin_app.get("id") if provider_name != "kizen" else None
-        for model in provider.get("models") or []:
-            usage = model.get("usage") or {}
-            rows.append(
-                {
-                    "provider_name": provider_name,
-                    "model_value": model.get("model_value"),
-                    "model_label": model.get("model_label"),
-                    "business_plugin_app_id": bpa_id,
-                    "supports_call": (usage.get("text") or {}).get("call"),
-                    "supports_decision": (usage.get("text") or {}).get("decision"),
-                    "supports_extraction": (usage.get("image") or {}).get("extraction"),
-                    "supports_transcription": (usage.get("audio") or {}).get(
-                        "transcription"
-                    ),
-                    "is_deprecated": model.get("is_deprecated"),
-                    "suggested_replacement": model.get("suggested_replacement"),
-                }
-            )
-    return rows
+        return auto_api.llm_model_rows(auto_api.get_metadata(client))
 
 
 def get_automation(api_name: str) -> dict[str, Any]:
@@ -313,7 +289,7 @@ def patch_steps(
 
 def _patch_field(api_name: str, mutate: Any, execute: bool = False) -> dict[str, Any]:
     """A lighter sibling of `patch_steps` for flipping one top-level field
-    (``active``, ``folder``) without requiring a full AutomationDef spec.
+    (``active``) without requiring a full AutomationDef spec.
 
     Same GET -> mutate -> PUT loop, but skips step-graph validation (the
     step graph itself isn't touched) and reports a before/after value pair
@@ -364,29 +340,33 @@ def set_active(api_name: str, active: bool, execute: bool = False) -> dict[str, 
 
 
 def move_to_folder(
-    api_name: str, folder_id: str | None, folder_name: str | None, execute: bool = False
+    api_name: str, folder_id: str, folder_name: str | None, execute: bool = False
 ) -> dict[str, Any]:
-    """Move one automation into a folder (or to the root if folder_id is None).
-
-    Confirmed wire mechanism (2026-07-22): the write dialect is a
-    bare, nullable `folder_id` — NOT the `folder: {id, name}` shape a live
-    read returns, which this function previously round-tripped verbatim
-    (ticket 20260720-174419). That shape PUTs fine (200, revision bumps) but
-    is silently ignored server-side — `folder` is read-only/expanded-for-
-    display, the same "reads expand, writes take a bare id" pattern
-    documented elsewhere in this codebase (e.g. field_to_modify,
-    target_custom_object). Verified with a direct PUT: `folder_id` set to a
-    real folder stuck on the next GET, where the old `folder: {id,name}`
-    payload left the automation at `<business_root>` despite the 200.
-    """
-
-    def mutate(payload: dict[str, Any]) -> tuple[str, Any, Any]:
-        before = payload.pop("folder", None)
-        payload["folder_id"] = folder_id
-        after = {"id": folder_id, "name": folder_name} if folder_id else None
-        return "folder", before, after
-
-    return _patch_field(api_name, mutate, execute)
+    """Move one automation into a folder through `folders/move`, which leaves
+    the automation itself alone (confirmed live 2026-10-30), so this works
+    whatever steps it has. Root is the `<business_root>` folder."""
+    config = load_env_config()
+    with KizenClient(config) as client:
+        before = _fetch_raw(client, api_name)
+        current = before.get("folder")
+        result: dict[str, Any] = {
+            "env": config.name,
+            "api_name": api_name,
+            "id": before["id"],
+            "revision_before": before.get("revision"),
+            "field": "folder",
+            "before": current,
+            "after": {"id": folder_id, "name": folder_name},
+            "no_op": (current or {}).get("id") == folder_id,
+            "executed": False,
+        }
+        if not execute or result["no_op"]:
+            return result
+        auto_api.move_automations(client, [before["id"]], folder_id)
+        after = auto_api.get_automation(client, before["id"])
+        result["executed"] = True
+        result["revision_after"] = after.get("revision")
+    return result
 
 
 def list_folders() -> list[dict[str, Any]]:
@@ -406,15 +386,9 @@ def list_subfolders(identifier: str) -> list[dict[str, Any]]:
     """
     config = load_env_config()
     with KizenClient(config) as client:
-        folders = auto_api.list_folders(client)
-        match = next(
-            (f for f in folders if identifier in (f.get("id"), f.get("name"))), None
-        )
-        if match is None:
-            available = [f.get("name") for f in folders]
-            raise LookupError(
-                f"folder '{identifier}' not found. Available: {available}"
-            )
+        from kizen_builder.tools.planners.automations import _find_folder
+
+        match = _find_folder(identifier, auto_api.list_folders(client))
         return auto_api.list_subfolders(client, match["id"])
 
 
@@ -559,7 +533,7 @@ def normalize_step_patch(
     doesn't read is refused, and an initialize_variable's `variable` must pass
     `AutomationVariableConfig`. The patched block then gets the same checks
     `automations create`/`update` and `steps add` apply
-    (`_built_block_problem`).
+    (`_resolve_llm_plugin_app`, `_built_block_problem`).
     """
     from pydantic import ValidationError
     from pydantic_core import InitErrorDetails
@@ -572,6 +546,7 @@ def normalize_step_patch(
         _block_field_for,
         _built_block_problem,
         _reject_unhonoured_keys,
+        _resolve_llm_plugin_app,
     )
     from kizen_builder.tools.plans import PlanError
 
@@ -603,6 +578,7 @@ def normalize_step_patch(
             patch[cfg_key] = builder(dict(patch[cfg_key]), auto, ctx)
         except VariableReferenceError as e:
             raise PlanError(f"step '{key}': {e}") from e
+        _resolve_llm_plugin_app(step_type, key, patch[cfg_key], ctx)
         problem = _built_block_problem(step_type, key, patch[cfg_key], auto, ctx)
         if problem:
             raise PlanError(problem)

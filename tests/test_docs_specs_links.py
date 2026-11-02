@@ -100,3 +100,12 @@ def test_spec_docs_have_no_dangling_sibling_links():
             if not (SPECS_DIR / name).exists():
                 dangling.append(f"{doc.name} -> {name}")
     assert not dangling, "spec doc links to a missing sibling:\n" + "\n".join(dangling)
+
+
+def test_reference_router_names_every_topic():
+    text = (docs.docs_root() / "reference.md").read_text()
+    table = text.split("## Find the surface", 1)[1].split("\n## ", 1)[0]
+    routed = set(re.findall(r"\| `([a-z][a-z0-9-]*)` \|", table))
+    expected = set(docs.list_topics()) - {"operating", "commands", "reference"}
+    missing = sorted(expected - routed)
+    assert not missing, "reference.md's router has no row for: " + ", ".join(missing)

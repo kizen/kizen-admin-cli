@@ -144,6 +144,16 @@ three ops of its own. Each of the three takes one stage in `value`, by name
 - A stage name that isn't on the object is a plan error, for every stage op,
   rather than a 400 or a 500 from the server.
 
+Some default fields take fewer ops than their field type, and `kizen filters
+ops` lists only the per-type ones (from the code, not live-probed):
+
+| default field | ops |
+|---|---|
+| `created`, `updated` | the date ops except `is_blank` |
+| `owner` | `=` `!=` `is_any_of` `is_none_of` `is_me` |
+| `email_status` | the single-select ops except `is_blank` |
+| `stage` | `=` `!=` `is_any_of` `is_none_of` |
+
 ## Variable-comparison clauses (automations only)
 
 Comparing an automation variable to a static value is a different `type`, and
