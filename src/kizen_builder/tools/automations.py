@@ -546,6 +546,7 @@ def normalize_step_patch(
         _block_field_for,
         _built_block_problem,
         _reject_unhonoured_keys,
+        _resolve_goal_trigger_stages,
         _resolve_llm_plugin_app,
     )
     from kizen_builder.tools.plans import PlanError
@@ -575,8 +576,9 @@ def normalize_step_patch(
         auto = _payload_auto(payload, target_object)
         ctx = LiveContext()
         try:
-            patch[cfg_key] = builder(dict(patch[cfg_key]), auto, ctx)
-        except VariableReferenceError as e:
+            block = _resolve_goal_trigger_stages(step_type, patch[cfg_key], auto, ctx)
+            patch[cfg_key] = builder(dict(block), auto, ctx)
+        except (PlanError, VariableReferenceError) as e:
             raise PlanError(f"step '{key}': {e}") from e
         _resolve_llm_plugin_app(step_type, key, patch[cfg_key], ctx)
         problem = _built_block_problem(step_type, key, patch[cfg_key], auto, ctx)
