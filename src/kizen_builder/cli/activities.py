@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from kizen_builder import output as out
@@ -204,7 +205,13 @@ def activities_get(
         rules = result.get("visibility_rules")
         if rules:
             console.print(f"[bold]Visibility rules[/bold] ({len(rules)})")
-            console.print_json(json.dumps(rules))
+            for n, rule in enumerate(rules, 1):
+                text = act_tools.describe_visibility_rule(rule, result["fields"])
+                if text:
+                    console.print(f"{n}. {escape(text)}", emoji=False)
+                else:
+                    console.print(f"{n}.")
+                    console.print_json(json.dumps(rule))
         else:
             console.print("[dim]no visibility rules[/dim]")
 
@@ -341,7 +348,10 @@ def activities_update(
     visibility_rules_file: str = typer.Option(
         "",
         "--visibility-rules-file",
-        help="Path to a JSON array of visibility-rule dicts to REPLACE the current set.",
+        help="Path to a JSON array of visibility rules (by name: "
+        '[{"show": [...], "when": {"field": ..., "is_any_of": [...]}}], or '
+        '"is_checked": true/false for a checkbox; or raw rule dicts). Replaces '
+        "the current set.",
     ),
     spec_file: str = typer.Option(
         "",

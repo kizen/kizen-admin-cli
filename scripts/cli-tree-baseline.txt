@@ -421,8 +421,12 @@
 │                                                       selected_objects_associated unless         │
 │                                                       --association-mode is given.               │
 │ --editable                   --not-editable           Set the editable flag.                     │
-│ --visibility-rules-file                        <str>  Path to a JSON array of visibility-rule    │
-│                                                       dicts to REPLACE the current set.          │
+│ --visibility-rules-file                        <str>  Path to a JSON array of visibility rules   │
+│                                                       (by name: [{"show": [...], "when":         │
+│                                                       {"field": ..., "is_any_of": [...]}}], or   │
+│                                                       "is_checked": true/false for a checkbox;   │
+│                                                       or raw rule dicts). Replaces the current   │
+│                                                       set.                                       │
 │ --spec-file                                    <str>  Path to a JSON dict of changes (advanced;  │
 │                                                       keys map to the wire body).                │
 │ --dry-run                                             Show the plan without applying.            │

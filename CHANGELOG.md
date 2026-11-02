@@ -42,6 +42,13 @@ called out explicitly under **Changed** or **Removed**.
   found, setting a date to today, a prompt that reads a related record, the
   email build order, a nightly run over many records, and branching on what
   someone logged.
+- **Activity visibility rules can be written with field and option names.**
+  `activities update --visibility-rules-file` takes `{"show": [...], "when":
+  {"field": ..., "is_any_of": [...]}}`, or `"is_checked": true` / `false` for
+  a checkbox, and writes the rule the Kizen editor writes. Raw rules still pass
+  through unchanged, unless a filter lacks its `view_model`: that empties the
+  editor's rule list, so it is now a plan error. `--dry-run` and `activities
+  get` describe rules of those shapes in words.
 
 ### Changed
 
