@@ -1,0 +1,3161 @@
+{
+  "id": "732c7874-4fa0-4ba6-8266-3f42ef201d74",
+  "name": "Condition render check",
+  "api_name": "condition_render_check",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+    "name": "rule_kinds",
+    "description": null,
+    "entity_name": "rule_kinds",
+    "object_name": "rule_kinds",
+    "object_class": "custom_objects",
+    "object_type": "pipeline",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "cdc93cd2-7b91-4502-902a-970fbca80c54",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "821edd4b-8c1a-4e6a-b781-54bdc8e7162a",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "found = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "45338029-2892-4710-a6d4-f5067046a9e0",
+          "name": "found",
+          "data_type": "entity",
+          "data_subtype": {
+            "id": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+            "name": "rule_kinds",
+            "description": null,
+            "entity_name": "rule_kinds",
+            "object_name": "rule_kinds",
+            "object_class": "custom_objects",
+            "object_type": "pipeline",
+            "default_on_activities": true,
+            "deleted": false
+          },
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-30T13:35:49.639171Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "1e30ae6b-d5ff-4de1-9825-0e5d38c86630",
+      "step_type": "condition",
+      "order": 1,
+      "description": "rule_kinds Fields 'Txt' Equals j OR Fields 'Txt' Contains x OR Fields 'Pick' Equals OR Fields 'Pick' Is Any Of '', '' OR Stage Equals '' OR Stage Is Any Of '' OR Fields '' Later Than Or On 2026-06-01T04:00:00.000Z OR Fields 'Rel' Is Blank OR Fields 'Rels' Isn't Blank OR Fields 'Rel' Is Any Of  OR Fields 'Count' More Than Or Equal To OR Fields 'Score' Less Than OR Fields 'Amount' More Than OR Fields 'Stars' Later Than Or On OR Fields 'Flag' Is Checked OR Fields 'Multi' Contains Any Of '' OR Fields 'Status' Equals OR Fields 'Day' Is Between 12/31/2025 - 12/30/2026 OR Fields '' Equals is_me OR Fields 'Member' Is Blank OR Fields 'Mail' Contains @ OR Fields 'Tags' Is Blank",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": "821edd4b-8c1a-4e6a-b781-54bdc8e7162a",
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": false,
+          "query": [
+            {
+              "id": "query-0",
+              "and": false,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::20ec6f12-3876-4281-a9d4-62ba71f592ca",
+                  "value": "j",
+                  "subtype": "custom",
+                  "condition": "=",
+                  "description": "Fields 'Txt' Equals j "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::20ec6f12-3876-4281-a9d4-62ba71f592ca",
+                  "value": "x",
+                  "subtype": "custom",
+                  "condition": "contains",
+                  "description": "Fields 'Txt' Contains x "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                  "value": "b3446d7c-5ef3-4a4e-9945-06298946d76e",
+                  "subtype": "custom",
+                  "condition": "=",
+                  "description": "Fields 'Pick' Equals "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                  "value": [
+                    "b3446d7c-5ef3-4a4e-9945-06298946d76e",
+                    "5b33a894-ce31-4893-bb0e-38e47a96d55b"
+                  ],
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "description": "Fields 'Pick' Is Any Of '', '' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": "d24dad28-e667-4507-978b-790785812c62",
+                  "subtype": "non_custom",
+                  "condition": "=",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "description": "Stage Equals '' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": [
+                    "d24dad28-e667-4507-978b-790785812c62"
+                  ],
+                  "subtype": "non_custom",
+                  "condition": "is_any_of",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "description": "Stage Is Any Of '' "
+                },
+                {
+                  "type": "fields",
+                  "field": "created",
+                  "value": "2026-06-01T04:00:00.000Z",
+                  "subtype": "non_custom",
+                  "condition": ">=",
+                  "description": "Fields '' Later Than Or On 2026-06-01T04:00:00.000Z "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::b1561707-d434-47de-8320-7f7f70f8ccfc",
+                  "value": true,
+                  "subtype": "custom",
+                  "condition": "is_blank",
+                  "description": "Fields 'Rel' Is Blank "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::a60c6500-2a52-47b7-b04d-167359887c89",
+                  "value": false,
+                  "subtype": "custom",
+                  "condition": "is_blank",
+                  "description": "Fields 'Rels' Isn't Blank "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::b1561707-d434-47de-8320-7f7f70f8ccfc",
+                  "value": [
+                    "2420676a-42c5-4ca8-8bda-56deeff34ec7"
+                  ],
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "description": "Fields 'Rel' Is Any Of  "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::5e7ddf4a-5f0a-46f1-8d8b-e9b8fb597405",
+                  "value": 80,
+                  "subtype": "custom",
+                  "condition": ">=",
+                  "description": "Fields 'Count' More Than Or Equal To "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::62bee8c0-9dd0-4988-92cc-0fdf60d5ffa7",
+                  "value": 80,
+                  "subtype": "custom",
+                  "condition": "<",
+                  "description": "Fields 'Score' Less Than "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::d074d4c2-ae8c-47b0-bce8-e9df4c308475",
+                  "value": 100,
+                  "subtype": "custom",
+                  "condition": ">",
+                  "description": "Fields 'Amount' More Than "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::e87d12c5-00e4-4257-aba4-5cc94cd40c2d",
+                  "value": "3",
+                  "subtype": "custom",
+                  "condition": ">=",
+                  "description": "Fields 'Stars' Later Than Or On "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::b36878da-0512-4e4b-b10a-e9aaa4843a01",
+                  "value": true,
+                  "subtype": "custom",
+                  "condition": "=",
+                  "description": "Fields 'Flag' Is Checked "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::232a4c40-9089-46d5-8dc1-28a2a75bdb3d",
+                  "value": [
+                    "0c8dbfda-e098-47e4-8560-9735d66569a0"
+                  ],
+                  "subtype": "custom",
+                  "condition": "has_any",
+                  "description": "Fields 'Multi' Contains Any Of '' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::9ccebea8-dab6-4ba8-ab84-6478f6b87e8e",
+                  "value": "398a6aab-1ea7-48fb-8008-1a2535dcc3be",
+                  "subtype": "custom",
+                  "condition": "=",
+                  "description": "Fields 'Status' Equals "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::faee370e-9c3b-4405-bb15-9b3ddf5d7b3f",
+                  "value": [
+                    "2026-01-01",
+                    "2026-12-31"
+                  ],
+                  "subtype": "custom",
+                  "condition": "between",
+                  "description": "Fields 'Day' Is Between 12/31/2025 - 12/30/2026 "
+                },
+                {
+                  "type": "fields",
+                  "field": "owner",
+                  "value": "is_me",
+                  "subtype": "non_custom",
+                  "condition": "=",
+                  "description": "Fields '' Equals is_me "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::d4fd668e-71be-4d35-ae7e-a4c33c694943",
+                  "value": true,
+                  "subtype": "custom",
+                  "condition": "is_blank",
+                  "description": "Fields 'Member' Is Blank "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::faa10dfd-d0e8-4185-8e56-f36420e610b6",
+                  "value": "@",
+                  "subtype": "custom",
+                  "condition": "contains",
+                  "description": "Fields 'Mail' Contains @ "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::87a15591-dee7-4a4a-9419-08591b9835e0",
+                  "value": true,
+                  "subtype": "custom",
+                  "condition": "is_blank",
+                  "description": "Fields 'Tags' Is Blank"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [
+          {
+            "id": "10f99bd3-e45b-492a-b74e-6385ab590615"
+          }
+        ],
+        "no_steps": [
+          {
+            "id": "39803a3b-f8ac-481c-bbc5-fea26ecb709f"
+          }
+        ],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "10f99bd3-e45b-492a-b74e-6385ab590615",
+      "step_type": "search_records",
+      "order": 2,
+      "description": "Overwrite Array 'found' Where rule_kinds undefinedAND undefined",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "1e30ae6b-d5ff-4de1-9825-0e5d38c86630",
+      "parent_condition": "yes",
+      "action_search_records": {
+        "custom_object": {
+          "id": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+          "name": "rule_kinds",
+          "object_name": "rule_kinds",
+          "entity_name": "rule_kinds",
+          "deleted": false
+        },
+        "filter_type": "custom_filter",
+        "filter_config": {
+          "and": true,
+          "query": [
+            {
+              "id": "query-0",
+              "and": true,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::20ec6f12-3876-4281-a9d4-62ba71f592ca",
+                  "value": "j",
+                  "subtype": "custom",
+                  "condition": "="
+                },
+                {
+                  "type": "fields",
+                  "field": "created",
+                  "value": "2026-06-01T04:00:00.000Z",
+                  "subtype": "non_custom",
+                  "condition": ">="
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "filter_groups": [],
+        "destination_variable": {
+          "name": "found",
+          "deleted": false
+        },
+        "destination_variable_resolution": "overwrite"
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "c1f4c789-f7f7-4660-b373-358b7105da46",
+      "step_type": "condition",
+      "order": 3,
+      "description": "rule_kinds (Fields 'Pick' Is Any Of Static Value 'Alpha' OR Fields 'Pick' Is None Of Static Value 'Gamma' OR Fields 'Pick' Does Not Equal Static Value Alpha OR Fields 'Pick' Is Blank OR Stage Is Any Of 'Open' OR Stage Is None Of 'Open' OR Stage Does Not Equal Static Value 'Open' OR Fields 'Rel' Is Any Of Static Value related rec OR Fields 'Stars' More Than Or Equal To Static Value 3 OR Fields 'Stars' Is Any Of Static Value '2', '3' OR Fields 'Multi' Contains Static Value 'C1' OR Fields 'Multi' Contains None Of Static Value 'C2' OR Owner Is Me OR Fields 'Owner' Is Me OR Fields 'Count' More Than Or Equal To Static Value 90 OR Fields 'Score' Less Than Static Value 40 OR Fields 'Member' Is Any Of Static Value Team Member A (member-a@example.com), Team Member B (member-b@example.com) OR Fields 'Flag' Is Checked OR Fields 'Status' Equals Static Value Open OR Fields 'YNM' Equals Static Value Yes) AND (Fields 'Txt' Contains Static Value j OR Fields 'Txt' Does Not Equal Static Value x OR Fields 'Day' Is Between 10/13/2026 - 10/15/2026 OR Fields 'When' Earlier Than Static Value 10/14/2026 at 12:00 am OR Stage Time in Stage 'Open' More Than 1 Day(s) OR Fields 'Stage' Left Stage Open Later Than Or On 10/13/2026)",
+      "user_description": "UI Capture",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": "10f99bd3-e45b-492a-b74e-6385ab590615",
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": true,
+          "query": [
+            {
+              "id": "query-0",
+              "and": false,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                  "value": [
+                    "b3446d7c-5ef3-4a4e-9945-06298946d76e"
+                  ],
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_dropdown",
+                          "relation": {},
+                          "field_type": "dropdown"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "b3446d7c-5ef3-4a4e-9945-06298946d76e"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          [
+                            "xf_map",
+                            "@result_path/results/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "code": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "code"
+                                ]
+                              ],
+                              "name": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "display_name"
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_found/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "Deleted",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_found": true,
+                              "error_message": "The option has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_allowed/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "No Access",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_allowed": true,
+                              "error_message": "Required field"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Pick' Is Any Of Static Value 'Alpha' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                  "value": [
+                    "1d333880-ef20-44fb-90bd-0bcdaf3abf02"
+                  ],
+                  "subtype": "custom",
+                  "condition": "is_none_of",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_dropdown",
+                          "relation": {},
+                          "field_type": "dropdown"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_none_of"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "1d333880-ef20-44fb-90bd-0bcdaf3abf02"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          [
+                            "xf_map",
+                            "@result_path/results/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "code": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "code"
+                                ]
+                              ],
+                              "name": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "display_name"
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_found/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "Deleted",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_found": true,
+                              "error_message": "The option has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_allowed/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "No Access",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_allowed": true,
+                              "error_message": "Required field"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Pick' Is None Of Static Value 'Gamma' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                  "value": "b3446d7c-5ef3-4a4e-9945-06298946d76e",
+                  "subtype": "custom",
+                  "condition": "!=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_dropdown",
+                          "relation": {},
+                          "field_type": "dropdown"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "does_not_equal"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "b3446d7c-5ef3-4a4e-9945-06298946d76e"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_hoist",
+                          [
+                            "xf_concat",
+                            [
+                              "xf_map",
+                              "@result_path/results/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "code": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "code"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              }
+                            ],
+                            [
+                              "xf_map",
+                              "@result_path/not_found/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_join",
+                                  "[",
+                                  "Deleted",
+                                  "] ",
+                                  [
+                                    "xf_pick",
+                                    "$",
+                                    [
+                                      "display_name"
+                                    ]
+                                  ]
+                                ],
+                                "not_found": true,
+                                "error_message": "The option has been deleted"
+                              }
+                            ],
+                            [
+                              "xf_map",
+                              "@result_path/not_allowed/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_join",
+                                  "[",
+                                  "No Access",
+                                  "] ",
+                                  [
+                                    "xf_pick",
+                                    "$",
+                                    [
+                                      "display_name"
+                                    ]
+                                  ]
+                                ],
+                                "not_allowed": true,
+                                "error_message": "Required field"
+                              }
+                            ]
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Pick' Does Not Equal Static Value Alpha "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                  "value": true,
+                  "subtype": "custom",
+                  "condition": "is_blank",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/6f0f110a-2ff7-4bc4-abcd-a7343d022987",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_dropdown",
+                          "relation": {},
+                          "field_type": "dropdown"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_blank"
+                    ]
+                  ],
+                  "description": "Fields 'Pick' Is Blank "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": [
+                    "d24dad28-e667-4507-978b-790785812c62"
+                  ],
+                  "subtype": "non_custom",
+                  "condition": "is_any_of",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "stage"
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "d24dad28-e667-4507-978b-790785812c62"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          [
+                            "xf_map",
+                            "@result_path/not_found/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[Deleted] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_found": true,
+                              "error_message": "The stage has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/results/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "display_name"
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Stage Is Any Of 'Open' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": [
+                    "d24dad28-e667-4507-978b-790785812c62"
+                  ],
+                  "subtype": "non_custom",
+                  "condition": "is_none_of",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "stage"
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_none_of"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "d24dad28-e667-4507-978b-790785812c62"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          [
+                            "xf_map",
+                            "@result_path/not_found/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[Deleted] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_found": true,
+                              "error_message": "The stage has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/results/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "display_name"
+                                ]
+                              ]
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Stage Is None Of 'Open' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": "d24dad28-e667-4507-978b-790785812c62",
+                  "subtype": "non_custom",
+                  "condition": "!=",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "stage"
+                      }
+                    ],
+                    [
+                      "condition",
+                      "!="
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/stages/d24dad28-e667-4507-978b-790785812c62",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The stage has been deleted"
+                        }
+                      }
+                    ]
+                  ],
+                  "description": "Stage Does Not Equal Static Value 'Open' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::b1561707-d434-47de-8320-7f7f70f8ccfc",
+                  "value": [
+                    "2420676a-42c5-4ca8-8bda-56deeff34ec7"
+                  ],
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/b1561707-d434-47de-8320-7f7f70f8ccfc",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_rel",
+                          "relation": {
+                            "fetch_url": "standard",
+                            "related_object": "b2d4c620-f837-4451-bf9f-29376172338c"
+                          },
+                          "field_type": "relationship"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "record_ids": [
+                            "2420676a-42c5-4ca8-8bda-56deeff34ec7"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          "@result_path/results/records",
+                          [
+                            "xf_map",
+                            "@result_path/not_found/records",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "not_found": true,
+                              "display_name": [
+                                "xf_join",
+                                "[",
+                                "Deleted",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "error_message": "The record has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_allowed/records",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "not_allowed": true,
+                              "display_name": [
+                                "xf_join",
+                                "[",
+                                "No Access",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "error_message": "Required field"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Rel' Is Any Of Static Value related rec "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::e87d12c5-00e4-4257-aba4-5cc94cd40c2d",
+                  "value": "3",
+                  "subtype": "custom",
+                  "condition": ">=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/e87d12c5-00e4-4257-aba4-5cc94cd40c2d",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_rating",
+                          "relation": {},
+                          "field_type": "rating"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "more_than_or_equal_to"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "f5acfe25-f7ab-3a74-b655-0b3acf3d1d84"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_hoist",
+                          [
+                            "xf_concat",
+                            [
+                              "xf_map",
+                              "@result_path/results/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "code": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "code"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              }
+                            ],
+                            [
+                              "xf_map",
+                              "@result_path/not_found/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_join",
+                                  "[",
+                                  "Deleted",
+                                  "] ",
+                                  [
+                                    "xf_pick",
+                                    "$",
+                                    [
+                                      "display_name"
+                                    ]
+                                  ]
+                                ],
+                                "not_found": true,
+                                "error_message": "The option has been deleted"
+                              }
+                            ],
+                            [
+                              "xf_map",
+                              "@result_path/not_allowed/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_join",
+                                  "[",
+                                  "No Access",
+                                  "] ",
+                                  [
+                                    "xf_pick",
+                                    "$",
+                                    [
+                                      "display_name"
+                                    ]
+                                  ]
+                                ],
+                                "not_allowed": true,
+                                "error_message": "Required field"
+                              }
+                            ]
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Stars' More Than Or Equal To Static Value 3 "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::e87d12c5-00e4-4257-aba4-5cc94cd40c2d",
+                  "value": [
+                    "2",
+                    "3"
+                  ],
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/e87d12c5-00e4-4257-aba4-5cc94cd40c2d",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_rating",
+                          "relation": {},
+                          "field_type": "rating"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "3343c85e-4adf-3ff0-a99e-1fc9b251ce7d",
+                            "f5acfe25-f7ab-3a74-b655-0b3acf3d1d84"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          [
+                            "xf_map",
+                            "@result_path/results/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "code": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "code"
+                                ]
+                              ],
+                              "name": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "display_name"
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_found/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "Deleted",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_found": true,
+                              "error_message": "The option has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_allowed/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "No Access",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_allowed": true,
+                              "error_message": "Required field"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Stars' Is Any Of Static Value '2', '3' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::232a4c40-9089-46d5-8dc1-28a2a75bdb3d",
+                  "value": [
+                    "0c8dbfda-e098-47e4-8560-9735d66569a0"
+                  ],
+                  "subtype": "custom",
+                  "condition": "has",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/232a4c40-9089-46d5-8dc1-28a2a75bdb3d",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_checkboxes",
+                          "relation": {},
+                          "field_type": "checkboxes"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "has"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "0c8dbfda-e098-47e4-8560-9735d66569a0"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          [
+                            "xf_map",
+                            "@result_path/results/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "code": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "code"
+                                ]
+                              ],
+                              "name": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "display_name"
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_found/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "Deleted",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_found": true,
+                              "error_message": "The option has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_allowed/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "No Access",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_allowed": true,
+                              "error_message": "Required field"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Multi' Contains Static Value 'C1' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::232a4c40-9089-46d5-8dc1-28a2a75bdb3d",
+                  "value": [
+                    "51182733-6ac3-427f-a46f-97e3fca674b2"
+                  ],
+                  "subtype": "custom",
+                  "condition": "!has_any",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/232a4c40-9089-46d5-8dc1-28a2a75bdb3d",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_checkboxes",
+                          "relation": {},
+                          "field_type": "checkboxes"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "!has_any"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "51182733-6ac3-427f-a46f-97e3fca674b2"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          [
+                            "xf_map",
+                            "@result_path/results/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "code": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "code"
+                                ]
+                              ],
+                              "name": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "display_name"
+                                ]
+                              ]
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_found/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "Deleted",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_found": true,
+                              "error_message": "The option has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_allowed/options",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "name": [
+                                "xf_join",
+                                "[",
+                                "No Access",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "not_allowed": true,
+                              "error_message": "Required field"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Multi' Contains None Of Static Value 'C2' "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "owner",
+                  "value": "is_me",
+                  "subtype": "non_custom",
+                  "condition": "=",
+                  "overwrite": {
+                    "type": "owner"
+                  },
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "owner"
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_me"
+                    ]
+                  ],
+                  "description": "Owner Is Me "
+                },
+                {
+                  "type": "fields",
+                  "field": "owner",
+                  "value": "is_me",
+                  "subtype": "non_custom",
+                  "condition": "=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/0c706850-8f6c-4f14-8222-fcc8f4f3e633",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "owner",
+                          "relation": {},
+                          "field_type": "team_selector"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_me"
+                    ]
+                  ],
+                  "description": "Fields 'Owner' Is Me "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::5e7ddf4a-5f0a-46f1-8d8b-e9b8fb597405",
+                  "value": "90",
+                  "subtype": "custom",
+                  "condition": ">=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/5e7ddf4a-5f0a-46f1-8d8b-e9b8fb597405",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_integer",
+                          "relation": {},
+                          "field_type": "integer"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "more_than_or_equal_to"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      "90"
+                    ]
+                  ],
+                  "description": "Fields 'Count' More Than Or Equal To Static Value 90 "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::62bee8c0-9dd0-4988-92cc-0fdf60d5ffa7",
+                  "value": "40",
+                  "subtype": "custom",
+                  "condition": "<",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/62bee8c0-9dd0-4988-92cc-0fdf60d5ffa7",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_decimal",
+                          "relation": {},
+                          "field_type": "decimal"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "less_than"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      "40"
+                    ]
+                  ],
+                  "description": "Fields 'Score' Less Than Static Value 40 "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::d4fd668e-71be-4d35-ae7e-a4c33c694943",
+                  "value": [
+                    "beca2db6-6bb7-410d-b5a2-03320ded085a",
+                    "916dac1b-5640-4268-9324-06132f342488"
+                  ],
+                  "subtype": "custom",
+                  "condition": "is_any_of",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/d4fd668e-71be-4d35-ae7e-a4c33c694943",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_member",
+                          "relation": {},
+                          "field_type": "team_selector"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_any_of"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "employee_ids": [
+                            "beca2db6-6bb7-410d-b5a2-03320ded085a",
+                            "916dac1b-5640-4268-9324-06132f342488"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_concat",
+                          "@result_path/results/employees",
+                          [
+                            "xf_map",
+                            "@result_path/not_found/employees",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "not_found": true,
+                              "display_name": [
+                                "xf_join",
+                                "[",
+                                "Deleted",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "error_message": "The team member has been deleted"
+                            }
+                          ],
+                          [
+                            "xf_map",
+                            "@result_path/not_allowed/employees",
+                            {
+                              "id": [
+                                "xf_pick",
+                                "$",
+                                [
+                                  "id"
+                                ]
+                              ],
+                              "not_allowed": true,
+                              "display_name": [
+                                "xf_join",
+                                "[",
+                                "No Access",
+                                "] ",
+                                [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              ],
+                              "error_message": "Required field"
+                            }
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Member' Is Any Of Static Value Team Member A (member-a@example.com), Team Member B (member-b@example.com) "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::b36878da-0512-4e4b-b10a-e9aaa4843a01",
+                  "value": true,
+                  "subtype": "custom",
+                  "condition": "=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/b36878da-0512-4e4b-b10a-e9aaa4843a01",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_checkbox",
+                          "relation": {},
+                          "field_type": "checkbox"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "is_checked"
+                    ]
+                  ],
+                  "description": "Fields 'Flag' Is Checked "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::9ccebea8-dab6-4ba8-ab84-6478f6b87e8e",
+                  "value": "398a6aab-1ea7-48fb-8008-1a2535dcc3be",
+                  "subtype": "custom",
+                  "condition": "=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/9ccebea8-dab6-4ba8-ab84-6478f6b87e8e",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_status",
+                          "relation": {},
+                          "field_type": "status"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "equals"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "398a6aab-1ea7-48fb-8008-1a2535dcc3be"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_hoist",
+                          [
+                            "xf_concat",
+                            [
+                              "xf_map",
+                              "@result_path/results/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "code": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "code"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              }
+                            ],
+                            [
+                              "xf_map",
+                              "@result_path/not_found/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_join",
+                                  "[",
+                                  "Deleted",
+                                  "] ",
+                                  [
+                                    "xf_pick",
+                                    "$",
+                                    [
+                                      "display_name"
+                                    ]
+                                  ]
+                                ],
+                                "not_found": true,
+                                "error_message": "The option has been deleted"
+                              }
+                            ],
+                            [
+                              "xf_map",
+                              "@result_path/not_allowed/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_join",
+                                  "[",
+                                  "No Access",
+                                  "] ",
+                                  [
+                                    "xf_pick",
+                                    "$",
+                                    [
+                                      "display_name"
+                                    ]
+                                  ]
+                                ],
+                                "not_allowed": true,
+                                "error_message": "Required field"
+                              }
+                            ]
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'Status' Equals Static Value Open "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::5a7519ea-1f44-49ac-ba3c-5ecddd30aea7",
+                  "value": "887e1f91-af03-415e-baaf-eafffb81ae2c",
+                  "subtype": "custom",
+                  "condition": "=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/5a7519ea-1f44-49ac-ba3c-5ecddd30aea7",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_ynm",
+                          "relation": {},
+                          "field_type": "yesnomaybe"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "equals"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/records/display-names",
+                        "body": {
+                          "option_ids": [
+                            "887e1f91-af03-415e-baaf-eafffb81ae2c"
+                          ]
+                        },
+                        "method": "POST",
+                        "result_path": [],
+                        "result_transform": [
+                          "xf_hoist",
+                          [
+                            "xf_concat",
+                            [
+                              "xf_map",
+                              "@result_path/results/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "code": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "code"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "display_name"
+                                  ]
+                                ]
+                              }
+                            ],
+                            [
+                              "xf_map",
+                              "@result_path/not_found/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_join",
+                                  "[",
+                                  "Deleted",
+                                  "] ",
+                                  [
+                                    "xf_pick",
+                                    "$",
+                                    [
+                                      "display_name"
+                                    ]
+                                  ]
+                                ],
+                                "not_found": true,
+                                "error_message": "The option has been deleted"
+                              }
+                            ],
+                            [
+                              "xf_map",
+                              "@result_path/not_allowed/options",
+                              {
+                                "id": [
+                                  "xf_pick",
+                                  "$",
+                                  [
+                                    "id"
+                                  ]
+                                ],
+                                "name": [
+                                  "xf_join",
+                                  "[",
+                                  "No Access",
+                                  "] ",
+                                  [
+                                    "xf_pick",
+                                    "$",
+                                    [
+                                      "display_name"
+                                    ]
+                                  ]
+                                ],
+                                "not_allowed": true,
+                                "error_message": "Required field"
+                              }
+                            ]
+                          ]
+                        ]
+                      }
+                    ]
+                  ],
+                  "description": "Fields 'YNM' Equals Static Value Yes"
+                }
+              ]
+            },
+            {
+              "id": "query-1",
+              "and": false,
+              "filters": [
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::20ec6f12-3876-4281-a9d4-62ba71f592ca",
+                  "value": "j",
+                  "subtype": "custom",
+                  "condition": "contains",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/20ec6f12-3876-4281-a9d4-62ba71f592ca",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_text",
+                          "relation": {},
+                          "field_type": "text"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "contains"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      "j"
+                    ]
+                  ],
+                  "description": "Fields 'Txt' Contains Static Value j "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::20ec6f12-3876-4281-a9d4-62ba71f592ca",
+                  "value": "x",
+                  "subtype": "custom",
+                  "condition": "!=",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/20ec6f12-3876-4281-a9d4-62ba71f592ca",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_text",
+                          "relation": {},
+                          "field_type": "text"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "does_not_equal"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      "x"
+                    ]
+                  ],
+                  "description": "Fields 'Txt' Does Not Equal Static Value x "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::faee370e-9c3b-4405-bb15-9b3ddf5d7b3f",
+                  "value": [
+                    "2026-10-14",
+                    "2026-10-16"
+                  ],
+                  "subtype": "custom",
+                  "condition": "between",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/faee370e-9c3b-4405-bb15-9b3ddf5d7b3f",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_date",
+                          "relation": {},
+                          "field_type": "date"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "between"
+                    ],
+                    [
+                      "value",
+                      [
+                        "2026-10-14",
+                        "2026-10-16"
+                      ]
+                    ]
+                  ],
+                  "description": "Fields 'Day' Is Between 10/13/2026 - 10/15/2026 "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "\"custom\"::7f5b4455-cac2-4f0e-b51e-2877c1689f63",
+                  "value": "2026-10-14T04:00:00.000Z",
+                  "subtype": "custom",
+                  "condition": "<",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/7f5b4455-cac2-4f0e-b51e-2877c1689f63",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "rk_datetime",
+                          "relation": {},
+                          "field_type": "datetime"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "earlier_than"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      "2026-10-14T04:00:00.000Z"
+                    ]
+                  ],
+                  "description": "Fields 'When' Earlier Than Static Value 10/14/2026 at 12:00 am "
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": "d24dad28-e667-4507-978b-790785812c62",
+                  "subtype": "non_custom",
+                  "condition": "time_in_stage",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "stage"
+                      }
+                    ],
+                    [
+                      "condition",
+                      "time_in_stage"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/stages/d24dad28-e667-4507-978b-790785812c62",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The stage has been deleted"
+                        }
+                      }
+                    ],
+                    [
+                      "comparison_condition",
+                      "more_than"
+                    ],
+                    [
+                      "comparison_value",
+                      "1"
+                    ],
+                    [
+                      "comparison_type",
+                      "days"
+                    ]
+                  ],
+                  "description": "Stage Time in Stage 'Open' More Than 1 Day(s) ",
+                  "comparison_type": "days",
+                  "comparison_value": "1",
+                  "comparison_condition": ">"
+                },
+                {
+                  "type": "fields_v2",
+                  "field": "stage",
+                  "value": "d24dad28-e667-4507-978b-790785812c62",
+                  "subtype": "non_custom",
+                  "condition": "left_stage",
+                  "overwrite": {
+                    "type": "stage"
+                  },
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "custom_object_id",
+                            "cc7d418b-329b-4fd3-9324-c6673b6f34a8"
+                          ],
+                          [
+                            "object_type",
+                            "pipeline"
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "fields"
+                      }
+                    ],
+                    [
+                      "field_id",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/fields/28548924-eac7-452b-be16-c12a24ee35fb",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The field has been deleted"
+                        },
+                        "error_response": {
+                          "name": "stage",
+                          "relation": {},
+                          "field_type": "dropdown"
+                        }
+                      }
+                    ],
+                    [
+                      "condition",
+                      "left_stage"
+                    ],
+                    [
+                      "value",
+                      {
+                        "url": "/pipelines/cc7d418b-329b-4fd3-9324-c6673b6f34a8/stages/d24dad28-e667-4507-978b-790785812c62",
+                        "method": "GET",
+                        "error_message": {
+                          "404": "The stage has been deleted"
+                        }
+                      }
+                    ],
+                    [
+                      "comparison_condition",
+                      "later_than_or_on"
+                    ],
+                    [
+                      "comparison_value",
+                      "2026-10-14"
+                    ]
+                  ],
+                  "description": "Fields 'Stage' Left Stage Open Later Than Or On 10/13/2026",
+                  "comparison_value": "2026-10-14",
+                  "comparison_condition": ">="
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [],
+        "no_steps": [],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "39803a3b-f8ac-481c-bbc5-fea26ecb709f",
+      "step_type": "stop_execution",
+      "order": 4,
+      "description": "Stop and mark as Failed and Do Not Notify",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "1e30ae6b-d5ff-4de1-9825-0e5d38c86630",
+      "parent_condition": "no",
+      "action_stop_execution": {
+        "action": "stop_and_fail",
+        "notify": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "45338029-2892-4710-a6d4-f5067046a9e0",
+      "name": "found",
+      "data_type": "entity",
+      "data_subtype": {
+        "id": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+        "name": "rule_kinds",
+        "description": null,
+        "entity_name": "rule_kinds",
+        "object_name": "rule_kinds",
+        "object_class": "custom_objects",
+        "object_type": "pipeline",
+        "default_on_activities": true,
+        "deleted": false
+      },
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-30T13:35:49.639171Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    }
+  ],
+  "revision": 3,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-30T08:35:49.593014-05:00",
+  "updated": "2026-10-30T12:21:25.060226-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

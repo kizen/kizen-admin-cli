@@ -36,6 +36,10 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Automation rules on an integer field with `>=` or a decimal field with
+  `<` now send the value as a string** (`"90"`), as the editor writes it.
+  Other number rules, and number rules on other filter surfaces, still send
+  the number.
 - An `update_pipeline_status` step in a spec is refused with a pointer to
   the stage field update.
 
@@ -56,6 +60,12 @@ called out explicitly under **Changed** or **Removed**.
   update` with its spec. `automations update` also keeps the rule text
   Kizen's editor stores on a rule the spec leaves as it is, instead of
   dropping it.
+- **More rule kinds now carry the Kizen editor's layout,** among them
+  number, checkbox, multi-option, team-member and relationship rules, and
+  rules on Contacts automations.
+  Contacts automations can compare a field to an array variable. `kizen
+  docs show filters` lists the rule kinds that still have no layout, and
+  the ones whose layout is inferred rather than captured.
 - `kizen records move` no longer fails with HTTP 500.
 - Saving an automation read back from Kizen with a checkboxes
   `change_field_value` step no longer fails with a 400.
