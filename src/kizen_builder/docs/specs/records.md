@@ -174,7 +174,7 @@ object are plain custom objects whose identifier is their api_name.
 | Upsert | `POST` | `/api/records/{object_identifier}/upsert` |
 | Bulk import (CSV) | `POST` | `/api/custom-objects/{object_uuid}/uploader` |
 | Bulk job progress | `GET` | `/api/bulk-action-progress/{id}` |
-| Move between stages | `PATCH` | `/api/records/{object_identifier}/{entity_id}/move` |
+| Move between stages | `PATCH` | `/api/records/{object_uuid}/{entity_id}/move` (the api_name answers 500, confirmed live 2026-10-30) |
 | Archive | `POST` | `/api/custom-objects/{object_uuid}/bulk-archive-entity-record` |
 | Unarchive | `PATCH` | `/api/records/{object_identifier}/{entity_id}/unarchive` |
 

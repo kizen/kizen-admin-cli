@@ -29,6 +29,8 @@ import threading
 from datetime import UTC, date, datetime
 from uuid import UUID
 
+from kizen_builder.utils import match_option
+
 _local_filter_cx = threading.local()
 _default_client = None
 
@@ -281,16 +283,11 @@ class FilterCondition:
         if isinstance(value, tuple):
             value = list(value)
 
-        # Translate an option name to its uuid; values that aren't option
-        # names (e.g. already a uuid) pass through unchanged.
-        name_lookup = {
-            opt["name"].lower(): opt["id"] for opt in (field.get("options") or [])
-        }
-
+        # Translate an option name to its uuid; values that aren't options
+        # pass through unchanged.
         def opt_id(v):
-            if isinstance(v, str):
-                return name_lookup.get(v.lower(), v)
-            return v
+            match = match_option(field.get("options"), v)
+            return match["id"] if match else v
 
         def tag_id(v):
             """
@@ -320,17 +317,16 @@ class FilterCondition:
         # answers a stage name or a foreign uuid with a 400 or a 500.
         if field["is_default"] and field["name"] == "stage":
             stages = field.get("options") or []
-            stage_ids = {opt["id"] for opt in stages}
 
             def stage_id(v):
-                resolved = opt_id(v)
-                if resolved not in stage_ids:
+                match = match_option(stages, v)
+                if match is None:
                     obj_name = client.custom_object(obj_id).get("name") or obj_id
                     raise ValueError(
                         f"stage '{v}' isn't a stage of '{obj_name}'. Stages: "
                         + ", ".join(opt["name"] for opt in stages)
                     )
-                return resolved
+                return match["id"]
 
             if isinstance(value, list):
                 value = [stage_id(v) for v in value]

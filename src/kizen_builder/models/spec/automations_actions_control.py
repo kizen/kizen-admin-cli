@@ -173,20 +173,3 @@ class ActionStartAutomationConfig(BaseModel):
     automation_id: str | None = Field(
         default=None, description="Direct UUID fallback for automation_api_name."
     )
-
-
-class ActionUpdatePipelineStatusConfig(BaseModel):
-    """Config for `step_type: update_pipeline_status`.
-
-    Note: `to_stage_id` takes a Kizen stage UUID directly. Stage name resolution
-    (via pipeline field options) is not currently supported by named references.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    stage_field_ref: str | None = Field(
-        default=None,
-        description="'object.field' for the pipeline status field. Resolved to UUID at apply time.",
-    )
-    stage_field_id: str | None = None
-    to_stage_id: str = Field(description="UUID of the target pipeline stage.")

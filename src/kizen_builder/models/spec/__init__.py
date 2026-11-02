@@ -88,7 +88,6 @@ from kizen_builder.models.spec.automations_actions_control import (
     ActionArchiveRecordConfig,
     ActionModifyAutomationConfig,
     ActionStartAutomationConfig,
-    ActionUpdatePipelineStatusConfig,
 )
 from kizen_builder.models.spec.automations_actions_messaging import (
     ActionSendEmailConfig,
@@ -304,7 +303,6 @@ __all__ = [
     "ActionModifyAutomationConfig",
     "ActionModifyRelatedEntitiesConfig",
     "ActionModifyRelatedEntitiesAutomationConfig",
-    "ActionUpdatePipelineStatusConfig",
     "ActionGoToAutomationStepConfig",
     "ActionInitializeVariableConfig",
     "ActionUpdateVariableConfig",

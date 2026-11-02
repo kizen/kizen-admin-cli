@@ -944,8 +944,8 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
         )
 
     if op.kind == "record_move":
-        # parent_object_uuid carries the object_identifier (api_name or uuid),
-        # same convention as kind="record".
+        # parent_object_uuid is the object UUID: the move route answers 500
+        # on the api_name (confirmed live 2026-10-30).
         if op.parent_object_uuid is None or op.existing_uuid is None:
             raise PlanError(
                 f"record_move op '{op.key}' missing object/record id — planning bug"
