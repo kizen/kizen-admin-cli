@@ -5862,9 +5862,6 @@ def test_every_captured_read_key_is_classified(path):
 # re-plans their output instead.
 _UNCAPTURED = {"notify_member_via_email", "notify_member_via_text"}
 
-# Wired triggers no captured fixture has: their wire shape is unverified.
-_UNCAPTURED_TRIGGERS = {"form_submitted", "survey_submitted"}
-
 
 def _wire_blocks() -> list:
     from kizen_builder.translate import live_to_payload
@@ -5896,7 +5893,7 @@ def test_wire_blocks_cover_every_wired_type():
     steps = {p.values[1] for p in _WIRE_BLOCKS if p.values[0] == "step"}
     triggers = {p.values[1] for p in _WIRE_BLOCKS if p.values[0] == "trigger"}
     assert set(_STEP_BUILDERS) - steps == _UNCAPTURED
-    assert set(_TRIGGER_BUILDERS) - triggers == _UNCAPTURED_TRIGGERS
+    assert set(_TRIGGER_BUILDERS) - triggers == set()
 
 
 def test_builder_output_passes_the_check():
