@@ -14,6 +14,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **An automation spec takes `folder` (name or UUID).** `create` puts the
+  automation there, and `update` moves it, or keeps the live folder when
+  `folder` is left out.
+
 ### Fixed
 
 - **`automations update` no longer resets what a spec leaves out on an
@@ -28,6 +34,9 @@ called out explicitly under **Changed** or **Removed**.
   Kizen's 2026-10-26 release added a setting the CLI refused to drop.
   Specs can now set `target_variable` and `variable_field_resolution` on the
   step, and `update` keeps them when a spec leaves them out.
+- **`automations move` no longer rewrites the automation**, so it works on
+  automations the CLI can't fully read back. Its success line no longer
+  says PUT.
 - **Steps that use a Kizen AI model now carry the business's Kizen AI app,
   as steps saved in the Kizen UI do.** Before, they were stored with no
   business plugin app, and the Kizen UI reported a missing business plugin
