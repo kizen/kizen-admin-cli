@@ -128,8 +128,8 @@ keeps an existing step's live severity. Confirmed live 2026-09-28.
 
 **Field references — two forms, don't mix them up:**
 - **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations)
-  uses the object-qualified `"<object_api>.<field_api>"` — resolved to a UUID at
-  apply time, portable across envs. Bare `field_id` UUIDs also work but are env-bound.
+  uses the object-qualified `"<object_api>.<field_api>"`, resolved to this
+  business's UUID at apply time. A bare `field_id` UUID also works.
 - **Condition `filter_config` `field`** uses the **bare field api_name**
   (`account_region`), *not* object-qualified — it's the filter DSL, same as
   `records list --filter` and saved views.
@@ -601,30 +601,39 @@ llm-models` for the live catalog (wraps `GET
 /api/automation2/automations/metadata`'s `llm.provider_model_details`):
 every enabled `model_name` this business can use, which of
 call_llm/condition-`llm_decision`/file_content_extraction/audio_transcription
-each one supports, deprecation status + suggested replacement, and —
-critically — the `business_plugin_app_id` each non-native model needs:
+each one supports, deprecation status + suggested replacement, and the
+`business_plugin_app_id` of the provider install that runs each one:
 
 ```
 $ kizen automations llm-models
 provider   model_name                   business_plugin_app_id                 call  decision  extract  transcribe
-kizen      kizen/pro                    —                                       ✓      ✓        ✓         ·
+kizen      kizen/pro                    145fa07b-ffe0-49cb-89af-8f126a0a2f13    ✓      ✓        ✓         ·
 gemini     gemini/gemini-2.5-flash      92dfef31-8b9b-49dc-b54b-3e47cd6b4523    ✓      ✓        ✓         ✓
 anthropic  claude-sonnet-4-5-20250929   96bae762-ad8c-4431-bf21-95aaedadaa08    ✓      ✓        ✓         ·
 ```
 
-`model_name` is a free string, unvalidated client-side — `gemini/...` and
-`openai/...` models need the provider prefix; Claude models are bare (e.g.
-`claude-3-7-sonnet-20250219`, no `claude/` prefix). **Any non-native
-`model_name` (anything not `kizen/...`) needs `business_plugin_app_id` set
-alongside it** — `model_name` alone 400s with `{'business_plugin_app_id':
-['Business plugin app not found']}` even though `model_name` looks
-sufficient on its own. `kizen/*` models don't need one (confirmed live:
-`kizen/pro` works with no extra field).
+`model_name` is a free string — `gemini/...` and `openai/...` models need
+the provider prefix; Claude models are bare (e.g.
+`claude-3-7-sonnet-20250219`, no `claude/` prefix). **`business_plugin_app_id`
+is optional in a spec: the CLI fills it from this catalog for every model,
+Kizen AI included**, so a step reads back with the same `business_plugin_app`
+a step saved in the Kizen UI has. Each business has its own Kizen AI install
+id, as it does for every other provider (confirmed live 2026-10-30). The
+write itself doesn't need it for `kizen/*`, but then stores the step with
+`business_plugin_app: null`, unlike a step saved in the Kizen UI; for any
+other provider, `model_name` alone 400s with
+`{'business_plugin_app_id': ['Business plugin app not found']}`. With
+`business_plugin_app_id` omitted, a `model_name` the catalog doesn't list
+is refused at plan time; with an explicit id, the server decides. An id
+that belongs to a different provider than the model's is refused too: the
+write accepts `kizen/pro` with the OpenAI install's id and stores that
+pairing (confirmed live 2026-10-30).
 
-**Getting `business_plugin_app_id` wrong looks the same as omitting it —
-same 400, so it's easy to think the id itself is bad rather than the
-source it came from.** Two endpoints return something that LOOKS like the
-right id and isn't:
+**If you set `business_plugin_app_id` by hand, take it from the right
+endpoint.** A wrong id gets the same 400 the raw API gives a missing one,
+so it's easy to think the id itself is bad rather than the source it came
+from. Two endpoints return something that LOOKS like the right id and
+isn't:
 - `GET /api/external-integrations/bootstrap` returns each plugin's
   **catalog/app-definition id** — identical across every business (it's the
   "Gemini the product" id, not "your business's installed Gemini
@@ -731,29 +740,9 @@ an **automation variable** to a static value is a different clause shape,
   } }
 ```
 
-- **`view_model` is required** — omit it and the condition renders empty/
-  untyped in the Kizen UI editor, though it still executes correctly via API.
-- **`rhs_value` is always a string**, even for a numeric comparison.
-- **`condition` → `view_model` string mapping**: `<=`→`less_than_or_equal_to`,
-  `>=`→`greater_than_or_equal_to`, `<`→`less_than`, `>`→`greater_than`,
-  `=`→`equal_to`. For blank checks, `condition` is `is_blank`/`is_not_blank`
-  directly (both keys use the same literal string in `view_model`) — this is
-  a distinct token pair from the record-field DSL's single `is_blank`+bool
-  form used elsewhere in `filter_config`.
-- **`custom_object_id`** is the automation's target object UUID;
-  **`client_tag_field_id`** is per business, not a constant: two businesses'
-  contact `tags` field ids differed (confirmed live 2026-10-05). Copy it from
-  the `view_model` of an existing condition in the same business
-  (`kizen automations get <api_name> --raw`). If there is none, use the
-  contact `tags` field's id from `kizen objects get client_client`. That
-  fallback is a best guess. Conditions were read in two businesses, one on 2026-10-05 and one on
-  2026-10-16. Record-field clauses mostly carried the `tags` id in both.
-  Variable clauses carried it in the second and a different id in the first. A
-  condition with no `view_model` still executes, so a wrong value probably
-  changes only how the builder UI shows the condition (not tested). A
-  field-vs-variable rule written with the filter spec's `variable` key doesn't
-  need it: the CLI resolves it per business (see [Field compared to an array
-  variable](#field-compared-to-an-array-variable)).
+The clause's rules — `view_model`, the operator mapping, blank checks,
+`client_tag_field_id` — are in `kizen docs show filters`, 'Variable-comparison
+clauses'.
 
 ### Field compared to an array variable
 
@@ -803,10 +792,9 @@ A merge field is not a bare `{{ <namespace>.<field_api_name> }}` token — the
 planner (and Kizen's builder UI) always wraps it in a
 `<span class="kzn-merge-field" data-merge-field-fallback-label="…"
 data-merge-field-relationship="…" [data-merge-field-objectname="…"]>{{ … }}</span>`
-marker; the bare token by itself is inert text. See
-`src/kizen_builder/tools/merge_fields.py` for the span-building rules this
-planner shares across step types, and `docs/specs/email-templates.md` for the
-same convention in email template `Text` blocks and dashboard static text.
+marker; the bare token by itself is inert text.
+`kizen docs show email-templates` has the same convention for email `Text`
+blocks and dashboard static text.
 
 The namespace token varies **by which step type's content field it's in** —
 this isn't one global convention:
@@ -1340,11 +1328,8 @@ folder's id.
 The error is nested: `{step_key: {action_block_name: {field_name: [message]}}}`.
 Work inside-out — which step, which config block, which wire field. A
 "not a valid choice" rejection for `create_related_entity`,
-`notify_member_via_text`, or `on_or_around_date` now carries the CLI's known
-valid values inline, sourced from
-`tools/planners/automations.py::KNOWN_ENUM_CHOICES` /
-`KNOWN_ENUM_CHOICES_TRIGGERS` — check the registry for what else this repo
-knows about a field before retrying blind. Common causes:
+`notify_member_via_text`, or `on_or_around_date`: the error lists the valid
+values the CLI knows. Common causes:
 
 - `null` for a non-nullable field (often a model default leaking through).
 - `action_on_failure: notify_continue` on a condition step — use `notify_pause`.
