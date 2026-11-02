@@ -9,12 +9,14 @@ from typing import Any
 import pytest
 
 import kizen_builder.tools.planners.automations as ma
+import kizen_builder.tools.planners.forms as mf
 from kizen_builder import filtering
 from kizen_builder.models.spec import AutomationDef
 from kizen_builder.tools.planners.automations import (
     LiveContext,
     _build_automation_payload,
 )
+from kizen_builder.tools.planners.forms import plan_create_form
 from tests.conftest import fake_get_object
 
 EXAMPLE = Path(__file__).parent / "fixtures" / "examples" / "support_desk"
@@ -39,6 +41,24 @@ OBJECTS = {
                 "field_type": "relationship",
                 "is_default": False,
                 "relation": {"related_object": CONTACTS_ID},
+            },
+            {
+                "id": "5d000000-0000-4000-8000-000000000005",
+                "api_name": "subject",
+                "field_type": "text",
+                "is_default": False,
+            },
+            {
+                "id": "5d000000-0000-4000-8000-000000000006",
+                "api_name": "message",
+                "field_type": "longtext",
+                "is_default": False,
+            },
+            {
+                "id": "5d000000-0000-4000-8000-000000000007",
+                "api_name": "channel",
+                "field_type": "dropdown",
+                "is_default": False,
             },
         ],
     },
@@ -120,3 +140,18 @@ def test_find_contact_automation_plans(support_desk):
         "value_type": "variable",
     }
     assert clause["view_model"][1][1]["url"] == f"/client/fields/{EMAIL_FIELD}"
+
+
+def test_contact_support_form_links_every_field(monkeypatch):
+    monkeypatch.setattr(mf, "get_object", _get_object)
+    monkeypatch.setattr(mf, "list_forms", lambda base_path: [])
+    spec = json.loads((EXAMPLE / "contact_support.form.json").read_text())
+    form, *fields = plan_create_form(spec).operations
+    assert form.payload["related_object_id"] == REQUESTS_ID
+    by_id = {f["id"]: f for f in OBJECTS["support_requests"]["fields"]}
+    for op in fields:
+        linked = by_id[op.payload["custom_object_field"]]
+        assert linked["api_name"] == op.payload["name"]
+        assert op.payload["field_type"] == linked["field_type"]
+        assert "options" not in op.payload
+    assert [op.payload["is_required"] for op in fields] == [True, True, True]

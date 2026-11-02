@@ -316,6 +316,22 @@ The object and its fields, applied as in `kizen docs show examples`:
         "relation_type": "many_to_one",
         "related_name": "Support Requests"
       }
+    },
+    {
+      "name": "Subject",
+      "api_name": "subject",
+      "field_type": "text"
+    },
+    {
+      "name": "Message",
+      "api_name": "message",
+      "field_type": "longtext"
+    },
+    {
+      "name": "Channel",
+      "api_name": "channel",
+      "field_type": "dropdown",
+      "options": ["Web Form", "Email", "Chat"]
     }
   ]
 }

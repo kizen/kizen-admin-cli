@@ -1,0 +1,25 @@
+{
+  "name": "Contact Support",
+  "api_name": "contact_support",
+  "related_object": "support_requests",
+  "fields": [
+    {
+      "name": "Your email",
+      "api_name": "customer_email",
+      "custom_object_field": "customer_email",
+      "required": true
+    },
+    {
+      "name": "Subject",
+      "api_name": "subject",
+      "custom_object_field": "subject",
+      "required": true
+    },
+    {
+      "name": "How can we help?",
+      "api_name": "message",
+      "custom_object_field": "message",
+      "required": true
+    }
+  ]
+}
