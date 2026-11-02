@@ -21,6 +21,50 @@ called out explicitly under **Changed** or **Removed**.
   `time_in_stage`, `entered_stage` and `left_stage` on a pipeline's `stage`
   field, with stage names. An unknown stage name in any stage filter is now
   an error at plan time instead of a server error.
+- **An automation spec takes `folder` (name or UUID).** `create` puts the
+  automation there, and `update` moves it, or keeps the live folder when
+  `folder` is left out.
+
+### Removed
+
+- `automations update --dry-run` no longer prints `detaches_mcp_server` or
+  `clears_run_tools_as`; those steps now keep their tools and are listed
+  under `keeps_live`.
+
+### Fixed
+
+- **`automations update` no longer resets what a spec leaves out on an
+  existing step or trigger.** Its description, note, skip flag, failure
+  handling and error severity keep their live values when the step carries
+  its `id`. Before, they reset to Kizen's defaults, so descriptions written
+  in the builder were lost. `--dry-run` names the steps as `keeps_live`.
+  The automation's `skip_non_working_days` is kept the same way; an update
+  that left it out used to turn it off.
+- **Automations with a Schedule Activity step work again with `show`,
+  `steps`, `activate`, `deactivate`, `move`, `diff` and `roundtrip`.**
+  Kizen's 2026-10-26 release added a setting the CLI refused to drop.
+  Specs can now set `target_variable` and `variable_field_resolution` on the
+  step, and `update` keeps them when a spec leaves them out.
+- **`automations move` no longer rewrites the automation**, so it works on
+  automations the CLI can't fully read back. Its success line no longer
+  says PUT.
+- **Steps that use a Kizen AI model now carry the business's Kizen AI app,
+  as steps saved in the Kizen UI do.** Before, they were stored with no
+  business plugin app, and the Kizen UI reported a missing business plugin
+  app on them. `business_plugin_app_id` is now optional for every model.
+  The plan refuses a value that belongs to a different provider and, when
+  the id is left out, a model the business's catalog doesn't list.
+- **`automations update` keeps an AI step's settings when the spec leaves
+  them out.** Before, it detached a Call LLM step's MCP server and reset its
+  turn limit to 25. It also reset the blank-merge-field handling and the
+  advanced flag on Call LLM, extraction, transcription and AI-decision
+  steps. Set `mcp_server` to `null` to detach a server.
+- **The operating guide matches today's CLI.** It no longer says there are
+  no spec files, drift detection or bulk writes, and it no longer names a
+  command or source file that doesn't exist. It says how to reach `kizen`'s
+  own help through `npx @kizenapps/cli admin`. Facts that several topics
+  repeated now live in one place, and `kizen docs show reference` routes to
+  every topic, including `team` and `examples`.
 
 ## [0.4.0] — 2026-10-27
 
