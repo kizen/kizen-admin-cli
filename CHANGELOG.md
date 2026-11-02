@@ -21,6 +21,9 @@ called out explicitly under **Changed** or **Removed**.
   `time_in_stage`, `entered_stage` and `left_stage` on a pipeline's `stage`
   field, with stage names. An unknown stage name in any stage filter is now
   an error at plan time instead of a server error.
+- **An automation spec takes `folder` (name or UUID).** `create` puts the
+  automation there, and `update` moves it, or keeps the live folder when
+  `folder` is left out.
 - **Automations set option fields by label.** A `change_field_value` step
   on a dropdown, radio, status, checkboxes, choices or yes/no/maybe field
   takes option labels as well as UUIDs, whether the field is named or given
@@ -48,9 +51,6 @@ called out explicitly under **Changed** or **Removed**.
   value) no longer moves the record to the first option when the options
   have no codes. Kizen now answers "This field may not be blank." and
   nothing changes. An option field set to an option UUID now matches it.
-- **An automation spec takes `folder` (name or UUID).** `create` puts the
-  automation there, and `update` moves it, or keeps the live folder when
-  `folder` is left out.
 - **`automations update` no longer resets what a spec leaves out on an
   existing step or trigger.** Its description, note, skip flag, failure
   handling and error severity keep their live values when the step carries
