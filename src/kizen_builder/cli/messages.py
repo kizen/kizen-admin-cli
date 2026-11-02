@@ -421,6 +421,10 @@ def messages_create(
     add`/`edit`. A message created any other way (raw content, no
     template behind it) won't show as selected in Kizen's builder UI even
     though the step technically references it.
+
+    With --json, stdout is the apply result. The new message's id is
+    `.results[0].server_uuid`, and the template it came from is
+    `.results[0].raw.base_message_id`. The preview goes to stderr.
     """
     _run_mutation(
         lambda: message_planners.plan_create_automation_message(api_name, template),

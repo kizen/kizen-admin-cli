@@ -1,0 +1,523 @@
+{
+  "id": "a6de2e6d-9fde-4301-87ea-d11104704cc0",
+  "name": "schedule probe",
+  "api_name": "schedule_probe",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "da33bb6e-a3a1-4dcd-beea-0e499292686c",
+    "name": "probes",
+    "description": null,
+    "entity_name": "Probe",
+    "object_name": "Probes",
+    "object_class": "custom_objects",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "49dc4d36-c5e3-4cc7-b90b-4c141a5b74ae",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 3
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "b30f4c23-a0a5-4e80-886b-364e1ce901ec",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 3,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "d77d5fe5-3efc-4354-8ccc-e34c8406cf9a",
+          "name": "act_a",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-30T15:53:31.752437Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "77a4875d-123e-4479-8412-d205b164c6fa",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 3,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "b30f4c23-a0a5-4e80-886b-364e1ce901ec",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "245c200a-dd79-4c5d-81be-4cec0fb660db",
+          "name": "act_b",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-30T15:53:31.766994Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "49b12621-0bb0-488b-9179-f55d6a157975",
+      "step_type": "initialize_variable",
+      "order": 2,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 2,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "77a4875d-123e-4479-8412-d205b164c6fa",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "ff29b5e3-7f7d-44b7-bdc2-f84ab5257bf4",
+          "name": "out_a",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-30T15:55:41.642219Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "62bbb30d-680f-4596-b43e-ef4698fe85ba",
+      "step_type": "initialize_variable",
+      "order": 3,
+      "description": "Initialize Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 2,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "49b12621-0bb0-488b-9179-f55d6a157975",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "2ca11d5a-be4d-4d04-92ca-49c19d5cbe73",
+          "name": "out_b",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-30T15:55:41.655280Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "abfff1b8-bfbc-46cb-81e9-aca046628f1a",
+      "step_type": "schedule_activity",
+      "order": 4,
+      "description": "Action: Schedule Activity",
+      "user_description": "",
+      "stats": {
+        "number_completed": 3,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "62bbb30d-680f-4596-b43e-ef4698fe85ba",
+      "parent_condition": "",
+      "action_schedule_activity": {
+        "activity_type": {
+          "id": "b287a134-1509-4803-abf1-bf08698d3bd1",
+          "name": "Follow-up",
+          "deleted": false,
+          "enabled": true
+        },
+        "schedule": {
+          "type": "with_delay",
+          "with_delay": {
+            "delay_type": "day",
+            "delay_value_type": "static",
+            "delay_value": 2,
+            "delay_variable": null,
+            "time_offset": "automation_time",
+            "time_offset_type": "static",
+            "time_offset_value": null,
+            "time_offset_variable": null,
+            "time": null
+          },
+          "on_or_around_date": null,
+          "skip_non_working_days": false
+        },
+        "assigned_to": {
+          "assignment_type": "owner",
+          "variable": null,
+          "role": null,
+          "employee": null,
+          "employees": [],
+          "field": null
+        },
+        "note": "overwrite",
+        "html_note": null,
+        "variable_field_resolution": "overwrite",
+        "notifications": [],
+        "association_configs": [
+          {
+            "custom_object": {
+              "id": "da33bb6e-a3a1-4dcd-beea-0e499292686c",
+              "object_name": "Probes",
+              "entity_name": "Probe",
+              "deleted": false
+            },
+            "association_source": "context_record",
+            "relationship_field": null,
+            "automation_variable": null
+          }
+        ],
+        "target_variable": {
+          "id": "d77d5fe5-3efc-4354-8ccc-e34c8406cf9a",
+          "name": "act_a",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": false
+        }
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "8fcc050c-0009-41f8-96db-fba433ae0018",
+      "step_type": "schedule_activity",
+      "order": 5,
+      "description": "Action: Schedule Activity",
+      "user_description": "",
+      "stats": {
+        "number_completed": 3,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "abfff1b8-bfbc-46cb-81e9-aca046628f1a",
+      "parent_condition": "",
+      "action_schedule_activity": {
+        "activity_type": {
+          "id": "b287a134-1509-4803-abf1-bf08698d3bd1",
+          "name": "Follow-up",
+          "deleted": false,
+          "enabled": true
+        },
+        "schedule": {
+          "type": "with_delay",
+          "with_delay": {
+            "delay_type": "day",
+            "delay_value_type": "static",
+            "delay_value": 3,
+            "delay_variable": null,
+            "time_offset": "automation_time",
+            "time_offset_type": "static",
+            "time_offset_value": null,
+            "time_offset_variable": null,
+            "time": null
+          },
+          "on_or_around_date": null,
+          "skip_non_working_days": false
+        },
+        "assigned_to": {
+          "assignment_type": "owner",
+          "variable": null,
+          "role": null,
+          "employee": null,
+          "employees": [],
+          "field": null
+        },
+        "note": "update_if_blank edited",
+        "html_note": null,
+        "variable_field_resolution": "update_if_blank",
+        "notifications": [],
+        "association_configs": [
+          {
+            "custom_object": {
+              "id": "da33bb6e-a3a1-4dcd-beea-0e499292686c",
+              "object_name": "Probes",
+              "entity_name": "Probe",
+              "deleted": false
+            },
+            "association_source": "context_record",
+            "relationship_field": null,
+            "automation_variable": null
+          }
+        ],
+        "target_variable": {
+          "id": "245c200a-dd79-4c5d-81be-4cec0fb660db",
+          "name": "act_b",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": false
+        }
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "3182d8ce-b2f3-46a1-846d-5b071bc5c37d",
+      "step_type": "update_variable",
+      "order": 6,
+      "description": "Update Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 2,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "8fcc050c-0009-41f8-96db-fba433ae0018",
+      "parent_condition": "",
+      "action_update_variable": {
+        "sources": [
+          {
+            "source_type": "variable",
+            "source_subtype": null,
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": {
+              "id": "d77d5fe5-3efc-4354-8ccc-e34c8406cf9a",
+              "name": "act_a",
+              "data_type": "string",
+              "data_subtype": null,
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-10-30T15:53:31.752437Z",
+              "deleted": false,
+              "is_array": false,
+              "is_array_item_variable": false,
+              "source_array_variable": null
+            },
+            "value": null,
+            "value_html": ""
+          }
+        ],
+        "variable": {
+          "id": "ff29b5e3-7f7d-44b7-bdc2-f84ab5257bf4",
+          "name": "out_a",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-30T15:55:41.642219Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "value_resolution": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "410e2ea0-b4b7-43cd-9e3f-90ea7f174791",
+      "step_type": "update_variable",
+      "order": 7,
+      "description": "Update Variable",
+      "user_description": "",
+      "stats": {
+        "number_completed": 2,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "3182d8ce-b2f3-46a1-846d-5b071bc5c37d",
+      "parent_condition": "",
+      "action_update_variable": {
+        "sources": [
+          {
+            "source_type": "variable",
+            "source_subtype": null,
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": {
+              "id": "245c200a-dd79-4c5d-81be-4cec0fb660db",
+              "name": "act_b",
+              "data_type": "string",
+              "data_subtype": null,
+              "input_format": null,
+              "output_format": null,
+              "created": "2026-10-30T15:53:31.766994Z",
+              "deleted": false,
+              "is_array": false,
+              "is_array_item_variable": false,
+              "source_array_variable": null
+            },
+            "value": null,
+            "value_html": ""
+          }
+        ],
+        "variable": {
+          "id": "2ca11d5a-be4d-4d04-92ca-49c19d5cbe73",
+          "name": "out_b",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-10-30T15:55:41.655280Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": null,
+        "value_resolution": null,
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "d77d5fe5-3efc-4354-8ccc-e34c8406cf9a",
+      "name": "act_a",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-30T15:53:31.752437Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "245c200a-dd79-4c5d-81be-4cec0fb660db",
+      "name": "act_b",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-30T15:53:31.766994Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "ff29b5e3-7f7d-44b7-bdc2-f84ab5257bf4",
+      "name": "out_a",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-30T15:55:41.642219Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "2ca11d5a-be4d-4d04-92ca-49c19d5cbe73",
+      "name": "out_b",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-10-30T15:55:41.655280Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    }
+  ],
+  "revision": 6,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 3,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-30T10:53:31.710199-05:00",
+  "updated": "2026-10-30T10:57:17.098285-05:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

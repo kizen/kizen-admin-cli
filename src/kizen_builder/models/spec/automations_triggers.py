@@ -204,29 +204,26 @@ class TriggerEmailReceivedFromContactConfig(BaseModel):
 
 
 class TriggerStageUpdatedConfig(BaseModel):
-    """Config for `trigger_type: stage_updated`.
-
-    Note: `from_stage_id` and `to_stage_id` take Kizen UUIDs directly.
-    Stage name resolution requires knowing the pipeline object and is not
-    currently supported via named references.
-    """
+    """Config for `trigger_type: stage_updated`, on a pipeline automation."""
 
     model_config = ConfigDict(extra="allow")
 
-    stage_field_ref: str | None = Field(
+    from_stage: str | None = Field(
         default=None,
-        description="'object.field' reference to the pipeline status field. Resolved to UUID at apply time.",
+        description=(
+            "Stage name or UUID the record moves from; null or omitted means any stage."
+        ),
     )
-    stage_field_id: str | None = Field(
-        default=None, description="Direct UUID fallback for the stage field."
+    to_stage: str | None = Field(
+        default=None,
+        description=(
+            "Stage name or UUID the record moves to; null or omitted means any stage."
+        ),
     )
-    from_stage_id: str | None = Field(
-        default=None, description="UUID of the 'from' pipeline stage."
+    fire_on_create: bool = Field(
+        default=False,
+        description="Also fire when a record is created in to_stage.",
     )
-    to_stage_id: str | None = Field(
-        default=None, description="UUID of the 'to' pipeline stage."
-    )
-    fire_on_create: bool = False
 
 
 class TriggerEmailLinkClickedConfig(BaseModel):

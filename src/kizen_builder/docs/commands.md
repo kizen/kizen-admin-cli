@@ -173,6 +173,12 @@ run without approval). `--yes` skips the confirm — use it only after the
 user approved the dry-run output in chat. `--json` emits machine-readable
 output (the plan with `--dry-run`, apply results otherwise).
 
+An apply result is `{plan_id, env, results: [{key, kind, action, status,
+server_uuid, message, raw}]}`, one entry per operation. A created entity's id
+is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. The
+preview goes to stderr and only the JSON to stdout, so don't merge `2>&1` into
+a JSON parse.
+
 ```
 # create
 kizen objects create --name Y [--api-name X] [--object-type standard|pipeline] [--pipeline] [...]   # api_name is derived from --name
@@ -398,11 +404,6 @@ target object to a readable api_name plus cardinality — the table `target`
 column shows e.g. `clinics (many_to_one)`, and `relation_target` /
 `relation_cardinality` are in the JSON/CSV output (no more hand-resolving the
 `related_object` UUID).
-
-Cross-env transport (`dev → uat → prod` etc.) is intentionally NOT
-part of this repo — it lives in a separate project so the prod-touching
-risk has its own guardrails. If a user asks to migrate, point them at
-that other project.
 
 ### Setup
 

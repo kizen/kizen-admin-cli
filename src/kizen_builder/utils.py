@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
+from typing import Any
 
 _SLUG_INVALID = re.compile(r"[^a-z0-9]+")
 _SLUG_EDGES = re.compile(r"^_+|_+$")
@@ -55,3 +56,27 @@ def is_uuid(value: str) -> bool:
     except (ValueError, AttributeError, TypeError):
         return False
     return True
+
+
+def match_option(
+    options: list[dict[str, Any]] | None, value: Any
+) -> dict[str, Any] | None:
+    """The option ``value`` names, or None.
+
+    Matches the option ``id`` exactly, else the first option whose ``name``,
+    then whose ``code``, equals ``value`` case-insensitively. A pipeline's
+    stages match the same way: the stage field's options are the stages.
+    """
+    if not isinstance(value, str):
+        return None
+    opts = options or []
+    for opt in opts:
+        if opt.get("id") == value:
+            return opt
+    folded = value.lower()
+    for key in ("name", "code"):
+        for opt in opts:
+            text = opt.get(key)
+            if text and text.lower() == folded:
+                return opt
+    return None

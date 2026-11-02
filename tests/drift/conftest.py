@@ -264,18 +264,30 @@ def create_field_on(
 
 
 def _create_drift_object(
-    drift_client, scratch: Scratch, what: str, object_type: str = "standard"
+    drift_client,
+    scratch: Scratch,
+    what: str,
+    object_type: str = "standard",
+    *,
+    stages: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Create one throwaway custom object from the planner payload."""
+    """Create one throwaway custom object from the planner payload: standard,
+    or a pipeline. ``stages`` names a pipeline's stages and implies one; a
+    pipeline without them gets the planner's single default stage."""
     from kizen_builder.api import custom_objects as co_api
-    from kizen_builder.models.spec import ObjectDef
+    from kizen_builder.models.spec import ObjectDef, PipelineDef, PipelineStageSpec
     from kizen_builder.tools.planners.objects import _build_object_payload
 
     spec = ObjectDef(
         name=debris_name(what),
         api_name=debris_api_name(what),
-        object_type=object_type,
+        object_type="pipeline" if stages else object_type,
         description="Created by the kizen-builder drift suite. Safe to delete.",
+        pipeline=(
+            PipelineDef(stages=[PipelineStageSpec(name=n) for n in stages])
+            if stages
+            else None
+        ),
     )
     payload = _build_object_payload(spec)
     created = co_api.create_object(drift_client, payload)

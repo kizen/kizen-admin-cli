@@ -135,7 +135,7 @@ COVERED_STEP_TYPES = (
     | PLUGIN_STEPS
 )
 
-#: Nine of the eleven wired trigger types ride on one record-based automation.
+#: Nine of the twelve wired trigger types ride on one record-based automation.
 RECORD_TRIGGER_TYPES = frozenset(
     {
         "manual",
@@ -156,8 +156,14 @@ GLOBAL_TRIGGER_TYPES = frozenset({"manual", "schedule"})
 #: `email_received` is Contact-only, so it needs one too.
 CONTACT_TRIGGER_TYPES = frozenset({"manual", "email_received"})
 
+#: `stage_updated` needs a pipeline object, which the drift object isn't.
+PIPELINE_TRIGGER_TYPES = frozenset({"manual", "stage_updated"})
+
 COVERED_TRIGGER_TYPES = (
-    RECORD_TRIGGER_TYPES | GLOBAL_TRIGGER_TYPES | CONTACT_TRIGGER_TYPES
+    RECORD_TRIGGER_TYPES
+    | GLOBAL_TRIGGER_TYPES
+    | CONTACT_TRIGGER_TYPES
+    | PIPELINE_TRIGGER_TYPES
 )
 
 
@@ -381,11 +387,10 @@ def drift_team_member_id(drift_config) -> str:
 def drift_llm_models(drift_config) -> dict[str, dict[str, Any]]:
     """Live LLM catalogue, keyed by capability.
 
-    `model_name` is unvalidated client-side and a wrong one 400s the same way
-    a missing `business_plugin_app_id` does, so the ids come from the
-    environment's own catalogue (``GET /api/automation2/automations/metadata``
-    via ``list_llm_models``) rather than a literal. Native ``kizen/*`` models
-    are preferred because they need no ``business_plugin_app_id`` at all.
+    The models come from the environment's own catalogue (``GET
+    /api/automation2/automations/metadata`` via ``list_llm_models``) rather
+    than a literal, since the plan refuses a model the business hasn't
+    enabled. Kizen AI models are preferred: every business has them.
     """
     from kizen_builder.tools.automations import list_llm_models
 
@@ -398,8 +403,8 @@ def drift_llm_models(drift_config) -> dict[str, dict[str, Any]]:
             f"no live model advertises {capability}; either the catalogue shape "
             "changed or this business has no such model enabled"
         )
-        native = [r for r in usable if not r["business_plugin_app_id"]]
-        return (native or usable)[0]
+        kizen = [r for r in usable if r["provider_name"] == "kizen"]
+        return (kizen or usable)[0]
 
     return {
         "call": pick("supports_call"),
@@ -409,10 +414,7 @@ def drift_llm_models(drift_config) -> dict[str, dict[str, Any]]:
 
 
 def _llm_block(model: dict[str, Any], **extra: Any) -> dict[str, Any]:
-    block = {"model_name": model["model_value"], **extra}
-    if model["business_plugin_app_id"]:
-        block["business_plugin_app_id"] = model["business_plugin_app_id"]
-    return block
+    return {"model_name": model["model_value"], **extra}
 
 
 # ---------------------------------------------------------------------------
@@ -612,7 +614,7 @@ def test_editor_layout_survives_the_roundtrip(drift_laid_out_conditions):
 
 
 # ---------------------------------------------------------------------------
-# Triggers — all ten on one automation
+# Triggers
 # ---------------------------------------------------------------------------
 
 
@@ -626,7 +628,7 @@ def drift_triggers(
     drift_form,
     drift_survey,
 ) -> dict[str, Any]:
-    """One automation carrying nine of the eleven wired trigger types.
+    """One automation carrying nine of the twelve wired trigger types.
 
     Directly analogous to the offline ``kitchen_sink_triggers.raw.json``
     capture, which is the evidence that many triggers on one automation is a
@@ -639,7 +641,8 @@ def drift_triggers(
     outright (*"Trigger type 'schedule' is only available for global agentic
     workflows"*, confirmed live 2026-08-06), so it gets its own global
     automation in :func:`drift_schedule_trigger`. ``email_received`` is
-    Contact-only, so it gets :func:`drift_email_received_trigger`.
+    Contact-only, so it gets :func:`drift_email_received_trigger`, and
+    ``stage_updated`` needs a pipeline, so it gets :func:`drift_stage_trigger`.
     """
     activity_id = drift_activity_type["id"]
     spec = _base_spec("trigs", drift_object)
@@ -797,8 +800,48 @@ def drift_email_received_trigger(drift_client, scratch) -> dict[str, Any]:
     return _create_automation(drift_client, scratch, spec)
 
 
+@pytest.fixture(scope="session")
+def drift_stage_trigger(drift_client, scratch) -> dict[str, Any]:
+    """`stage_updated` by stage name, as a trigger and as a goal's wait-until
+    trigger, on a pipeline object of its own."""
+    obj = _create_drift_object(
+        drift_client, scratch, "pipeline_object", stages=["Stage A", "Stage B"]
+    )
+    spec = _base_spec("stage", obj)
+    spec["triggers"] = [
+        {"trigger_type": "manual", "order": 0, "trigger_manual": {}},
+        {
+            "trigger_type": "stage_updated",
+            "order": 1,
+            "trigger_stage_updated": {"from_stage": "Stage A", "to_stage": "stage b"},
+        },
+    ]
+    spec["steps"] = [
+        {
+            "key": "goal",
+            "step_type": "goal",
+            "order": 0,
+            "parent_key": None,
+            "step_goal": {
+                "wait_type": "never",
+                "triggers": [
+                    {
+                        "trigger_type": "stage_updated",
+                        "trigger_stage_updated": {"to_stage": "Stage B"},
+                    }
+                ],
+            },
+        }
+    ]
+    stages = {s["name"]: s["id"] for s in obj["live"]["pipeline"]["stages"]}
+    return {**_create_automation(drift_client, scratch, spec), "stages": stages}
+
+
 def test_every_wired_trigger_type_is_accepted(
-    drift_triggers, drift_schedule_trigger, drift_email_received_trigger
+    drift_triggers,
+    drift_schedule_trigger,
+    drift_email_received_trigger,
+    drift_stage_trigger,
 ):
     """The write half: every wired type goes out and the POST succeeds."""
     sent = {t["type"] for t in drift_triggers["sent"]["triggers"]}
@@ -813,7 +856,9 @@ def test_every_wired_trigger_type_is_accepted(
     assert scheduled == set(GLOBAL_TRIGGER_TYPES)
     contact = {t["type"] for t in drift_email_received_trigger["sent"]["triggers"]}
     assert contact == set(CONTACT_TRIGGER_TYPES)
-    assert sent | scheduled | contact == set(COVERED_TRIGGER_TYPES)
+    pipeline = {t["type"] for t in drift_stage_trigger["sent"]["triggers"]}
+    assert pipeline == set(PIPELINE_TRIGGER_TYPES)
+    assert sent | scheduled | contact | pipeline == set(COVERED_TRIGGER_TYPES)
 
 
 def test_schedule_trigger_is_flat_in_both_dialects(drift_schedule_trigger):
@@ -870,6 +915,33 @@ def test_email_received_puts_back_unchanged(drift_client, drift_email_received_t
     )
     after = auto_api.get_automation(drift_client, drift_email_received_trigger["uuid"])
     assert list(semantic_diff(before, after)) == []
+
+
+def test_stage_updated_reads_back_as_sent(drift_stage_trigger):
+    """Names go out as stage UUIDs, both keys always present, and the read
+    matches, on the trigger and the goal alike."""
+    record = drift_stage_trigger
+    stages = record["stages"]
+    sent = next(t for t in record["sent"]["triggers"] if t["type"] == "stage_updated")
+    live = next(
+        t for t in record["live"]["triggers"] if t["trigger_type"] == "stage_updated"
+    )
+    expected = {
+        "from_stage": stages["Stage A"],
+        "to_stage": stages["Stage B"],
+        "fire_on_create": False,
+    }
+    assert sent["trigger_stage_updated"] == expected
+    assert live["trigger_stage_updated"] == expected
+    assert live["description"] == "Stage Update from 'Stage A' to 'Stage B'"
+
+    (goal,) = _live_steps_by_type(record)["goal"]
+    (nested,) = goal["step_goal"]["triggers"]
+    assert nested["trigger_stage_updated"] == {**expected, "from_stage": None}
+
+
+def test_stage_updated_puts_back_unchanged(drift_client, drift_stage_trigger):
+    _put_back_unchanged(drift_client, drift_stage_trigger)
 
 
 def test_every_wired_trigger_type_survives_the_roundtrip(drift_triggers):
@@ -2033,6 +2105,20 @@ def test_ai_steps_are_accepted(drift_ai_steps):
     assert set(_live_steps_by_type(drift_ai_steps)) == set(AI_STEPS)
 
 
+def test_ai_steps_carry_the_catalogs_plugin_app(drift_ai_steps, drift_llm_models):
+    """A spec with no `business_plugin_app_id` gets the catalog's, so the step
+    reads back with the plugin app a step saved in the Kizen UI has."""
+    live = _live_steps_by_type(drift_ai_steps)
+    for step_type, model in (
+        ("call_llm", drift_llm_models["call"]),
+        ("file_content_extraction", drift_llm_models["extraction"]),
+        ("audio_transcription", drift_llm_models["transcription"]),
+    ):
+        (step,) = live[step_type]
+        stored = step[f"action_{step_type}"]["business_plugin_app"]
+        assert stored["id"] == model["business_plugin_app_id"], step_type
+
+
 def test_call_llm_block_is_action_call_llm(drift_ai_steps):
     """The API accepts, and the read returns, ``action_call_llm``. Until
     Kizen's 2026-10-13 release ``GET /api/docs/schema`` spelled the property
@@ -2282,6 +2368,47 @@ def test_call_llm_mcp_step_puts_back_unchanged(drift_client, drift_ai_mcp_step):
     )
     after = auto_api.get_automation(drift_client, drift_ai_mcp_step["uuid"])
     assert list(semantic_diff(before, after)) == []
+
+
+def test_call_llm_update_omitting_tools_keeps_them(
+    drift_client, drift_ai_mcp_step, drift_object, drift_step_fields, drift_llm_models
+):
+    """An update from a spec that carries the step's id and leaves out the
+    tool keys keeps the live server, account and turn limit."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.tools.planners.automations import plan_update_automation
+
+    live = auto_api.get_automation(drift_client, drift_ai_mcp_step["uuid"])
+    (step,) = live["steps"]
+    spec = _base_spec("ai_mcp", drift_object)
+    spec.update(api_name=live["api_name"], name=live["name"])
+    spec["steps"] = [
+        {
+            "key": "llm_tools",
+            "id": step["id"],
+            "step_type": "call_llm",
+            "order": 0,
+            "parent_key": None,
+            "action_call_llm": _llm_block(
+                drift_llm_models["call"],
+                prompt="Summarize this record using the available tools.",
+                destinations=[{"field": drift_step_fields["longtext"]["id"]}],
+            ),
+        },
+    ]
+    (op,) = plan_update_automation(spec).operations
+    assert "llm_tools" in op.preview["keeps_live"]
+    auto_api.update_automation(
+        drift_client,
+        drift_ai_mcp_step["uuid"],
+        op.payload,
+        last_revision=op.payload.get("last_revision"),
+    )
+    after = auto_api.get_automation(drift_client, drift_ai_mcp_step["uuid"])
+    block = after["steps"][0]["action_call_llm"]
+    assert block["mcp_server"]["id"] == drift_ai_mcp_step["server"]["id"]
+    assert block["run_tools_as"]["id"] == drift_ai_mcp_step["account"]["id"]
+    assert block["max_sequential_turns"] == 10
 
 
 def test_input_field_reads_back_mirrored_as_a_context_source(
@@ -2693,6 +2820,7 @@ THEMED_AUTOMATIONS = (
     "drift_triggers",
     "drift_schedule_trigger",
     "drift_email_received_trigger",
+    "drift_stage_trigger",
     "drift_startable_automation",
     "drift_code_step_automation",
     "drift_control_flow",

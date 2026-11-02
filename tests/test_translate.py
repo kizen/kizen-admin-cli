@@ -48,6 +48,7 @@ ALL_FIXTURES = [
     "automations/new_features_loops.raw.json",
     "automations/on_or_around_date_goto.raw.json",
     "automations/plugin_code_steps.raw.json",
+    "automations/schedule_activity_target_variable.raw.json",
     "automations/schedule_trigger.raw.json",
     "automations/sets_variable_overrides.raw.json",
     "automations/two_code_steps.raw.json",
@@ -183,6 +184,14 @@ def test_no_variable_ids_survive_translation(path: str) -> None:
         iv = s.get("action_initialize_variable")
         if iv and isinstance(iv.get("variable"), dict):
             assert "id" not in iv["variable"]
+
+
+def test_live_to_payload_carries_no_folder() -> None:
+    """A PUT without `folder_id` keeps the live folder; the read's
+    `folder: {id, name}` is ignored on write anyway."""
+    payload = live_to_payload(load_fixture("automations/two_code_steps.raw.json"))
+    assert "folder_id" not in payload
+    assert "folder" not in payload
 
 
 def test_email_received_rides_under_its_from_contact_key() -> None:
@@ -420,6 +429,9 @@ class _RefContext:
             ("policies", "policy_document"): _POLICY_DOCUMENT,
         }[(obj, fld)]
 
+    def llm_plugin_app_id(self, model_name: str) -> str:
+        return "145fa07b-ffe0-49cb-89af-8f126a0a2f13"
+
 
 def test_source_dotted_refs_resolve_to_bare_uuids() -> None:
     from kizen_builder.tools.planners.automations import _build_step_payload
@@ -542,6 +554,24 @@ def test_schedule_activity_keeps_its_html_note() -> None:
     blk = _step_block(live_to_payload(raw), "schedule_activity")
     assert blk["html_note"] == "<p><strong>Rich</strong> note</p>"
     assert blk["note"] == step["action_schedule_activity"]["note"]
+
+
+def test_schedule_activity_sends_its_variable_binding_by_name() -> None:
+    """A read expands `target_variable` to the variable; the write takes its
+    name. Both keys reset when a PUT leaves them out (confirmed live
+    2026-10-30)."""
+    payload = live_to_payload(
+        load_fixture("automations/schedule_activity_target_variable.raw.json")
+    )
+    blocks = [
+        s["action_schedule_activity"]
+        for s in payload["steps"]
+        if s["type"] == "schedule_activity"
+    ]
+    assert [(b["target_variable"], b["variable_field_resolution"]) for b in blocks] == [
+        ("act_a", "overwrite"),
+        ("act_b", "update_if_blank"),
+    ]
 
 
 # ---------------------------------------------------------------------------

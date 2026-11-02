@@ -312,6 +312,21 @@ class ActionScheduleActivityConfig(BaseModel):
             "a write without it clears it (confirmed live 2026-10-06)."
         ),
     )
+    target_variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Name of a UUID or String automation variable that receives the "
+            "scheduled activity's id; a read's expanded {id, name, ...} is "
+            "accepted too."
+        ),
+    )
+    variable_field_resolution: Literal["overwrite", "update_if_blank"] | None = Field(
+        default=None,
+        description=(
+            "Whether `target_variable` is overwritten or set only while blank. "
+            "Kizen stores `overwrite` when it's left out."
+        ),
+    )
 
 
 class ActionDeleteScheduledActivityConfig(BaseModel):

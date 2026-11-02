@@ -43,6 +43,7 @@ keys it reads with :func:`honours` (or :func:`honours_all`), add it to
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -63,7 +64,7 @@ from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
-from kizen_builder.utils import is_uuid
+from kizen_builder.utils import is_uuid, match_option
 
 # ---------------------------------------------------------------------------
 # Live-context cache (fetched once per plan call)
@@ -86,6 +87,7 @@ class LiveContext:
         # rather than a single value shape.
         self._objects_by_api: dict[str, Any] = {}
         self._automations_by_api: dict[str, dict[str, Any]] | None = None
+        self._folders: list[dict[str, Any]] | None = None
         self._secret_descriptions: dict[str, str] | None = None
         self._step_pickers: dict[str, list[dict[str, Any]]] = {}
 
@@ -124,6 +126,40 @@ class LiveContext:
             )
         return matches[0]["id"]
 
+    def llm_models(self) -> list[dict[str, Any]]:
+        """The business's LLM catalog, one row per (provider, model)."""
+        from kizen_builder.api.automations import get_metadata, llm_model_rows
+
+        return self._step_picker(
+            "llm_models", lambda client: llm_model_rows(get_metadata(client))
+        )
+
+    def llm_plugin_app_id(self, model_name: str) -> str:
+        """The business plugin app (provider install) that runs ``model_name``."""
+        rows = self.llm_models()
+        row = next((r for r in rows if r["model_value"] == model_name), None)
+        if (
+            row is None
+            and model_name.startswith("kizen/")
+            and not any(r["provider_name"] == "kizen" for r in rows)
+        ):
+            row = {"provider_name": "kizen", "business_plugin_app_id": None}
+        if row is None:
+            raise PlanError(
+                f"model '{model_name}' isn't enabled in '{self.env}'. Run kizen "
+                "automations llm-models for the models this business can use."
+            )
+        if not row["business_plugin_app_id"]:
+            app = (
+                "Kizen AI" if row["provider_name"] == "kizen" else row["provider_name"]
+            )
+            raise PlanError(
+                f"'{model_name}' needs the {app} app, which isn't installed in "
+                f"'{self.env}'. Install {app} from the business's plugin settings, "
+                "then plan again."
+            )
+        return row["business_plugin_app_id"]
+
     def _step_picker(
         self, name: str, fetch: Callable[[Any], list[dict[str, Any]]]
     ) -> list[dict[str, Any]]:
@@ -158,16 +194,25 @@ class LiveContext:
         # Fall back to the object-level data (id/type without options)
         return self._field(object_api_name, field_api_name)
 
-    def _fields_with_options(self, object_api_name: str) -> list[dict[str, Any]]:
-        cache_key = f"__fields__{object_api_name}"
+    def field_by_id(self, object_ref: str, field_id: str) -> dict[str, Any] | None:
+        """The live field with this UUID on an object (api_name or UUID)."""
+        fields = self._fields_with_options(object_ref)
+        return next((f for f in fields if f.get("id") == field_id), None)
+
+    def _fields_with_options(self, object_ref: str) -> list[dict[str, Any]]:
+        cache_key = f"__fields__{object_ref}"
         if cache_key not in self._objects_by_api:
-            obj = self.object_data(object_api_name)
+            obj_id = (
+                object_ref
+                if is_uuid(object_ref)
+                else self.object_data(object_ref)["id"]
+            )
             from kizen_builder.api import custom_objects as co_api
             from kizen_builder.api.client import KizenClient
 
             cfg = load_env_config()
             with KizenClient(cfg) as client:
-                self._objects_by_api[cache_key] = co_api.list_fields(client, obj["id"])
+                self._objects_by_api[cache_key] = co_api.list_fields(client, obj_id)
         return self._objects_by_api[cache_key]
 
     def _field(self, object_api_name: str, field_api_name: str) -> dict[str, Any]:
@@ -202,6 +247,15 @@ class LiveContext:
             self._automations_by_api = {a["api_name"]: a for a in list_automations()}
         rec = self._automations_by_api.get(api_name)
         return rec["id"] if rec else None
+
+    def folder(self, identifier: str) -> dict[str, Any]:
+        """The live automation folder with this name or UUID."""
+        if self._folders is None:
+            self._folders = _live_folders()
+        return _find_folder(identifier, self._folders)
+
+    def folder_uuid(self, identifier: str) -> str:
+        return str(self.folder(identifier)["id"])
 
     def integration_secret_description(self, api_name: str) -> str | None:
         """The secret's description, the label the UI gives its merge field.
@@ -307,7 +361,10 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
                 action="create",
                 kind="automation",
                 key=auto.api_name,
-                preview=_automation_preview(env, auto, payload, ctx),
+                preview={
+                    **_automation_preview(env, auto, payload, ctx),
+                    **_folder_preview(auto, ctx),
+                },
                 payload=payload,
             )
         ],
@@ -346,11 +403,12 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     resolved_active = auto.active if auto.active is not None else live_active
     auto = auto.model_copy(update={"active": resolved_active})
 
-    payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
-    _keep_rule_descriptions(payload, current)
+    payload, keeps_live = _update_payload(auto, ctx, current)
     preview = _automation_preview(env, auto, payload, ctx, live_active=live_active)
+    preview.update(_folder_preview(auto, ctx, current))
     preview["current_revision"] = current.get("revision")
-    preview.update(_llm_tools_dropped(current, payload))
+    if keeps_live:
+        preview["keeps_live"] = keeps_live
     return Plan.build(
         env=env,
         summary=f"Update automation '{auto.api_name}'",
@@ -375,10 +433,9 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     Fetches the live automation exactly once and derives both comparison
     sides from that single `current`: the live side via
     `translate.live_to_payload`, the spec side via the same
-    `_build_automation_payload` + `_merge_server_state` +
-    `_keep_rule_descriptions` calls `plan_update_automation` itself makes (not by calling
-    `plan_update_automation`/building a `Plan` a second time, which would
-    re-fetch `current` and admit a race). This also guarantees
+    `_update_payload` call `plan_update_automation` itself makes (not by
+    calling `plan_update_automation`/building a `Plan` a second time, which
+    would re-fetch `current` and admit a race). This also guarantees
     `last_revision` matches on both sides by construction. Mirrors
     `plan_update_automation`'s `active` resolution (an omitted `active` in
     the spec means "leave live's value alone," not "set False") so `active`
@@ -415,8 +472,12 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     auto = auto.model_copy(update={"active": resolved_active})
 
     live_payload = live_to_payload(current)
-    spec_payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
-    _keep_rule_descriptions(spec_payload, current)
+    spec_payload, _ = _update_payload(auto, ctx, current)
+    # Neither side carries the live folder, so a spec that names one would
+    # always show a change. Compare against the live folder instead.
+    if current.get("folder"):
+        live_payload["folder_id"] = current["folder"]["id"]
+        spec_payload.setdefault("folder_id", live_payload["folder_id"])
 
     return {
         "env": env,
@@ -427,13 +488,214 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     }
 
 
+def _update_payload(
+    auto: AutomationDef, ctx: LiveContext, current: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """The PUT body `update` sends and `diff` compares against live."""
+    payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    _keep_rule_descriptions(payload, current)
+    # The model defaults this to False, which a PUT would write over a live
+    # true (confirmed live 2026-10-30).
+    if (
+        "skip_non_working_days" not in auto.model_fields_set
+        and current.get("skip_non_working_days") is not None
+    ):
+        payload["skip_non_working_days"] = current["skip_non_working_days"]
+    return _carry_omitted_step_keys(payload, auto, current)
+
+
+# Keys a PUT resets to Kizen's default when they're left out or sent as the
+# model default (confirmed live 2026-10-30), so an update keeps the live value
+# of each one the spec doesn't set.
+_KEPT_STEP_KEYS = (
+    "description",
+    "user_description",
+    "should_skip_execution",
+    "continue_with_branch",
+    "action_on_failure",
+    "error_notification_severity_level",
+)
+_KEPT_TRIGGER_KEYS = ("description", "user_description", "should_skip_execution")
+
+
+@dataclass(frozen=True)
+class _KeptBlockKeys:
+    """Config-block keys an update keeps live, all or none: when the spec
+    block sets none of ``set_by`` (default: ``keys``) and every ``read`` key
+    (default: ``keys``) is non-null live, each of ``keys`` gets ``write`` of
+    its live value. A live ``default``, what Kizen stores when a PUT leaves
+    the key out, is carried without naming the step in ``keeps_live``.
+    ``within`` names a sub-block holding the keys, used only when the block's
+    ``type`` names it, live and built; there "set" means present in the
+    spec's dict."""
+
+    keys: tuple[str, ...]
+    read: tuple[str, ...] = ()
+    set_by: tuple[str, ...] = ()
+    write: Callable[[Any], Any] = lambda v: v
+    within: str | None = None
+    default: Any = None
+
+
+_KEPT_LLM_PROMPT_KEYS = (
+    _KeptBlockKeys(("merge_field_validation",), default="error_if_required"),
+    _KeptBlockKeys(("is_advanced",)),
+)
+
+# Config-block keys a PUT resets the same way, by step type (confirmed live
+# 2026-10-30).
+_KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
+    "schedule_activity": (
+        _KeptBlockKeys(("target_variable",), write=lambda v: _unwrap_variable_name(v)),
+        _KeptBlockKeys(("variable_field_resolution",)),
+    ),
+    "call_llm": (
+        # Kizen rejects a server without an account, so they carry as a pair.
+        _KeptBlockKeys(
+            ("mcp_server_id", "run_tools_as_id"),
+            read=("mcp_server", "run_tools_as"),
+            set_by=("mcp_server", "mcp_server_id", "run_tools_as", "run_tools_as_id"),
+            write=lambda v: _unwrap_id(v),
+        ),
+        _KeptBlockKeys(("max_sequential_turns",)),
+        _KeptBlockKeys(("tool_failure_policy",)),
+        *_KEPT_LLM_PROMPT_KEYS,
+    ),
+    "file_content_extraction": _KEPT_LLM_PROMPT_KEYS,
+    "audio_transcription": _KEPT_LLM_PROMPT_KEYS,
+    "condition": (
+        _KeptBlockKeys(
+            ("merge_field_validation",),
+            within="llm_decision",
+            default="error_if_required",
+        ),
+    ),
+}
+
+
+def _kept_values(
+    kept: _KeptBlockKeys, set_in_spec: set[str], live_block: dict[str, Any]
+) -> dict[str, Any]:
+    if set_in_spec & set(kept.set_by or kept.keys):
+        return {}
+    live_values = [live_block.get(k) for k in kept.read or kept.keys]
+    if any(v is None for v in live_values):
+        return {}
+    return {k: kept.write(v) for k, v in zip(kept.keys, live_values, strict=True)}
+
+
+def _changes(
+    kept: _KeptBlockKeys, built: dict[str, Any], values: dict[str, Any]
+) -> bool:
+    return any(
+        built.get(k) != v and not (k not in built and v == kept.default)
+        for k, v in values.items()
+    )
+
+
+def _kept_block(
+    spec: AutomationStepDef | AutomationTriggerDef,
+    built: dict[str, Any],
+    live: dict[str, Any],
+) -> tuple[str | None, dict[str, Any], bool]:
+    """The step's config-block field, its built block with the live value,
+    as written, of each kept block key the spec block leaves out, and
+    whether that changed anything Kizen would store."""
+    if (
+        not isinstance(spec, AutomationStepDef)
+        or spec.step_type not in _KEPT_BLOCK_KEYS
+    ):
+        return None, {}, False
+    field = _block_field_for(spec.step_type)
+    spec_block = getattr(spec, field)
+    set_in_spec = spec_block.model_fields_set if spec_block is not None else set()
+    live_block = live.get(field) or {}
+    block = dict(built.get(field) or {})
+    changed = False
+    for kept in _KEPT_BLOCK_KEYS[spec.step_type]:
+        if kept.within is None:
+            values = _kept_values(kept, set_in_spec, live_block)
+            changed |= _changes(kept, block, values)
+            block.update(values)
+        elif live_block.get("type") == block.get("type") == kept.within:
+            sub = getattr(spec_block, kept.within, None)
+            values = _kept_values(
+                kept,
+                set(sub) if isinstance(sub, dict) else set(),
+                live_block.get(kept.within) or {},
+            )
+            inner = block.get(kept.within) or {}
+            changed |= _changes(kept, inner, values)
+            if values:
+                block[kept.within] = {**inner, **values}
+    return field, block, changed
+
+
+def _carry_omitted_step_keys(
+    payload: dict[str, Any], auto: AutomationDef, current: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Give each spec step and trigger whose `id` matches a live one the live
+    value of every kept key, and kept block key, the spec leaves out. Returns
+    the payload and the keys of the steps and triggers whose payload that
+    changed.
+
+    Matched by id only: a step without one is new to the server, and pairing
+    it by position could stamp one step's settings on another."""
+    live_steps = {s["id"]: s for s in current.get("steps") or [] if s.get("id")}
+    live_triggers = {t["id"]: t for t in current.get("triggers") or [] if t.get("id")}
+    spec_triggers = {t.id: t for t in auto.triggers if t.id}
+    kept: list[str] = []
+
+    def carry(
+        built: dict[str, Any],
+        spec: AutomationStepDef | AutomationTriggerDef | None,
+        live: dict[str, Any] | None,
+        keys: tuple[str, ...],
+    ) -> dict[str, Any]:
+        if spec is None or live is None:
+            return built
+        values = {
+            k: live[k]
+            for k in keys
+            if k not in spec.model_fields_set and live.get(k) is not None
+        }
+        # The branch a skipped condition or goal runs means nothing without
+        # the skip, so it is kept only with a kept skip.
+        if values.get("should_skip_execution") is not True:
+            values.pop("continue_with_branch", None)
+        field, block, block_kept = _kept_block(spec, built, live)
+        if block_kept or any(built.get(k) != v for k, v in values.items()):
+            kept.append(built["key"])
+        out = {**built, **values}
+        if field is not None and block != (built.get(field) or {}):
+            out[field] = block
+        return out
+
+    # Triggers can't pair by index: a manual one is prepended when the spec
+    # has none. The payload carries `id` only from the spec.
+    triggers = [
+        carry(
+            t,
+            spec_triggers.get(t.get("id")),
+            live_triggers.get(t.get("id")),
+            _KEPT_TRIGGER_KEYS,
+        )
+        for t in payload["triggers"]
+    ]
+    steps = [
+        carry(built, spec, live_steps.get(spec.id or ""), _KEPT_STEP_KEYS)
+        for spec, built in zip(auto.steps, payload["steps"], strict=True)
+    ]
+    return {**payload, "triggers": triggers, "steps": steps}, kept
+
+
 def _merge_server_state(
     payload: dict[str, Any], current: dict[str, Any]
 ) -> dict[str, Any]:
     """Fold live server-managed state into an update payload.
 
     PUT replaces the whole automation, so fields the spec doesn't model
-    (folder, variables, throttles, …) must be carried over from the live
+    (variables, throttles, …) must be carried over from the live
     automation or the API rejects the write / drops them. Spec-provided
     values win over carried-over ones. Also stamps ``last_revision``
     (optimistic concurrency — a concurrent edit between plan and apply
@@ -447,8 +709,9 @@ def _merge_server_state(
     matched by name.
     """
     server_fields: dict[str, Any] = {}
-    if current.get("folder") is not None:
-        server_fields["folder"] = current["folder"]
+    # No folder: a PUT without `folder_id` keeps the live one, and carrying it
+    # would undo a move made after the read (`folders/move` doesn't bump the
+    # revision, so `last_revision` wouldn't catch it).
     if current.get("variables"):
         # Same read→write reduction as step-level variable definitions
         # (expanded data_subtype → bare UUID, ids stripped).
@@ -574,13 +837,19 @@ def _live_folders() -> list[dict[str, Any]]:
 
 
 def _find_folder(identifier: str, folders: list[dict[str, Any]]) -> dict[str, Any]:
-    match = next(
-        (f for f in folders if identifier in (f.get("id"), f.get("name"))), None
-    )
-    if match is None:
+    by_id = next((f for f in folders if f.get("id") == identifier), None)
+    if by_id is not None:
+        return by_id
+    matches = [f for f in folders if f.get("name") == identifier]
+    if not matches:
         available = [f.get("name") for f in folders]
         raise PlanError(f"folder '{identifier}' not found. Available: {available}")
-    return match
+    if len(matches) > 1:
+        ids = ", ".join(str(f.get("id")) for f in matches)
+        raise PlanError(
+            f"folder '{identifier}' matches {len(matches)} folders; give its UUID: {ids}"
+        )
+    return matches[0]
 
 
 def plan_create_folder(name: str, *, parent: str | None = None) -> Plan:
@@ -692,6 +961,33 @@ def _automation_preview(
     }
 
 
+def _folder_preview(
+    auto: AutomationDef, ctx: LiveContext, current: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """The preview's `folder` cell: the spec's folder on create, and on update
+    the live one, as `<old> → <new>` when the spec moves it."""
+    live = (current or {}).get("folder") or {}
+    target = ctx.folder(auto.folder) if auto.folder else live
+    if not target:
+        return {}
+    if live and live.get("id") != target.get("id"):
+        return {"folder": " → ".join(folder_labels(live, target))}
+    return {"folder": target.get("name")}
+
+
+def folder_labels(before: dict[str, Any], after: dict[str, Any]) -> tuple[str, str]:
+    """Two folders by name, with a short id on each when two folders share
+    the name (the server allows it)."""
+    same_name = before.get("name") == after.get("name")
+    twins = same_name and before.get("id") != after.get("id")
+
+    def label(f: dict[str, Any]) -> str:
+        name = str(f.get("name"))
+        return f"{name} ({str(f.get('id'))[:8]})" if twins else name
+
+    return label(before), label(after)
+
+
 # A group's closer is a child of its initiator, not a parallel lane.
 _CLOSER_STEP_TYPES = frozenset({"merge_branches", "next_or_finish"})
 
@@ -787,31 +1083,6 @@ def _rule_field(
     return next((f for f in fields if ref in (f["id"], f["api_name"])), None)
 
 
-def _llm_tools_dropped(
-    current: dict[str, Any], payload: dict[str, Any]
-) -> dict[str, list[str]]:
-    """Call LLM steps whose live MCP server or run-as account the update
-    clears, by spec step key. A spec that omits the keys sends null, so an
-    `update` detaches a server attached in the UI. Steps pair as `diff`
-    pairs them: by id, then by position."""
-    from kizen_builder.translate import _wire_pairs
-
-    live_steps = sorted(current.get("steps") or [], key=lambda s: s.get("order") or 0)
-    dropped: dict[str, list[str]] = {}
-    for live, built in _wire_pairs(live_steps, payload.get("steps") or []):
-        if live is None or built is None or built.get("type") != "call_llm":
-            continue
-        was = live.get("action_call_llm") or {}
-        now = built.get("action_call_llm") or {}
-        for read_key, wire_key, cell in (
-            ("mcp_server", "mcp_server_id", "detaches_mcp_server"),
-            ("run_tools_as", "run_tools_as_id", "clears_run_tools_as"),
-        ):
-            if was.get(read_key) and now.get(wire_key) is None:
-                dropped.setdefault(cell, []).append(built["key"])
-    return dropped
-
-
 # ---------------------------------------------------------------------------
 # Top-level payload builder
 # ---------------------------------------------------------------------------
@@ -828,6 +1099,8 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     }
     if auto.target_object:
         payload["custom_object_id"] = ctx.object_uuid(auto.target_object)
+    if auto.folder:
+        payload["folder_id"] = ctx.folder_uuid(auto.folder)
     if auto.user_description:
         payload["user_description"] = auto.user_description
     if auto.error_notification_email is not None:
@@ -1093,6 +1366,97 @@ def _qualify_trigger_field_ref(
     return {**block, "field_ref": ".".join(_split_field_ref(ref, auto))}
 
 
+# The server's default and the UI's text. A description in either form names
+# no user intent, only (possibly old) stages, so it is rewritten from the
+# stages being sent: a spec copied from a read would otherwise label a changed
+# trigger with its previous stages.
+_GENERATED_STAGE_DESCRIPTION = re.compile(
+    r"Stage Updated|Stage Update from '.*' to '.*'", re.DOTALL
+)
+
+
+def _resolve_trigger_stages(
+    trigger_type: str,
+    key: str,
+    block: dict[str, Any],
+    description: str | None,
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> tuple[dict[str, Any], str | None]:
+    """A `stage_updated` block with its stage names resolved to UUIDs, and its
+    description: the UI's text unless the spec wrote its own. Other trigger
+    types pass through.
+
+    Kizen refuses a name, and answers a stage of another pipeline with a
+    message that doesn't name the stage (confirmed live 2026-10-30).
+    """
+    if trigger_type != "stage_updated":
+        return block, description
+    where = f"trigger '{key}'"
+    if not auto.target_object:
+        raise PlanError(
+            f"{where}: stage_updated needs a pipeline object, and the "
+            "automation has no target_object."
+        )
+    obj = ctx.object_data(auto.target_object)
+    if obj.get("object_type") != "pipeline":
+        raise PlanError(
+            f"{where}: stage_updated needs a pipeline object, and "
+            f"'{auto.target_object}' isn't one."
+        )
+    stages = obj.get("stages") or []
+    out = dict(block)
+    names = {}
+    for k in ("from_stage", "to_stage"):
+        value = block.get(k)
+        if value is None:
+            names[k] = "Any Stage"
+            continue
+        match = match_option(stages, value)
+        if match is None:
+            raise PlanError(
+                f"{where}: stage '{value}' isn't a stage of "
+                f"'{obj.get('display_name') or auto.target_object}'. "
+                f"Stages: {', '.join(str(s.get('name')) for s in stages)}"
+            )
+        out[k] = match["id"]
+        names[k] = match["name"]
+    if description and not _GENERATED_STAGE_DESCRIPTION.fullmatch(description):
+        return out, description
+    return out, f"Stage Update from '{names['from_stage']}' to '{names['to_stage']}'"
+
+
+def _goal_trigger_key(t: dict[str, Any], i: int) -> str:
+    return t.get("key") or f"goal_trigger_{i}"
+
+
+def _resolve_goal_trigger_stages(
+    step_type: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """A goal block whose `stage_updated` wait-until triggers have stage UUIDs
+    and a description. Runs before the goal builder, which translate also
+    calls, so the builder never needs a lookup."""
+    if step_type != "goal" or not block.get("triggers"):
+        return block
+    triggers = []
+    for i, t in enumerate(block["triggers"]):
+        trigger_type = t.get("trigger_type") or t.get("type")
+        if trigger_type != "stage_updated":
+            triggers.append(t)
+            continue
+        cfg_field = trigger_config_field(trigger_type)
+        resolved, description = _resolve_trigger_stages(
+            trigger_type,
+            _goal_trigger_key(t, i),
+            dict(t.get(cfg_field) or {}),
+            t.get("description"),
+            auto,
+            ctx,
+        )
+        triggers.append({**t, cfg_field: resolved, "description": description})
+    return {**block, "triggers": triggers}
+
+
 def _build_trigger_payload(
     t: AutomationTriggerDef, auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -1122,6 +1486,11 @@ def _build_trigger_payload(
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
     block_dict = _qualify_trigger_field_ref(t.trigger_type, block_dict, auto)
+    block_dict, description = _resolve_trigger_stages(
+        t.trigger_type, p["key"], block_dict, p.get("description"), auto, ctx
+    )
+    if description:
+        p["description"] = description
     p[cfg_field] = builder(block_dict, ctx)
     problem = _inbox_selection_problem([p])
     if problem:
@@ -1330,6 +1699,18 @@ def _trigger_scheduled_activity_overdue(
     return out
 
 
+@honours("from_stage", "to_stage", "fire_on_create")
+def _trigger_stage_updated(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
+    # Stage names were resolved before dispatch (_resolve_trigger_stages).
+    # Both stage keys are required, null meaning Any Stage; Kizen accepts and
+    # ignores `stage_field`, so it's never sent (confirmed live 2026-10-30).
+    return {
+        "from_stage": block.get("from_stage"),
+        "to_stage": block.get("to_stage"),
+        "fire_on_create": bool(block.get("fire_on_create", False)),
+    }
+
+
 @honours("receiving_inbox", "selected_integrated_inboxes")
 def _trigger_email_received(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any]:
     # Contact automations only: a custom object gets 400 "only client custom
@@ -1356,6 +1737,7 @@ _TRIGGER_BUILDERS: dict[str, Any] = {
     "form_submitted": _trigger_form_submitted,
     "survey_submitted": _trigger_survey_submitted,
     "email_received": _trigger_email_received,
+    "stage_updated": _trigger_stage_updated,
 }
 
 
@@ -1504,6 +1886,13 @@ def _build_step_payload(
 
     if step.step_type in _CONFIGLESS_STEP_TYPES:
         return p
+    if step.step_type == "update_pipeline_status":
+        raise PlanError(
+            f"step '{step.key}': Kizen's automation builder has no move-stage "
+            "step. Move the record with a change_field_value step on the stage "
+            'field: {"step_type": "change_field_value", "action_change_field_value": '
+            '{"field_ref": "stage", "specific_field_value": "<stage name>"}}'
+        )
     builder = _STEP_BUILDERS.get(step.step_type)
     if builder is None:
         raise PlanError(
@@ -1516,9 +1905,11 @@ def _build_step_payload(
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
     try:
+        block_dict = _resolve_goal_trigger_stages(step.step_type, block_dict, auto, ctx)
         wire_block = builder(block_dict, auto, ctx)
     except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
+    _resolve_llm_plugin_app(step.step_type, step.key, wire_block, ctx)
     problem = _built_block_problem(step.step_type, step.key, wire_block, auto, ctx)
     if problem:
         raise PlanError(problem)
@@ -1736,6 +2127,41 @@ def _llm_tools_pairing_problem(key: str, block: dict[str, Any]) -> str | None:
     return None
 
 
+_LLM_STEP_TYPES = ("call_llm", "file_content_extraction", "audio_transcription")
+
+
+def _resolve_llm_plugin_app(
+    step_type: str, key: str, block: dict[str, Any], ctx: LiveContext
+) -> None:
+    """Fill an LLM block's ``business_plugin_app_id`` from the business's
+    catalog, as the Kizen UI does. The write accepts a block without one,
+    or with another provider's, and stores it that way."""
+    llm: Any = block
+    if step_type == "condition" and block.get("type") == "llm_decision":
+        llm = block.get("llm_decision")
+    elif step_type not in _LLM_STEP_TYPES:
+        return
+    if not isinstance(llm, dict) or not llm.get("model_name"):
+        return
+    model_name, bpa_id = llm["model_name"], llm.get("business_plugin_app_id")
+    try:
+        if not bpa_id:
+            llm["business_plugin_app_id"] = ctx.llm_plugin_app_id(model_name)
+            return
+        rows = ctx.llm_models()
+    except PlanError as e:
+        raise PlanError(f"step '{key}': {e}") from e
+    owner = next((r for r in rows if r["business_plugin_app_id"] == bpa_id), None)
+    expected = next((r for r in rows if r["model_value"] == model_name), None)
+    if owner and expected and expected["business_plugin_app_id"] != bpa_id:
+        raise PlanError(
+            f"step '{key}': business_plugin_app_id {bpa_id} is "
+            f"{owner['provider_name']}'s, but {model_name} is a "
+            f"{expected['provider_name']} model. Leave business_plugin_app_id "
+            "out and the CLI uses this business's own."
+        )
+
+
 def _render_filter_config(
     fc: dict[str, Any],
     object_api_name: str | None,
@@ -1812,7 +2238,7 @@ def _step_goal(
         if not trigger_type:
             raise PlanError(f"goal trigger {i} has no trigger_type")
         p: dict[str, Any] = {
-            "key": t.get("key") or f"goal_trigger_{i}",
+            "key": _goal_trigger_key(t, i),
             "type": trigger_type,
             "prefix": "trigger",
             "user_description": t.get("user_description") or "",
@@ -2191,12 +2617,22 @@ def _step_change_field_value(
         # Flat → wrap into single-element actions
         flat = {k: v for k, v in block.items() if k != "actions"}
         actions_in = [flat]
-    return {"actions": [_change_field_value_action(a, auto, ctx) for a in actions_in]}
+    return {
+        "actions": [
+            _change_field_value_action(a, auto, ctx, auto.target_object)
+            for a in actions_in
+        ]
+    }
 
 
 def _change_field_value_action(
-    a: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+    a: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+    field_object: str | None,
 ) -> dict[str, Any]:
+    """One field change. ``field_object`` is the object the field lives on
+    (api_name or UUID), for finding a field given by UUID."""
     out: dict[str, Any] = {
         "field_resolution": a.get("field_resolution") or "overwrite",
         "update_mode": a.get("update_mode") or "update_fields",
@@ -2241,7 +2677,12 @@ def _change_field_value_action(
                 if k in sfv
             }
         else:
-            out["specific_field_value"] = sfv
+            # A read expands a checkboxes value to [{id, name, deleted}, …].
+            if isinstance(sfv, list):
+                sfv = [(_unwrap_id(v) or v) if isinstance(v, dict) else v for v in sfv]
+            out["specific_field_value"] = _option_labels_to_ids(
+                field, sfv, field_object, auto, ctx
+            )
     if a.get("context_entity_field") is not None:
         # A field on the triggering record (auto.target_object) — a bare
         # name (no dot) resolves against it, same as field_ref elsewhere.
@@ -2271,6 +2712,113 @@ def _change_field_value_action(
     return out
 
 
+# Field types whose values are option UUIDs: a change_field_value write, and
+# the options an LLM destination may fill. A pipeline's `stage` is a dropdown
+# whose options are the stages.
+_OPTION_FIELD_TYPES = {
+    "dropdown",
+    "radio",
+    "status",
+    "checkboxes",
+    "choices",
+    "yesnomaybe",
+}
+
+
+def _is_label(value: Any) -> bool:
+    # Kizen saves "" as a cleared value and reads it back as a bare "".
+    return isinstance(value, str) and value != "" and not is_uuid(value)
+
+
+def _option_labels_to_ids(
+    field: Any,
+    value: Any,
+    field_object: str | None,
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> Any:
+    """Resolve option labels in a `specific_field_value` to option UUIDs.
+
+    Kizen answers a label with a 500, or saves an automation it then can't
+    read (confirmed live 2026-10-30), so an unknown label is refused here.
+    UUIDs and read shapes never need the lookup.
+    """
+    values = value if isinstance(value, list) else [value]
+    labels = [v for v in values if _is_label(v)]
+    if not labels:
+        return value
+    # A read's field object carries its type, and a text value reads back as
+    # a bare string.
+    if isinstance(field, dict) and field.get("field_type") not in (
+        None,
+        *_OPTION_FIELD_TYPES,
+    ):
+        return value
+    obj_ref, data = _change_field(field, field_object, labels[0], auto, ctx)
+    if data.get("field_type") not in _OPTION_FIELD_TYPES:
+        return value
+    options = data.get("options") or []
+    names = ", ".join(str(o.get("name")) for o in options)
+
+    def option_id(v: Any) -> Any:
+        if not _is_label(v):
+            return v
+        match = match_option(options, v)
+        if match is not None:
+            return match["id"]
+        obj = ctx.object_data(obj_ref)
+        obj_api = obj.get("api_name") or obj_ref
+        fld_api = data.get("name") or data.get("api_name")
+        if fld_api == "stage" and obj.get("object_type") == "pipeline":
+            raise PlanError(
+                f"stage '{v}' isn't a stage of "
+                f"'{obj.get('display_name') or obj_api}'. Stages: {names}"
+            )
+        raise PlanError(
+            f"'{v}' isn't an option of '{fld_api}' on '{obj_api}'. Options: {names}"
+        )
+
+    if isinstance(value, list):
+        return [option_id(v) for v in value]
+    return option_id(value)
+
+
+def _change_field(
+    field: Any,
+    field_object: str | None,
+    label: str,
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> tuple[str, dict[str, Any]]:
+    """(object, live field) for a change whose value holds a label.
+
+    A field given by UUID is looked up by id: `steps get` prints the wire
+    shape, and an edit that swaps an option UUID for a label must resolve it
+    like a named field does.
+    """
+    if isinstance(field, str) and not is_uuid(field):
+        obj_api, fld_api = _split_field_ref(field, auto)
+        return obj_api, ctx.field_data(obj_api, fld_api)
+    field_id = _unwrap_id(field)
+    if field_id is None and isinstance(field, dict):
+        api_name = field.get("name") or field.get("api_name")
+        if auto.target_object and api_name:
+            return auto.target_object, ctx.field_data(auto.target_object, api_name)
+    if not field_object or field_id is None:
+        raise PlanError(
+            f"'{label}' looks like an option label, but the field is given as a "
+            "UUID, so its options can't be looked up. Name the field as "
+            '"<object>.<field>", or give the option\'s UUID.'
+        )
+    data = ctx.field_by_id(field_object, field_id)
+    if data is None:
+        raise PlanError(
+            f"field '{field_id}' isn't a field of "
+            f"'{ctx.object_data(field_object).get('api_name') or field_object}'."
+        )
+    return field_object, data
+
+
 @honours(
     "automation_target_relationship_fields",
     "relationship_field_ref",
@@ -2297,13 +2845,14 @@ def _step_modify_related_entities(
     single = block.get("relationship_field_ref") or block.get("relationship_field_id")
     if single:
         rel_fields_in.append(single)
+    object_to_modify = _resolve_object(block.get("object_to_modify"), ctx)
     out: dict[str, Any] = {
-        "object_to_modify": _resolve_object(block.get("object_to_modify"), ctx),
+        "object_to_modify": object_to_modify,
         "automation_target_relationship_fields": [
             r for r in (_resolve_field(r, auto, ctx) for r in rel_fields_in) if r
         ],
         "fields_to_modify": [
-            _change_field_value_action(f, auto, ctx)
+            _change_field_value_action(f, auto, ctx, object_to_modify)
             for f in (block.get("fields_to_modify") or [])
         ],
     }
@@ -2765,9 +3314,6 @@ def _step_file_content_extraction(
     return {k: v for k, v in out.items() if v is not None}
 
 
-_CHOICE_FIELD_TYPES = {"dropdown", "radio", "checkboxes", "choices", "yesnomaybe"}
-
-
 def _resolve_llm_destinations(
     destinations: list[dict[str, Any]],
     auto: AutomationDef,
@@ -2831,7 +3377,7 @@ def _resolve_llm_destinations(
             d["field"] = hop_uuid
             if not d.get("options") and dest_obj_api and dest_fld_api:
                 fdata = ctx.field_data(dest_obj_api, dest_fld_api)
-                if fdata.get("field_type") in _CHOICE_FIELD_TYPES:
+                if fdata.get("field_type") in _OPTION_FIELD_TYPES:
                     d["options"] = [
                         o["id"] for o in (fdata.get("options") or []) if o.get("id")
                     ]
@@ -2842,7 +3388,7 @@ def _resolve_llm_destinations(
             # Auto-populate options for choice-type fields when not already set
             if not d.get("options"):
                 fdata = ctx.field_data(obj_api, fld_api)
-                if fdata.get("field_type") in _CHOICE_FIELD_TYPES:
+                if fdata.get("field_type") in _OPTION_FIELD_TYPES:
                     d["options"] = [
                         o["id"] for o in (fdata.get("options") or []) if o.get("id")
                     ]
@@ -2863,6 +3409,8 @@ def _resolve_llm_destinations(
     "association_configs",
     "note",
     "html_note",
+    "target_variable",
+    "variable_field_resolution",
 )
 def _step_schedule_activity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -2889,6 +3437,10 @@ def _step_schedule_activity(
     for key in ("note", "html_note"):
         if block.get(key) is not None:
             out[key] = block[key]
+    if block.get("target_variable") is not None:
+        out["target_variable"] = _unwrap_variable_name(block["target_variable"])
+    if block.get("variable_field_resolution") is not None:
+        out["variable_field_resolution"] = block["variable_field_resolution"]
     return out
 
 

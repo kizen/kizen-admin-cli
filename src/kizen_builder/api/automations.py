@@ -55,6 +55,34 @@ def get_metadata(client: KizenClient) -> dict[str, Any]:
     return client.get("/api/automation2/automations/metadata")
 
 
+def llm_model_rows(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten :func:`get_metadata`'s LLM catalog into one row per (provider,
+    model). ``business_plugin_app_id`` is the provider's install in this
+    business, Kizen AI's included."""
+    rows: list[dict[str, Any]] = []
+    for provider in (meta.get("llm") or {}).get("provider_model_details") or []:
+        bpa_id = (provider.get("plugin_app") or {}).get("id")
+        for model in provider.get("models") or []:
+            usage = model.get("usage") or {}
+            rows.append(
+                {
+                    "provider_name": provider.get("provider_name"),
+                    "model_value": model.get("model_value"),
+                    "model_label": model.get("model_label"),
+                    "business_plugin_app_id": bpa_id,
+                    "supports_call": (usage.get("text") or {}).get("call"),
+                    "supports_decision": (usage.get("text") or {}).get("decision"),
+                    "supports_extraction": (usage.get("image") or {}).get("extraction"),
+                    "supports_transcription": (usage.get("audio") or {}).get(
+                        "transcription"
+                    ),
+                    "is_deprecated": model.get("is_deprecated"),
+                    "suggested_replacement": model.get("suggested_replacement"),
+                }
+            )
+    return rows
+
+
 def list_mcp_step_options(client: KizenClient) -> list[dict[str, Any]]:
     """GET /api/mcp-servers/step-options: the MCP servers a `call_llm` step
     can attach, as its picker lists them (`{id, name, api_name, is_enabled,
@@ -381,11 +409,8 @@ def duplicate_automation(
 # Confirmed live: list, get, create, update (PATCH — see update_folder), and
 # delete all round-tripped successfully against a throwaway folder. The one
 # surprise: update is PATCH, not PUT (PUT 405s: "Only patch is allowed"),
-# unlike every other resource in this codebase. `move_to_folder`'s bulk
-# convenience endpoint from the roadmap ticket (`POST .../folders/move`) was
-# NOT implemented/tested — moving one automation goes through the
-# already-confirmed `folder` field on the automation itself instead (see
-# tools/automations.py's move_to_folder).
+# unlike every other resource in this codebase. Moving automations between
+# folders is its own endpoint (see move_automations).
 # ---------------------------------------------------------------------------
 
 
@@ -453,12 +478,21 @@ def delete_folder(client: KizenClient, folder_id: str) -> dict[str, Any]:
     return resp if isinstance(resp, dict) else {}
 
 
-# Moving an existing automation between folders does NOT use a separate
-# endpoint here — `folder` is a confirmed field on the automation itself
-# (fixtures show `"folder": {"id": ..., "name": ...}` round-tripping through
-# a normal PUT; see test_automation_payloads.py's
-# `op.payload["folder"] == raw["folder"]` assertion). So moving one
-# automation is just a PUT with `folder` set to the new {"id": ...} (or
-# None), via the same lightweight GET->mutate->PUT loop `set_active` uses —
-# no guessed bulk endpoint needed. The roadmap ticket's `POST .../folders/move`
-# may exist as a bulk-move convenience on top of this; not implemented here.
+def move_automations(
+    client: KizenClient, automation_ids: list[str], folder_id: str
+) -> None:
+    """POST /api/automation2/folders/move: move automations into a folder.
+
+    Confirmed live 2026-10-30: the body is `{"automation_ids": [...],
+    "folder_ids": [], "new_parent_folder_id": <id>}` and the answer is 200 with
+    an empty body. The automation isn't rewritten: its revision stays put.
+    Root is the `<business_root>` folder's id.
+    """
+    client.post(
+        "/api/automation2/folders/move",
+        json={
+            "automation_ids": list(automation_ids),
+            "folder_ids": [],
+            "new_parent_folder_id": folder_id,
+        },
+    )
