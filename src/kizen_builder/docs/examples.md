@@ -18,11 +18,8 @@ build them:
 3. an automation with a branch, a merge, and a `code_step`
 4. a dashboard, generated the way `kizen docs show dashboard` recommends
 
-Each JSON block below is a byte-for-byte copy of a committed fixture under
-`tests/fixtures/examples/service_ticket/` — `tests/test_examples_doc_matches_fixtures.py`
-fails if this doc and that fixture ever diverge. `tests/drift/test_worked_examples.py`
-(marked `pytest.mark.drift`) applies the same fixtures against a real
-environment end to end.
+Each JSON block is checked against a committed fixture, and the set is applied
+end to end against a real business before release.
 
 Every annotation below names the surface topic that owns the underlying fact
 rather than restating it — `kizen docs show <topic>` for the full story.
@@ -300,9 +297,8 @@ of the step's keys.
 `condition.filter_config` uses the bare field api_name and an option
 **label** (`"High"`), not a UUID — `kizen docs show filters` resolves it at
 apply time, same DSL as `records list --filter`. `code_step`'s
-`inputs[].field_ref` is `"service_tickets.priority"` — see `kizen docs show
-automation`, "field_ref resolves at apply time," which is why this spec is
-portable across environments rather than hand-carrying a UUID.
+`inputs[].field_ref` is `"service_tickets.priority"`, not a UUID — see
+`kizen docs show automation`, 'Field references'.
 
 ```bash
 kizen automations create --spec-file automation.json --dry-run
@@ -432,13 +428,12 @@ scheduled list` reads the scheduled `Site Visit` back.
 
 **Logging an activity instance is a browser-only step — the doc doesn't run
 this part headless.** `activity.md` is explicit: "Logging/scheduling of
-instances stays in the UI," and `cli/activities_instances.py` exposes only
-`get`/`list` on both logged and scheduled instances — there is no
-`activities logged create`. Wiring an `activity_logged` trigger, a
-`schedule_activity` step (used above), or a `scheduled_activity_overdue`
-trigger into an automation is fully CLI-wired; **firing** an
-`activity_logged` trigger specifically requires logging one instance by hand
-in the Kizen UI first.
+instances stays in the UI," and the CLI reads logged and scheduled instances
+but can't create them — there is no `activities logged create`. Wiring an
+`activity_logged` trigger, a `schedule_activity` step (used above), or a
+`scheduled_activity_overdue` trigger into an automation is fully CLI-wired;
+**firing** an `activity_logged` trigger specifically requires logging one
+instance by hand in the Kizen UI first.
 
 The read side is still real: after logging one `Site Visit` instance by hand
 against a ticket in the browser,

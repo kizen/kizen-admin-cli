@@ -1,6 +1,6 @@
 # Kizen Admin CLI — reference router & cross-surface conventions
 
-Everything specific to one kind of entity now lives with that entity. This file
+Everything specific to one kind of entity lives with that entity. This file
 holds only what doesn't belong to any single surface: how to find the right
 topic, and the conventions that hold across all of them.
 
@@ -25,12 +25,14 @@ the wire formats, endpoints, and confirmed quirks together.
 | Record layouts | `layout` |
 | Filter groups, quick filters, column templates | `saved-views` |
 | Roles & permission groups | `permission-group` |
+| Team members and their roles | `team` |
 | Service accounts (run-tools-as identities) | `service-account` |
 | Smart connectors (API + local dev loop) | `smart-connectors` |
 | A connector's flow spec (`configure-flow`) | `smart-connector-flow` |
 | Email templates & automation messages | `email-templates` |
 | Files: upload, reference, download | `files` |
 | Filters — one DSL, six surfaces | `filters` |
+| One build across surfaces, start to finish | `examples` |
 
 `kizen docs list` is the live version of this table. Command **syntax** is
 always `kizen <group> <cmd> --help`; how to *operate* an environment is

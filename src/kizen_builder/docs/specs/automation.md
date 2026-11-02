@@ -61,6 +61,7 @@ kizen automations create --spec-file auto.json --dry-run
 | `type` | enum | `record_based` (default) or `global`. |
 | `target_object` | api_name | **Required for `record_based`.** Resolved to `custom_object_id`. |
 | `active` | bool \| null | On create, an omitted/`null` value resolves to `false` — prefer authoring inactive, then `automations activate`. On update, an omitted/`null` value **preserves whatever the live automation already is**; only an explicit `true`/`false` changes it. |
+| `folder` | string | Folder name or UUID (`kizen automations folders list`). On update, leaving it out keeps the current folder. A name two folders share is refused; give the UUID. |
 | `triggers` | `AutomationTriggerDef[]` | See wired triggers below. |
 | `steps` | `AutomationStepDef[]` | The graph. See wiring rules below. |
 
@@ -123,13 +124,13 @@ live 2026-09-28.
 spec is rejected without it. Confirmed live 2026-09-28.
 
 `error_notification_severity_level` (`error`, `warning`, `info`, `inherit`)
-sets a step's own severity. Omitted, the step inherits. Confirmed live
-2026-09-28.
+sets a step's own severity. Omitted, a new step inherits and an `update`
+keeps an existing step's live severity. Confirmed live 2026-09-28.
 
 **Field references — two forms, don't mix them up:**
 - **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations)
-  uses the object-qualified `"<object_api>.<field_api>"` — resolved to a UUID at
-  apply time, portable across envs. Bare `field_id` UUIDs also work but are env-bound.
+  uses the object-qualified `"<object_api>.<field_api>"`, resolved to this
+  business's UUID at apply time. A bare `field_id` UUID also works.
 - **Condition `filter_config` `field`** uses the **bare field api_name**
   (`account_region`), *not* object-qualified — it's the filter DSL, same as
   `records list --filter` and saved views.
@@ -641,30 +642,39 @@ llm-models` for the live catalog (wraps `GET
 /api/automation2/automations/metadata`'s `llm.provider_model_details`):
 every enabled `model_name` this business can use, which of
 call_llm/condition-`llm_decision`/file_content_extraction/audio_transcription
-each one supports, deprecation status + suggested replacement, and —
-critically — the `business_plugin_app_id` each non-native model needs:
+each one supports, deprecation status + suggested replacement, and the
+`business_plugin_app_id` of the provider install that runs each one:
 
 ```
 $ kizen automations llm-models
 provider   model_name                   business_plugin_app_id                 call  decision  extract  transcribe
-kizen      kizen/pro                    —                                       ✓      ✓        ✓         ·
+kizen      kizen/pro                    145fa07b-ffe0-49cb-89af-8f126a0a2f13    ✓      ✓        ✓         ·
 gemini     gemini/gemini-2.5-flash      92dfef31-8b9b-49dc-b54b-3e47cd6b4523    ✓      ✓        ✓         ✓
 anthropic  claude-sonnet-4-5-20250929   96bae762-ad8c-4431-bf21-95aaedadaa08    ✓      ✓        ✓         ·
 ```
 
-`model_name` is a free string, unvalidated client-side — `gemini/...` and
-`openai/...` models need the provider prefix; Claude models are bare (e.g.
-`claude-3-7-sonnet-20250219`, no `claude/` prefix). **Any non-native
-`model_name` (anything not `kizen/...`) needs `business_plugin_app_id` set
-alongside it** — `model_name` alone 400s with `{'business_plugin_app_id':
-['Business plugin app not found']}` even though `model_name` looks
-sufficient on its own. `kizen/*` models don't need one (confirmed live:
-`kizen/pro` works with no extra field).
+`model_name` is a free string — `gemini/...` and `openai/...` models need
+the provider prefix; Claude models are bare (e.g.
+`claude-3-7-sonnet-20250219`, no `claude/` prefix). **`business_plugin_app_id`
+is optional in a spec: the CLI fills it from this catalog for every model,
+Kizen AI included**, so a step reads back with the same `business_plugin_app`
+a step saved in the Kizen UI has. Each business has its own Kizen AI install
+id, as it does for every other provider (confirmed live 2026-10-30). The
+write itself doesn't need it for `kizen/*`, but then stores the step with
+`business_plugin_app: null`, unlike a step saved in the Kizen UI; for any
+other provider, `model_name` alone 400s with
+`{'business_plugin_app_id': ['Business plugin app not found']}`. With
+`business_plugin_app_id` omitted, a `model_name` the catalog doesn't list
+is refused at plan time; with an explicit id, the server decides. An id
+that belongs to a different provider than the model's is refused too: the
+write accepts `kizen/pro` with the OpenAI install's id and stores that
+pairing (confirmed live 2026-10-30).
 
-**Getting `business_plugin_app_id` wrong looks the same as omitting it —
-same 400, so it's easy to think the id itself is bad rather than the
-source it came from.** Two endpoints return something that LOOKS like the
-right id and isn't:
+**If you set `business_plugin_app_id` by hand, take it from the right
+endpoint.** A wrong id gets the same 400 the raw API gives a missing one,
+so it's easy to think the id itself is bad rather than the source it came
+from. Two endpoints return something that LOOKS like the right id and
+isn't:
 - `GET /api/external-integrations/bootstrap` returns each plugin's
   **catalog/app-definition id** — identical across every business (it's the
   "Gemini the product" id, not "your business's installed Gemini
@@ -690,7 +700,7 @@ are usable for which step type in one shot.
 
 | Wire value | UI label |
 |---|---|
-| `error_if_required` | "Error if any merge field is blank" (server default when the key is omitted) |
+| `error_if_required` | "Error if any merge field is blank" (the default for a new step; `update` keeps an existing step's live value) |
 | `default_to_unknown` | "Default to 'Unknown'" — fixed literal text, not a configurable string |
 | `blank` | "Leave Blank" |
 
@@ -727,15 +737,16 @@ server's tools. Confirmed live 2026-10-27:
 - Reads expand both references (`mcp_server {id, name, api_name, …}`,
   `run_tools_as {id, name}`), and every `call_llm` step reads
   `max_sequential_turns` and `tool_failure_policy`, server or not.
-- The planner always sends all four keys. A step that omits them gets no
-  server, no account, 25 turns and `never_fail`, so `update` from a spec
-  without them **detaches a server attached in the UI**. `update --dry-run`
-  names those steps in its preview: `detaches_mcp_server=[<step key>, …]`,
-  and `clears_run_tools_as=[…]` for a run-as account that goes. Steps pair
-  as `diff` pairs them, and `diff` shows each change as
-  `mcp_server_id: '<uuid>' → None` and `run_tools_as_id: '<uuid>' → None`.
-  Kizen itself, given a PUT that omits both ids, keeps the server and clears
-  the account, which leaves a step its own validator rejects.
+- A new step that omits them gets no server, no account, 25 turns and
+  `never_fail`. On `update`, a step whose `id` matches a live one keeps its
+  live server and account when the spec sets none of `mcp_server`,
+  `mcp_server_id`, `run_tools_as` and `run_tools_as_id`, and keeps its live
+  `max_sequential_turns` and `tool_failure_policy` when the spec leaves them
+  out. `--dry-run` names those steps under `keeps_live`. To remove the
+  server, set `mcp_server` (or `run_tools_as`) to `null`: both go. A live
+  step with a server but no account gets neither, because Kizen rejects that
+  pairing. Kizen itself, given a PUT that omits both ids, keeps the server
+  and clears the account, which leaves a step its own validator rejects.
 
 ### Variable-comparison condition step
 
@@ -771,29 +782,9 @@ an **automation variable** to a static value is a different clause shape,
   } }
 ```
 
-- **`view_model` is required** — omit it and the condition renders empty/
-  untyped in the Kizen UI editor, though it still executes correctly via API.
-- **`rhs_value` is always a string**, even for a numeric comparison.
-- **`condition` → `view_model` string mapping**: `<=`→`less_than_or_equal_to`,
-  `>=`→`greater_than_or_equal_to`, `<`→`less_than`, `>`→`greater_than`,
-  `=`→`equal_to`. For blank checks, `condition` is `is_blank`/`is_not_blank`
-  directly (both keys use the same literal string in `view_model`) — this is
-  a distinct token pair from the record-field DSL's single `is_blank`+bool
-  form used elsewhere in `filter_config`.
-- **`custom_object_id`** is the automation's target object UUID;
-  **`client_tag_field_id`** is per business, not a constant: two businesses'
-  contact `tags` field ids differed (confirmed live 2026-10-05). Copy it from
-  the `view_model` of an existing condition in the same business
-  (`kizen automations get <api_name> --raw`). If there is none, use the
-  contact `tags` field's id from `kizen objects get client_client`. That
-  fallback is a best guess. Conditions were read in two businesses, one on 2026-10-05 and one on
-  2026-10-16. Record-field clauses mostly carried the `tags` id in both.
-  Variable clauses carried it in the second and a different id in the first. A
-  condition with no `view_model` still executes, so a wrong value probably
-  changes only how the builder UI shows the condition (not tested). A
-  field-vs-variable rule written with the filter spec's `variable` key doesn't
-  need it: the CLI resolves it per business (see [Field compared to an array
-  variable](#field-compared-to-an-array-variable)).
+The clause's rules — `view_model`, the operator mapping, blank checks,
+`client_tag_field_id` — are in `kizen docs show filters`, 'Variable-comparison
+clauses'.
 
 ### Field compared to an array variable
 
@@ -843,10 +834,9 @@ A merge field is not a bare `{{ <namespace>.<field_api_name> }}` token — the
 planner (and Kizen's builder UI) always wraps it in a
 `<span class="kzn-merge-field" data-merge-field-fallback-label="…"
 data-merge-field-relationship="…" [data-merge-field-objectname="…"]>{{ … }}</span>`
-marker; the bare token by itself is inert text. See
-`src/kizen_builder/tools/merge_fields.py` for the span-building rules this
-planner shares across step types, and `docs/specs/email-templates.md` for the
-same convention in email template `Text` blocks and dashboard static text.
+marker; the bare token by itself is inert text.
+`kizen docs show email-templates` has the same convention for email `Text`
+blocks and dashboard static text.
 
 The namespace token varies **by which step type's content field it's in** —
 this isn't one global convention:
@@ -971,7 +961,10 @@ as a real custom object's own api_name, and its span gets
 - **`notify_member_via_email` content is a separate resource, not inline.** Its
   config points at an `AutomationMessage` by `id`. Create it correctly with
   `kizen messages create <automation> --template <name>` first, then reference
-  that UUID — a message built from raw content shows as *unselected* in the UI.
+  that message's id — a message built from raw content shows as *unselected*
+  in the UI. With `--json` the id is `.results[0].server_uuid`:
+  `kizen messages create <automation> --template <name> --yes --json | jq -r
+  '.results[0].server_uuid'`.
 - **`code_step.secrets` are env-specific** — the spec carries secret *names*; the
   target env must have each configured or the step fails at runtime. Surface
   this when authoring.
@@ -981,14 +974,39 @@ as a real custom object's own api_name, and its span gets
   history against the old id (confirmed live 2026-08-10). Set `id` (copied
   from a live read, e.g. `kizen automations show`) on any step that isn't
   actually new, and it keeps the same id and history across the write.
-- **`active` is the one runtime-state field the full replace does not
-  clobber when the spec is silent.** An update PUT is a full replace, but
-  `automations update` resolves an omitted/`null` `active` to the live
-  automation's current value before building the payload — a spec that
-  doesn't mention `active` never turns a running automation off. An
-  explicit `true`/`false` still wins and is echoed in the `--dry-run`
-  preview as a transition (`True → False (DEACTIVATES a live automation)`)
-  rather than a bare value.
+  Carrying `id` is also what keeps the step's settings below when the spec
+  leaves them out.
+- **What an update keeps when the spec is silent.** An update PUT is a full
+  replace, so `automations update` fills in these live values before
+  building the payload. An explicit value in the spec always wins, `""` and
+  `false` included. A `description: ""` is sent as no description, so
+  Kizen writes the type's default text rather than an empty one.
+  - `active`. A spec that doesn't mention it never turns a running
+    automation off. An explicit `true`/`false` is echoed in the `--dry-run`
+    preview as a transition (`True → False (DEACTIVATES a live automation)`)
+    rather than a bare value.
+  - The automation's `skip_non_working_days`. Without it a PUT turns a live
+    `true` off (confirmed live 2026-10-30).
+  - A webhook trigger's auth ([Webhook trigger auth](#webhook-trigger-auth-confirmed-live-2026-10-27)).
+  - On a step whose `id` matches a live step: `description`,
+    `user_description`, `should_skip_execution`, `continue_with_branch`
+    (only with a kept skip), `action_on_failure` and
+    `error_notification_severity_level`. On a trigger whose `id` matches:
+    `description`, `user_description` and `should_skip_execution`.
+    On a `schedule_activity` step whose `id` matches, its block's
+    `target_variable` and `variable_field_resolution` too
+    ([below](#schedule_activitytarget_variable-and-variable_field_resolution)).
+    On an LLM step whose `id` matches, its `merge_field_validation` and
+    `is_advanced` (on a condition, `llm_decision.merge_field_validation`),
+    and on `call_llm` also its MCP server and run-as account (as a pair),
+    `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
+    server)**).
+    `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
+    A Kizen PUT without them resets each to its default (confirmed live
+    2026-10-30).
+  - A step or trigger without `id` is new to Kizen, so what its spec leaves
+    out gets Kizen's defaults: the type's default description, an empty
+    note, not skipped.
 - **`condition.filter_config`** uses the filtering DSL (`{"all"|"any": [...]}`,
   single conditions wrapped in `{"all": [...]}`) — same as `saved-views.md`.
   Fields are **bare api_names**; **ops are per field type** (e.g. dropdown uses
@@ -1051,7 +1069,7 @@ Why a translator is mandatory rather than nice-to-have:
   dropped, not forwarded.
 - **So is a key a live read carries that the builder doesn't model.** Every
   verb that reads an automation back, whether to write it (`activate`,
-  `deactivate`, `move`, `steps add|edit|remove`, `roundtrip --execute`) or to
+  `deactivate`, `steps add|edit|remove`, `roundtrip --execute`) or to
   show or diff it (`show`, `steps get`, `diff`), stops with an error naming
   the automation, the step or trigger and the key, before any PUT.
   Only a non-empty value counts, and the same limits apply: keys inside
@@ -1099,7 +1117,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
 | `value_html` on an `update_variable` source | `''` |
-| `description` on a step or trigger | a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. It is written on create and on a PUT that omits it, so an update from a spec without one replaces a description set in the UI. Other types compare as sent |
+| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ### Read→write transforms
 
@@ -1226,6 +1244,26 @@ Kizen stores the two separately, and a PUT without `html_note` clears it
 while `note` survives. Set both when you want the note in both forms.
 Confirmed live 2026-10-06.
 
+### `schedule_activity.target_variable` and `variable_field_resolution`
+
+`target_variable` names a String or UUID automation variable that receives
+the scheduled activity's id. Write it as the variable's name; a read expands
+it to `{id, name, data_type, …}`, and `steps get` prints the name again.
+`variable_field_resolution` is `overwrite` (the default) or
+`update_if_blank`, which leaves a variable that already holds a value alone
+(the activity is still scheduled).
+A step that binds no variable reads `target_variable: null` with
+`overwrite`. Confirmed live 2026-10-30, including runs: `overwrite` replaced a
+seeded value with the new activity's id, and `update_if_blank` kept it.
+
+A PUT that leaves either key out resets it to `null`/`overwrite`. `steps edit`,
+`activate` and the other read-back verbs send both from the live read, and
+`update` keeps the live values when the spec omits them. An explicit
+`"target_variable": null` unbinds the variable. If an update removes the
+bound variable from `variables`, send that `null` too: otherwise the kept name
+points at a variable that no longer exists, and Kizen refuses the PUT with
+`HTTP 400 … variable '<name>' does not exist.`
+
 ### `schedule_activity.association_configs`
 
 Per-object record linkage, for activity types associated with more than one
@@ -1325,17 +1363,23 @@ assigns anyone:
 The reliable way to set an owner today is `kizen records update <object> <id>
 -f owner=<uuid>`, or a `change_field_value` step on `owner`.
 
-### `move_to_folder` / `automations move`
+### Folders
 
-The write dialect is a bare, nullable `folder_id` — **not** the
-`folder: {id, name}` shape a live read returns. The `folder: {…}` payload PUTs
-fine (200, revision bumps) and is **silently ignored**.
-
-And **`folder_id: null` — the obvious way to say "move to root" — 400s** with
-*"This field may not be null."* Root is itself a real, listable folder
-(`<business_root>`, always present in `kizen automations folders list`), not an
-absent value. `kizen automations move <api>` with no `--folder` resolves to that
-folder's id.
+- **A spec's `folder` goes on the wire as a bare `folder_id`.** A POST with it
+  creates the automation in that folder (confirmed live 2026-10-30). A read
+  returns `folder: {id, name}`, and that shape is **silently ignored** on write:
+  it PUTs fine (200, revision bumps) and the folder doesn't change (confirmed
+  live 2026-07-22). `update` and every verb that writes a read-back automation
+  send the live folder's `folder_id`, unless the spec names another.
+- **Root is a real folder**, `<business_root>`, always present in `kizen
+  automations folders list`, not an absent value. `folder_id: null` 400s with
+  *"This field may not be null."* (confirmed live 2026-07-22).
+- **`automations move` doesn't PUT.** It sends `POST
+  /api/automation2/folders/move` with `{"automation_ids": [<id>], "folder_ids":
+  [], "new_parent_folder_id": <folder id>}`, which answers 200 with an empty
+  body and leaves the revision unchanged (confirmed live 2026-10-30). So it
+  works on automations the CLI can't fully read back. With no `--folder` it
+  targets `<business_root>`.
 
 ## Debugging
 
@@ -1344,11 +1388,8 @@ folder's id.
 The error is nested: `{step_key: {action_block_name: {field_name: [message]}}}`.
 Work inside-out — which step, which config block, which wire field. A
 "not a valid choice" rejection for `create_related_entity`,
-`notify_member_via_text`, or `on_or_around_date` now carries the CLI's known
-valid values inline, sourced from
-`tools/planners/automations.py::KNOWN_ENUM_CHOICES` /
-`KNOWN_ENUM_CHOICES_TRIGGERS` — check the registry for what else this repo
-knows about a field before retrying blind. Common causes:
+`notify_member_via_text`, or `on_or_around_date`: the error lists the valid
+values the CLI knows. Common causes:
 
 - `null` for a non-nullable field (often a model default leaking through).
 - `action_on_failure: notify_continue` on a condition step — use `notify_pause`.
