@@ -55,6 +55,34 @@ def get_metadata(client: KizenClient) -> dict[str, Any]:
     return client.get("/api/automation2/automations/metadata")
 
 
+def llm_model_rows(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten :func:`get_metadata`'s LLM catalog into one row per (provider,
+    model). ``business_plugin_app_id`` is the provider's install in this
+    business, Kizen AI's included."""
+    rows: list[dict[str, Any]] = []
+    for provider in (meta.get("llm") or {}).get("provider_model_details") or []:
+        bpa_id = (provider.get("plugin_app") or {}).get("id")
+        for model in provider.get("models") or []:
+            usage = model.get("usage") or {}
+            rows.append(
+                {
+                    "provider_name": provider.get("provider_name"),
+                    "model_value": model.get("model_value"),
+                    "model_label": model.get("model_label"),
+                    "business_plugin_app_id": bpa_id,
+                    "supports_call": (usage.get("text") or {}).get("call"),
+                    "supports_decision": (usage.get("text") or {}).get("decision"),
+                    "supports_extraction": (usage.get("image") or {}).get("extraction"),
+                    "supports_transcription": (usage.get("audio") or {}).get(
+                        "transcription"
+                    ),
+                    "is_deprecated": model.get("is_deprecated"),
+                    "suggested_replacement": model.get("suggested_replacement"),
+                }
+            )
+    return rows
+
+
 def list_mcp_step_options(client: KizenClient) -> list[dict[str, Any]]:
     """GET /api/mcp-servers/step-options: the MCP servers a `call_llm` step
     can attach, as its picker lists them (`{id, name, api_name, is_enabled,

@@ -16,6 +16,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Steps that use a Kizen AI model now carry the business's Kizen AI app,
+  as steps saved in the Kizen UI do.** Before, they were stored with no
+  business plugin app, and the Kizen UI reported a missing business plugin
+  app on them. `business_plugin_app_id` is now optional for every model.
+  The plan refuses a value that belongs to a different provider and, when
+  the id is left out, a model the business's catalog doesn't list.
 - **The operating guide matches today's CLI.** It no longer says there are
   no spec files, drift detection or bulk writes, and it no longer names a
   command or source file that doesn't exist. It says how to reach `kizen`'s

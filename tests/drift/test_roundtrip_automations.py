@@ -381,11 +381,10 @@ def drift_team_member_id(drift_config) -> str:
 def drift_llm_models(drift_config) -> dict[str, dict[str, Any]]:
     """Live LLM catalogue, keyed by capability.
 
-    `model_name` is unvalidated client-side and a wrong one 400s the same way
-    a missing `business_plugin_app_id` does, so the ids come from the
-    environment's own catalogue (``GET /api/automation2/automations/metadata``
-    via ``list_llm_models``) rather than a literal. Native ``kizen/*`` models
-    are preferred because they need no ``business_plugin_app_id`` at all.
+    The models come from the environment's own catalogue (``GET
+    /api/automation2/automations/metadata`` via ``list_llm_models``) rather
+    than a literal, since the plan refuses a model the business hasn't
+    enabled. Kizen AI models are preferred: every business has them.
     """
     from kizen_builder.tools.automations import list_llm_models
 
@@ -398,8 +397,8 @@ def drift_llm_models(drift_config) -> dict[str, dict[str, Any]]:
             f"no live model advertises {capability}; either the catalogue shape "
             "changed or this business has no such model enabled"
         )
-        native = [r for r in usable if not r["business_plugin_app_id"]]
-        return (native or usable)[0]
+        kizen = [r for r in usable if r["provider_name"] == "kizen"]
+        return (kizen or usable)[0]
 
     return {
         "call": pick("supports_call"),
@@ -409,10 +408,7 @@ def drift_llm_models(drift_config) -> dict[str, dict[str, Any]]:
 
 
 def _llm_block(model: dict[str, Any], **extra: Any) -> dict[str, Any]:
-    block = {"model_name": model["model_value"], **extra}
-    if model["business_plugin_app_id"]:
-        block["business_plugin_app_id"] = model["business_plugin_app_id"]
-    return block
+    return {"model_name": model["model_value"], **extra}
 
 
 # ---------------------------------------------------------------------------
@@ -1988,6 +1984,20 @@ def drift_ai_steps(
 def test_ai_steps_are_accepted(drift_ai_steps):
     assert _sent_step_types(drift_ai_steps) == set(AI_STEPS)
     assert set(_live_steps_by_type(drift_ai_steps)) == set(AI_STEPS)
+
+
+def test_ai_steps_carry_the_catalogs_plugin_app(drift_ai_steps, drift_llm_models):
+    """A spec with no `business_plugin_app_id` gets the catalog's, so the step
+    reads back with the plugin app a step saved in the Kizen UI has."""
+    live = _live_steps_by_type(drift_ai_steps)
+    for step_type, model in (
+        ("call_llm", drift_llm_models["call"]),
+        ("file_content_extraction", drift_llm_models["extraction"]),
+        ("audio_transcription", drift_llm_models["transcription"]),
+    ):
+        (step,) = live[step_type]
+        stored = step[f"action_{step_type}"]["business_plugin_app"]
+        assert stored["id"] == model["business_plugin_app_id"], step_type
 
 
 def test_call_llm_block_is_action_call_llm(drift_ai_steps):
