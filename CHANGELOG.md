@@ -52,6 +52,12 @@ called out explicitly under **Changed** or **Removed**.
   "variable": "customer_email"}` with `=` or `contains`, so a search can
   find the Contact with a request's email. The automation doc works this
   through as "Find or create a Contact by email".
+- **The docs show an AI step reading an emailed reply, and searching the
+  knowledge catalog.** The code-steps doc has a script that reads the email
+  behind an `email_received` run from the Contact's timeline, since the
+  trigger passes only the Contact. The automation doc hands that text to an
+  AI step, and shows an AI step searching the catalog through the `readonly`
+  MCP server.
 
 ### Changed
 

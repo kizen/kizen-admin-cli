@@ -251,6 +251,114 @@ Confirmed live 2026-10-30:
   with the exception's message as its error, while the run itself read
   `completed`. Records created before the failing element stay.
 
+## Reading a Contact's newest inbound email
+
+An `email_received` trigger starts a Contacts automation, but the run gets the
+Contact, not the email: no step can read the subject or body from the trigger.
+A code step reads the email from the Contact's timeline instead. It takes the
+newest inbound email from that Contact, which is usually the one that started
+the run, but not after two quick replies or on a run started by hand. The
+automation that hands its text to an AI step is in `kizen docs show
+automation`, "An AI step reads an emailed reply".
+
+**Which emails.** Kizen's UI code suggests the trigger fires only for email
+that arrives in a connected (integrated) inbox, with `receiving_inbox` picking
+among those inboxes, and that a reply to mail Kizen sent from its own sending
+service goes to a reply-to address that isn't synced, so it never reaches the
+timeline. Both come from reading the UI code, not from a live run. A synced
+email shows on the Contact's timeline as an `integrated_inbox_email_received`
+event.
+
+**A run started by the trigger hasn't been seen reading its own email.** If
+the inbox sync lags behind the trigger, the event isn't on the timeline yet:
+the script finds no inbound email and outputs `""`, and nothing fails. A short
+`delay` step before the code step is a hedge.
+
+**Bind the Contact's email, not its id.** On a Contacts automation, the
+Contact's id never reaches a script: the merge fields that would carry it
+arrive empty (see `kizen docs show automation`, "Merge-field namespace tokens
+by step type"). An input with `input_type: "field"` and `field_ref:
+"client_client.email"` arrives as the email, so the script looks the Contact up
+by it. Confirmed live 2026-10-30.
+
+**The three calls:**
+
+| Call | Answers |
+|---|---|
+| `post("/records/client_client/search", json=…)`, an `=` filter on `email` | 200, the matching Contacts under `results` |
+| `get(f"/records/client_client/{rid}/timeline", params={"size": 50})` | 200, `{count, links, prev_cursor, next_cursor, events}`, newest first |
+| `get(f"/synced-email/{sid}/full_response")` | 200, `{from, to, reply_to, subject, text_plain, text_html}` |
+
+- `size` caps the page, and `count` is that page's length, not a total. Older
+  events are behind `next_cursor`. Confirmed live 2026-11-02.
+- Each event has `type_name`, `created` and `data` (confirmed live
+  2026-11-02). An `integrated_inbox_email_received` event's `data` carries
+  the synced email's id, the `sid` the body read takes. Its raw key name is
+  inferred from Kizen's UI code, which camel-cases it, so the script takes
+  `synced_email_id` or `syncedEmailId` and fails the step if neither is there.
+- `text_plain` can be empty with the whole reply in `text_html`, so the
+  script falls back to the HTML with its tags stripped.
+
+The script, with a `contact_email` input and an `email_body` output:
+
+```python
+# Read the newest email this Contact sent to a connected inbox, as plain text.
+import html
+import re
+
+
+def ok(resp, what):
+    if resp.status_code != 200:
+        raise Exception(f"{what} failed: {resp.status_code} {resp.text[:200]}")
+    return resp.json()
+
+
+email = (inputs.contact_email or "").strip()
+if not email:
+    raise Exception("the Contact has no email to look it up by")
+match = {"type": "fields", "subtype": "non_custom", "field": "email"}
+query = [{"and": True, "filters": [{**match, "condition": "=", "value": email}]}]
+found = ok(
+    kizen.api.post(
+        "/records/client_client/search",
+        json={"query": query, "and": True, "field_names": ["email"]},
+    ),
+    "searching Contacts",
+)["results"]
+if len(found) != 1:
+    raise Exception(f"{len(found)} Contacts have email {email}, not 1")
+
+events = ok(
+    kizen.api.get(
+        f"/records/client_client/{found[0]['id']}/timeline", params={"size": 50}
+    ),
+    "reading the timeline",
+)["events"]
+inbound = [e for e in events if e["type_name"] == "integrated_inbox_email_received"]
+outputs.email_body = ""
+if not inbound:
+    outputs.log(f"no inbound email in the Contact's last {len(events)} timeline events")
+else:
+    data = max(inbound, key=lambda e: e["created"])["data"]
+    sid = data.get("synced_email_id") or data.get("syncedEmailId")
+    if not sid:
+        raise Exception(f"no synced email id in the event's data: {sorted(data)}")
+    body = ok(kizen.api.get(f"/synced-email/{sid}/full_response"), f"reading {sid}")
+    text = body.get("text_plain") or ""
+    if not text.strip():
+        markup = body.get("text_html") or ""
+        markup = re.sub(r"(?is)<(script|style).*?</\1>", "", markup)
+        markup = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>", "\n", markup)
+        text = html.unescape(re.sub(r"<[^>]+>", "", markup))
+    outputs.email_body = text.strip()
+    outputs.log(f"read email {sid}: {len(outputs.email_body)} characters")
+```
+
+With no inbound email, the step succeeds with `email_body` set to `""` and a
+log line, so the steps after it still run. An email no Contact has fails the
+step with the count. Confirmed live 2026-11-02, with `kizen code test` and in
+an automation run, on a Contact with no inbound email.
+
 ## Wiring it into an automation
 
 Once it passes, add it as a `code_step` with `kizen automations steps
