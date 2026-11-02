@@ -53,7 +53,7 @@ def autos_list(
 ) -> None:
     """List automations in the configured env."""
     fmt = out.resolve_format(output, json_out)
-    with cli_errors(LookupError):
+    with cli_errors(PlanError):
         items = auto_tools.list_automations(folder=folder or None)
 
     def table() -> None:

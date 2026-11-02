@@ -282,6 +282,13 @@ class AutomationDef(BaseModel):
         ),
     )
     active: bool | None = None
+    folder: str | None = Field(
+        default=None,
+        description=(
+            "Folder name or UUID (`kizen automations folders list`). On update, "
+            "leaving it out keeps the current folder."
+        ),
+    )
     user_description: str | None = None
     error_notification_email: str | None = None
     skip_non_working_days: bool = False

@@ -14,6 +14,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **An automation spec takes `folder` (name or UUID).** `create` puts the
+  automation there, and `update` moves it, or keeps the live folder when
+  `folder` is left out.
+
 ### Removed
 
 - `automations update --dry-run` no longer prints `detaches_mcp_server` or
@@ -34,6 +40,9 @@ called out explicitly under **Changed** or **Removed**.
   Kizen's 2026-10-26 release added a setting the CLI refused to drop.
   Specs can now set `target_variable` and `variable_field_resolution` on the
   step, and `update` keeps them when a spec leaves them out.
+- **`automations move` no longer rewrites the automation**, so it works on
+  automations the CLI can't fully read back. Its success line no longer
+  says PUT.
 - **Steps that use a Kizen AI model now carry the business's Kizen AI app,
   as steps saved in the Kizen UI do.** Before, they were stored with no
   business plugin app, and the Kizen UI reported a missing business plugin
@@ -45,6 +54,12 @@ called out explicitly under **Changed** or **Removed**.
   turn limit to 25. It also reset the blank-merge-field handling and the
   advanced flag on Call LLM, extraction, transcription and AI-decision
   steps. Set `mcp_server` to `null` to detach a server.
+- **The operating guide matches today's CLI.** It no longer says there are
+  no spec files, drift detection or bulk writes, and it no longer names a
+  command or source file that doesn't exist. It says how to reach `kizen`'s
+  own help through `npx @kizenapps/cli admin`. Facts that several topics
+  repeated now live in one place, and `kizen docs show reference` routes to
+  every topic, including `team` and `examples`.
 
 ## [0.4.0] — 2026-10-27
 

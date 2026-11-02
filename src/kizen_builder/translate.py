@@ -146,7 +146,7 @@ def live_to_payload(raw: dict[str, Any]) -> dict[str, Any]:
         _live_step_to_wire(s, step_keys, trigger_keys, where)
         for s in _sorted_steps(raw)
     ]
-    # Carries folder/variables/throttles, injects variable ids into
+    # Carries variables/throttles, injects variable ids into
     # initialize_variable steps, stamps last_revision.
     return _merge_server_state(payload, raw)
 

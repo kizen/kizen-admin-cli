@@ -485,7 +485,8 @@
 │                       full spec.                                                                 │
 │ duplicate             Duplicate one automation. The copy is named/numbered by the server.        │
 │ delete                Delete one automation. Irreversible.                                       │
-│ move                  Move one automation into a folder (or to the root), for organization.      │
+│ move                  Move one automation into a folder, or to the root when --folder is left    │
+│                       out.                                                                       │
 │ steps                 Step-level surgery on one automation. Each verb fetches live state,        │
 │                       mutates one node of the translated payload, validates the whole step       │
 │                       graph, and PUTs atomically. Step keys come from `kizen automations show`.  │
@@ -738,14 +739,9 @@
                                                                                                     
  Usage: automations move [OPTIONS] {api_name}                                                       
                                                                                                     
- Move one automation into a folder (or to the root), for organization.                              
+ Move one automation into a folder, or to the root when --folder is left out.                       
                                                                                                     
- Confirmed wire mechanism (see tools/automations.py's move_to_folder                                
- docstring): the write dialect is a bare `folder_id`, and — contrary to                             
- what an unset/null folder_id might suggest — "root" is itself a real,                              
- listable folder (`<business_root>`, always present), not a null/absent                             
- value; the API 400s on a null folder_id ("This field may not be null").                            
- Omitting `--folder` here resolves to that root folder's id.                                        
+ The automation itself isn't rewritten, so this works whatever steps it has.                        
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name to move. [required]                                │
@@ -2496,6 +2492,10 @@
  add`/`edit`. A message created any other way (raw content, no                                      
  template behind it) won't show as selected in Kizen's builder UI even                              
  though the step technically references it.                                                         
+                                                                                                    
+ With --json, stdout is the apply result. The new message's id is                                   
+ `.results[0].server_uuid`, and the template it came from is                                        
+ `.results[0].raw.base_message_id`. The preview goes to stderr.                                     
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name. [required]                                        │
