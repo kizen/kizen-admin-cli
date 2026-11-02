@@ -233,17 +233,19 @@ variable inside the body:
 - `change_type: entity_variable_field` with the item variable and
   `related_object_field` (a field UUID on the found record's object) copies one
   of its fields onto this record.
-- `exit_loop` straight after stops at the first record.
 
-This links each new hire to the first playbook whose name contains "Sales",
-and copies the playbook's text. Both variable steps sit at the front, as the
-loop section above requires:
+Every pass of the loop sets the field again, so when the search finds several
+records the last one wins. Narrow the filter until it matches one record.
+
+This links each new hire to the playbook named "Sales Onboarding", and copies
+the playbook's text. Both variable steps sit at the front, as the loop section
+above requires:
 
 ```json
 { "key": "find", "parent_key": "v_item", "step_type": "search_records", "order": 2,
   "action_search_records": { "custom_object": "playbooks",
     "filter_type": "custom_filter",
-    "filter_config": { "all": [ { "field": "name", "op": "contains", "value": "Sales" } ] },
+    "filter_config": { "all": [ { "field": "name", "op": "=", "value": "Sales Onboarding" } ] },
     "destination_variable": "playbooks", "destination_variable_resolution": "overwrite" } },
 { "key": "each", "parent_key": "find", "step_type": "loop", "order": 3,
   "description": "For each item in 'playbooks'",
@@ -255,13 +257,13 @@ loop section above requires:
   "action_change_field_value": { "field_ref": "hires.hire_copied",
     "change_type": "entity_variable_field", "variable": "playbooks_item",
     "related_object_field": "<playbooks.pb_text field uuid>" } },
-{ "key": "first_only", "parent_key": "copy", "step_type": "exit_loop", "order": 6 },
-{ "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 7 }
+{ "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 6 }
 ```
 
-Confirmed live 2026-10-30: the run linked the playbook, copied its text, and
-logged "Loop ended early by an Exit Loop step". To read the linked record's
-fields in a later step, see
+Confirmed live 2026-11-02: the search found one playbook, and the loop's one
+pass linked it and copied its text. With the filter widened to `contains`
+"Sales", it found two, the loop ran twice, and the hire ended linked to the
+second. To read the linked record's fields in a later step, see
 [Reading a related record's field into a variable](#reading-a-related-records-field-into-a-variable).
 
 ### Running once per record on a schedule
