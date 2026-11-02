@@ -47,9 +47,20 @@ called out explicitly under **Changed** or **Removed**.
   search and archive send and return, and works through an AI step whose
   JSON list a code step turns into records. It no longer says a record read
   leaves out relationship fields: a set one is there.
+- **Condition and search steps can compare a text or email field to a
+  string variable.** A filter spec takes `{"field": "email", "op": "=",
+  "variable": "customer_email"}` with `=` or `contains`, so a search can
+  find the Contact with a request's email. The automation doc works this
+  through as "Find or create a Contact by email".
 
 ### Changed
 
+- **A merge field in a condition or search filter value is refused at plan
+  time.** Kizen stored `{{ … }}` as text and matched nothing; the error
+  points to the string-variable form. Raw wire filters are unchanged.
+- **`create_related_entity` on Contacts is refused at plan time.** Kizen
+  rejected it at create ("contact creation not supported"); the error
+  points to creating the Contact in a code step.
 - **Automation rules on an integer field with `>=` or a decimal field with
   `<` now send the value as a string** (`"90"`), as the editor writes it.
   Other number rules, and number rules on other filter surfaces, still send

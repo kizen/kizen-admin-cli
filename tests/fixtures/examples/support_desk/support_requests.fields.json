@@ -1,0 +1,20 @@
+{
+  "category": "Request Details",
+  "fields": [
+    {
+      "name": "Customer Email",
+      "api_name": "customer_email",
+      "field_type": "email"
+    },
+    {
+      "name": "Customer",
+      "api_name": "customer",
+      "field_type": "relationship",
+      "relation": {
+        "target_object": "client_client",
+        "relation_type": "many_to_one",
+        "related_name": "Support Requests"
+      }
+    }
+  ]
+}

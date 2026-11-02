@@ -1,0 +1,159 @@
+{
+  "name": "Find or create the customer",
+  "api_name": "find_or_create_customer",
+  "type": "record_based",
+  "target_object": "support_requests",
+  "triggers": [
+    {
+      "trigger_type": "new_entity_created",
+      "order": 0,
+      "trigger_new_entity_created": {
+        "action": "create_only"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "key": "found",
+      "parent_key": null,
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "found_contacts = []",
+      "action_initialize_variable": {
+        "sources": [],
+        "array_aggregation_mode": "add_all",
+        "variable": {
+          "name": "found_contacts",
+          "data_type": "entity",
+          "is_array": true,
+          "data_subtype": "<client_client_object_uuid>"
+        }
+      }
+    },
+    {
+      "key": "found_item",
+      "parent_key": "found",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "Item Reference Variable",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "name": "found_contacts_item",
+          "data_type": "entity",
+          "data_subtype": "<client_client_object_uuid>"
+        }
+      }
+    },
+    {
+      "key": "email",
+      "parent_key": "found_item",
+      "step_type": "initialize_variable",
+      "order": 2,
+      "action_initialize_variable": {
+        "sources": [
+          {
+            "source_type": "static",
+            "source_subtype": "string",
+            "value": "{{ custom_objects.customer_email }}"
+          }
+        ],
+        "variable": {
+          "name": "customer_email",
+          "data_type": "string"
+        }
+      }
+    },
+    {
+      "key": "find",
+      "parent_key": "email",
+      "step_type": "search_records",
+      "order": 3,
+      "action_search_records": {
+        "custom_object": "client_client",
+        "filter_type": "custom_filter",
+        "filter_config": {
+          "all": [
+            {
+              "field": "email",
+              "op": "=",
+              "variable": "customer_email"
+            }
+          ]
+        },
+        "destination_variable": "found_contacts",
+        "destination_variable_resolution": "overwrite"
+      }
+    },
+    {
+      "key": "each",
+      "parent_key": "find",
+      "step_type": "loop",
+      "order": 4,
+      "description": "For each item in 'found_contacts'",
+      "step_loop": {
+        "array_variable": "found_contacts",
+        "item_variable": "found_contacts_item"
+      }
+    },
+    {
+      "key": "link",
+      "parent_key": "each",
+      "step_type": "change_field_value",
+      "order": 5,
+      "action_change_field_value": {
+        "field_ref": "support_requests.customer",
+        "change_type": "variable",
+        "variable": "found_contacts_item"
+      }
+    },
+    {
+      "key": "next",
+      "parent_key": "each",
+      "step_type": "next_or_finish",
+      "order": 6
+    },
+    {
+      "key": "no_customer",
+      "parent_key": "next",
+      "step_type": "condition",
+      "order": 7,
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "all": [
+            {
+              "field": "customer",
+              "op": "is_blank"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "key": "create_contact",
+      "parent_key": "no_customer",
+      "parent_branch": "yes",
+      "step_type": "code_step",
+      "order": 8,
+      "action_code_step": {
+        "script": "# Create a Contact for an email no Contact has yet; the output links it.\nemail = (inputs.customer_email or \"\").strip()\nif not email:\n    raise Exception(\"customer_email is blank: no Contact to create\")\nresp = kizen.api.post(\n    \"/records/client_client/add\", json={\"fields\": [{\"name\": \"email\", \"value\": email}]}\n)\nif resp.status_code != 201:\n    raise Exception(\n        f\"creating a Contact for {email} failed: {resp.status_code} {resp.text[:200]}\"\n    )\noutputs.customer = resp.json()[\"id\"]",
+        "inputs": [
+          {
+            "name": "customer_email",
+            "input_type": "field",
+            "field_ref": "support_requests.customer_email",
+            "data_type": "string"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "customer",
+            "output_type": "field",
+            "field_ref": "support_requests.customer"
+          }
+        ]
+      }
+    }
+  ]
+}

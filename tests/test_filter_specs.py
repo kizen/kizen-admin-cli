@@ -289,6 +289,7 @@ class _CapturedSchema:
                 related_object=_CONDITIONS,
             ),
             _field("notes", "8d1d5c2e-3f2a-4b55-9a59-0c6d2b7f2a10", "text"),
+            _field("visit_date", "1b0c6f0e-2d4a-4f6b-8e1a-3c5d7e9f0a12", "date"),
         ],
         _PIPELINE: [
             _field(
@@ -377,9 +378,9 @@ def test_variable_needs_the_declarations_only_a_condition_step_passes():
         from_spec({"field": "fdropdown", "op": "is_any_of", "variable": "allowed"})
     assert str(e.value) == (
         '"variable" compares to an automation variable and only works in a '
-        "condition step's filter_config"
+        "condition or search_records step's filter_config"
     )
-    with pytest.raises(ValueError, match="only works in a condition step"):
+    with pytest.raises(ValueError, match="only works in a condition or"):
         render_search_filters(
             {"all": [{"field": "fdropdown", "op": "is_any_of", "variable": "x"}]},
             "policies_policy",
@@ -396,9 +397,9 @@ def test_variable_and_value_are_exclusive():
     assert str(e.value) == 'a condition takes "value" or "variable", not both'
 
 
-def test_variable_takes_only_the_any_of_ops():
-    with pytest.raises(ValueError, match="is_any_of, not_any_of"):
-        from_spec({"field": "f", "op": "=", "variable": "v"}, variables={})
+def test_variable_takes_only_the_variable_ops():
+    with pytest.raises(ValueError, match="is_any_of, not_any_of, =, contains"):
+        from_spec({"field": "f", "op": "!=", "variable": "v"}, variables={})
 
 
 _STRINGS = {"strs": {"data_type": "string", "is_array": True}}
@@ -448,10 +449,34 @@ _STRINGS = {"strs": {"data_type": "string", "is_array": True}}
             "array variable",
         ),
         (
+            {"field": "visit_date", "op": "is_any_of", "variable": "strs"},
+            _STRINGS,
+            "field 'visit_date' (date) can't be compared to a variable. Field types "
+            "that can: checkboxes, dropdown, email, relationship, team_selector, text",
+        ),
+        (
             {"field": "notes", "op": "is_any_of", "variable": "strs"},
             _STRINGS,
-            "field 'notes' (text) can't be compared to a variable. Field types that "
-            "can: checkboxes, dropdown, relationship, team_selector",
+            "op 'is_any_of' can't compare field 'notes' (text) to a variable. Use "
+            "one of: =, contains",
+        ),
+        (
+            {"field": "encounter_class", "op": "=", "variable": "strs"},
+            _STRINGS,
+            "op '=' can't compare field 'encounter_class' (dropdown) to a variable. "
+            "Use one of: is_any_of, not_any_of",
+        ),
+        (
+            {"field": "notes", "op": "=", "variable": "strs"},
+            _STRINGS,
+            "field 'notes' (text) can't be compared to a string array variable; it "
+            "takes a single string variable",
+        ),
+        (
+            {"field": "notes", "op": "contains", "variable": "n"},
+            {"n": {"data_type": "number", "is_array": False}},
+            "field 'notes' (text) can't be compared to a number variable; it takes "
+            "a single string variable",
         ),
     ],
 )
@@ -1151,6 +1176,63 @@ def test_contacts_variable_rule_takes_the_contacts_head():
     assert clause["view_model"][:2] == expected_head
     assert clause["condition"] == "has_any"
     assert clause["value_type"] == "variable"
+
+
+_EMAIL_VARIABLE = {"contact_email": {"data_type": "string", "is_array": False}}
+
+
+def _contacts_variable_rule():
+    raw = load_fixture("automations/condition_variable_rhs_contacts.raw.json")
+    (step,) = [s for s in raw["steps"] if s["step_type"] == "condition"]
+    ((rule,),) = [
+        g["filters"] for g in step["step_condition"]["filter_config"]["query"]
+    ]
+    return _without_description(rule)
+
+
+def _string_variable_clause(spec, obj):
+    with filter_context(obj, client=_RuleKindsSchema()):
+        (clause,) = as_filter_config(from_spec({"all": [spec]}, _EMAIL_VARIABLE))[
+            "query"
+        ][0]["filters"]
+    return clause
+
+
+def test_email_contains_a_string_variable_matches_the_ui_capture():
+    spec = {"field": "email", "op": "contains", "variable": "contact_email"}
+    clause = _string_variable_clause(spec, "client_client")
+    assert clause == _contacts_variable_rule()
+
+
+def test_email_equals_a_string_variable_takes_the_equals_token():
+    spec = {"field": "email", "op": "=", "variable": "contact_email"}
+    clause = _string_variable_clause(spec, "client_client")
+    expected = _contacts_variable_rule()
+    expected["condition"] = "="
+    expected["view_model"][2] = ["condition", "equals"]
+    assert clause == expected
+
+
+@pytest.mark.parametrize(("op", "token"), [("=", "equals"), ("contains", "contains")])
+def test_custom_text_field_compared_to_a_string_variable(op, token):
+    spec = {"field": "rk_text", "op": op, "variable": "contact_email"}
+    clause = _string_variable_clause(spec, _RULE_KINDS)
+    assert {k: v for k, v in clause.items() if k != "view_model"} == {
+        "type": "fields_v2",
+        "subtype": "custom",
+        "field": '"custom"::20ec6f12-3876-4281-a9d4-62ba71f592ca',
+        "condition": op,
+        "value": "contact_email",
+        "value_type": "variable",
+    }
+    assert clause["view_model"][2:] == [
+        ["condition", token],
+        ["value_type", "variable"],
+        [
+            "variable",
+            {"name": "contact_email", "is_array": False, "data_type": "string"},
+        ],
+    ]
 
 
 def test_rating_value_with_no_option_is_refused():

@@ -49,9 +49,13 @@ re-run through the DSL.
   `{"field": ...}` is not accepted anywhere — not in `--filter`, not in a
   condition step.
 - A variable compared to a static value is a clause type the DSL doesn't
-  cover (below): pass a raw wire dict. A **field compared to an array
-  variable** is in the DSL: give `"variable"` instead of `"value"`, in a
-  condition step only (below).
+  cover (below): pass a raw wire dict. A **field compared to a variable** is
+  in the DSL: give `"variable"` instead of `"value"`, in a condition or
+  `search_records` step only (below).
+- **A value can't be a merge field.** A condition or `search_records` step
+  stores `{{ … }}` in a filter value as text and matches nothing (confirmed
+  live 2026-10-30 and 2026-11-02), so the CLI refuses one in a filter spec.
+  Copy the value into a string variable and compare to that.
 - A pipeline's `stage` field also takes `time_in_stage`, `entered_stage` and
   `left_stage`, which test how long a record has been in a stage and when it
   entered or left one. See [Pipeline stage conditions](#pipeline-stage-conditions).
@@ -299,22 +303,25 @@ with no `view_model` still executes, so a wrong value in a raw clause probably
 changes only how the builder UI shows it (not tested). A rule the CLI compiles
 from a filter spec doesn't need it: the CLI writes the layout itself and
 resolves the id per business (see [Comparing a field to an array
-variable](#comparing-a-field-to-an-array-variable-condition-steps-only)).
+variable](#comparing-a-field-to-a-variable-condition-and-search_records-steps)).
 
-## Comparing a field to an array variable (condition steps only)
+## Comparing a field to a variable (condition and search_records steps)
 
 The UI's "Variable" option on a rule compares a record field to an
 automation variable instead of a literal. In the DSL, name the variable:
 
 ```json
 { "all": [
-    { "field": "status", "op": "is_any_of", "variable": "allowed_statuses" }
+    { "field": "status", "op": "is_any_of", "variable": "allowed_statuses" },
+    { "field": "email", "op": "=", "variable": "customer_email" }
 ] }
 ```
 
 - `variable` replaces `value`; give one or the other.
-- Ops: `is_any_of` or `not_any_of`. Labels vary by field type: checkboxes
-  and relationship fields say "Contains Any Of" / "Contains None Of".
+- Ops: a text or email field takes `=` or `contains` and a single string
+  variable. The other field types take `is_any_of` or `not_any_of` and an
+  array. Labels vary by field type: checkboxes and relationship fields say
+  "Contains Any Of" / "Contains None Of".
 - The variable must be declared in the same automation, by an
   `initialize_variable` step or as a `search_records` destination (an entity
   array of the searched object). The planner checks its kind against the
@@ -322,22 +329,29 @@ automation variable instead of a literal. In the DSL, name the variable:
   open the step.
 - For a dropdown, the array can hold option names or option UUIDs: a test
   run on 2026-10-14 matched with each. The other field types were not run.
-- Every other filter surface rejects `"variable"`, `search_records`
-  included.
+- Every other filter surface rejects `"variable"`: records search, filter
+  groups, quick filters and dashlets.
 
 Which variables the UI offers for each field type (confirmed live
-2026-10-14):
+2026-10-14; email 2026-10-30):
 
-| field type | variable kinds |
-|---|---|
-| `dropdown` | string array, UUID array |
-| `checkboxes` | string array, UUID array |
-| `team_selector` | string array, UUID array, a single `employee` variable |
-| `relationship` | string array, UUID array, entity array of the related object |
+| field type | variable kinds | ops |
+|---|---|---|
+| `dropdown` | string array, UUID array | `is_any_of`, `not_any_of` |
+| `checkboxes` | string array, UUID array | `is_any_of`, `not_any_of` |
+| `team_selector` | string array, UUID array, a single `employee` variable | `is_any_of`, `not_any_of` |
+| `relationship` | string array, UUID array, entity array of the related object | `is_any_of`, `not_any_of` |
+| `text`, `email` | a single string variable | `=`, `contains` |
 
 The wire clause is the field's usual clause with the variable's name as
 `value` and `"value_type": "variable"`. The `condition` token is the same one
-a literal list would get (checkboxes `not_any_of` is `!has_any`).
+a literal would get (checkboxes `not_any_of` is `!has_any`).
+
+The string-variable layout was saved in the editor for email `contains`, in
+a condition step. The editor's token for `=` (`equals`), text fields, and the
+same rule in a `search_records` step are inferred from the literal rules and
+the shared clause shape. A `search_records` email `=` rule built this way ran
+and matched (confirmed live 2026-11-02).
 
 ## Writing a condition step's filter, start to finish
 
