@@ -22,6 +22,12 @@ called out explicitly under **Changed** or **Removed**.
   app on them. `business_plugin_app_id` is now optional for every model.
   The plan refuses a value that belongs to a different provider and, when
   the id is left out, a model the business's catalog doesn't list.
+- **The operating guide matches today's CLI.** It no longer says there are
+  no spec files, drift detection or bulk writes, and it no longer names a
+  command or source file that doesn't exist. It says how to reach `kizen`'s
+  own help through `npx @kizenapps/cli admin`. Facts that several topics
+  repeated now live in one place, and `kizen docs show reference` routes to
+  every topic, including `team` and `examples`.
 
 ## [0.4.0] — 2026-10-27
 
