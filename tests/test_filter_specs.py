@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import copy
+from datetime import date
+
 import pytest
 
 from kizen_builder.filtering import (
+    Field,
     VariableReferenceError,
     as_filter_config,
     field_type_ops,
@@ -461,3 +465,285 @@ def test_variable_rule_refused_on_contacts():
     spec = {"field": "tags", "op": "is_any_of", "variable": "strs"}
     with pytest.raises(VariableReferenceError, match="isn't supported on Contacts"):
         _compile(spec, "client_client", _STRINGS)
+
+
+# ---------------------------------------------------------------------------
+# The pipeline stage field's own ops: time_in_stage, entered_stage, left_stage
+# ---------------------------------------------------------------------------
+
+_STAGE_1 = "a82570ce-c4e4-4548-bbb7-8b77f94bbb9a"
+
+
+def _dsl_clause(expr):
+    with filter_context("policies_policy", client=StubClient()):
+        return expr.as_dict()
+
+
+@pytest.mark.parametrize(
+    ("spec", "expr"),
+    [
+        (
+            {"op": "time_in_stage", "value": "Stage 1", "more_than": 14},
+            Field("stage").time_in_stage("Stage 1", more_than=14, units="days"),
+        ),
+        (
+            {
+                "op": "time_in_stage",
+                "value": _STAGE_1,
+                "less_than": 0,
+                "units": "hours",
+            },
+            Field("stage").time_in_stage(_STAGE_1, less_than=0, units="hours"),
+        ),
+        (
+            {"op": "entered_stage", "value": "stage 1", "earlier_than": "2026-07-14"},
+            Field("stage").entered_stage("Stage 1", earlier_than=date(2026, 7, 14)),
+        ),
+        (
+            {"op": "left_stage", "value": "Stage 1", "later_than_or_on": "2026-10-30"},
+            Field("stage").left_stage("Stage 1", later_than_or_on=date(2026, 10, 30)),
+        ),
+    ],
+)
+def test_stage_op_compiles_to_the_dsl_clause(spec, expr):
+    spec = {"field": "stage", **spec}
+    expected = _dsl_clause(expr)
+    assert expected["value"] == _STAGE_1
+    (clause,) = _clauses({"all": [spec]})
+    assert clause == expected
+    with filter_context("policies_policy", client=StubClient()):
+        cfg = as_filter_config(from_spec({"all": [spec]}))
+    assert cfg["query"][0]["filters"] == [expected]
+
+
+def test_time_in_stage_clause_is_the_probed_wire_shape():
+    (clause,) = _clauses(
+        {
+            "field": "stage",
+            "op": "time_in_stage",
+            "value": "Stage 1",
+            "more_than": 4,
+            "units": "days",
+        }
+    )
+    assert clause == {
+        "type": "fields_v2",
+        "subtype": "non_custom",
+        "field": "stage",
+        "overwrite": {"type": "stage"},
+        "condition": "time_in_stage",
+        "value": _STAGE_1,
+        "comparison_condition": ">",
+        "comparison_value": "4",
+        "comparison_type": "days",
+    }
+
+
+_ENTERED_ONE_OF = (
+    "on, not_on, earlier_than, earlier_than_or_on, later_than, later_than_or_on"
+)
+
+
+@pytest.mark.parametrize(
+    ("spec", "message"),
+    [
+        (
+            {"op": "time_in_stage", "value": "Stage 1"},
+            'op "time_in_stage" takes exactly one of: more_than, less_than',
+        ),
+        (
+            {"op": "time_in_stage", "value": "Stage 1", "more_than": 1, "less_than": 2},
+            'op "time_in_stage" takes exactly one of: more_than, less_than',
+        ),
+        (
+            {"op": "entered_stage", "value": "Stage 1"},
+            f'op "entered_stage" takes exactly one of: {_ENTERED_ONE_OF}',
+        ),
+        (
+            {"op": "left_stage", "value": "Stage 1", "on": "2026-10-30", "not_on": "x"},
+            f'op "left_stage" takes exactly one of: {_ENTERED_ONE_OF}',
+        ),
+        (
+            {"op": "time_in_stage", "value": "Stage 1", "more_than": 1.5},
+            'op "time_in_stage": more_than must be a whole number of days, hours '
+            "or weeks, got 1.5",
+        ),
+        (
+            {"op": "time_in_stage", "value": "Stage 1", "less_than": -1},
+            'op "time_in_stage": less_than must be a whole number of days, hours '
+            "or weeks, got -1",
+        ),
+        (
+            {"op": "time_in_stage", "value": "Stage 1", "more_than": "5"},
+            'op "time_in_stage": more_than must be a whole number of days, hours '
+            'or weeks, got "5"',
+        ),
+        (
+            {"op": "time_in_stage", "value": "Stage 1", "more_than": True},
+            'op "time_in_stage": more_than must be a whole number of days, hours '
+            "or weeks, got true",
+        ),
+        (
+            {
+                "op": "time_in_stage",
+                "value": "Stage 1",
+                "more_than": 1,
+                "units": "months",
+            },
+            'op "time_in_stage": units must be one of days, hours, weeks, got "months"',
+        ),
+        (
+            {"op": "entered_stage", "value": "Stage 1", "on": "10/30/2026"},
+            'op "entered_stage": on must be a date as YYYY-MM-DD, got "10/30/2026"',
+        ),
+        (
+            {"op": "entered_stage", "value": "Stage 1", "on": "2026-02-30"},
+            'op "entered_stage": on must be a date as YYYY-MM-DD, got "2026-02-30"',
+        ),
+        (
+            {"op": "left_stage", "value": "Stage 1", "later_than": "2026-10-30T00:00"},
+            'op "left_stage": later_than must be a date as YYYY-MM-DD, '
+            'got "2026-10-30T00:00"',
+        ),
+        (
+            {"op": "time_in_stage", "value": ["Stage 1"], "more_than": 1},
+            'op "time_in_stage" takes one stage in "value", not a list',
+        ),
+        (
+            {"op": "entered_stage", "on": "2026-10-30"},
+            'op "entered_stage" requires a "value"',
+        ),
+        (
+            {
+                "op": "entered_stage",
+                "value": "Stage 1",
+                "on": "2026-10-30",
+                "units": "days",
+            },
+            "unknown keys in condition: ['units']",
+        ),
+        (
+            {"op": "=", "value": "Stage 1", "more_than": 1},
+            "unknown keys in condition: ['more_than']",
+        ),
+    ],
+)
+def test_stage_op_refusals(spec, message):
+    with pytest.raises(ValueError) as e:
+        from_spec({"field": "stage", **spec})
+    assert str(e.value) == message
+
+
+def test_stage_op_cannot_compare_to_a_variable():
+    with pytest.raises(ValueError, match='can\'t compare to a "variable"'):
+        from_spec(
+            {"field": "stage", "op": "time_in_stage", "variable": "v", "more_than": 1},
+            variables={},
+        )
+
+
+def test_stage_op_refused_off_the_stage_field():
+    with pytest.raises(ValueError, match="does not support condition 'time_in_stage'"):
+        _clauses(
+            {
+                "field": "fdropdown",
+                "op": "time_in_stage",
+                "value": "dd1",
+                "more_than": 1,
+            }
+        )
+
+
+class _NamedStub(StubClient):
+    def custom_object(self, api_name):
+        return {**super().custom_object(api_name), "name": "policies_policy"}
+
+    def get_field(self, obj_id, name):
+        if name == _STAGE_FIELD_ID:
+            name = "stage"
+        return super().get_field(obj_id, name)
+
+
+_STAGE_FIELD_ID = "94de5e17-04f5-490d-9510-793e01d38ffa"
+
+
+@pytest.mark.parametrize("field", ["stage", _STAGE_FIELD_ID])
+@pytest.mark.parametrize(
+    "spec",
+    [
+        {"op": "=", "value": "Stage 1"},
+        {"op": "time_in_stage", "value": "Stage 1", "more_than": 1},
+    ],
+)
+def test_stage_field_by_name_or_uuid_gets_the_stage_clause(field, spec):
+    (by_field,) = render_search_filters(
+        {"field": field, **spec}, "policies_policy", client=_NamedStub()
+    )[0]["filters"]
+    (by_name,) = _clauses({"field": "stage", **spec})
+    assert by_field == by_name
+    assert by_field["overwrite"] == {"type": "stage"}
+
+    with pytest.raises(ValueError, match="'Stage 9' isn't a stage of"):
+        render_search_filters(
+            {"field": field, **spec, "value": "Stage 9"},
+            "policies_policy",
+            client=_NamedStub(),
+        )
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        {"field": "stage", "op": "=", "value": "Stage 9"},
+        {"field": "stage", "op": "is_any_of", "value": ["Stage 1", "Stage 9"]},
+        {"field": "stage", "op": "time_in_stage", "value": "Stage 9", "more_than": 1},
+        {"field": "stage", "op": "left_stage", "value": "Stage 9", "on": "2026-10-30"},
+    ],
+)
+def test_unknown_stage_is_refused(spec):
+    with pytest.raises(ValueError) as e:
+        render_search_filters({"all": [spec]}, "policies_policy", client=_NamedStub())
+    assert str(e.value) == (
+        "stage 'Stage 9' isn't a stage of 'policies_policy'. Stages: Stage 1"
+    )
+
+
+def test_stage_uuid_from_another_object_is_refused():
+    with pytest.raises(ValueError, match="isn't a stage of"):
+        _clauses(
+            {
+                "field": "stage",
+                "op": "=",
+                "value": "8c3f0149-6915-4370-940f-2e61848d6842",
+            }
+        )
+
+
+def test_stage_resolves_by_name_case_insensitively_or_by_uuid():
+    by_name, by_uuid = _clauses(
+        {
+            "all": [
+                {"field": "stage", "op": "=", "value": "STAGE 1"},
+                {"field": "stage", "op": "!=", "value": _STAGE_1},
+            ]
+        }
+    )
+    assert by_name["value"] == by_uuid["value"] == _STAGE_1
+
+
+def test_non_stage_options_still_pass_through():
+    (clause,) = _clauses({"field": "fdropdown", "op": "=", "value": "not-an-option"})
+    assert clause["value"] == "not-an-option"
+
+
+def test_stage_ops_are_valid_spec_ops_but_not_a_field_type_row():
+    from kizen_builder.filtering import VALID_SPEC_OPS
+
+    assert {"time_in_stage", "entered_stage", "left_stage"} <= set(VALID_SPEC_OPS)
+    for ops in field_type_ops().values():
+        assert not {"time_in_stage", "entered_stage", "left_stage"} & set(ops)
+
+
+def test_ui_built_stage_clauses_normalize_unchanged():
+    raw = load_fixture("automations/stage_time_filter_config.json")
+    assert normalize_filter_config(copy.deepcopy(raw)) == raw

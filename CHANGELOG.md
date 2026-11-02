@@ -16,6 +16,11 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Filters can test how long a record has been in a stage.** `--filter`,
+  condition and search steps, filter groups and quick filters take
+  `time_in_stage`, `entered_stage` and `left_stage` on a pipeline's `stage`
+  field, with stage names. An unknown stage name in any stage filter is now
+  an error at plan time instead of a server error.
 - **An automation spec takes `folder` (name or UUID).** `create` puts the
   automation there, and `update` moves it, or keeps the live folder when
   `folder` is left out.

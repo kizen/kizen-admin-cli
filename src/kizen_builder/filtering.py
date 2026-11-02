@@ -23,6 +23,8 @@ payload shapes this module emits.
 """
 
 import contextlib
+import json
+import re
 import threading
 from datetime import UTC, date, datetime
 from uuid import UUID
@@ -314,11 +316,26 @@ class FilterCondition:
             value = "is_me"
 
         # --- stage is a default field with a special payload shape ---------
-        if field["is_default"] and self.field == "stage":
+        # Unlike other options, an unknown stage is refused here: the server
+        # answers a stage name or a foreign uuid with a 400 or a 500.
+        if field["is_default"] and field["name"] == "stage":
+            stages = field.get("options") or []
+            stage_ids = {opt["id"] for opt in stages}
+
+            def stage_id(v):
+                resolved = opt_id(v)
+                if resolved not in stage_ids:
+                    obj_name = client.custom_object(obj_id).get("name") or obj_id
+                    raise ValueError(
+                        f"stage '{v}' isn't a stage of '{obj_name}'. Stages: "
+                        + ", ".join(opt["name"] for opt in stages)
+                    )
+                return resolved
+
             if isinstance(value, list):
-                value = [opt_id(v) for v in value]
+                value = [stage_id(v) for v in value]
             else:
-                value = opt_id(value)
+                value = stage_id(value)
             return {
                 "type": "fields_v2",
                 "subtype": "non_custom",
@@ -1516,6 +1533,10 @@ def as_custom_filters(expr):
 #   {"all": [<spec>, ...]}   AND group          {"any": [...]}   OR group
 #   {"field": "<api_name or uuid>", "op": "<op>", "value": <v>}
 #   {"field": "<api_name or uuid>", "op": "<op>", "variable": "<name>"}
+#   {"field": "stage", "op": "time_in_stage", "value": "<stage>",
+#    "more_than"|"less_than": <int>[, "units": "days"|"hours"|"weeks"]}
+#   {"field": "stage", "op": "entered_stage"|"left_stage", "value": "<stage>",
+#    "<on|not_on|earlier_than|...>": "YYYY-MM-DD"}
 #
 # Field names, option labels, and tag names resolve to UUIDs exactly as in
 # the DSL (the spec compiles TO the DSL). Ops with no value (is_blank,
@@ -1557,7 +1578,24 @@ _LIST_OPS = {
     "between": lambda f, v: f.between(*v),
 }
 
-VALID_SPEC_OPS = sorted({*_NO_VALUE_OPS, *_SCALAR_OPS, *_LIST_OPS})
+# The pipeline stage field's own ops: "value" is one stage, plus exactly one
+# comparison key named like the DSL method's keyword arguments.
+_TIME_IN_STAGE_UNITS = ("days", "hours", "weeks")
+_STAGE_OP_COMPARISONS = {
+    "time_in_stage": ("more_than", "less_than"),
+    "entered_stage": tuple(Field._STAGE_COMPARISONS),
+    "left_stage": tuple(Field._STAGE_COMPARISONS),
+}
+_STAGE_OP_KEYS = {
+    "time_in_stage": {"more_than", "less_than", "units"},
+    "entered_stage": set(Field._STAGE_COMPARISONS),
+    "left_stage": set(Field._STAGE_COMPARISONS),
+}
+_YYYY_MM_DD = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+VALID_SPEC_OPS = sorted(
+    {*_NO_VALUE_OPS, *_SCALAR_OPS, *_LIST_OPS, *_STAGE_OP_COMPARISONS}
+)
 
 _VARIABLE_OPS = {"is_any_of": "is_any_of", "not_any_of": "is_none_of"}
 
@@ -1587,9 +1625,9 @@ def field_type_ops(field_type=None):
     ops; omit it for every known field type.
 
     Not covered: the "stage" field's own condition set (time_in_stage,
-    entered_stage, left_stage — DSL-only, no spec op exposes them) and the
-    narrower override some default fields get (created, updated, owner,
-    email_status) — see ``_STAGE_CONDITIONS`` / ``_DEFAULT_FIELD_CONDITION_OVERRIDES``.
+    entered_stage, left_stage) and the narrower override some default fields
+    get (created, updated, owner, email_status) — see ``_STAGE_CONDITIONS`` /
+    ``_DEFAULT_FIELD_CONDITION_OVERRIDES``.
     """
     # is_checked/not_checked are checkbox-only spelling of `= True`/`= False`;
     # excluded from the general reverse map so they don't bleed into every
@@ -1647,13 +1685,16 @@ def from_spec(spec, variables=None):
         return group_cls(*[from_spec(c, variables) for c in children])
 
     if "field" in spec:
-        unknown = set(spec) - {"field", "op", "value", "variable"}
+        op = spec.get("op")
+        allowed = {"field", "op", "value", "variable", *_STAGE_OP_KEYS.get(op, ())}
+        unknown = set(spec) - allowed
         if unknown:
             raise ValueError(f"unknown keys in condition: {sorted(unknown)}")
         if "variable" in spec:
             return _variable_condition(spec, variables)
-        op = spec.get("op")
         field = Field(spec["field"])
+        if op in _STAGE_OP_COMPARISONS:
+            return _stage_condition(field, op, spec)
         if op in _NO_VALUE_OPS:
             if "value" in spec:
                 raise ValueError(f'op "{op}" takes no "value"')
@@ -1671,6 +1712,52 @@ def from_spec(spec, variables=None):
     raise ValueError(
         f'filter spec must contain "all", "any", or "field" (got keys: {sorted(spec)})'
     )
+
+
+def _stage_condition(field, op, spec):
+    """time_in_stage / entered_stage / left_stage, validated against the
+    values the server accepts (confirmed live 2026-10-30)."""
+    if "value" not in spec:
+        raise ValueError(f'op "{op}" requires a "value"')
+    stage = spec["value"]
+    if isinstance(stage, list):
+        raise ValueError(f'op "{op}" takes one stage in "value", not a list')
+    comparisons = _STAGE_OP_COMPARISONS[op]
+    given = [k for k in comparisons if k in spec]
+    if len(given) != 1:
+        raise ValueError(f'op "{op}" takes exactly one of: {", ".join(comparisons)}')
+    (key,) = given
+    amount = spec[key]
+
+    if op == "time_in_stage":
+        if not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
+            raise ValueError(
+                f'op "{op}": {key} must be a whole number of days, hours or '
+                f"weeks, got {json.dumps(amount)}"
+            )
+        units = spec.get("units", "days")
+        if units not in _TIME_IN_STAGE_UNITS:
+            raise ValueError(
+                f'op "{op}": units must be one of '
+                f"{', '.join(_TIME_IN_STAGE_UNITS)}, got {json.dumps(units)}"
+            )
+        return field.time_in_stage(stage, units=units, **{key: amount})
+
+    if not (isinstance(amount, str) and _is_yyyy_mm_dd(amount)):
+        raise ValueError(
+            f'op "{op}": {key} must be a date as YYYY-MM-DD, got {json.dumps(amount)}'
+        )
+    return getattr(field, op)(stage, **{key: amount})
+
+
+def _is_yyyy_mm_dd(value):
+    if not _YYYY_MM_DD.fullmatch(value):
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _variable_condition(spec, variables):

@@ -53,9 +53,9 @@ def filters_ops(
         console.print(t)
         console.print(
             "\n[dim]Not covered here: the pipeline 'stage' field's own conditions "
-            "(time_in_stage/entered_stage/left_stage — DSL-only) and narrower "
-            "overrides on a few default fields (created, updated, owner, "
-            "email_status). See `kizen docs show records`.[/dim]"
+            "(time_in_stage/entered_stage/left_stage) and narrower overrides on "
+            "a few default fields (created, updated, owner, email_status). See "
+            "`kizen docs show filters`.[/dim]"
         )
 
     csv_rows = (
