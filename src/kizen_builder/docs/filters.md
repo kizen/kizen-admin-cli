@@ -131,7 +131,7 @@ are the filter spec's.
 | datetime (`created` too) | `<`, `>=` | `=`, `!=`, `<=`, `>`, `between`, `month_equals`, `is_blank`, `not_blank` |
 | team_selector (`owner` too) | `is_me`, `is_any_of` | `=`, `!=`, `not_any_of`, `is_blank`, `not_blank` |
 | relationship | Contains (`is_any_of`), `is_blank`, `not_blank` | Does Not Contain (`not_any_of`), `contains`, `not_contains` |
-| stage | `=`, `!=`, `is_any_of`, `not_any_of` | none |
+| stage | `=`, `!=`, `is_any_of`, `not_any_of`, and the stage-time ops below | the stage-time ops' other comparisons |
 | money, radio, timezone, phonenumber, longtext, files, dynamictags | none | every op |
 
 Laid out but inferred, not saved in the editor. Each takes the layout
@@ -162,9 +162,10 @@ records, and drops the captured layouts beside it. They don't warn.
   money included, still sends the number. Other filter surfaces always keep
   the number. Kizen compares the string form numerically (tested
   2026-10-30).
-- The stage-time rules (Python DSL only) are laid out for `time_in_stage`
-  with `more_than`, `entered_stage` with `earlier_than` and `left_stage` with
-  `later_than_or_on`. Their other comparisons aren't captured.
+- The stage-time ops are laid out for `time_in_stage` with `more_than`,
+  `entered_stage` with `earlier_than` and `left_stage` with
+  `later_than_or_on`, from a filter spec or the Python DSL. Their other
+  comparisons aren't captured.
 
 ### Record-field operators
 

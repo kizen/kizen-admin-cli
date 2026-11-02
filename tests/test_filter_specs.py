@@ -912,6 +912,30 @@ def test_uncaptured_rule_kinds_get_no_view_model(rule, obj):
     assert "view_model" not in _laid_out(rule, obj)
 
 
+@pytest.mark.parametrize(
+    ("spec", "dsl"),
+    [
+        (
+            {"op": "time_in_stage", "value": "Stage 2", "more_than": 4},
+            lambda: Field("stage").time_in_stage("Stage 2", more_than=4),
+        ),
+        (
+            {"op": "entered_stage", "value": "Stage 1", "earlier_than": "2026-07-14"},
+            lambda: Field("stage").entered_stage("Stage 1", earlier_than="2026-07-14"),
+        ),
+        (
+            {"op": "left_stage", "value": "Stage 1", "later_than_or_on": "2026-10-14"},
+            lambda: Field("stage").left_stage("Stage 1", later_than_or_on="2026-10-14"),
+        ),
+    ],
+    ids=["time_in_stage", "entered_stage", "left_stage"],
+)
+def test_stage_op_specs_get_the_dsl_layout(spec, dsl):
+    clause = _laid_out({"field": "stage", **spec}, _PIPELINE)
+    assert "view_model" in clause
+    assert clause == _laid_out(dsl, _PIPELINE)
+
+
 # The "UI Capture" step's rules and the Contacts rules, saved in the editor
 # (see the fixtures).
 
