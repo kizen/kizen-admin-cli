@@ -45,6 +45,10 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Removed
 
+- **Automation specs and `steps add` no longer take an `exit_loop` step.**
+  Kizen doesn't support it as a feature yet, so a step that names it is
+  refused as an unknown step type. `loop` and `next_or_finish` are
+  unchanged.
 - `automations update --dry-run` no longer prints `detaches_mcp_server` or
   `clears_run_tools_as`; those steps now keep their tools and are listed
   under `keeps_live`.

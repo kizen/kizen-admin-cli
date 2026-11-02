@@ -114,7 +114,6 @@ LOOP_STEPS = frozenset(
         "delay",
         "condition",
         "merge_branches",
-        "exit_loop",
         "next_or_finish",
     }
 )
@@ -1438,8 +1437,8 @@ def test_branch_groups_put_back_unchanged(drift_client, drift_branch_groups):
 
 
 # ---------------------------------------------------------------------------
-# Loops: a merged condition with an exit_loop in the body, a second loop after
-# the first, and a step after that
+# Loops: a merged condition with an empty no branch in the body, a second loop
+# after the first, and a step after that
 # ---------------------------------------------------------------------------
 
 
@@ -1490,7 +1489,6 @@ def drift_loops(drift_client, scratch, drift_object) -> dict[str, Any]:
             },
         ),
         wait("wait_yes", "check", parent_branch="yes"),
-        step("leave", "check", "exit_loop", parent_branch="no"),
         step("merge", "check", "merge_branches"),
         step("next", "each", "next_or_finish"),
         loop("each_again", "next", "arr1"),
@@ -1515,12 +1513,11 @@ def test_loop_linkage_survives_the_roundtrip(drift_loops):
     each, each_again = sorted(live["loop"], key=lambda s: s["order"])
     nxt, nxt_again = sorted(live["next_or_finish"], key=lambda s: s["order"])
     (check,) = live["condition"]
-    (leave,) = live["exit_loop"]
     assert each["is_branch_group_initiator"] is True
     assert each["step_loop"]["array_variable"]["name"] == "arr0"
     assert each["step_loop"]["item_variable"]["name"] == "arr0_item"
     assert check["parent_step_id"] == each["id"]
-    assert (leave["parent_step_id"], leave["parent_condition"]) == (check["id"], "no")
+    assert check["step_condition"]["no_steps"] == []
     assert nxt["parent_step_id"] == each["id"]
     assert each_again["parent_step_id"] == nxt["id"]
     assert nxt_again["parent_step_id"] == each_again["id"]

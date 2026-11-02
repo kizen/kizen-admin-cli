@@ -18,6 +18,10 @@ automation steps).
   `filter_config` from a UI-built search_records step on a pipeline,
   2026-10-30: `entered_stage` and `time_in_stage` clauses, with the UI's
   `view_model` and `description`.
+- `automations/loops.raw.json` — spec-built and read back 2026-10-27. One
+  step on the merged condition's `no` branch was removed by hand afterwards:
+  the condition's `no_steps` is emptied and the `order`s after it are
+  renumbered. Re-capture from the drift tier's `drift_loops` spec.
 - `records/`, `executions/`, `team/` — tool-level `--json` output.
   Exceptions: `executions/detail_form_submission.json` and
   `executions/history_form_submission.json` are hand-authored to the OpenAPI
