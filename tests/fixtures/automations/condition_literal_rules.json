@@ -1,0 +1,487 @@
+{
+ "captured": "2026-10-30, GET /api/automations/<automation_id> of automations built in the Kizen UI; one condition or search_records rule each",
+ "rules": [
+  {
+   "automation_id": "30c52afc-35cf-4d1a-b863-1abb6b5e21cb",
+   "clause": {
+    "type": "fields_v2",
+    "field": "\"custom\"::107925a9-19f0-41b5-8f44-28badfa44e58",
+    "value": "j",
+    "subtype": "custom",
+    "condition": "=",
+    "view_model": [
+     [
+      "filter_type",
+      {
+       "vars": [
+        [
+         "fields_settings_search",
+         true
+        ],
+        [
+         "custom_object_id",
+         "ceed733b-9dd9-4bf9-8c52-8ba1ac41da45"
+        ],
+        [
+         "object_type",
+         "standard"
+        ],
+        [
+         "client_tag_field_id",
+         "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+        ]
+       ],
+       "filter_type": "fields"
+      }
+     ],
+     [
+      "field_id",
+      {
+       "url": "/custom-objects/ceed733b-9dd9-4bf9-8c52-8ba1ac41da45/fields/107925a9-19f0-41b5-8f44-28badfa44e58",
+       "method": "GET",
+       "error_message": {
+        "404": "The field has been deleted"
+       },
+       "error_response": {
+        "name": "patient_first_name",
+        "relation": {},
+        "field_type": "text"
+       }
+      }
+     ],
+     [
+      "condition",
+      "equals"
+     ],
+     [
+      "value_type",
+      "static"
+     ],
+     [
+      "value",
+      "j"
+     ]
+    ],
+    "description": "Fields 'First Name' Equals Static Value j"
+   }
+  },
+  {
+   "automation_id": "359fbd3b-af29-4e11-ad4e-539817016eb8",
+   "clause": {
+    "type": "fields",
+    "field": "created",
+    "value": "2026-06-01T04:00:00.000Z",
+    "subtype": "non_custom",
+    "condition": ">=",
+    "view_model": [
+     [
+      "filter_type",
+      {
+       "vars": [
+        [
+         "fields_settings_search",
+         true
+        ],
+        [
+         "custom_object_id",
+         "8c3f0149-6915-4370-940f-2e61848d6842"
+        ],
+        [
+         "object_type",
+         "pipeline"
+        ],
+        [
+         "client_tag_field_id",
+         "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+        ]
+       ],
+       "filter_type": "fields"
+      }
+     ],
+     [
+      "field_id",
+      {
+       "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/fields/ab8db33d-19df-4587-9307-fadb7e67a1da",
+       "method": "GET",
+       "error_message": {
+        "404": "The field has been deleted"
+       },
+       "error_response": {
+        "name": "created",
+        "relation": {},
+        "field_type": "datetime"
+       }
+      }
+     ],
+     [
+      "condition",
+      "later_than_or_on"
+     ],
+     [
+      "value_type",
+      "static"
+     ],
+     [
+      "value",
+      "2026-06-01T04:00:00.000Z"
+     ]
+    ],
+    "description": "Fields 'Date Created' Later Than Or On Static Value 06/01/2026 at 12:00 am"
+   }
+  },
+  {
+   "automation_id": "2bc21a3e-45bf-4bfb-91a9-4fe64ab2945b",
+   "clause": {
+    "type": "fields_v2",
+    "field": "\"custom\"::6347d056-19da-46e2-8720-cfd95dfaf96c",
+    "value": true,
+    "subtype": "custom",
+    "condition": "is_blank",
+    "view_model": [
+     [
+      "filter_type",
+      {
+       "vars": [
+        [
+         "fields_settings_search",
+         true
+        ],
+        [
+         "custom_object_id",
+         "e8093798-e46c-4306-852f-d3be48c1dc3f"
+        ],
+        [
+         "object_type",
+         "standard"
+        ],
+        [
+         "client_tag_field_id",
+         "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+        ]
+       ],
+       "filter_type": "fields"
+      }
+     ],
+     [
+      "field_id",
+      {
+       "url": "/custom-objects/e8093798-e46c-4306-852f-d3be48c1dc3f/fields/6347d056-19da-46e2-8720-cfd95dfaf96c",
+       "method": "GET",
+       "error_message": {
+        "404": "The field has been deleted"
+       },
+       "error_response": {
+        "name": "primary_assessment_area_record",
+        "relation": {
+         "fetch_url": "standard",
+         "related_object": "afcf03d1-11bf-4aaf-8691-b9d34e75ee63"
+        },
+        "field_type": "relationship"
+       }
+      }
+     ],
+     [
+      "condition",
+      "is_blank"
+     ]
+    ],
+    "description": "Fields 'Primary Assessment Area Record' Is Blank"
+   }
+  },
+  {
+   "automation_id": "649890d8-1a22-4089-86b2-3ea011ed41e3",
+   "clause": {
+    "type": "fields_v2",
+    "field": "stage",
+    "value": "7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc",
+    "subtype": "non_custom",
+    "condition": "entered_stage",
+    "overwrite": {
+     "type": "stage"
+    },
+    "view_model": [
+     [
+      "filter_type",
+      {
+       "vars": [
+        [
+         "fields_settings_search",
+         true
+        ],
+        [
+         "custom_object_id",
+         "8c3f0149-6915-4370-940f-2e61848d6842"
+        ],
+        [
+         "object_type",
+         "pipeline"
+        ],
+        [
+         "client_tag_field_id",
+         "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+        ]
+       ],
+       "filter_type": "fields"
+      }
+     ],
+     [
+      "field_id",
+      {
+       "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/fields/dd7e1f05-351d-4b34-9953-478a3be82b79",
+       "method": "GET",
+       "error_message": {
+        "404": "The field has been deleted"
+       },
+       "error_response": {
+        "name": "stage",
+        "relation": {},
+        "field_type": "dropdown"
+       }
+      }
+     ],
+     [
+      "condition",
+      "entered_stage"
+     ],
+     [
+      "value",
+      {
+       "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/stages/7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc",
+       "method": "GET",
+       "error_message": {
+        "404": "The stage has been deleted"
+       }
+      }
+     ],
+     [
+      "comparison_condition",
+      "earlier_than"
+     ],
+     [
+      "comparison_value",
+      "2026-7-14"
+     ]
+    ],
+    "description": "Fields 'Stage' Entered Stage Stage 1 Earlier Than 07/14/2026 ",
+    "comparison_value": "2026-7-14",
+    "comparison_condition": "<"
+   }
+  },
+  {
+   "automation_id": "649890d8-1a22-4089-86b2-3ea011ed41e3",
+   "clause": {
+    "type": "fields_v2",
+    "field": "stage",
+    "value": "fe19470a-9e23-4be6-871a-f6ad10f244f6",
+    "subtype": "non_custom",
+    "condition": "time_in_stage",
+    "overwrite": {
+     "type": "stage"
+    },
+    "view_model": [
+     [
+      "filter_type",
+      {
+       "vars": [
+        [
+         "fields_settings_search",
+         true
+        ],
+        [
+         "custom_object_id",
+         "8c3f0149-6915-4370-940f-2e61848d6842"
+        ],
+        [
+         "object_type",
+         "pipeline"
+        ],
+        [
+         "client_tag_field_id",
+         "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+        ]
+       ],
+       "filter_type": "fields"
+      }
+     ],
+     [
+      "field_id",
+      {
+       "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/fields/dd7e1f05-351d-4b34-9953-478a3be82b79",
+       "method": "GET",
+       "error_message": {
+        "404": "The field has been deleted"
+       },
+       "error_response": {
+        "name": "stage",
+        "relation": {},
+        "field_type": "dropdown"
+       }
+      }
+     ],
+     [
+      "condition",
+      "time_in_stage"
+     ],
+     [
+      "value",
+      {
+       "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/stages/fe19470a-9e23-4be6-871a-f6ad10f244f6",
+       "method": "GET",
+       "error_message": {
+        "404": "The stage has been deleted"
+       }
+      }
+     ],
+     [
+      "comparison_condition",
+      "more_than"
+     ],
+     [
+      "comparison_value",
+      "4"
+     ],
+     [
+      "comparison_type",
+      "days"
+     ]
+    ],
+    "description": "Fields 'Stage' Time in Stage Stage 2 More Than 4 Day(s) ",
+    "comparison_type": "days",
+    "comparison_value": "4",
+    "comparison_condition": ">"
+   }
+  },
+  {
+   "automation_id": "649890d8-1a22-4089-86b2-3ea011ed41e3",
+   "clause": {
+    "type": "fields_v2",
+    "field": "\"custom\"::558e8df0-eab1-4501-92c3-d5229404219c",
+    "value": false,
+    "subtype": "custom",
+    "condition": "is_blank",
+    "view_model": [
+     [
+      "filter_type",
+      {
+       "vars": [
+        [
+         "fields_settings_search",
+         true
+        ],
+        [
+         "custom_object_id",
+         "8c3f0149-6915-4370-940f-2e61848d6842"
+        ],
+        [
+         "object_type",
+         "pipeline"
+        ],
+        [
+         "client_tag_field_id",
+         "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+        ]
+       ],
+       "filter_type": "fields"
+      }
+     ],
+     [
+      "field_id",
+      {
+       "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/fields/558e8df0-eab1-4501-92c3-d5229404219c",
+       "method": "GET",
+       "error_message": {
+        "404": "The field has been deleted"
+       },
+       "error_response": {
+        "name": "related_branch_records",
+        "relation": {
+         "fetch_url": "standard",
+         "related_object": "95ca0064-bcf7-44bb-9e5c-b350a3847278"
+        },
+        "field_type": "relationship"
+       }
+      }
+     ],
+     [
+      "condition",
+      "is_not_blank"
+     ]
+    ],
+    "description": "Fields 'Related Branch Records' Isn't Blank"
+   }
+  },
+  {
+   "automation_id": "d95e9059-7924-4a45-bddb-ed7235768a9c",
+   "clause": {
+    "type": "fields_v2",
+    "field": "stage",
+    "value": "7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc",
+    "subtype": "non_custom",
+    "condition": "=",
+    "overwrite": {
+     "type": "stage"
+    },
+    "view_model": [
+     [
+      "filter_type",
+      {
+       "vars": [
+        [
+         "fields_settings_search",
+         true
+        ],
+        [
+         "custom_object_id",
+         "8c3f0149-6915-4370-940f-2e61848d6842"
+        ],
+        [
+         "object_type",
+         "pipeline"
+        ],
+        [
+         "client_tag_field_id",
+         "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+        ]
+       ],
+       "filter_type": "fields"
+      }
+     ],
+     [
+      "field_id",
+      {
+       "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/fields/dd7e1f05-351d-4b34-9953-478a3be82b79",
+       "method": "GET",
+       "error_message": {
+        "404": "The field has been deleted"
+       },
+       "error_response": {
+        "name": "stage",
+        "relation": {},
+        "field_type": "dropdown"
+       }
+      }
+     ],
+     [
+      "condition",
+      "equals"
+     ],
+     [
+      "value_type",
+      "static"
+     ],
+     [
+      "value",
+      {
+       "url": "/pipelines/8c3f0149-6915-4370-940f-2e61848d6842/stages/7855ba7b-e9e9-46d1-9fbb-16fde74eb4bc",
+       "method": "GET",
+       "error_message": {
+        "404": "The stage has been deleted"
+       }
+      }
+     ]
+    ],
+    "description": "Fields 'Stage' Equals Static Value Stage 1"
+   }
+  }
+ ]
+}

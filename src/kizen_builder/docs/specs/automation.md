@@ -762,9 +762,9 @@ an **automation variable** to a static value is a different clause shape,
     "filter_config": { "and": true, "query": [
       { "id": "query-0", "and": true, "filters": [
         { "type": "variable", "subtype": "automation_variable",
-          "lhs_variable_name": "score", "condition": "<=",
+          "lhs_variable_name": "score", "condition": ">=",
           "rhs_value": "5.5", "rhs_value_type": "static",
-          "description": "Variable Value 'score' Less Than Or Equal To Static Value 5.5",
+          "description": "Variable Value 'score' More Than Or Equal To Static Value 5.5",
           "view_model": [
             ["filter_type", { "vars": [
                 ["fields_settings_search", true],
@@ -773,7 +773,7 @@ an **automation variable** to a static value is a different clause shape,
                 ["client_tag_field_id", "<client-tag-field-uuid>"]
               ], "filter_type": "variable" }],
             ["lhs_variable", { "name": "score", "data_type": "number" }],
-            ["condition", "less_than_or_equal_to"],
+            ["condition", "more_than_or_equal_to"],
             ["value_type", "static"],
             ["value", "5.5"]
           ] }
@@ -1020,6 +1020,10 @@ as a real custom object's own api_name, and its span gets
   `not_in_group` with no `group_ids` is rejected at plan time. The API accepts
   an empty filter, but the UI then shows an error on the step (reported
   2026-09-29). A group condition with no groups has nothing to test.
+  Compiled rules carry the Kizen editor's `view_model` where the CLI has the
+  rule's layout. The editor uses them only when every rule in the step has
+  one, and the `create`/`update` plan warns about each rule saved without one
+  (`kizen docs show filters`).
 
 ---
 
