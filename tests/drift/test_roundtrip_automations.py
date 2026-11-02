@@ -2251,6 +2251,47 @@ def test_call_llm_mcp_step_puts_back_unchanged(drift_client, drift_ai_mcp_step):
     assert list(semantic_diff(before, after)) == []
 
 
+def test_call_llm_update_omitting_tools_keeps_them(
+    drift_client, drift_ai_mcp_step, drift_object, drift_step_fields, drift_llm_models
+):
+    """An update from a spec that carries the step's id and leaves out the
+    tool keys keeps the live server, account and turn limit."""
+    from kizen_builder.api import automations as auto_api
+    from kizen_builder.tools.planners.automations import plan_update_automation
+
+    live = auto_api.get_automation(drift_client, drift_ai_mcp_step["uuid"])
+    (step,) = live["steps"]
+    spec = _base_spec("ai_mcp", drift_object)
+    spec.update(api_name=live["api_name"], name=live["name"])
+    spec["steps"] = [
+        {
+            "key": "llm_tools",
+            "id": step["id"],
+            "step_type": "call_llm",
+            "order": 0,
+            "parent_key": None,
+            "action_call_llm": _llm_block(
+                drift_llm_models["call"],
+                prompt="Summarize this record using the available tools.",
+                destinations=[{"field": drift_step_fields["longtext"]["id"]}],
+            ),
+        },
+    ]
+    (op,) = plan_update_automation(spec).operations
+    assert "llm_tools" in op.preview["keeps_live"]
+    auto_api.update_automation(
+        drift_client,
+        drift_ai_mcp_step["uuid"],
+        op.payload,
+        last_revision=op.payload.get("last_revision"),
+    )
+    after = auto_api.get_automation(drift_client, drift_ai_mcp_step["uuid"])
+    block = after["steps"][0]["action_call_llm"]
+    assert block["mcp_server"]["id"] == drift_ai_mcp_step["server"]["id"]
+    assert block["run_tools_as"]["id"] == drift_ai_mcp_step["account"]["id"]
+    assert block["max_sequential_turns"] == 10
+
+
 def test_input_field_reads_back_mirrored_as_a_context_source(
     drift_ai_steps, drift_step_fields
 ):
