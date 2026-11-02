@@ -71,11 +71,15 @@ def resolve_form_id(
 
 
 def _normalize_field(f: dict[str, Any]) -> dict[str, Any]:
+    link = f.get("custom_object_field")
     return {
         "id": f.get("id"),
         "api_name": f.get("name"),
         "display_name": f.get("display_name"),
         "field_type": f.get("field_type"),
+        "custom_object_field": (
+            {"id": link.get("id"), "api_name": link.get("name")} if link else None
+        ),
         "is_required": f.get("is_required"),
         "is_read_only": f.get("is_read_only"),
         "is_hidden": f.get("is_hidden"),

@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FormDef, FormFieldDef
+from kizen_builder.models.spec.field_configs import check_type_blocks
 from kizen_builder.tools.form_ui import unplaced_fields
 from kizen_builder.tools.forms import FORMS_BASE_PATH, get_form, list_forms
 from kizen_builder.tools.objects import get_object
@@ -88,6 +89,11 @@ def plan_create_form(
             "'related_object_id' UUID."
         )
 
+    fields = form_def.fields or []
+    if _has_links(fields):
+        ref = form_def.related_object_id or form_def.related_object
+        fields = _link_fields(fields, get_object(ref or ""), kind)
+
     object_key = f"{kind}:{form_def.api_name or form_def.name}"
     ops: list[PlanOperation] = [
         PlanOperation(
@@ -98,14 +104,14 @@ def plan_create_form(
                 "env": env,
                 "name": form_def.name,
                 "api_name": form_def.api_name or "(server-derived)",
-                "fields": len(form_def.fields or []),
+                "fields": len(fields),
             },
             payload=_build_form_payload(form_def),
         )
     ]
 
     seen: set[str] = set()
-    for idx, field in enumerate(form_def.fields or []):
+    for idx, field in enumerate(fields):
         label = field.api_name or field.name
         if label in seen:
             raise PlanError(f"duplicate {kind} field '{label}' in the batch.")
@@ -370,16 +376,18 @@ def plan_create_form_fields(
     form = _load_form(identifier, base_path, kind)
     form_id = form["id"]
 
+    defs = [
+        f if isinstance(f, FormFieldDef) else FormFieldDef.model_validate(f)
+        for f in fields
+    ]
+    if _has_links(defs):
+        defs = _link_fields(defs, get_object(form["related_object"]["id"]), kind)
+
     have = {f.get("api_name") for f in form["fields"] if f.get("api_name")}
     base_order = len(form["fields"])
     ops: list[PlanOperation] = []
     seen: set[str] = set()
-    for idx, field in enumerate(fields):
-        fd = (
-            field
-            if isinstance(field, FormFieldDef)
-            else FormFieldDef.model_validate(field)
-        )
+    for idx, fd in enumerate(defs):
         label = fd.api_name or fd.name
         if fd.api_name and fd.api_name in have:
             raise PlanError(
@@ -425,6 +433,16 @@ def plan_update_form_field(
     env = load_env_config().name
     form = _load_form(identifier, base_path, kind)
     existing = _find_form_field(form, field_api_name, kind)
+    if "custom_object_field" in changes:
+        link = existing.get("custom_object_field") or {}
+        if changes["custom_object_field"] not in (link.get("id"), link.get("api_name")):
+            linked = link.get("api_name")
+            raise PlanError(
+                f"field '{field_api_name}' on {kind} '{form.get('name')}' is "
+                f"{f'linked to {linked}' if linked else 'form-only'}, and an update "
+                "can't change its link. Delete the field and create it again with "
+                "the new 'custom_object_field'."
+            )
 
     payload: dict[str, Any] = {}
     diff: dict[str, Any] = {}
@@ -614,6 +632,55 @@ def plan_remove_form_field_option(
 # ---------------------------------------------------------------------------
 
 
+def _has_links(fields: list[FormFieldDef]) -> bool:
+    return any(f.custom_object_field for f in fields)
+
+
+def _link_fields(
+    fields: list[FormFieldDef], related: dict[str, Any], kind: FormKind
+) -> list[FormFieldDef]:
+    """Resolve each ``custom_object_field`` to a field id on ``related`` (a
+    ``get_object`` result), taking ``field_type`` from that field when omitted."""
+    obj = related["api_name"]
+    by_ref: dict[str, dict[str, Any]] = {}
+    for f in related["fields"]:
+        if not f.get("deleted"):
+            by_ref[f["id"]] = f
+            by_ref[f["api_name"]] = f
+    linked: list[FormFieldDef] = []
+    for fd in fields:
+        ref = fd.custom_object_field
+        if ref is None:
+            linked.append(fd)
+            continue
+        target = by_ref.get(ref)
+        if target is None:
+            raise PlanError(
+                f"{kind} field '{fd.name}': '{ref}' is not a field on {obj} — "
+                f"kizen objects get {obj} lists them"
+            )
+        field_type = target["field_type"]
+        if fd.field_type is not None and fd.field_type != field_type:
+            raise PlanError(
+                f"{kind} field '{fd.name}': field_type '{fd.field_type}' doesn't "
+                f"match {obj}.{target['api_name']}, a '{field_type}' field. Omit "
+                "field_type to take the linked field's."
+            )
+        update: dict[str, Any] = {
+            "field_type": field_type,
+            "custom_object_field": target["id"],
+        }
+        # Kizen 400s a money field without money_options and a yesnomaybe
+        # without options, then stores the linked field's own, so these are
+        # only there to be sent.
+        if field_type == "yesnomaybe":
+            update["options"] = [o["code"] for o in target.get("options") or []]
+        fd = fd.model_copy(update=update)
+        check_type_blocks(fd, f"{kind} field '{fd.name}'", {"yesnomaybe"})
+        linked.append(fd)
+    return linked
+
+
 def _resolve_related_object_id(form: FormDef) -> str | None:
     if form.related_object_id:
         return form.related_object_id
@@ -656,6 +723,8 @@ def _build_form_field_payload(
         "is_read_only": field.read_only,
         "is_hidden": field.hidden,
     }
+    if field.custom_object_field:
+        payload["custom_object_field"] = field.custom_object_field
     if field.api_name:
         payload["name"] = field.api_name
     if field.description:

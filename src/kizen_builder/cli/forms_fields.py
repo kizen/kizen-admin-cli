@@ -98,12 +98,20 @@ def add_field_commands(
         field_type: str = typer.Option(
             "", "--type", help="Field type (text, dropdown, rating, etc.)."
         ),
+        custom_object_field: str = typer.Option(
+            "",
+            "--custom-object-field",
+            help=f"Link the answer to this field (api_name or UUID) of the {kind}'s "
+            "related object. Its type and options come from that field.",
+        ),
         description: str = typer.Option("", "--description", help="Field description."),
         required: bool = typer.Option(
             False, "--required", help="Mark the field required."
         ),
         hidden: bool = typer.Option(
-            False, "--hidden", help="Hide the field by default."
+            False,
+            "--hidden",
+            help="Set the record-view hidden flag. The form still shows the field.",
         ),
         option: list[str] = typer.Option(
             [], "--option", help="Choice option (repeatable)."
@@ -152,17 +160,21 @@ def add_field_commands(
             )
             return
 
-        if not display_name or not field_type:
+        if not display_name or not (field_type or custom_object_field):
             err_console.print(
-                "[red]error:[/red] single-field create needs --name and --type."
+                "[red]error:[/red] single-field create needs --name, and --type "
+                "or --custom-object-field."
             )
             raise typer.Exit(code=2)
         field_dict: dict[str, Any] = {
             "name": display_name,
-            "field_type": field_type,
             "required": required,
             "hidden": hidden,
         }
+        if field_type:
+            field_dict["field_type"] = field_type
+        if custom_object_field:
+            field_dict["custom_object_field"] = custom_object_field
         if option:
             field_dict["options"] = option
         if api_name:

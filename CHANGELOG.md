@@ -16,6 +16,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Form and survey fields can be tied to the related record's fields.** A
+  `fields` entry takes `custom_object_field` (an api_name or UUID on the
+  form's `related_object`), and `forms fields create` takes
+  `--custom-object-field`. The field's type and options come from the
+  record's field, a mismatched `field_type` or an unknown name is refused at
+  plan time, and `forms fields list --json` shows each field's link.
 - **Filters can test how long a record has been in a stage.** `--filter`,
   condition and search steps, filter groups and quick filters take
   `time_in_stage`, `entered_stage` and `left_stage` on a pipeline's `stage`
