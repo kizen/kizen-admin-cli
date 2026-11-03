@@ -6,6 +6,7 @@ such a value up front, naming the field and never the value.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 import respx
@@ -57,6 +58,17 @@ def _run_objects_list():
     return result, any_http
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _flat(output: str) -> str:
+    """Output as one line of plain text: Rich panel borders and wrapping gone,
+    and ANSI styling stripped. Typer forces terminal styling whenever
+    GITHUB_ACTIONS, FORCE_COLOR or PY_COLORS is set, which splits flag names
+    with escape codes."""
+    return " ".join(_ANSI.sub("", output).replace("│", " ").split())
+
+
 @pytest.mark.parametrize(("sep", "label"), SEPARATORS, ids=[s[1] for s in SEPARATORS])
 def test_profile_malformed_key_never_echoed(sep, label):
     _store_testenv(api_key=f"BADKEY{sep}Z9QX")
@@ -66,7 +78,7 @@ def test_profile_malformed_key_never_echoed(sep, label):
 
     result, any_http = _run_objects_list()
     assert result.exit_code == 1
-    flat = " ".join(result.output.split())
+    flat = _flat(result.output)
     assert flat.startswith(f"error: Profile 'testenv' in {profiles.credentials_path()}")
     assert flat.endswith(
         "has an invalid api_key: it may contain only visible ASCII characters "
@@ -86,7 +98,7 @@ def test_profile_malformed_identity_never_echoed(field, sep, label):
     result, any_http = _run_objects_list()
     assert result.exit_code == 1
     assert f"has an invalid {field}: it may contain only visible ASCII" in (
-        " ".join(result.output.split())
+        _flat(result.output)
     )
     for text in (result.output, repr(result.exception)):
         assert "BADID" not in text
@@ -97,8 +109,8 @@ def test_profile_malformed_identity_never_echoed(field, sep, label):
 def test_profile_malformed_fields_named_together():
     _store_testenv(api_key="BAD KEY", user_id="bad id")
     result, _ = _run_objects_list()
-    assert "has an invalid api_key, user_id: each may contain only" in " ".join(
-        result.output.split()
+    assert "has an invalid api_key, user_id: each may contain only" in _flat(
+        result.output
     )
     assert "re-enter them." in result.output
 
@@ -146,7 +158,7 @@ def test_init_rejects_malformed_key_before_sending(source, flag, tmp_path, monke
         any_http = router.route().respond(json={"results": []})
         result = runner.invoke(app, argv, input=stdin, terminal_width=300)
     assert result.exit_code == 2, result.output
-    flat = " ".join(result.output.replace("│", " ").split())
+    flat = _flat(result.output)
     assert flag in flat
     assert (
         f"Invalid value for {flag}: it may contain only visible ASCII characters "
@@ -186,7 +198,7 @@ def test_init_empty_key_is_required_not_invalid(tmp_path, monkeypatch):
             terminal_width=300,
         )
     assert result.exit_code == 2, result.output
-    flat = " ".join(result.output.replace("│", " ").split())
+    flat = _flat(result.output)
     assert "--api-key" in flat
     assert "is required." in flat
     assert "it may contain only" not in flat
