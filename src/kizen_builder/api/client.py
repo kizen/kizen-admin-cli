@@ -1,7 +1,8 @@
 """Thin httpx wrapper that authenticates every call, retries reads, and
 normalizes errors into a single exception type.
 
-A profile authenticates with the three ``X-*`` headers. Helper mode sends only
+A profile, or API-key mode, authenticates with the three ``X-*`` headers.
+Helper mode sends only
 ``Authorization: Bearer``, from :class:`~kizen_builder.auth_helper.BearerHelperAuth`,
 which refreshes the token and resends once on a 401 inside a single attempt;
 the retries below wrap that whole exchange.
@@ -20,7 +21,11 @@ from urllib.parse import urlsplit
 import httpx
 
 from kizen_builder.auth_helper import BearerHelperAuth
-from kizen_builder.config import ApiKeyAuth, EnvConfig, HelperAuth
+from kizen_builder.config import (
+    ApiKeyAuth,
+    EnvConfig,
+    HelperAuth,
+)
 
 _MAX_ATTEMPTS = 3
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
@@ -187,6 +192,14 @@ class KizenClient:
         message = _extract_error_message(body) or f"{method} {path} failed"
         if isinstance(self._config.auth, HelperAuth):
             message = _helper_auth_message(message, resp.status_code, body)
+        elif resp.status_code in (401, 403) and (
+            isinstance(self._config.auth, ApiKeyAuth) and self._config.auth.env_var
+        ):
+            # A wrapper owns the key, so `kizen init` can't fix it.
+            message = (
+                f"{message} — the API key in ${self._config.auth.env_var} may be "
+                "invalid, expired or revoked."
+            )
         elif resp.status_code in (401, 403):
             # Auth failure — surface the exact command the user can run to fix.
             label = self._config.name

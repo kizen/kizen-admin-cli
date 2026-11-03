@@ -20,13 +20,19 @@ environment is its ``business_id``.
 ``$KIZEN_AUTH_HELPER`` is in the process environment, a wrapper (app-builder)
 owns authentication: the config comes from ``KIZEN_*`` variables alone, the
 credential store is never opened, and requests carry a Bearer header that the
-helper command prints (:mod:`kizen_builder.auth_helper`). The variable contract
-is documented in ``docs/operating.md``.
+helper command prints (:mod:`kizen_builder.auth_helper`).
+
+**API-key mode** is its sibling: when ``$KICODE_API_KEY`` is in the process
+environment, a wrapper supplies the key and identity the same way, and requests
+carry the profile-style ``X-API-KEY`` headers. Setting both is an error. Helper
+mode's contract is documented in ``docs/operating.md``; API-key mode serves
+kicode only and is deliberately left out of the shipped docs.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -51,16 +57,34 @@ class ConfigError(Exception):
     """Raised when required env vars for the active environment are missing."""
 
 
-# Helper mode's environment contract. The first one switches the mode on.
+# The wrapper modes' environment contracts. The first of each switches its
+# mode on; the identity variables are shared.
 HELPER_ENV = "KIZEN_AUTH_HELPER"
-_HELPER_VARS = (HELPER_ENV, "KIZEN_BASE_URL", "KIZEN_BUSINESS_ID", "KIZEN_USER_ID")
+KICODE_KEY_ENV = "KICODE_API_KEY"
+# Visible ASCII only. Stricter than a header requires (interior spaces are
+# legal there), but no key or id has one, and it rules out every value httpx
+# would refuse with an error quoting it.
+_HEADER_VALUE = re.compile(r"[\x21-\x7e]+")
+# The rule header_value_ok() enforces, for messages that never show the value.
+HEADER_VALUE_RULE = (
+    "may contain only visible ASCII characters "
+    "(no spaces, tabs, line breaks or control characters)"
+)
+_IDENTITY_VARS = ("KIZEN_BASE_URL", "KIZEN_BUSINESS_ID", "KIZEN_USER_ID")
+_HELPER_VARS = (HELPER_ENV, *_IDENTITY_VARS)
+_KICODE_KEY_VARS = (KICODE_KEY_ENV, *_IDENTITY_VARS)
 
 
 @dataclass(frozen=True)
 class ApiKeyAuth:
-    """A profile's API key, sent as ``X-API-KEY`` with the identity headers."""
+    """An API key, sent as ``X-API-KEY`` with the identity headers.
+
+    ``env_var`` names the variable a wrapper supplied it in (API-key mode), or
+    is ``None`` for a profile's key, so error advice can point at the source.
+    """
 
     api_key: str = field(repr=False)
+    env_var: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,15 +121,53 @@ def helper_mode() -> bool:
     return HELPER_ENV in os.environ
 
 
-def refuse_in_helper_mode(command: str, managed: str) -> None:
-    """Stop a command that manages what app-builder owns in helper mode.
+def api_key_mode() -> bool:
+    """Whether a wrapper supplies an API key through ``$KICODE_API_KEY``.
 
-    ``managed`` completes "app-builder manages ...", e.g.
-    "this installation".
+    Process environment only, like :func:`helper_mode`: a ``.env`` file can't
+    switch it on.
     """
+    return KICODE_KEY_ENV in os.environ
+
+
+def header_value_ok(value: str) -> bool:
+    """Whether ``value`` can be sent as an API-key or identity header.
+
+    Checked before anything is sent, because httpx's error for an illegal
+    header value quotes the value, and the value may be a secret.
+    """
+    return bool(_HEADER_VALUE.fullmatch(value))
+
+
+def wrapper() -> str | None:
+    """Who supplies the environment instead of a profile, as named in
+    messages, or ``None`` when a profile does. Both wrapper modes at once is
+    an error, not either one."""
+    _refuse_both_wrappers()
     if helper_mode():
+        return "app-builder"
+    if api_key_mode():
+        return "kicode"
+    return None
+
+
+def refuse_when_wrapped(command: str, managed: str) -> None:
+    """Stop a command that manages what a wrapper owns in either wrapper mode.
+
+    ``managed`` completes "<wrapper> manages ...", e.g. "this installation".
+    """
+    owner = wrapper()
+    if owner:
         raise ConfigError(
-            f"`kizen {command}` is unavailable here: app-builder manages {managed}."
+            f"`kizen {command}` is unavailable here: {owner} manages {managed}."
+        )
+
+
+def _refuse_both_wrappers() -> None:
+    if helper_mode() and api_key_mode():
+        raise ConfigError(
+            f"${HELPER_ENV} and ${KICODE_KEY_ENV} are both set, so there are two "
+            "ways to authenticate. Use one or the other."
         )
 
 
@@ -120,20 +182,25 @@ def load_env_config(
     from the central store and enforces the directory pin's ``business_id``
     checksum before returning.
 
-    In helper mode (``$KIZEN_AUTH_HELPER`` set) the config comes from the
-    ``KIZEN_*`` helper variables instead, no ``.env`` is loaded and the
-    credential store is never read; the pin's ``business_id`` is still
-    enforced.
+    In helper mode (``$KIZEN_AUTH_HELPER`` set) or API-key mode
+    (``$KICODE_API_KEY`` set) the config comes from the ``KIZEN_*`` variables
+    instead, no ``.env`` is loaded and the credential store is never read; the
+    pin's ``business_id`` is still enforced. Both set is an error.
     """
+    _refuse_both_wrappers()
     if helper_mode():
         return _load_helper_config(env_name)
+    if api_key_mode():
+        return _load_api_key_config(env_name)
 
     if dotenv_path is not None:
         load_dotenv(dotenv_path, override=False)
     else:
         load_dotenv(find_dotenv(usecwd=True), override=False)
-    # Helper mode comes from the real environment only (see helper_mode()).
+    # The wrapper modes come from the real environment only (see
+    # helper_mode()); we only get here when neither was set there.
     os.environ.pop(HELPER_ENV, None)
+    os.environ.pop(KICODE_KEY_ENV, None)
 
     pin = profiles.load_pin()
 
@@ -178,6 +245,18 @@ def _load_profile(name: str) -> EnvConfig:
             f"Profile '{name}' in {profiles.credentials_path()} is missing "
             f"required fields. Run `kizen init --profile {name}` to re-enter them."
         )
+    bad = [
+        field
+        for field in ("api_key", "business_id", "user_id")
+        if not header_value_ok(getattr(creds, field))
+    ]
+    if bad:
+        raise ConfigError(
+            f"Profile '{name}' in {profiles.credentials_path()} has an invalid "
+            f"{', '.join(bad)}: {'it' if len(bad) == 1 else 'each'} "
+            f"{HEADER_VALUE_RULE}. Run `kizen init --profile {name}` to re-enter "
+            f"{'it' if len(bad) == 1 else 'them'}."
+        )
     return EnvConfig(
         name=name.lower(),
         business_id=creds.business_id,
@@ -190,6 +269,50 @@ def _load_profile(name: str) -> EnvConfig:
 def _load_helper_config(env_name: str | None) -> EnvConfig:
     """Build an EnvConfig from the helper-mode variables. Never reads the
     credential store or a ``.env`` file."""
+    values = _wrapper_values(
+        env_name,
+        _HELPER_VARS,
+        supplier="app-builder supplies the environment",
+        needs="Running under app-builder",
+    )
+    try:
+        argv = tuple(shlex.split(values[HELPER_ENV]))
+    except ValueError as exc:
+        raise ConfigError(f"${HELPER_ENV} can't be parsed: {exc}") from None
+    return _wrapper_config(values, HelperAuth(argv))
+
+
+def _load_api_key_config(env_name: str | None) -> EnvConfig:
+    """Build an EnvConfig from the API-key-mode variables. Never reads the
+    credential store or a ``.env`` file."""
+    values = _wrapper_values(
+        env_name,
+        _KICODE_KEY_VARS,
+        supplier="kicode supplies the environment",
+        needs="Running under kicode",
+    )
+    bad = [
+        var
+        for var in (KICODE_KEY_ENV, "KIZEN_BUSINESS_ID", "KIZEN_USER_ID")
+        if not header_value_ok(values[var])
+    ]
+    if bad:
+        raise ConfigError(
+            f"{', '.join(bad)} {'is' if len(bad) == 1 else 'are'} invalid: "
+            f"{'it' if len(bad) == 1 else 'each'} {HEADER_VALUE_RULE}."
+        )
+    return _wrapper_config(
+        values, ApiKeyAuth(values[KICODE_KEY_ENV], env_var=KICODE_KEY_ENV)
+    )
+
+
+def _wrapper_values(
+    env_name: str | None, variables: tuple[str, ...], *, supplier: str, needs: str
+) -> dict[str, str]:
+    """A wrapper mode's stripped ``variables``, after refusing any profile
+    selector and any missing one. ``variables[0]`` is the mode's switch.
+    Messages name variables, never their values."""
+    switch = variables[0]
     selectors = [
         label
         for label, value in (
@@ -201,25 +324,25 @@ def _load_helper_config(env_name: str | None) -> EnvConfig:
     ]
     if selectors:
         raise ConfigError(
-            f"${HELPER_ENV} is set, so app-builder supplies the environment, "
+            f"${switch} is set, so {supplier}, "
             f"but {' and '.join(selectors)} also selects a profile. "
             "Use one or the other."
         )
 
-    values = {var: os.environ.get(var, "").strip() for var in _HELPER_VARS}
+    values = {var: os.environ.get(var, "").strip() for var in variables}
     missing = [var for var, value in values.items() if not value]
     if missing:
         raise ConfigError(
-            f"${HELPER_ENV} is set, but {', '.join(missing)} "
+            f"${switch} is set, but {', '.join(missing)} "
             f"{'is' if len(missing) == 1 else 'are'} missing or empty. "
-            f"Running under app-builder needs all of {', '.join(_HELPER_VARS)}."
+            f"{needs} needs all of {', '.join(variables)}."
         )
+    return values
 
-    try:
-        argv = tuple(shlex.split(values[HELPER_ENV]))
-    except ValueError as exc:
-        raise ConfigError(f"${HELPER_ENV} can't be parsed: {exc}") from None
-    base_url = _helper_base_url(values["KIZEN_BASE_URL"])
+
+def _wrapper_config(values: dict[str, str], auth: Auth) -> EnvConfig:
+    """The EnvConfig for a wrapper mode's ``values``, after the pin check."""
+    base_url = _wrapper_base_url(values["KIZEN_BASE_URL"])
     business_id = values["KIZEN_BUSINESS_ID"]
 
     pin = profiles.load_pin()
@@ -236,11 +359,11 @@ def _load_helper_config(env_name: str | None) -> EnvConfig:
         business_id=business_id,
         user_id=values["KIZEN_USER_ID"],
         base_url=base_url,
-        auth=HelperAuth(argv),
+        auth=auth,
     )
 
 
-def _helper_base_url(value: str) -> str:
+def _wrapper_base_url(value: str) -> str:
     """``$KIZEN_BASE_URL`` as an https origin, like a profile's ``base_url``."""
     parts = urlsplit(value.rstrip("/"))
     if (

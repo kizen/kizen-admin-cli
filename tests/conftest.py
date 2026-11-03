@@ -78,6 +78,10 @@ def fake_env(monkeypatch: pytest.MonkeyPatch, tmp_path_factory) -> None:
 
     monkeypatch.setenv("KIZEN_ENV", "testenv")
     monkeypatch.delenv("KIZEN_PROFILE", raising=False)
+    # `kizen init`'s --api-key fallback; a developer's export mustn't leak in.
+    monkeypatch.delenv("KIZEN_API_KEY", raising=False)
+    # Set, it switches every command to API-key mode.
+    monkeypatch.delenv("KICODE_API_KEY", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.mktemp("xdg")))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path_factory.mktemp("xdg-cache")))
     profiles.write_profile(
