@@ -24,6 +24,10 @@ automation steps).
   `view_model`: `is_not_blank` on a longtext, four OR'd filters on a
   dropdown (`=`, `!=`, `is_none_of`, `is_blank`), `>=` on a rating, and
   three date filters AND'd.
+- `automations/loops.raw.json` — spec-built and read back 2026-10-27. One
+  step on the merged condition's `no` branch was removed by hand afterwards:
+  the condition's `no_steps` is emptied and the `order`s after it are
+  renumbered. Re-capture from the drift tier's `drift_loops` spec.
 - `records/`, `executions/`, `team/` — tool-level `--json` output.
   Exceptions: `executions/detail_form_submission.json` and
   `executions/history_form_submission.json` are hand-authored to the OpenAPI

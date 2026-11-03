@@ -1114,7 +1114,9 @@
  Patch one step: top-level keys in the JSON replace the step's.                                     
                                                                                                     
  A config block (`action_*` / `step_*`) replaces wholesale — start                                  
- from `steps get` output and modify. Blocks accept the same authoring                               
+ from `steps get` output and modify. The one exception is a                                         
+ `stop_execution` block: a key it leaves out keeps the live value, and a                            
+ stop with no action gets `stop_and_complete`. Blocks accept the same authoring                     
  shapes as create specs (field_refs resolve against the live env).                                  
  `key` and `type` are immutable; re-parenting via `parent_key` /                                    
  `parent_yes_no` is allowed and graph-validated.                                                    
@@ -1514,7 +1516,9 @@
  can't drift from what `dashboards create` accepts — and unlike "copy a                             
  live dashlet", it works on an env with no populated dashboards. Pass                               
  `--object`/`--field` as **api_names** (never UUIDs) to bake real ids                               
- in; omit them for `<...>` placeholders you fill later.                                             
+ in; omit them for `<...>` placeholders you fill later. `--filter`                                  
+ narrows a custom-object dashlet's records, e.g. to the viewer's own:                               
+ `{"all": [{"field": "owner", "op": "is_me"}]}`.                                                    
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --type         -t      <str>  Dashlet type to generate. Omit to list every available type.       │
@@ -1527,6 +1531,10 @@
 │ --chart-type           <str>  Override chart_type (metric families only).                        │
 │ --metric-type          <str>  Override metric_type (metric families only).                       │
 │ --frequency            <str>  day/week/month — required for chart_type=line.                     │
+│ --filter               <str>  Filter as JSON: a spec ({"all"|"any": [...]} of                    │
+│                               {"field","op","value"}) resolved against --object, or a raw        │
+│                               {"custom_filters": {...}} block. Custom-object types only.         │
+│ --filter-file          <str>  Path to a JSON filter (same format as --filter).                   │
 │ --full                        Wrap the config in a full DashboardDef ready for `dashboards       │
 │                               create`.                                                           │
 │ --help                        Show this message and exit.                                        │

@@ -183,6 +183,8 @@ until a short page comes back. Archive is the odd one out: it lives under
 `/api/custom-objects` and its path segment is the object's **UUID**, not its
 api_name — every other row above takes either.
 
+From a code step, see `kizen docs show code-steps`.
+
 ## The `fields` write shape
 
 ```json

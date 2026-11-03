@@ -26,7 +26,7 @@ re-run through the DSL.
 | Quick filters | `filters` | same shape as filter groups |
 | Automation `condition` step | `step_condition.filter_config` | `kizen docs show automation` |
 | Automation `search_records` step | `filter_config` | resolved against the step's **own** `custom_object`, not the automation's `target_object` |
-| Dashlets | `config.custom_filters` | an empty filter is a specific literal, not `{}` — `kizen docs show dashboard` |
+| Dashlets (`dashboards dashlet-config --filter`, or a dashboard spec) | `config.filters.custom_filters` | a spec in `config.filters` compiles against the dashlet's object; an empty filter is a specific literal, not `{}` — `kizen docs show dashboard` |
 
 ## The DSL
 

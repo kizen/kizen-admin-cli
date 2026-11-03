@@ -205,7 +205,8 @@ the source. A few load-bearing reminders:
   than duplicating tails.
 - `field_ref` resolves at apply time (`kizen docs show automation`, 'Field
   references').
-- `stop_execution` needs no config block — the planner emits the empty one.
+- `stop_execution`'s `action` sets the run's final status; the planner sends
+  `stop_and_complete` when it's omitted.
 - A step or trigger type the CLI doesn't wire is a `PlanError`;
   `kizen docs show automation` lists the wired and the unwired ones.
 - Condition `filter_config` uses the shared filter DSL — the same one

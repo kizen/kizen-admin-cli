@@ -233,6 +233,90 @@ def test_steps_add_drops_a_copied_id(live, tmp_path) -> None:
     ]
     assert "id" not in new
     assert new["parent_key"] == "s01_code_step"
+    assert new["action_stop_execution"] == {"action": "stop_and_complete"}
+
+
+def _add_live_stop(live: SimpleNamespace, block: dict[str, Any]) -> str:
+    """Hang a stop with ``block`` off the live automation's last step and
+    return the key `steps get` gives it."""
+    live.raw["steps"].append(
+        {
+            "id": "7c1d9e40-2b6a-4f8e-9d35-5a0e6c4b1f27",
+            "step_type": "stop_execution",
+            "order": 2,
+            "description": "Stop Execution",
+            "user_description": "",
+            "parent_step_id": live.raw["steps"][1]["id"],
+            "parent_condition": "",
+            "action_stop_execution": block,
+            "action_on_failure": "notify_continue",
+            "should_skip_execution": False,
+            "error_notification_severity_level": "inherit",
+        }
+    )
+    (stop,) = [
+        s for s in live_to_payload(live.raw)["steps"] if s["type"] == "stop_execution"
+    ]
+    return stop["key"]
+
+
+def _put_stop_block(live: SimpleNamespace) -> dict[str, Any]:
+    (stop,) = [
+        s for s in request_json(live.put)["steps"] if s["type"] == "stop_execution"
+    ]
+    return stop["action_stop_execution"]
+
+
+def test_roundtrip_resends_a_saved_null_stop_action_as_it_is(live) -> None:
+    _add_live_stop(live, {"action": None, "notify": False})
+
+    assert roundtrip_automation(API_NAME, execute=True)["drift"] == []
+    assert _put_stop_block(live) == {"notify": False}
+
+
+_FAIL_NOTIFY = {"action": "stop_and_fail", "notify": True}
+
+
+@pytest.mark.parametrize(
+    "live_block, patch, sent",
+    [
+        (_FAIL_NOTIFY, {}, _FAIL_NOTIFY),
+        (_FAIL_NOTIFY, {"notify": False}, {**_FAIL_NOTIFY, "notify": False}),
+        (_FAIL_NOTIFY, {"action": "pause"}, {**_FAIL_NOTIFY, "action": "pause"}),
+        (
+            {"action": None, "notify": True},
+            {},
+            {"action": "stop_and_complete", "notify": True},
+        ),
+        (
+            _FAIL_NOTIFY,
+            {"action": None},
+            {"action": "stop_and_complete", "notify": True},
+        ),
+    ],
+)
+def test_steps_edit_stop_keeps_the_live_action_and_notify_it_leaves_out(
+    live, tmp_path, live_block, patch, sent
+) -> None:
+    key = _add_live_stop(live, live_block)
+    spec = tmp_path / "patch.json"
+    spec.write_text(json.dumps({"action_stop_execution": patch}))
+
+    result = _invoke("steps", "edit", API_NAME, key, "--yes", "--spec-file", str(spec))
+
+    assert result.exit_code == 0, result.output
+    assert _put_stop_block(live) == sent
+
+
+def test_steps_edit_without_the_stop_block_leaves_it_alone(live, tmp_path) -> None:
+    key = _add_live_stop(live, {"action": None, "notify": False})
+    spec = tmp_path / "patch.json"
+    spec.write_text(json.dumps({"user_description": "End"}))
+
+    result = _invoke("steps", "edit", API_NAME, key, "--yes", "--spec-file", str(spec))
+
+    assert result.exit_code == 0, result.output
+    assert _put_stop_block(live) == {"notify": False}
 
 
 # ---------------------------------------------------------------------------
