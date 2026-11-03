@@ -42,6 +42,11 @@ called out explicitly under **Changed** or **Removed**.
   found, setting a date to today, a prompt that reads a related record, the
   email build order, a nightly run over many records, and branching on what
   someone logged.
+- **The code-steps doc covers reading and writing records from a script.**
+  It names all five `kizen.api` verbs, shows what a read, create, update,
+  search and archive send and return, and works through an AI step whose
+  JSON list a code step turns into records. It no longer says a record read
+  leaves out relationship fields: a set one is there.
 
 ### Changed
 
