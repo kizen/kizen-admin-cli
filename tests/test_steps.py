@@ -220,9 +220,9 @@ def test_validator_flags_goto_to_initialize_variable(kitchen: dict) -> None:
 
 @pytest.fixture()
 def loops() -> dict:
-    """s04_loop: body s05_condition (merged, exit_loop on no), closed by
-    s09_next_or_finish; then s10_loop: body s11_delay, closed by
-    s12_next_or_finish, then s13_delay."""
+    """s04_loop: body s05_condition (merged, empty no branch), closed by
+    s08_next_or_finish; then s09_loop: body s10_delay, closed by
+    s11_next_or_finish, then s12_delay."""
     return live_to_payload(load_fixture("automations/loops.raw.json"))
 
 
@@ -231,7 +231,7 @@ def test_insert_under_a_loop_heads_the_body(loops: dict) -> None:
     report = insert_step(loops, new, parent_key="s04_loop")
     assert report["adopted"] == ["s05_condition"]
     assert find_step(loops, "s05_condition")["parent_key"] == new["key"]
-    assert find_step(loops, "s09_next_or_finish")["parent_key"] == "s04_loop"
+    assert find_step(loops, "s08_next_or_finish")["parent_key"] == "s04_loop"
     assert validate_payload(loops) == []
 
 
@@ -246,29 +246,29 @@ def test_insert_under_a_branch_group_leaves_its_merge() -> None:
 
 def test_insert_under_next_or_finish_goes_right_after_the_loop(loops: dict) -> None:
     new = _mk_stop(loops)
-    report = insert_step(loops, new, parent_key="s09_next_or_finish")
-    assert report["adopted"] == ["s10_loop"]
-    assert new["parent_key"] == "s09_next_or_finish"
+    report = insert_step(loops, new, parent_key="s08_next_or_finish")
+    assert report["adopted"] == ["s09_loop"]
+    assert new["parent_key"] == "s08_next_or_finish"
     assert validate_payload(loops) == []
 
 
 def test_remove_loop_with_steps_under_it_refuses(loops: dict) -> None:
     with pytest.raises(PlanError) as e:
-        remove_step(loops, "s10_loop")
+        remove_step(loops, "s09_loop")
     assert str(e.value) == (
-        "'s10_loop' is a loop with steps under it (s11_delay); removing it "
+        "'s09_loop' is a loop with steps under it (s10_delay); removing it "
         "alone would leave its next_or_finish without a loop. Remove its body first, or pass cascade=True to delete "
         "the loop with its body and everything after it."
     )
 
 
 def test_remove_loop_with_cascade_takes_what_follows(loops: dict) -> None:
-    report = remove_step(loops, "s10_loop", cascade=True)
+    report = remove_step(loops, "s09_loop", cascade=True)
     assert report["removed"] == [
-        "s10_loop",
-        "s11_delay",
-        "s12_next_or_finish",
-        "s13_delay",
+        "s09_loop",
+        "s10_delay",
+        "s11_next_or_finish",
+        "s12_delay",
     ]
     assert validate_payload(loops) == []
 
@@ -276,27 +276,26 @@ def test_remove_loop_with_cascade_takes_what_follows(loops: dict) -> None:
 @pytest.mark.parametrize("cascade", [False, True])
 def test_remove_next_or_finish_refuses(loops: dict, cascade: bool) -> None:
     with pytest.raises(PlanError) as e:
-        remove_step(loops, "s12_next_or_finish", cascade=cascade)
+        remove_step(loops, "s11_next_or_finish", cascade=cascade)
     assert str(e.value) == (
-        "'s12_next_or_finish' closes loop 's10_loop' and can't be removed on its "
+        "'s11_next_or_finish' closes loop 's09_loop' and can't be removed on its "
         "own. Remove the loop instead."
     )
 
 
 def test_remove_only_body_step_leaves_an_empty_body(loops: dict) -> None:
-    remove_step(loops, "s11_delay")
-    assert [c["key"] for c in children_of(loops, "s10_loop")] == ["s12_next_or_finish"]
+    remove_step(loops, "s10_delay")
+    assert [c["key"] for c in children_of(loops, "s09_loop")] == ["s11_next_or_finish"]
     assert validate_payload(loops) == []
 
 
-def test_steps_add_builds_an_exit_loop(loops: dict) -> None:
+def test_steps_add_refuses_an_exit_loop(loops: dict) -> None:
+    from pydantic import ValidationError
+
     from kizen_builder.tools.automations import build_wire_step
 
-    wire = build_wire_step({"step_type": "exit_loop"}, loops, "object_with_workflow")
-    assert wire["type"] == "exit_loop"
-    assert not [k for k in wire if k.startswith("step_")]
-    insert_step(loops, wire, parent_key="s11_delay")
-    assert validate_payload(loops) == []
+    with pytest.raises(ValidationError, match="unknown step_type 'exit_loop'"):
+        build_wire_step({"step_type": "exit_loop"}, loops, "object_with_workflow")
 
 
 # `steps add` of a loop: the loop, its next_or_finish and its item variable.
