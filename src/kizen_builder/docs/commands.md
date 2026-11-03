@@ -187,6 +187,7 @@ kizen fields create <object_api_name> --api-name X --type text --category Y [...
 kizen fields create <object_api_name> [--spec-file path | < stdin]                  # many at once
 kizen automations create [--spec-file path | < stdin]
 kizen dashboards create [--spec-file path | < stdin]            # dashboard/homepage + dashlets
+kizen dashboards dashlet-config --type <t> [--object o] [--field f] [--filter '<json>'|--filter-file f] [--full]   # print one dashlet config (no write)
 kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools + sharing (kizen docs show mcp-server)
 kizen layouts update <object_api_name> [--spec-file | < stdin]  # PUT-replace a record layout
 kizen records create <object> --field api_name=value [...]      # one record (values resolved vs schema)

@@ -10,7 +10,8 @@ from kizen_builder.models.spec._base import ApiName
 
 
 class DashletDef(BaseModel):
-    """One dashlet on a dashboard. ``config``/``layout`` are opaque passthrough."""
+    """One dashlet on a dashboard. ``config``/``layout`` are passthrough, except
+    a filter spec in ``config.filters``."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -31,7 +32,8 @@ class DashletDef(BaseModel):
     config: dict[str, Any] = Field(
         default_factory=dict,
         description="Dashlet config (report_type, chart_type, filters, ...). "
-        "Opaque passthrough — copy from a live dashlet.",
+        "Passed through, except a filter spec in 'filters' "
+        '({"all"|"any": [...]}), compiled at plan time.',
     )
 
 

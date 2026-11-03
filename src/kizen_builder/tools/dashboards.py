@@ -56,6 +56,9 @@ an expression and wrap it with ``as_custom_filters``::
     with filter_context("document_sets"):
         filters = as_custom_filters(Field("status") == "Complete")
 
+``compile_filters`` does the same from a JSON filter spec; the dashboard
+planner and ``dashboards dashlet-config --filter`` both call it.
+
 A dashlet with no filter must still send the "no filter" shape, not an empty
 ``{}`` — ``{}`` 400s with "You must send only one type of filters:
 in_group_ids, not_in_group_ids or custom_filters" (confirmed live
@@ -74,8 +77,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, TypeGuard
 
+from kizen_builder import filtering
 from kizen_builder.api import dashboards as dash_api
 from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
@@ -135,6 +139,27 @@ _DASHLET_STYLE_CONFIG: dict[str, Any] = {
 
 NO_FILTER: dict[str, Any] = {"custom_filters": {"and": True, "query": []}}
 """The wire shape for "no filter" on a dashlet. An empty ``{}`` 400s."""
+
+
+def is_filter_spec(filters: Any) -> TypeGuard[dict[str, Any]]:
+    """True for a filter spec (``{"all"|"any": [...]}``), false for wire filters."""
+    return isinstance(filters, dict) and ("all" in filters or "any" in filters)
+
+
+def compile_filters(filters: dict[str, Any], object_id: str) -> dict[str, Any]:
+    """A dashlet's ``config.filters``: a filter spec compiled against
+    ``object_id`` (a UUID or api_name), anything else returned unchanged.
+
+    Only schema GETs. A bad field or op raises ``ValueError("invalid filter
+    spec: ...")``.
+    """
+    if not is_filter_spec(filters):
+        return filters
+    try:
+        with filtering.filter_context(object_id):
+            return filtering.as_custom_filters(filtering.from_spec(filters))
+    except (ValueError, LookupError) as e:
+        raise ValueError(f"invalid filter spec: {e}") from e
 
 
 def _default_date_filter(

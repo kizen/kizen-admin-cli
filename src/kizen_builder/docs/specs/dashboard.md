@@ -3,7 +3,8 @@
 **Consumed by:** `kizen dashboards create|update --spec-file <f>` (also stdin).
 
 > The dashlet `config`/`layout` surface is wide, so a spec still carries them
-> as **passthrough** dicts. But you don't hand-write a `config` and you don't
+> as **passthrough** dicts (a filter spec in `config.filters` is the one part
+> compiled). But you don't hand-write a `config` and you don't
 > need a live dashlet to copy — **generate one with
 > `kizen dashboards dashlet-config`** (see below). It emits a valid config for
 > any dashlet type straight from the library builders, so it can't drift from
@@ -35,6 +36,9 @@ kizen dashboards dashlet-config --type field_breakdown --object clinics --field 
   the parameterized metric families (`pipeline_metric`, `activity_metric`,
   `email_metric`, `marketing_metric`). `--frequency` (day/week/month) is
   required when `--chart-type line`; the command fills a sensible default.
+- **`--filter` / `--filter-file`** narrow a custom-object dashlet's records,
+  for example to the viewer's own. See
+  [Showing each viewer their own records](#showing-each-viewer-their-own-records).
 - **`--full`** wraps the config in a full `DashboardDef` (picking `homepage`
   vs `generic_dashboard` for you — see the homepage rule below).
 - Guidance (placeholders present, homepage-only) prints to **stderr**, so
@@ -111,7 +115,7 @@ kizen dashboards dashlet-config --type field_breakdown --object clinics --field 
 | `name` | string | Display name (default `"[default]"`). |
 | `custom_object` | UUID | Object the dashlet queries; `null` for non-object dashlets (e.g. email metrics). |
 | `layout` | object | Grid geometry `{x, y, w, h, …}`. Passed through verbatim. |
-| `config` | object | `report_type`, `chart_type`, filters, … Generate with `dashboards dashlet-config` (above). |
+| `config` | object | `report_type`, `chart_type`, filters, … Generate with `dashboards dashlet-config` (above). `filters` is the wire block, or a filter spec, compiled at plan time. |
 
 ## Layout & sizing — don't guess `w`/`h`
 
@@ -254,9 +258,10 @@ geometry (`x`, `y`, `w`, `h`, plus `min/max_h/w`); `config` carries `report_type
 + `chart_type` + `entity_type` + type-specific blocks.
 
 **A dashlet with no filter must send**
-`{"custom_filters": {"and": true, "query": []}}`, **not `{}`** — an empty dict
-400s with *"You must send only one type of filters: in_group_ids,
-not_in_group_ids or custom_filters"* (confirmed live 2026-07-20).
+`{"custom_filters": {"and": true, "query": []}}`, or a filter spec, compiled at
+plan time. **Not `{}`**: an empty dict 400s with *"You must send only one type
+of filters: in_group_ids, not_in_group_ids or custom_filters"* (confirmed live
+2026-07-20).
 
 ### The full `entity_type` enum
 
@@ -351,6 +356,93 @@ round-tripped by creating a dashlet and reading its config back.
   valid — and with a dashlet-level `custom_object` *and* a `config.object_id`
   pointing at two different UUIDs, neither of them a pipeline. Semantics not
   understood well enough to build for; copy a live example.
+
+## Showing each viewer their own records
+
+A dashlet filtered with `is_me` shows each person the records they own, so one
+homepage serves the whole team as "my deals", "my At Risk deals" or "my
+commissions":
+
+- `{"field": "owner", "op": "is_me"}` matches the record owner.
+- The same op on a team-member field matches whoever that field names, e.g. a
+  Commission's `kizen_user`.
+- Add more clauses for the rest of the filter: "my At Risk deals" is
+  `owner is_me` and `health = At Risk`.
+
+The ops, and how a spec compiles, are in `kizen docs show filters`.
+
+**Only the five custom-object types take a record filter:** `table_of_records`,
+`field_breakdown`, `field_sum`, `field_range_breakdown` and `pivot_table`.
+Metric dashlets (pipeline, activity, email, marketing) and scheduled-activity
+dashlets don't, and both ways in below refuse a filter spec on them. A
+scheduled-activity dashlet's people filter, `include_employees`, takes
+team-member ids.
+
+There are two ways in, and both compile against the dashlet's object:
+
+- `kizen dashboards dashlet-config --type table_of_records --object deals
+  --field name --filter '{"all": [{"field": "owner", "op": "is_me"}]}'` writes
+  the compiled filter into the printed config. `--filter` needs `--object`.
+  It also takes a wire block with exactly one of `custom_filters`,
+  `in_group_ids` or `not_in_group_ids`, passed through; anything else exits 2.
+- In a `dashboards create|update` spec, set a dashlet's `config.filters` to a
+  filter spec. The planner compiles it against the dashlet's `custom_object`,
+  or else `config.object_id`. Wire filters, such as a `custom_filters` block
+  from `dashboards get --raw`, pass through unchanged, so a read-back dashlet
+  re-applies as it was.
+
+Confirmed live 2026-10-30: all five types saved an `owner is_me` filter and
+read it back unchanged. The dashlet data the UI loads counted only the API
+user's two records of three: a `field_sum` of 150 (all three total 1050) and a
+`pivot_table` of 2. The CLI user created those dashlets and was also the
+viewer, so this doesn't yet show that `is_me` follows the viewer rather than
+the creator.
+
+This homepage for `deals` (owner, plus a `health` dropdown with On Track /
+Needs Attention / At Risk) has three dashlets: "My open deals", "My deals by
+health" and "My At Risk deals". `<deals_object_uuid>` is the `id` from
+`kizen objects get deals --json`, and the two field tokens are the `id`s of
+`deals.name` and `deals.health` in the same output:
+
+<!-- fixture: examples/first_build/rep_home.dashboard.json -->
+```json
+{
+  "api_name": "rep_home",
+  "name": "Rep Home",
+  "type": "homepage",
+  "dashlets": [
+    { "name": "My open deals", "custom_object": "<deals_object_uuid>",
+      "layout": { "x": 0, "y": 0, "w": 8, "h": 3 },
+      "config": { "entity_type": "custom_object", "report_type": "table_of_records",
+        "chart_type": "table", "metric_type": "records_number",
+        "filters": { "all": [ { "field": "owner", "op": "is_me" } ] },
+        "fe_extra_info": { "columns": [
+          { "id": "<deals.name_field_uuid>", "label": "Name", "display_name": "Name" },
+          { "id": "<deals.health_field_uuid>", "label": "Health", "display_name": "Health" } ] } } },
+    { "name": "My deals by health", "custom_object": "<deals_object_uuid>",
+      "layout": { "x": 8, "y": 0, "w": 4, "h": 3 },
+      "config": { "entity_type": "custom_object", "report_type": "field_metrics",
+        "chart_type": "donut", "metric_type": "fields_value_breakdown",
+        "object_id": "<deals_object_uuid>", "field": "<deals.health_field_uuid>",
+        "filters": { "all": [ { "field": "owner", "op": "is_me" } ] },
+        "metric_type_extra_info": { "include_summary": true, "summary_explanation": "",
+          "fields_value_breakdown": { "type": "custom_values", "buckets": [],
+            "consider_null_values": false } } } },
+    { "name": "My At Risk deals", "custom_object": "<deals_object_uuid>",
+      "layout": { "x": 0, "y": 3, "w": 12, "h": 3 },
+      "config": { "entity_type": "custom_object", "report_type": "table_of_records",
+        "chart_type": "table", "metric_type": "records_number",
+        "filters": { "all": [ { "field": "owner", "op": "is_me" },
+                              { "field": "health", "op": "=", "value": "At Risk" } ] },
+        "fe_extra_info": { "columns": [
+          { "id": "<deals.name_field_uuid>", "label": "Name", "display_name": "Name" } ] } } }
+  ]
+}
+```
+
+Each dashlet carries only the keys it needs. `dashlet-config` also adds the
+house style (`fe_extra_info.dashlet_style_config`); Kizen saved and served
+these three without it (confirmed live 2026-10-30).
 
 ## See also
 

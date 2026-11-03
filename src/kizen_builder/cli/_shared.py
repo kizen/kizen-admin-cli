@@ -183,6 +183,20 @@ def read_json_file(path: str, flag: str) -> Any:
     return parse_json(read_text_file(path, flag), f"{flag} {path}")
 
 
+def load_filter_spec(filter_json: str, filter_file: str) -> Any:
+    """The JSON from a `--filter`/`--filter-file` pair, or None when neither
+    is set. Passing both prints an `error:` line and exits 2."""
+    if filter_json and filter_file:
+        err_console.print("[red]error:[/red] pass --filter or --filter-file, not both.")
+        raise typer.Exit(code=2)
+    text = read_text_file(filter_file, "--filter-file") if filter_file else filter_json
+    if not text:
+        return None
+    return parse_json(
+        text, f"--filter-file {filter_file}" if filter_file else "--filter"
+    )
+
+
 def _version_callback(value: bool) -> None:
     if value:
         console.print(f"kizen-builder {__version__}")
