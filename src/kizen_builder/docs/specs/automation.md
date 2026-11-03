@@ -41,7 +41,8 @@ An automation is triggers + a step graph, sent as one atomic POST/PUT.
         "specific_field_value": true
       } },
     { "key": "done", "parent_key": "check", "parent_branch": "no",
-      "step_type": "stop_execution", "order": 2 }
+      "step_type": "stop_execution", "order": 2,
+      "action_stop_execution": { "action": "stop_and_complete" } }
   ]
 }
 ```
@@ -105,7 +106,8 @@ branches) and 2026-09-29 (goals).
 { "key": "small", "parent_key": "check", "parent_branch": "no",
   "step_type": "delay", "order": 2, "step_delay": { "minutes": 5 } },
 { "key": "rejoin", "parent_key": "check", "step_type": "merge_branches", "order": 3 },
-{ "key": "after", "parent_key": "rejoin", "step_type": "stop_execution", "order": 4 }
+{ "key": "after", "parent_key": "rejoin", "step_type": "stop_execution", "order": 4,
+  "action_stop_execution": { "action": "stop_and_complete" } }
 ```
 
 **Parallel branches** are the children of a `branch` step, none with a
@@ -154,7 +156,6 @@ automation-step`):
 4. **The body**, hanging off the loop.
 5. **One `next_or_finish` child of the loop**, which closes the body. The steps
    after the loop hang off it.
-6. **Optional `exit_loop` steps** inside the body.
 
 Both variable steps go at the front of the automation, like every
 `initialize_variable`. Confirmed live 2026-10-27.
@@ -206,10 +207,6 @@ Both variable steps go at the front of the automation, like every
   the server adds to the item variable from the loop. It reads a null key in a
   top-level or `initialize_variable` variable definition as absent. Confirmed
   live 2026-10-27.
-- **`exit_loop`** ends the innermost loop it sits in, and an outer loop carries
-  on with its next item. It can be the loop's direct child, sit under a
-  condition in the body, or follow an inner loop inside an outer body. After
-  the loop's `next_or_finish` it is a 400. Confirmed live 2026-10-27.
 - **Body lanes:** a body can be empty or have two lanes. Two lanes get the
   fan-out warning, like any plain fan-out. Confirmed live 2026-10-27.
 - **Nesting:** a loop can sit in another loop's body, up to three levels, and a
@@ -233,17 +230,19 @@ variable inside the body:
 - `change_type: entity_variable_field` with the item variable and
   `related_object_field` (a field UUID on the found record's object) copies one
   of its fields onto this record.
-- `exit_loop` straight after stops at the first record.
 
-This links each new hire to the first playbook whose name contains "Sales",
-and copies the playbook's text. Both variable steps sit at the front, as the
-loop section above requires:
+Every pass of the loop sets the field again, so when the search finds several
+records the last one wins. Narrow the filter until it matches one record.
+
+This links each new hire to the playbook named "Sales Onboarding", and copies
+the playbook's text. Both variable steps sit at the front, as the loop section
+above requires:
 
 ```json
 { "key": "find", "parent_key": "v_item", "step_type": "search_records", "order": 2,
   "action_search_records": { "custom_object": "playbooks",
     "filter_type": "custom_filter",
-    "filter_config": { "all": [ { "field": "name", "op": "contains", "value": "Sales" } ] },
+    "filter_config": { "all": [ { "field": "name", "op": "=", "value": "Sales Onboarding" } ] },
     "destination_variable": "playbooks", "destination_variable_resolution": "overwrite" } },
 { "key": "each", "parent_key": "find", "step_type": "loop", "order": 3,
   "description": "For each item in 'playbooks'",
@@ -255,13 +254,13 @@ loop section above requires:
   "action_change_field_value": { "field_ref": "hires.hire_copied",
     "change_type": "entity_variable_field", "variable": "playbooks_item",
     "related_object_field": "<playbooks.pb_text field uuid>" } },
-{ "key": "first_only", "parent_key": "copy", "step_type": "exit_loop", "order": 6 },
-{ "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 7 }
+{ "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 6 }
 ```
 
-Confirmed live 2026-10-30: the run linked the playbook, copied its text, and
-logged "Loop ended early by an Exit Loop step". To read the linked record's
-fields in a later step, see
+Confirmed live 2026-11-02: the search found one playbook, and the loop's one
+pass linked it and copied its text. With the filter widened to `contains`
+"Sales", it found two, the loop ran twice, and the hire ended linked to the
+second. To read the linked record's fields in a later step, see
 [Reading a related record's field into a variable](#reading-a-related-records-field-into-a-variable).
 
 ### Find or create a Contact by email
@@ -567,7 +566,9 @@ The one exception is `email_received`, whose block is
 `selected_integrated_inboxes`, which needs a list of integrated inbox UUIDs;
 reads expand each to `{id, email}`. It works on Contact automations only: a
 custom object gets 400 "only client custom object is allowed". Confirmed live
-2026-10-14.
+2026-10-14. The run gets the Contact, not the email; to read it, see `kizen
+docs show code-steps`, "Reading a Contact's newest inbound email". Saving
+it and `kizen automations activate` both work (confirmed live 2026-11-02).
 `manual` is an empty `trigger_manual: {}`. `schedule` → `trigger_schedule:
 {rrule, is_advanced}` — a recurring trigger (works on global automations too,
 where it's the only "time-based" option since `on_or_around_date` needs a
@@ -657,6 +658,8 @@ A `goal` step's `step_goal.triggers` are wait-until triggers with the same
 `trigger_type` names and config blocks as the top level, e.g. `email_received`
 to wait for a reply. Its `wait_type` is `never`, `delay` or
 `specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
+The goal hands the run the Contact, not the reply; to read the reply, see
+`kizen docs show code-steps`, "Reading a Contact's newest inbound email".
 A goal counts only an event that happens while the run is waiting at it, so a
 `stage_updated` goal misses a move made before the run reaches the goal, and
 stays pending (confirmed live 2026-10-30).
@@ -703,7 +706,7 @@ one was observed.
 | `condition` | `step_condition` | branch on a filter / group membership / LLM decision |
 | `delay` | `step_delay` | wait a duration or until a time |
 | `goal` | `step_goal` | wait for a condition/event |
-| `stop_execution` | `action_stop_execution` | end this branch — the "Action Options" choice below is required in the UI |
+| `stop_execution` | `action_stop_execution` | end this branch. `action` sets the run's final status (see the options below); omitted, the CLI sends `stop_and_complete` |
 | `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
 | `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
@@ -728,7 +731,6 @@ one was observed.
 | `merge_branches` | none | rejoin a branch group — see Branch groups |
 | `loop` | `step_loop` | run its body once per item of an array variable — see Loops |
 | `next_or_finish` | none | close a loop body — see Loops |
-| `exit_loop` | none | leave the loop from inside its body |
 
 `search_records` (the automation-builder equivalent of `records list
 --filter`) needs its own `custom_object` — independent of the automation's
@@ -1144,6 +1146,127 @@ server's tools. Confirmed live 2026-10-27:
   pairing. Kizen itself, given a PUT that omits both ids, keeps the server
   and clears the account, which leaves a step its own validator rejects.
 
+#### Searching a knowledge catalog
+
+An AI step searches the business's knowledge catalogs through a server that
+serves the catalog tools. Confirmed live 2026-11-02:
+
+- **The server** is the system `readonly` server, or any server whose
+  `tool_names` include `listCatalogs`, `searchCatalog` and `getDocument` (see
+  `kizen docs show mcp-server`).
+- **`run_tools_as`** is Kizen's own automation account, named "Agentic
+  Workflow Code" where this was run. If that name isn't valid on a business,
+  `--dry-run` names the accounts that are: `plan error: step 'draft': service
+  account 'No Such Account' can't run a Call LLM step's tools in '<env>'.
+  Available: …`.
+- **`kizen/pro`** supports tool calling.
+- `listCatalogs` returns the default catalog, "Business Knowledge", api_name
+  `business_knowledge` (confirmed live 2026-10-30). `searchCatalog` takes
+  `query`, `n` and `catalog`; the model may leave `catalog` null.
+- **To see what each search returned**, run `kizen automations runs view
+  <execution_id> --json`. The step's `detailed_log.tool_calls` lists every call
+  with its `arguments` and `result`, and `tool_summary` counts them.
+
+This drafts an answer to a support request from the catalog, started by hand on
+a request. The prompt reads the request's `subject` field:
+
+<!-- fixture: examples/support_desk/draft_reply.automation.json#/triggers -->
+```json
+[ { "trigger_type": "manual", "order": 0, "trigger_manual": {} } ]
+```
+
+<!-- fixture: examples/support_desk/draft_reply.automation.json#/steps/0 -->
+```json
+{ "key": "answer", "parent_key": null, "step_type": "initialize_variable", "order": 0,
+  "action_initialize_variable": { "sources": [],
+    "variable": { "name": "draft_answer", "data_type": "string" } } }
+```
+
+<!-- fixture: examples/support_desk/draft_reply.automation.json#/steps/1 -->
+```json
+{ "key": "draft", "parent_key": "answer", "step_type": "call_llm", "order": 1,
+  "action_call_llm": {
+    "model_name": "kizen/pro",
+    "mcp_server": "readonly",
+    "run_tools_as": "Agentic Workflow Code",
+    "merge_field_validation": "default_to_unknown",
+    "prompt": "Search the knowledge catalog with searchCatalog for this support request, then draft a short answer from what you find. End with the titles of the documents you used, or say that none matched.\nRequest subject: {{ custom_objects.subject }}",
+    "destinations": [ { "variable": "draft_answer" } ] } }
+```
+
+Confirmed live 2026-11-02, on a copy of this file: the model called
+`searchCatalog` twice and wrote its draft to `draft_answer`.
+
+### An AI step reads an emailed reply
+
+A customer replies by email, and an AI step reads the reply. The
+`email_received` trigger hands the run the Contact but not the email, so a code
+step reads the newest inbound email from the Contact's timeline into a
+variable, and the AI step's prompt quotes that variable. The script, the calls
+it makes and the inboxes the trigger watches are in `kizen docs show
+code-steps`, "Reading a Contact's newest inbound email".
+
+The automation runs on Contacts, when an email arrives or by hand:
+
+<!-- fixture: examples/support_desk/read_reply.automation.json#/triggers -->
+```json
+[ { "trigger_type": "manual", "order": 0, "trigger_manual": {} },
+  { "trigger_type": "email_received", "order": 1,
+    "trigger_email_received_from_contact": { "receiving_inbox": "any" } } ]
+```
+
+Two string variables hold the body and the summary:
+
+<!-- fixture: examples/support_desk/read_reply.automation.json#/steps/0 -->
+```json
+{ "key": "body", "parent_key": null, "step_type": "initialize_variable", "order": 0,
+  "action_initialize_variable": { "sources": [],
+    "variable": { "name": "email_body", "data_type": "string" } } }
+```
+
+<!-- fixture: examples/support_desk/read_reply.automation.json#/steps/1 -->
+```json
+{ "key": "summary", "parent_key": "body", "step_type": "initialize_variable", "order": 1,
+  "action_initialize_variable": { "sources": [],
+    "variable": { "name": "reply_summary", "data_type": "string" } } }
+```
+
+The code step's input is the Contact's `email` field, because `{{ contact.id
+}}` and the other Contact merge fields arrive empty (see [Merge-field namespace
+tokens by step type](#merge-field-namespace-tokens-by-step-type)). Its output
+writes the variable:
+
+<!-- fixture: examples/support_desk/read_reply.automation.json#/steps/2 -->
+```json
+{ "key": "read_email", "parent_key": "summary", "step_type": "code_step", "order": 2,
+  "action_code_step": {
+    "script": "# Read the newest email this Contact sent to a connected inbox, as plain text.\nimport html\nimport re\n\n\ndef ok(resp, what):\n    if resp.status_code != 200:\n        raise Exception(f\"{what} failed: {resp.status_code} {resp.text[:200]}\")\n    return resp.json()\n\n\nemail = (inputs.contact_email or \"\").strip()\nif not email:\n    raise Exception(\"the Contact has no email to look it up by\")\nmatch = {\"type\": \"fields\", \"subtype\": \"non_custom\", \"field\": \"email\"}\nquery = [{\"and\": True, \"filters\": [{**match, \"condition\": \"=\", \"value\": email}]}]\nfound = ok(\n    kizen.api.post(\n        \"/records/client_client/search\",\n        json={\"query\": query, \"and\": True, \"field_names\": [\"email\"]},\n    ),\n    \"searching Contacts\",\n)[\"results\"]\nif len(found) != 1:\n    raise Exception(f\"{len(found)} Contacts have email {email}, not 1\")\n\nevents = ok(\n    kizen.api.get(\n        f\"/records/client_client/{found[0]['id']}/timeline\", params={\"size\": 50}\n    ),\n    \"reading the timeline\",\n)[\"events\"]\ninbound = [e for e in events if e[\"type_name\"] == \"integrated_inbox_email_received\"]\noutputs.email_body = \"\"\nif not inbound:\n    outputs.log(f\"no inbound email in the Contact's last {len(events)} timeline events\")\nelse:\n    data = max(inbound, key=lambda e: e[\"created\"])[\"data\"]\n    sid = data.get(\"synced_email_id\") or data.get(\"syncedEmailId\")\n    if not sid:\n        raise Exception(f\"no synced email id in the event's data: {sorted(data)}\")\n    body = ok(kizen.api.get(f\"/synced-email/{sid}/full_response\"), f\"reading {sid}\")\n    text = body.get(\"text_plain\") or \"\"\n    if not text.strip():\n        markup = body.get(\"text_html\") or \"\"\n        markup = re.sub(r\"(?is)<(script|style).*?</\\1>\", \"\", markup)\n        markup = re.sub(r\"(?i)<br\\s*/?>|</p>|</div>|</li>\", \"\\n\", markup)\n        text = html.unescape(re.sub(r\"<[^>]+>\", \"\", markup))\n    outputs.email_body = text.strip()\n    outputs.log(f\"read email {sid}: {len(outputs.email_body)} characters\")",
+    "inputs": [ { "name": "contact_email", "input_type": "field",
+                  "field_ref": "client_client.email", "data_type": "string" } ],
+    "outputs": [ { "name": "email_body", "output_type": "variable",
+                   "variable_name": "email_body", "data_type": "string" } ] } }
+```
+
+The prompt reads the body as `{{ automation_variable.email_body }}`.
+`default_to_unknown` lets the step run when no email was found and the body is
+empty; Kizen sent the prompt with `unknown` in its place (confirmed live
+2026-11-02):
+
+<!-- fixture: examples/support_desk/read_reply.automation.json#/steps/3 -->
+```json
+{ "key": "summarize", "parent_key": "read_email", "step_type": "call_llm", "order": 3,
+  "action_call_llm": {
+    "model_name": "kizen/lite",
+    "merge_field_validation": "default_to_unknown",
+    "prompt": "Summarize this customer's email reply in one sentence. If the reply is Unknown or empty, answer: No reply to summarize.\nReply: {{ automation_variable.email_body }}",
+    "destinations": [ { "variable": "reply_summary" } ] } }
+```
+
+Confirmed live 2026-11-02, on a copy of this file: it saved, activated, and a
+run started by hand on a Contact with no inbound email completed. The code step
+logged that it found no inbound email, and `reply_summary` was set to "No
+reply to summarize."
+
 ### Variable-comparison condition step
 
 A `condition` step's `filter_config` normally uses the record-field filter
@@ -1307,6 +1430,12 @@ call notes and its account's industry, and Kizen sent it with both filled in
 The destination is a dropdown, so the CLI fills its `options` and the model's
 answer sets one of them.
 
+On a Contacts automation, `{{ contact.id }}`, `{{ contact.email }}` and
+`{{ entity_record.id }}` in a static variable source save, but the variable
+arrives empty (`None` in a code step), and `{{ custom_objects.id }}` there is a
+400 on save. To use the Contact's own field in a code step, bind it as a
+`field` input instead (confirmed live 2026-10-30).
+
 Other reserved namespaces (not real object fields, no API-queryable
 catalog, never carry `data-merge-field-objectname`): `team_member.<field>`
 (the notified team member's own fields), `business.<field>` (tenant
@@ -1438,13 +1567,16 @@ Confirmed live 2026-10-30, in this order.
   | Pause | `pause` | **pauses** (doesn't stop) |
 
   Pair any of these with `"notify": true` to also fire the corresponding
-  notification (the UI's separate "Send Notification" toggle). The API
-  still accepts an omitted/`null` `action` (a bare `{}` block, or no block
-  at all) and reads back `null` — but nothing built through the UI leaves
-  it unset, so pick one explicitly if the run's final status matters
-  rather than relying on whatever `null` defaults to. Previously this
-  entire option set was undocumented and untyped, so specs always left it
-  unset even when e.g. "stop and mark as failed" was the intent.
+  notification (the UI's separate "Send Notification" toggle). Kizen
+  accepts a block without `action` and reads it back `null`, but that step
+  never finishes. The run stays active while the step retries ("unexpected
+  failure"), and the editor shows the action as "Unknown" (confirmed live
+  2026-10-30). So the CLI never sends one. A new step without `action` gets
+  `stop_and_complete`. On `update` and `steps edit`, a step whose `id`
+  matches keeps its live `action` and `notify` when you leave them out, and
+  a live `null` becomes `stop_and_complete`. `translate`, `steps get` and
+  `roundtrip` show and resend a saved `null` as it is. Fix one with
+  `steps edit`.
 - **`change_field_value.specific_field_value` is a bare scalar** — not
   `{value: …}`. The planner wraps it in the `actions: [...]` array. For an
   option field (dropdown, radio, status, checkboxes, choices, yesnomaybe, a
@@ -1490,10 +1622,11 @@ Confirmed live 2026-10-30, in this order.
     `is_advanced` (on a condition, `llm_decision.merge_field_validation`),
     and on `call_llm` also its MCP server and run-as account (as a pair),
     `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
-    server)**).
+    server)**). On a `stop_execution` whose `id` matches, its `action` and
+    `notify`.
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
-    A Kizen PUT without them resets each to its default (confirmed live
-    2026-10-30).
+    A Kizen PUT without them resets each to its default, except the stop's,
+    which Kizen keeps when the block is empty (confirmed live 2026-10-30).
   - A step or trigger without `id` is new to Kizen, so what its spec leaves
     out gets Kizen's defaults: the type's default description, an empty
     note, not skipped.
@@ -1612,7 +1745,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
 | `value_html` on an `update_variable` source | `''` |
-| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
+| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ### Read→write transforms
 
@@ -1636,7 +1769,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
-| `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` and `exit_loop` are read with no config block, and none is written. Confirmed live 2026-10-27 |
+| `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` is read with no config block, and none is written. Confirmed live 2026-10-27 |
 | A loop's item variable read with `is_array_item_variable: true` and `source_array_variable: <array>` | echoed as read. The server sets both itself from the loop, so sending them is harmless and omitting them changes nothing. `diff` ignores both. Confirmed live 2026-10-27 |
 | Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
 | `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
@@ -1674,8 +1807,6 @@ inconsistent:
   - a `loop` has exactly one `next_or_finish` child;
   - a `loop` has no `merge_branches` child;
   - a `next_or_finish` hangs directly off a `loop`;
-  - an `exit_loop` is inside a loop body: walking up its parents, it reaches a
-    loop through a body step, not through that loop's `next_or_finish`;
   - a loop iterates an array variable of records, strings or UUIDs, declared
     by an `initialize_variable` step;
   - its item variable is declared by an `initialize_variable` step as a single

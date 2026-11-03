@@ -1,0 +1,46 @@
+{
+  "name": "Draft an answer from the knowledge catalog",
+  "api_name": "draft_answer_from_catalog",
+  "type": "record_based",
+  "target_object": "support_requests",
+  "triggers": [
+    {
+      "trigger_type": "manual",
+      "order": 0,
+      "trigger_manual": {}
+    }
+  ],
+  "steps": [
+    {
+      "key": "answer",
+      "parent_key": null,
+      "step_type": "initialize_variable",
+      "order": 0,
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "name": "draft_answer",
+          "data_type": "string"
+        }
+      }
+    },
+    {
+      "key": "draft",
+      "parent_key": "answer",
+      "step_type": "call_llm",
+      "order": 1,
+      "action_call_llm": {
+        "model_name": "kizen/pro",
+        "mcp_server": "readonly",
+        "run_tools_as": "Agentic Workflow Code",
+        "merge_field_validation": "default_to_unknown",
+        "prompt": "Search the knowledge catalog with searchCatalog for this support request, then draft a short answer from what you find. End with the titles of the documents you used, or say that none matched.\nRequest subject: {{ custom_objects.subject }}",
+        "destinations": [
+          {
+            "variable": "draft_answer"
+          }
+        ]
+      }
+    }
+  ]
+}

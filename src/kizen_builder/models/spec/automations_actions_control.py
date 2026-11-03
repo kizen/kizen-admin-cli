@@ -119,12 +119,11 @@ class ActionStopExecutionConfig(BaseModel):
     | Pause and Error                        | `pause_and_error`    |
     | Pause                                  | `pause`              |
 
-    Omitting this block (or leaving `action` unset) is accepted by the API
-    and reads back `null` — but every step built through the UI has one of
-    the five set, so a spec that cares about the run's final status
-    (rather than relying on whatever `null` defaults to) should set one
-    explicitly. `notify` has no documented server-side default; it reads
-    back `false` when unset.
+    Kizen accepts an unset `action` and reads it back `null`, but a run
+    that reaches that step never finishes (confirmed live 2026-10-30), so
+    the CLI sends `stop_and_complete` for a new step that leaves it out, and
+    the live action for an `update` or `steps edit` whose step `id` matches.
+    `notify` reads back `false` when unset.
     """
 
     model_config = ConfigDict(extra="allow")

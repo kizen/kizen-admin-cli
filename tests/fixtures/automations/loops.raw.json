@@ -351,11 +351,7 @@
             "id": "180ef686-6ddb-408b-85bd-a27a09f6f11f"
           }
         ],
-        "no_steps": [
-          {
-            "id": "2bb8fbdd-c72d-40b6-ba48-2a93f21a5a81"
-          }
-        ],
+        "no_steps": [],
         "groups": []
       },
       "action_on_failure": "notify_pause",
@@ -394,27 +390,9 @@
       "is_branch_group_initiator": false
     },
     {
-      "id": "2bb8fbdd-c72d-40b6-ba48-2a93f21a5a81",
-      "step_type": "exit_loop",
-      "order": 7,
-      "description": "Exit Loop",
-      "user_description": "",
-      "stats": {
-        "number_completed": 0,
-        "number_failed": 0,
-        "number_pending": 0
-      },
-      "parent_step_id": "aee408db-665a-4b4e-a52a-18eafffd7a98",
-      "parent_condition": "no",
-      "action_on_failure": "notify_pause",
-      "should_skip_execution": false,
-      "error_notification_severity_level": "inherit",
-      "is_branch_group_initiator": false
-    },
-    {
       "id": "e437e98d-cf99-4f67-95b8-76d83837f76c",
       "step_type": "merge_branches",
-      "order": 8,
+      "order": 7,
       "description": "Merge Branches",
       "user_description": "",
       "stats": {
@@ -432,7 +410,7 @@
     {
       "id": "cbfeaf23-050e-43f2-ab77-71a738d6601a",
       "step_type": "next_or_finish",
-      "order": 9,
+      "order": 8,
       "description": "Next/Finish",
       "user_description": "",
       "stats": {
@@ -450,7 +428,7 @@
     {
       "id": "6e3af27e-6f34-462c-b81e-1ea192c36920",
       "step_type": "loop",
-      "order": 10,
+      "order": 9,
       "description": "Loop",
       "user_description": "",
       "stats": {
@@ -487,7 +465,7 @@
     {
       "id": "6a81ee88-37ff-4223-a1bc-c6983ba0562e",
       "step_type": "delay",
-      "order": 11,
+      "order": 10,
       "description": "Delay",
       "user_description": "",
       "stats": {
@@ -517,7 +495,7 @@
     {
       "id": "ad4924d1-5c10-4c84-8f73-44e6f814bd21",
       "step_type": "next_or_finish",
-      "order": 12,
+      "order": 11,
       "description": "Next/Finish",
       "user_description": "",
       "stats": {
@@ -535,7 +513,7 @@
     {
       "id": "b93bab2e-4f6b-4f03-ab3b-e17da109a9e1",
       "step_type": "delay",
-      "order": 13,
+      "order": 12,
       "description": "Delay",
       "user_description": "",
       "stats": {

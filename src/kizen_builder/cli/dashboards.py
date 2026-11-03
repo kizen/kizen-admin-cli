@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from rich.markup import escape
 from rich.table import Table
 
 from kizen_builder import output as out
@@ -14,6 +15,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    load_filter_spec,
 )
 from kizen_builder.tools import dashboards as dash_tools
 from kizen_builder.tools import dashlet_templates as dash_tpl
@@ -283,6 +285,16 @@ def dashboards_dashlet_config(
     frequency: str = typer.Option(
         "", "--frequency", help="day/week/month — required for chart_type=line."
     ),
+    filter_json: str = typer.Option(
+        "",
+        "--filter",
+        help='Filter as JSON: a spec ({"all"|"any": [...]} of {"field","op","value"}) '
+        'resolved against --object, or a raw {"custom_filters": {...}} block. '
+        "Custom-object types only.",
+    ),
+    filter_file: str = typer.Option(
+        "", "--filter-file", help="Path to a JSON filter (same format as --filter)."
+    ),
     full: bool = typer.Option(
         False,
         "--full",
@@ -295,7 +307,9 @@ def dashboards_dashlet_config(
     can't drift from what `dashboards create` accepts — and unlike "copy a
     live dashlet", it works on an env with no populated dashboards. Pass
     `--object`/`--field` as **api_names** (never UUIDs) to bake real ids
-    in; omit them for `<...>` placeholders you fill later.
+    in; omit them for `<...>` placeholders you fill later. `--filter`
+    narrows a custom-object dashlet's records, e.g. to the viewer's own:
+    `{"all": [{"field": "owner", "op": "is_me"}]}`.
     """
     if not dashlet_type:
         t = Table(title="Dashlet types (kizen dashboards dashlet-config --type <t>)")
@@ -319,6 +333,13 @@ def dashboards_dashlet_config(
         console.print(t)
         return
 
+    filter_spec = load_filter_spec(filter_json, filter_file)
+    if filter_spec is not None and (
+        problem := dash_tpl.filter_problem(dashlet_type, object_ref, filter_spec)
+    ):
+        err_console.print(f"[red]error:[/red] {escape(problem)}", emoji=False)
+        raise typer.Exit(code=2)
+
     with cli_errors(LookupError, ValueError):
         gen = dash_tpl.generate(
             dashlet_type,
@@ -328,6 +349,7 @@ def dashboards_dashlet_config(
             chart_type=chart_type or None,
             metric_type=metric_type or None,
             frequency=frequency or None,
+            filter_spec=filter_spec,
         )
 
     config = gen.config

@@ -362,6 +362,10 @@ kizen dashboards create --spec-file dashboard.json --dry-run
 kizen dashboards create --spec-file dashboard.json --yes
 ```
 
+To show each viewer only their own tickets, add `--filter '{"all": [{"field":
+"owner", "op": "is_me"}]}'`; see `kizen docs show dashboard`, "Showing each
+viewer their own records."
+
 Custom-object dashlets (`table_of_records`, `field_breakdown`) are
 **homepage-only** — `dashlet-config --full` picks `type: "homepage"` for
 this reason; see `kizen docs show dashboard`'s `⚠️` section.

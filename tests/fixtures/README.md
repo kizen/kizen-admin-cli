@@ -18,6 +18,16 @@ automation steps).
   `filter_config` from a UI-built search_records step on a pipeline,
   2026-10-30: `entered_stage` and `time_in_stage` clauses, with the UI's
   `view_model` and `description`.
+- `activities/site_visit_report.json` — `kizen activities get --json` output
+  for a type built in the UI on cli-testing (2026-07-17), trimmed to its
+  fields and its four visibility rules, which the editor wrote with its
+  `view_model`: `is_not_blank` on a longtext, four OR'd filters on a
+  dropdown (`=`, `!=`, `is_none_of`, `is_blank`), `>=` on a rating, and
+  three date filters AND'd.
+- `automations/loops.raw.json` — spec-built and read back 2026-10-27. One
+  step on the merged condition's `no` branch was removed by hand afterwards:
+  the condition's `no_steps` is emptied and the `order`s after it are
+  renumbered. Re-capture from the drift tier's `drift_loops` spec.
 - `records/`, `executions/`, `team/` — tool-level `--json` output.
   Exceptions: `executions/detail_form_submission.json` and
   `executions/history_form_submission.json` are hand-authored to the OpenAPI

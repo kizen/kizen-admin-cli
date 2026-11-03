@@ -151,7 +151,9 @@ POST   /api/mcp/{api_name}                    # JSON-RPC, for MCP clients (endpo
   `custom_knowledge` (`listCatalogs`, `searchCatalog`, `getDocument`) and
   `custom_objects` (`listCustomObjects`, `listObjectFields`,
   `listObjectFieldOptions`, `getCustomObject`). All seven are
-  `readOnlyHint: true`. The system `readonly` server serves all seven.
+  `readOnlyHint: true`. The system `readonly` server serves all seven. For an
+  AI step that searches a catalog, see `kizen docs show automation`,
+  "Searching a knowledge catalog".
 - `step-options` is a bare list of `{id, name, api_name, is_enabled, deleted,
   tool_count}`. It lists disabled servers and leaves out deleted ones.
 

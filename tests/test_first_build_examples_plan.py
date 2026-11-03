@@ -11,7 +11,10 @@ import pytest
 import kizen_builder.tools.planners.automations as ma
 from kizen_builder import filtering
 from kizen_builder.models.spec import AutomationDef
-from kizen_builder.tools.planners.activities import plan_create_activity
+from kizen_builder.tools.planners.activities import (
+    plan_create_activity,
+    plan_update_activity,
+)
 from kizen_builder.tools.planners.automations import (
     LiveContext,
     _build_automation_payload,
@@ -158,3 +161,31 @@ def test_first_build_activity_plans(first_build_business, monkeypatch):
     monkeypatch.setattr(pa, "list_activities", lambda: [])
     plan = plan_create_activity(_example("call.activity.json"))
     assert plan.operations
+
+
+def test_first_build_visibility_rules_plan(monkeypatch):
+    import kizen_builder.tools.planners.activities as pa
+
+    outcome = {
+        "id": "fb000000-0000-4000-8000-000000000201",
+        "api_name": "outcome",
+        "field_type": "activity_custom_field",
+        "custom_object_field": {"id": DEAL_FIELDS[3]["id"], "field_type": "dropdown"},
+        "options": _options("Connected", "Left Voicemail", "No Answer"),
+    }
+    notes = {"id": "fb000000-0000-4000-8000-000000000202", "api_name": "call_notes"}
+    call = {
+        "id": "fb000000-0000-4000-8000-000000000200",
+        "name": "Call",
+        "api_name": "call",
+        "fields": [outcome, notes],
+        "visibility_rules": [],
+    }
+    monkeypatch.setattr(pa, "get_activity", lambda ident, include_fields=True: call)
+    rules = json.loads((EXAMPLES / "call.visibility_rules.json").read_text())
+    (op,) = plan_update_activity("call", {"visibility_rules": rules}).operations
+    (rule,) = op.payload["visibility_rules"]
+    assert [f["value"] for f in rule["rule"]["filters"]] == [
+        o["id"] for o in outcome["options"][:2]
+    ]
+    assert rule["layout_items"] == [{"field_id": notes["id"]}]

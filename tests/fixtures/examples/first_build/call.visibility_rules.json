@@ -1,0 +1,4 @@
+[
+  { "show": ["call_notes"],
+    "when": { "field": "outcome", "is_any_of": ["Connected", "Left Voicemail"] } }
+]

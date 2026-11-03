@@ -15,9 +15,7 @@ from kizen_builder.cli._shared import (
     app,
     cli_errors,
     console,
-    err_console,
-    parse_json,
-    read_text_file,
+    load_filter_spec,
 )
 from kizen_builder.tools import saved_views as sv_tools
 from kizen_builder.tools.planners import saved_views as sv_planners
@@ -26,18 +24,6 @@ filter_groups_app = typer.Typer(
     help="Per-object saved filters (segments): /filter-groups.", no_args_is_help=True
 )
 app.add_typer(filter_groups_app, name="filter-groups")
-
-
-def _load_filter_spec(filter_json: str, filter_file: str) -> dict[str, Any] | None:
-    if filter_json and filter_file:
-        err_console.print("[red]error:[/red] pass --filter or --filter-file, not both.")
-        raise typer.Exit(code=2)
-    text = read_text_file(filter_file, "--filter-file") if filter_file else filter_json
-    if not text:
-        return None
-    return parse_json(
-        text, f"--filter-file {filter_file}" if filter_file else "--filter"
-    )
 
 
 @filter_groups_app.command("list")
@@ -135,7 +121,7 @@ def filter_groups_create(
     --filter` and automation condition steps.
     """
     spec: dict[str, Any] = {"name": name, "hidden": hidden}
-    fc = _load_filter_spec(filter_json, filter_file)
+    fc = load_filter_spec(filter_json, filter_file)
     if fc is not None:
         spec["config"] = fc
     if owner:
@@ -181,7 +167,7 @@ def filter_groups_update(
     changes: dict[str, Any] = {}
     if name:
         changes["name"] = name
-    fc = _load_filter_spec(filter_json, filter_file)
+    fc = load_filter_spec(filter_json, filter_file)
     if fc is not None:
         changes["config"] = fc
     if hidden is not None:

@@ -101,6 +101,45 @@ def _normalize_field(f: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def describe_visibility_rule(
+    rule: dict[str, Any], fields: list[dict[str, Any]]
+) -> str | None:
+    """``show a, b when c is any of X, Y`` for a rule in that shape: ``=``
+    filters on one field's options, OR'd. ``… when c is checked`` (or ``is not
+    checked``) for one ``=`` filter on true or false. None for any other rule."""
+    by_id = {f.get("id"): f for f in fields}
+    body = rule.get("rule") or {}
+    filters = body.get("filters") or []
+    items = rule.get("layout_items") or []
+    shown = [by_id[i.get("field_id")] for i in items if i.get("field_id") in by_id]
+    tested = {f.get("activity_field_id") for f in filters}
+    if not filters or not shown or len(shown) != len(items) or len(tested) != 1:
+        return None
+    if len(filters) > 1 and body.get("and") is not False:
+        return None
+    field = by_id.get(tested.pop())
+    if field is None:
+        return None
+    shown_names = ", ".join(s.get("api_name") or s["id"] for s in shown)
+    field_name = field.get("api_name") or field["id"]
+    first = filters[0]
+    if len(filters) == 1 and isinstance(first.get("value"), bool):
+        if first.get("type") != "activity_field" or first.get("condition") != "=":
+            return None
+        state = "checked" if first["value"] else "not checked"
+        return f"show {shown_names} when {field_name} is {state}"
+    options = {o.get("id"): o.get("name") for o in field.get("options") or []}
+    names = []
+    for f in filters:
+        value = f.get("value")
+        if f.get("type") != "activity_field" or f.get("condition") != "=":
+            return None
+        if not isinstance(value, str) or value not in options:
+            return None
+        names.append(options[value])
+    return f"show {shown_names} when {field_name} is any of {', '.join(names)}"
+
+
 def get_activity(identifier: str, *, include_fields: bool = True) -> dict[str, Any]:
     """Return one activity type plus its fields and visibility rules.
 

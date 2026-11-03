@@ -113,8 +113,8 @@ def skipped_condition() -> dict:
 @pytest.fixture(scope="module")
 def loops() -> dict:
     """Spec-built, then read back: a loop whose body is a merged condition
-    with an `exit_loop` on its no branch, then a second loop after the
-    first's `next_or_finish`, then a step after that. Its fixed translation
+    with an empty no branch, then a second loop after the first's
+    `next_or_finish`, then a step after that. Its fixed translation
     round-tripped live with `semantic_diff == []` (2026-10-27)."""
     return live_to_payload(load_fixture("automations/loops.raw.json"))
 
@@ -1572,9 +1572,8 @@ def test_loop_keeps_its_initiator_flag(loops: dict) -> None:
     assert all(s["is_branch_group_initiator"] for s in _steps_by_type(loops, "loop"))
 
 
-@pytest.mark.parametrize("step_type", ["next_or_finish", "exit_loop"])
-def test_loop_closers_carry_no_config_block(loops: dict, step_type: str) -> None:
-    for s in _steps_by_type(loops, step_type):
+def test_loop_closers_carry_no_config_block(loops: dict) -> None:
+    for s in _steps_by_type(loops, "next_or_finish"):
         assert not [k for k in s if k.startswith("step_")]
         assert [k for k in s if k.startswith("action_")] == ["action_on_failure"]
 
@@ -1598,9 +1597,9 @@ def test_misread_config_block_is_refused() -> None:
 
 def test_block_on_a_configless_step_is_refused() -> None:
     raw = load_fixture("automations/loops.raw.json")
-    step = next(s for s in raw["steps"] if s["step_type"] == "exit_loop")
-    step["action_exit_loop"] = {"x": 1}
-    with pytest.raises(PlanError, match="action_exit_loop would be lost on PUT"):
+    step = next(s for s in raw["steps"] if s["step_type"] == "next_or_finish")
+    step["action_next_or_finish"] = {"x": 1}
+    with pytest.raises(PlanError, match="action_next_or_finish would be lost on PUT"):
         live_to_payload(raw)
 
 
@@ -1724,7 +1723,6 @@ def _accepted_shapes() -> dict[str, list[dict]]:
         _delay("b1", "l"),
         _ws("n", "next_or_finish", "l"),
     ]
-    shapes["A9-exit-after-body-step"] = _base() + [_ws("x", "exit_loop", "b1")]
     shapes["B5-nest-3"] = _nest(3)
     head, p = _head()
     shapes["B7-loop-on-yes-branch"] = head + [
@@ -1734,26 +1732,12 @@ def _accepted_shapes() -> dict[str, list[dict]]:
         _ws("n", "next_or_finish", "l"),
         _delay("no1", "c", "no"),
     ]
-    shapes["B9-step-after-exit"] = _base() + [
-        _ws("x", "exit_loop", "b1"),
-        _delay("after_x", "x"),
-    ]
-    shapes["B10-exit-direct-child"] = _base() + [_ws("x", "exit_loop", "l")]
     shapes["B13-two-body-lanes"] = _base() + [_delay("b2", "l")]
     shapes["B14-branch-group-in-body"] = _base() + [
         _ws("br", "branch", "l", is_branch_group_initiator=True),
         _delay("lane1", "br"),
         _delay("lane2", "br"),
         _ws("m", "merge_branches", "br"),
-    ]
-    head, p = _head(2)
-    shapes["D2-exit-after-inner-loop"] = head + [
-        _loop("l0", p, "arr0", "arr0_item"),
-        _loop("l1", "l0", "arr1", "arr1_item"),
-        _delay("ib", "l1"),
-        _ws("n1", "next_or_finish", "l1"),
-        _ws("x", "exit_loop", "n1"),
-        _ws("n0", "next_or_finish", "l0"),
     ]
     head, p = _head(data_type="uuid")
     shapes["D3-uuid-array"] = head + [
@@ -1887,18 +1871,6 @@ def test_next_or_finish_closing_a_condition_is_flagged() -> None:
     assert _NOT_UNDER_LOOP.format(k="cn", p="c") in _problems(steps)
 
 
-_EXIT = "exit_loop step 'x' is not inside a loop body (server 400s otherwise)"
-
-
-def test_exit_loop_outside_any_loop_is_flagged() -> None:
-    head, p = _head()
-    assert _problems(head + [_delay("d", p), _ws("x", "exit_loop", "d")]) == [_EXIT]
-
-
-def test_exit_loop_after_the_next_or_finish_is_flagged() -> None:
-    assert _problems(_base() + [_ws("x", "exit_loop", "n")]) == [_EXIT]
-
-
 def test_loop_over_a_scalar_is_flagged() -> None:
     steps = _base()
     steps[0]["action_initialize_variable"]["variable"]["is_array"] = False
@@ -1983,7 +1955,7 @@ def _show(monkeypatch, fixture: str, *args: str) -> str:
 def test_show_labels_a_loop_with_its_variables(monkeypatch) -> None:
     out = _show(monkeypatch, "automations/loops.raw.json")
     assert "s04_loop [for each arr0 as arr0_item]  Loop" in out
-    assert "s10_loop [for each arr1 as arr1_item]  Loop" in out
+    assert "s09_loop [for each arr1 as arr1_item]  Loop" in out
 
 
 def test_show_puts_the_body_under_the_loop_and_the_rest_after_it(
@@ -1997,15 +1969,13 @@ def test_show_puts_the_body_under_the_loop_and_the_rest_after_it(
         "    │   └── s05_condition  Condition",
         "    │       ├── yes",
         "    │       │   └── s06_delay  Delay",
-        "    │       ├── no",
-        "    │       │   └── s07_exit_loop  Exit Loop",
-        "    │       └── s08_merge_branches  Merge Branches",
-        "    └── s09_next_or_finish  Next/Finish",
-        "        └── s10_loop [for each arr1 as arr1_item]  Loop",
+        "    │       └── s07_merge_branches  Merge Branches",
+        "    └── s08_next_or_finish  Next/Finish",
+        "        └── s09_loop [for each arr1 as arr1_item]  Loop",
         "            ├── body",
-        "            │   └── s11_delay  Delay",
-        "            └── s12_next_or_finish  Next/Finish",
-        "                └── s13_delay  Delay",
+        "            │   └── s10_delay  Delay",
+        "            └── s11_next_or_finish  Next/Finish",
+        "                └── s12_delay  Delay",
     ]
 
 

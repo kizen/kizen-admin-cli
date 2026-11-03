@@ -121,6 +121,11 @@ def support_desk(patch_live_lookups, monkeypatch):
     filtering.set_default_client(None)
 
 
+def _plan(name: str) -> dict[str, Any]:
+    spec = json.loads((EXAMPLE / name).read_text())
+    return _build_automation_payload(AutomationDef.model_validate(spec), LiveContext())
+
+
 def test_find_contact_automation_plans(support_desk):
     text = (EXAMPLE / "find_contact.automation.json").read_text()
     text = text.replace('"<client_client_object_uuid>"', json.dumps(CONTACTS_ID))
@@ -155,3 +160,48 @@ def test_contact_support_form_links_every_field(monkeypatch):
         assert op.payload["field_type"] == linked["field_type"]
         assert "options" not in op.payload
     assert [op.payload["is_required"] for op in fields] == [True, True, True]
+
+
+def test_read_reply_automation_plans(support_desk):
+    payload = _plan("read_reply.automation.json")
+    (inbox,) = [t for t in payload["triggers"] if t["type"] == "email_received"]
+    assert inbox["trigger_email_received_from_contact"]["receiving_inbox"] == "any"
+    code = next(s for s in payload["steps"] if s["type"] == "code_step")
+    (contact_email,) = code["action_code_step"]["inputs"]
+    assert contact_email["field"] == {"id": EMAIL_FIELD}
+    llm = next(s for s in payload["steps"] if s["type"] == "call_llm")
+    assert "{{ automation_variable.email_body }}" in llm["action_call_llm"]["prompt"]
+
+
+def test_draft_reply_automation_plans(support_desk, monkeypatch):
+    from kizen_builder.api import automations as api
+    from kizen_builder.api import client
+
+    class _Client:
+        def __init__(self, cfg):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    server = {"id": "5d000000-0000-4000-8000-0000000000e0", "api_name": "readonly"}
+    account = {"id": "5d000000-0000-4000-8000-0000000000e1"}
+    monkeypatch.setattr(client, "KizenClient", _Client)
+    monkeypatch.setattr(
+        api, "list_mcp_step_options", lambda _c: [{**server, "name": "Read Only"}]
+    )
+    monkeypatch.setattr(
+        api,
+        "list_run_tools_as_options",
+        lambda _c: [{**account, "name": "Agentic Workflow Code"}],
+    )
+    payload = _plan("draft_reply.automation.json")
+    llm = next(s for s in payload["steps"] if s["type"] == "call_llm")
+    block = llm["action_call_llm"]
+    assert (block["mcp_server_id"], block["run_tools_as_id"]) == (
+        server["id"],
+        account["id"],
+    )

@@ -210,6 +210,7 @@ def test_plan_update_activity_always_includes_structural_keys_when_passed():
     explicitly present in `changes` — unlike scalar keys, there's no
     old-vs-new comparison against live state for them."""
     _mock_activity_detail()
+    _mock_activity_fields()
     plan = plan_update_activity("site_visit", {"visibility_rules": []})
     (op,) = plan.operations
     assert op.payload == {"visibility_rules": []}
