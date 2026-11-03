@@ -156,7 +156,6 @@ automation-step`):
 4. **The body**, hanging off the loop.
 5. **One `next_or_finish` child of the loop**, which closes the body. The steps
    after the loop hang off it.
-6. **Optional `exit_loop` steps** inside the body.
 
 Both variable steps go at the front of the automation, like every
 `initialize_variable`. Confirmed live 2026-10-27.
@@ -208,10 +207,6 @@ Both variable steps go at the front of the automation, like every
   the server adds to the item variable from the loop. It reads a null key in a
   top-level or `initialize_variable` variable definition as absent. Confirmed
   live 2026-10-27.
-- **`exit_loop`** ends the innermost loop it sits in, and an outer loop carries
-  on with its next item. It can be the loop's direct child, sit under a
-  condition in the body, or follow an inner loop inside an outer body. After
-  the loop's `next_or_finish` it is a 400. Confirmed live 2026-10-27.
 - **Body lanes:** a body can be empty or have two lanes. Two lanes get the
   fan-out warning, like any plain fan-out. Confirmed live 2026-10-27.
 - **Nesting:** a loop can sit in another loop's body, up to three levels, and a
@@ -343,7 +338,6 @@ stays pending (confirmed live 2026-10-30).
 | `merge_branches` | none | rejoin a branch group — see Branch groups |
 | `loop` | `step_loop` | run its body once per item of an array variable — see Loops |
 | `next_or_finish` | none | close a loop body — see Loops |
-| `exit_loop` | none | leave the loop from inside its body |
 
 `search_records` (the automation-builder equivalent of `records list
 --filter`) needs its own `custom_object` — independent of the automation's
@@ -1127,7 +1121,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
 | `value_html` on an `update_variable` source | `''` |
-| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
+| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ### Read→write transforms
 
@@ -1151,7 +1145,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
-| `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` and `exit_loop` are read with no config block, and none is written. Confirmed live 2026-10-27 |
+| `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` is read with no config block, and none is written. Confirmed live 2026-10-27 |
 | A loop's item variable read with `is_array_item_variable: true` and `source_array_variable: <array>` | echoed as read. The server sets both itself from the loop, so sending them is harmless and omitting them changes nothing. `diff` ignores both. Confirmed live 2026-10-27 |
 | Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
 | `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
@@ -1189,8 +1183,6 @@ inconsistent:
   - a `loop` has exactly one `next_or_finish` child;
   - a `loop` has no `merge_branches` child;
   - a `next_or_finish` hangs directly off a `loop`;
-  - an `exit_loop` is inside a loop body: walking up its parents, it reaches a
-    loop through a body step, not through that loop's `next_or_finish`;
   - a loop iterates an array variable of records, strings or UUIDs, declared
     by an `initialize_variable` step;
   - its item variable is declared by an `initialize_variable` step as a single

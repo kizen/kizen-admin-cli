@@ -100,8 +100,7 @@ Consequences worth knowing:
   a condition/goal branch, `--root` puts the new step first. A
   `next_or_finish` or `merge_branches` child is never adopted, so `--parent
   <loop>` puts the new step at the head of the loop body, and `--parent
-  <next_or_finish>` puts it right after the loop. An `exit_loop` adds like any
-  step.
+  <next_or_finish>` puts it right after the loop.
 - **`add` of a `loop` adds its `next_or_finish` and its item variable too**, as
   Kizen's builder does. The spec is `{"step_type": "loop", "step_loop":
   {"array_variable": "<array>"}}`, and the array must already be declared by

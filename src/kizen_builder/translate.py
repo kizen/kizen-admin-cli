@@ -464,8 +464,8 @@ def _loop_problems(steps: list[dict[str, Any]]) -> list[str]:
     plus two from Kizen's builder that the API doesn't enforce: nesting depth
     and one array at two levels. The body hangs off the loop, its one
     `next_or_finish` child closes it, and what follows the loop hangs off the
-    `next_or_finish`. A graph with no loop, `next_or_finish` or `exit_loop`
-    passes untouched."""
+    `next_or_finish`. A graph with no loop or `next_or_finish` passes
+    untouched."""
     problems: list[str] = []
     by_key = {s.get("key"): s for s in steps}
     declared: dict[str, dict[str, Any]] = {}
@@ -510,11 +510,6 @@ def _loop_problems(steps: list[dict[str, Any]]) -> list[str]:
                     "a loop; it must hang directly off the loop it closes (server "
                     "400s otherwise)"
                 )
-        elif step_type == "exit_loop" and not _in_loop_body(s, by_key):
-            problems.append(
-                f"exit_loop step '{key}' is not inside a loop body (server 400s "
-                "otherwise)"
-            )
     return problems
 
 
@@ -586,10 +581,6 @@ def _builder_loop_problems(
             "the automation stays editable in the UI."
         )
     return problems
-
-
-def _in_loop_body(step: dict[str, Any], by_key: dict[Any, dict[str, Any]]) -> bool:
-    return bool(enclosing_loops(step, by_key))
 
 
 def enclosing_loops(
@@ -769,7 +760,6 @@ _DEFAULT_DESCRIPTIONS = {
     "branch": "Branch",
     "condition": "Condition",
     "delay": "Delay",
-    "exit_loop": "Exit Loop",
     "initialize_variable": "Initialize Variable",
     "loop": "Loop",
     "manual": "Manual",

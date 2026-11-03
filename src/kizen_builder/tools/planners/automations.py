@@ -1840,9 +1840,7 @@ _ACTION_STEP_TYPES = {
 
 
 # Read with no config block at all, so none is written either.
-_CONFIGLESS_STEP_TYPES = frozenset(
-    {"branch", "merge_branches", "next_or_finish", "exit_loop"}
-)
+_CONFIGLESS_STEP_TYPES = frozenset({"branch", "merge_branches", "next_or_finish"})
 
 
 def _prefix_for(step_type: str) -> str:
