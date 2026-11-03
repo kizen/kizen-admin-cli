@@ -136,7 +136,9 @@ class ActivityDef(BaseModel):
     association_mode: AssociationMode | None = Field(default=None)
     visibility_rules: list[dict[str, Any]] | None = Field(
         default=None,
-        description="Conditional field-visibility rules (opaque rule dicts).",
+        description="Conditional field-visibility rules: by name "
+        "(`{show, when}`, set with `activities update`), or the raw rule dicts "
+        "a read returns.",
     )
     submission_action: Literal["redirect", "trigger_webhook"] | None = Field(
         default=None
