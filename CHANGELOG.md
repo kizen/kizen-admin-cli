@@ -116,6 +116,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **A malformed API key or id can no longer end up printed in an error.** A
+  profile whose `api_key`, `business_id` or `user_id` contains anything other
+  than visible ASCII characters (a space, tab, line break or control
+  character) now fails with an error naming the profile and the field,
+  instead of a network error that could quote the key. `kizen init` refuses
+  such a value as it is entered, before checking it live or storing it.
+
 - **Condition and search rules written by the CLI now carry the layout the
   Kizen workflow editor uses to show them,** for text, dropdown, stage,
   date-time and blank-relationship rules. The editor uses these layouts only

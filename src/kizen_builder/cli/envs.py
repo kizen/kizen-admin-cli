@@ -13,7 +13,7 @@ from kizen_builder.cli._shared import (
     console,
     err_console,
 )
-from kizen_builder.config import refuse_in_helper_mode
+from kizen_builder.config import refuse_when_wrapped
 from kizen_builder.tools import envs as env_tools
 
 envs_app = typer.Typer(
@@ -28,7 +28,7 @@ def envs_list(
     json_out: bool = JSON_OPTION,
 ) -> None:
     """List the Kizen env configured in this directory."""
-    refuse_in_helper_mode("envs list", "the environment")
+    refuse_when_wrapped("envs list", "the environment")
     fmt = out.resolve_format(output, json_out)
     items = env_tools.list_envs()
 

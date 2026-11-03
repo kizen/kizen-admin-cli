@@ -17,7 +17,13 @@ from kizen_builder import docs as docs_res
 from kizen_builder import profiles
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.cli._shared import app, console, err_console
-from kizen_builder.config import ApiKeyAuth, EnvConfig, refuse_in_helper_mode
+from kizen_builder.config import (
+    HEADER_VALUE_RULE,
+    ApiKeyAuth,
+    EnvConfig,
+    header_value_ok,
+    refuse_when_wrapped,
+)
 
 # The dotted-halftone Kizen logo mark from Kizen's node CLI (@kizenapps/cli's
 # src/ui/Logo.tsx), transcribed verbatim from that package's published source
@@ -302,7 +308,7 @@ def init(
     anything still missing is prompted for, so this works interactively and
     headlessly from the same command.
     """
-    refuse_in_helper_mode("init", "this environment's credentials")
+    refuse_when_wrapped("init", "this environment's credentials")
     _print_banner()
     cwd = Path.cwd()
     if not profile:
@@ -326,6 +332,17 @@ def init(
         existing.user_id if existing else "",
         flag="--user-id",
     )
+    # Each is sent as a header. Refuse a bad one before the live check or the
+    # store sees it; the message names the flag, never the value.
+    for value, flag in (
+        (api_key, "--api-key"),
+        (business_id, "--business-id"),
+        (user_id, "--user-id"),
+    ):
+        if not value:
+            raise typer.BadParameter("is required.", param_hint=flag)
+        if not header_value_ok(value):
+            raise typer.BadParameter(f"it {HEADER_VALUE_RULE}.", param_hint=flag)
     if base_url:
         try:
             base_url_in = profiles.resolve_base_url(base_url)
