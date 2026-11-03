@@ -1,0 +1,667 @@
+{
+  "env": "testenv",
+  "id": "0c01c7a5-bc95-4d49-8d93-8a33e9ab3950",
+  "name": "Site Visit Report",
+  "api_name": "site_visit_report",
+  "fields": [
+    {
+      "id": "c0db056b-f2ac-4436-ab35-7927432ab91d",
+      "api_name": "visit_summary",
+      "display_name": "Visit Summary",
+      "description": "",
+      "field_type": "longtext",
+      "custom_object_field": null,
+      "linked_field": null,
+      "is_default": false,
+      "is_required": false,
+      "is_read_only": false,
+      "is_hidden": false,
+      "is_deletable": true,
+      "order": 0,
+      "options": null,
+      "relation": null
+    },
+    {
+      "id": "09776bcc-1a11-4b80-bcbf-d2c0a084bc82",
+      "api_name": "notes",
+      "display_name": "Notes",
+      "description": "",
+      "field_type": "wysiwyg",
+      "custom_object_field": null,
+      "linked_field": null,
+      "is_default": true,
+      "is_required": false,
+      "is_read_only": false,
+      "is_hidden": false,
+      "is_deletable": false,
+      "order": 0,
+      "options": null,
+      "relation": null
+    },
+    {
+      "id": "83ed0134-67e4-4ea2-a419-f3889d653198",
+      "api_name": "visit_outcome",
+      "display_name": "Visit Outcome",
+      "description": "",
+      "field_type": "dropdown",
+      "custom_object_field": null,
+      "linked_field": null,
+      "is_default": false,
+      "is_required": true,
+      "is_read_only": false,
+      "is_hidden": false,
+      "is_deletable": true,
+      "order": 1,
+      "options": [
+        {
+          "id": "4061e95b-f995-4ffb-97f0-63ff7d09902d",
+          "name": "Successful",
+          "code": "Successful"
+        },
+        {
+          "id": "0885b8da-e654-4ddb-b3d5-84a9ab7ac327",
+          "name": "Needs Follow-up",
+          "code": "Needs Follow-up"
+        }
+      ],
+      "relation": null
+    },
+    {
+      "id": "7c9a9e8c-2a31-4fc9-80aa-6b57a87998d8",
+      "api_name": "followup_date",
+      "display_name": "Follow-up Date",
+      "description": "",
+      "field_type": "date",
+      "custom_object_field": null,
+      "linked_field": null,
+      "is_default": false,
+      "is_required": false,
+      "is_read_only": false,
+      "is_hidden": false,
+      "is_deletable": true,
+      "order": 2,
+      "options": null,
+      "relation": null
+    },
+    {
+      "id": "d166f039-fbcd-472a-b6b8-3b3d863a3d32",
+      "api_name": "satisfaction",
+      "display_name": "Satisfaction",
+      "description": "",
+      "field_type": "rating",
+      "custom_object_field": null,
+      "linked_field": null,
+      "is_default": false,
+      "is_required": true,
+      "is_read_only": false,
+      "is_hidden": false,
+      "is_deletable": true,
+      "order": 3,
+      "options": null,
+      "relation": null
+    },
+    {
+      "id": "3a002d01-e0af-48c5-abe5-849765f0fd32",
+      "api_name": "branch_street_address",
+      "display_name": "Branch Street Address",
+      "description": "",
+      "field_type": "activity_custom_field",
+      "custom_object_field": {
+        "id": "8c527157-a4a4-42db-b8c3-e11d5b8ba482",
+        "name": "street_address",
+        "display_name": "Street Address",
+        "field_type": "text",
+        "is_default": false,
+        "custom_object": {
+          "id": "95ca0064-bcf7-44bb-9e5c-b350a3847278",
+          "name": "branches",
+          "object_type": "standard",
+          "object_name": "Branches",
+          "entity_name": "Branch",
+          "rollup_related_leadsources": true,
+          "fetch_url": "standard",
+          "association_source": "direct"
+        },
+        "meta": {
+          "cols": 2
+        }
+      },
+      "linked_field": "branches.street_address",
+      "is_default": false,
+      "is_required": false,
+      "is_read_only": false,
+      "is_hidden": false,
+      "is_deletable": true,
+      "order": 5,
+      "options": null,
+      "relation": null
+    },
+    {
+      "id": "5a7f1a15-bc28-45a1-9797-e72ff31d0aa7",
+      "api_name": "branch_city",
+      "display_name": "City",
+      "description": "",
+      "field_type": "activity_custom_field",
+      "custom_object_field": {
+        "id": "2b5cda61-4940-4fe4-9031-4bf3343d9fab",
+        "name": "city",
+        "display_name": "City",
+        "field_type": "text",
+        "is_default": false,
+        "custom_object": {
+          "id": "95ca0064-bcf7-44bb-9e5c-b350a3847278",
+          "name": "branches",
+          "object_type": "standard",
+          "object_name": "Branches",
+          "entity_name": "Branch",
+          "rollup_related_leadsources": true,
+          "fetch_url": "standard",
+          "association_source": "direct"
+        },
+        "meta": {}
+      },
+      "linked_field": "branches.city",
+      "is_default": false,
+      "is_required": false,
+      "is_read_only": false,
+      "is_hidden": false,
+      "is_deletable": true,
+      "order": 6,
+      "options": null,
+      "relation": null
+    }
+  ],
+  "visibility_rules": [
+    {
+      "rule": {
+        "and": false,
+        "filters": [
+          {
+            "type": "activity_field",
+            "value": false,
+            "condition": "is_blank",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/c0db056b-f2ac-4436-ab35-7927432ab91d",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "longtext"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "is_not_blank"
+              ]
+            ],
+            "activity_field_id": "c0db056b-f2ac-4436-ab35-7927432ab91d"
+          }
+        ]
+      },
+      "layout_items": [
+        {
+          "field_id": "83ed0134-67e4-4ea2-a419-f3889d653198"
+        }
+      ]
+    },
+    {
+      "rule": {
+        "and": false,
+        "filters": [
+          {
+            "type": "activity_field",
+            "value": "4061e95b-f995-4ffb-97f0-63ff7d09902d",
+            "condition": "=",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/83ed0134-67e4-4ea2-a419-f3889d653198",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "dropdown"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "equals"
+              ],
+              [
+                "value",
+                {
+                  "url": "/records/display-names",
+                  "body": {
+                    "activity_option_ids": [
+                      "4061e95b-f995-4ffb-97f0-63ff7d09902d"
+                    ]
+                  },
+                  "method": "POST",
+                  "result_path": [],
+                  "result_transform": [
+                    "xf_hoist",
+                    [
+                      "xf_concat",
+                      [
+                        "xf_map",
+                        "@result_path/not_found/activity_options",
+                        {
+                          "id": [
+                            "xf_pick",
+                            "$",
+                            [
+                              "id"
+                            ]
+                          ],
+                          "name": [
+                            "xf_join",
+                            "[Deleted] ",
+                            [
+                              "xf_pick",
+                              "$",
+                              [
+                                "display_name"
+                              ]
+                            ]
+                          ],
+                          "not_found": true,
+                          "error_message": "The option has been deleted"
+                        }
+                      ],
+                      [
+                        "xf_map",
+                        "@result_path/results/activity_options",
+                        {
+                          "id": [
+                            "xf_pick",
+                            "$",
+                            [
+                              "id"
+                            ]
+                          ],
+                          "name": [
+                            "xf_pick",
+                            "$",
+                            [
+                              "display_name"
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  ]
+                }
+              ]
+            ],
+            "activity_field_id": "83ed0134-67e4-4ea2-a419-f3889d653198"
+          },
+          {
+            "type": "activity_field",
+            "value": "0885b8da-e654-4ddb-b3d5-84a9ab7ac327",
+            "condition": "!=",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/83ed0134-67e4-4ea2-a419-f3889d653198",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "dropdown"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "does_not_equal"
+              ],
+              [
+                "value",
+                {
+                  "url": "/records/display-names",
+                  "body": {
+                    "activity_option_ids": [
+                      "0885b8da-e654-4ddb-b3d5-84a9ab7ac327"
+                    ]
+                  },
+                  "method": "POST",
+                  "result_path": [],
+                  "result_transform": [
+                    "xf_hoist",
+                    [
+                      "xf_concat",
+                      [
+                        "xf_map",
+                        "@result_path/not_found/activity_options",
+                        {
+                          "id": [
+                            "xf_pick",
+                            "$",
+                            [
+                              "id"
+                            ]
+                          ],
+                          "name": [
+                            "xf_join",
+                            "[Deleted] ",
+                            [
+                              "xf_pick",
+                              "$",
+                              [
+                                "display_name"
+                              ]
+                            ]
+                          ],
+                          "not_found": true,
+                          "error_message": "The option has been deleted"
+                        }
+                      ],
+                      [
+                        "xf_map",
+                        "@result_path/results/activity_options",
+                        {
+                          "id": [
+                            "xf_pick",
+                            "$",
+                            [
+                              "id"
+                            ]
+                          ],
+                          "name": [
+                            "xf_pick",
+                            "$",
+                            [
+                              "display_name"
+                            ]
+                          ]
+                        }
+                      ]
+                    ]
+                  ]
+                }
+              ]
+            ],
+            "activity_field_id": "83ed0134-67e4-4ea2-a419-f3889d653198"
+          },
+          {
+            "type": "activity_field",
+            "value": [
+              "7f8860bb-568e-4295-8045-30ea1a2fe839",
+              "912d6db8-6d44-4939-bb81-054f4ef7c1be"
+            ],
+            "condition": "is_none_of",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/83ed0134-67e4-4ea2-a419-f3889d653198",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "dropdown"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "is_none_of"
+              ],
+              [
+                "value",
+                {
+                  "url": "/records/display-names",
+                  "body": {
+                    "activity_option_ids": [
+                      "7f8860bb-568e-4295-8045-30ea1a2fe839",
+                      "912d6db8-6d44-4939-bb81-054f4ef7c1be"
+                    ]
+                  },
+                  "method": "POST",
+                  "result_path": [],
+                  "result_transform": [
+                    "xf_concat",
+                    [
+                      "xf_map",
+                      "@result_path/not_found/activity_options",
+                      {
+                        "id": [
+                          "xf_pick",
+                          "$",
+                          [
+                            "id"
+                          ]
+                        ],
+                        "name": [
+                          "xf_join",
+                          "[Deleted] ",
+                          [
+                            "xf_pick",
+                            "$",
+                            [
+                              "display_name"
+                            ]
+                          ]
+                        ],
+                        "not_found": true,
+                        "error_message": "The option has been deleted"
+                      }
+                    ],
+                    [
+                      "xf_map",
+                      "@result_path/results/activity_options",
+                      {
+                        "id": [
+                          "xf_pick",
+                          "$",
+                          [
+                            "id"
+                          ]
+                        ],
+                        "name": [
+                          "xf_pick",
+                          "$",
+                          [
+                            "display_name"
+                          ]
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            ],
+            "activity_field_id": "83ed0134-67e4-4ea2-a419-f3889d653198"
+          },
+          {
+            "type": "activity_field",
+            "value": false,
+            "condition": "is_blank",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/83ed0134-67e4-4ea2-a419-f3889d653198",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "dropdown"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "is_not_blank"
+              ]
+            ],
+            "activity_field_id": "83ed0134-67e4-4ea2-a419-f3889d653198"
+          }
+        ]
+      },
+      "layout_items": [
+        {
+          "field_id": "7c9a9e8c-2a31-4fc9-80aa-6b57a87998d8"
+        }
+      ]
+    },
+    {
+      "rule": {
+        "and": false,
+        "filters": [
+          {
+            "type": "activity_field",
+            "value": "4",
+            "condition": ">=",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/d166f039-fbcd-472a-b6b8-3b3d863a3d32",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "rating"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "more_than_or_equal_to"
+              ],
+              [
+                "value",
+                "4"
+              ]
+            ],
+            "activity_field_id": "d166f039-fbcd-472a-b6b8-3b3d863a3d32"
+          }
+        ]
+      },
+      "layout_items": [
+        {
+          "field_id": "c0db056b-f2ac-4436-ab35-7927432ab91d"
+        }
+      ]
+    },
+    {
+      "rule": {
+        "and": true,
+        "filters": [
+          {
+            "type": "activity_field",
+            "value": "2026-7-14",
+            "condition": "<=",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/7c9a9e8c-2a31-4fc9-80aa-6b57a87998d8",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "date"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "earlier_than_or_on"
+              ],
+              [
+                "value",
+                "2026-7-14"
+              ]
+            ],
+            "activity_field_id": "7c9a9e8c-2a31-4fc9-80aa-6b57a87998d8"
+          },
+          {
+            "type": "activity_field",
+            "value": "2",
+            "condition": "month_equals",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/7c9a9e8c-2a31-4fc9-80aa-6b57a87998d8",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "date"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "month_equals"
+              ],
+              [
+                "value",
+                "2"
+              ]
+            ],
+            "activity_field_id": "7c9a9e8c-2a31-4fc9-80aa-6b57a87998d8"
+          },
+          {
+            "type": "activity_field",
+            "value": [
+              "2026-7-11",
+              "2026-7-17"
+            ],
+            "condition": "between",
+            "view_model": [
+              [
+                "field_id",
+                {
+                  "url": "/activities/0c01c7a5-bc95-4d49-8d93-8a33e9ab3950/fields/7c9a9e8c-2a31-4fc9-80aa-6b57a87998d8",
+                  "method": "GET",
+                  "error_message": {
+                    "404": "The field has been deleted"
+                  },
+                  "error_response": {
+                    "field_type": "date"
+                  }
+                }
+              ],
+              [
+                "condition",
+                "between"
+              ],
+              [
+                "value",
+                [
+                  "2026-7-11",
+                  "2026-7-17"
+                ]
+              ]
+            ],
+            "activity_field_id": "7c9a9e8c-2a31-4fc9-80aa-6b57a87998d8"
+          }
+        ]
+      },
+      "layout_items": [
+        {
+          "field_id": "09776bcc-1a11-4b80-bcbf-d2c0a084bc82"
+        }
+      ]
+    }
+  ]
+}

@@ -190,7 +190,9 @@ def steps_edit(
     """Patch one step: top-level keys in the JSON replace the step's.
 
     A config block (`action_*` / `step_*`) replaces wholesale — start
-    from `steps get` output and modify. Blocks accept the same authoring
+    from `steps get` output and modify. The one exception is a
+    `stop_execution` block: a key it leaves out keeps the live value, and a
+    stop with no action gets `stop_and_complete`. Blocks accept the same authoring
     shapes as create specs (field_refs resolve against the live env).
     `key` and `type` are immutable; re-parenting via `parent_key` /
     `parent_yes_no` is allowed and graph-validated.

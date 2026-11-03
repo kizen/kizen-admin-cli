@@ -184,7 +184,32 @@ def test_goal_step_nested_trigger_id_forwarded_when_set_in_spec(patch_live_looku
 def test_stop_execution_emits_config_block(patch_live_lookups):
     payload = _build(BRANCHING_SPEC)
     stop = next(s for s in payload["steps"] if s["key"] == "stop_yes")
-    assert stop["action_stop_execution"] == {}
+    assert stop["action_stop_execution"] == {"action": "stop_and_complete"}
+
+
+@pytest.mark.parametrize(
+    "block, sent",
+    [
+        (None, {"action": "stop_and_complete"}),
+        ({}, {"action": "stop_and_complete"}),
+        ({"notify": False}, {"action": "stop_and_complete", "notify": False}),
+        ({"notify": True}, {"action": "stop_and_complete", "notify": True}),
+        ({"action": None}, {"action": "stop_and_complete"}),
+    ],
+)
+def test_stop_execution_without_an_action_sends_stop_and_complete(
+    patch_live_lookups, block, sent
+):
+    """Kizen saves a stop with no action, and a run that reaches it never
+    finishes (confirmed live 2026-10-30)."""
+    spec = dict(BRANCHING_SPEC)
+    spec["steps"] = [
+        dict(s, action_stop_execution=block) if s["key"] == "stop_yes" else s
+        for s in spec["steps"]
+    ]
+    payload = _build(spec)
+    stop = next(s for s in payload["steps"] if s["key"] == "stop_yes")
+    assert stop["action_stop_execution"] == sent
 
 
 @pytest.mark.parametrize(
@@ -3176,6 +3201,107 @@ def _webhook_spec(raw: dict, *, auth: bool = False, ids: bool = True) -> dict:
     }
 
 
+@pytest.fixture
+def stop_live(webhook_live, monkeypatch):
+    """`webhook_live`, served as edited: a test sets the live stop's block."""
+    import kizen_builder.tools.planners.automations as ma
+
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": webhook_live})
+    return webhook_live
+
+
+def _stop_spec(raw: dict, live_block: dict, spec_block: dict | None) -> dict:
+    """`_webhook_spec` with the live stop set to ``live_block`` and the spec's
+    stop block set to ``spec_block`` (None leaves it out). The step-level
+    keys match live, so `keeps_live` names the stop only for its block."""
+    raw["steps"][0]["action_stop_execution"] = live_block
+    spec = _webhook_spec(raw, auth=True)
+    spec["steps"][0].update(_live_step_keys(raw["steps"][0]))
+    if spec_block is None:
+        del spec["steps"][0]["action_stop_execution"]
+    else:
+        spec["steps"][0]["action_stop_execution"] = spec_block
+    return spec
+
+
+_FAIL_NOTIFY = {"action": "stop_and_fail", "notify": True}
+
+
+@pytest.mark.parametrize(
+    "live_block, spec_block, sent, kept",
+    [
+        (_FAIL_NOTIFY, None, _FAIL_NOTIFY, True),
+        (_FAIL_NOTIFY, {}, _FAIL_NOTIFY, True),
+        (_FAIL_NOTIFY, {"notify": False}, {**_FAIL_NOTIFY, "notify": False}, True),
+        (_FAIL_NOTIFY, {"action": "pause"}, {**_FAIL_NOTIFY, "action": "pause"}, True),
+        (
+            _FAIL_NOTIFY,
+            {"action": "pause", "notify": False},
+            {"action": "pause", "notify": False},
+            False,
+        ),
+        (
+            {"action": None, "notify": False},
+            None,
+            {"action": "stop_and_complete", "notify": False},
+            False,
+        ),
+        (
+            {"action": None, "notify": True},
+            None,
+            {"action": "stop_and_complete", "notify": True},
+            True,
+        ),
+        (
+            {"action": "stop_and_complete", "notify": False},
+            None,
+            {"action": "stop_and_complete", "notify": False},
+            False,
+        ),
+    ],
+)
+def test_update_stop_keeps_the_live_action_and_notify_it_leaves_out(
+    stop_live, live_block, spec_block, sent, kept
+):
+    """Kizen keeps the live block on a `{}` PUT (confirmed live 2026-10-30);
+    what it does with half a block is unprobed, so both keys are sent."""
+    spec = _stop_spec(stop_live, live_block, spec_block)
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["steps"][0]["action_stop_execution"] == sent
+    assert ("stop" in op.preview.get("keeps_live", [])) is kept
+
+
+def test_update_new_stop_keeps_nothing_live(stop_live):
+    spec = _stop_spec(stop_live, _FAIL_NOTIFY, None)
+    del spec["steps"][0]["id"]
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["steps"][0]["action_stop_execution"] == {
+        "action": "stop_and_complete"
+    }
+
+
+@pytest.mark.parametrize(
+    "live_block, lines",
+    [
+        (_FAIL_NOTIFY, []),
+        (
+            {"action": None, "notify": False},
+            [("action", "<absent>", "stop_and_complete")],
+        ),
+    ],
+)
+def test_diff_stop_without_a_block_shows_only_a_real_change(
+    stop_live, live_block, lines
+):
+    spec = _stop_spec(stop_live, live_block, None)
+    diff = diff_automation(spec)["diff"]
+    assert [
+        (d["path"].rsplit(".", 1)[-1], d["before"], d["after"])
+        for d in diff
+        if ".action_stop_execution." in d["path"]
+    ] == lines
+
+
 def _webhook_blocks(payload: dict) -> dict[str, dict]:
     return {
         t["trigger_webhook"]["name"]: t["trigger_webhook"]
@@ -5185,9 +5311,7 @@ def test_skipped_condition_without_branch_rejected():
         AutomationDef.model_validate(spec)
 
 
-@pytest.mark.parametrize(
-    "step_type", ["branch", "merge_branches", "next_or_finish", "exit_loop"]
-)
+@pytest.mark.parametrize("step_type", ["branch", "merge_branches", "next_or_finish"])
 def test_configless_step_with_config_block_rejected(step_type):
     spec = _merged_condition_spec()
     merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")
@@ -5253,13 +5377,12 @@ def _loop_spec() -> dict:
                 step_condition={"type": "custom_filter", "filter_config": NAME_IS_X},
             ),
             _s("wait", "check", "delay", 6, parent_branch="yes"),
-            _s("leave", "check", "exit_loop", 7, parent_branch="no"),
-            _s("merge", "check", "merge_branches", 8),
-            _s("next", "each", "next_or_finish", 9),
-            loop("each_again", "next", "arr1", 10),
-            _s("body", "each_again", "delay", 11),
-            _s("next_again", "each_again", "next_or_finish", 12),
-            _s("tail", "next_again", "delay", 13),
+            _s("merge", "check", "merge_branches", 7),
+            _s("next", "each", "next_or_finish", 8),
+            loop("each_again", "next", "arr1", 9),
+            _s("body", "each_again", "delay", 10),
+            _s("next_again", "each_again", "next_or_finish", 11),
+            _s("tail", "next_again", "delay", 12),
         ],
     }
 
@@ -5272,7 +5395,7 @@ def test_loop_spec_payload(patch_live_lookups):
         "item_variable": "arr0_item",
     }
     assert by_key["each"]["is_branch_group_initiator"] is True
-    for key in ("leave", "next"):
+    for key in ("next",):
         assert not [k for k in by_key[key] if k.startswith("step_")]
         assert [k for k in by_key[key] if k.startswith("action_")] == [
             "action_on_failure"
@@ -5288,7 +5411,7 @@ def test_loop_spec_needs_its_step_loop():
 
 def test_broken_loop_spec_fails_plan(patch_live_lookups):
     spec = _loop_spec()
-    spec["steps"][9]["parent_key"] = "check"
+    spec["steps"][8]["parent_key"] = "check"
     with pytest.raises(PlanError) as e:
         plan_create_automation(spec)
     assert "loop 'each' has 0 next_or_finish children" in str(e.value)
@@ -5343,8 +5466,8 @@ def _string_loop_steps() -> list[dict]:
 def _nested_loops(
     depth: int, root_parent: str | None = None, arrays: list[str] | None = None
 ) -> list[dict]:
-    """`depth` loops, each the body of the one before, and an `exit_loop` in
-    the innermost body. Each loop iterates its entry in `arrays` (by default
+    """`depth` loops, each the body of the one before, and a delay in the
+    innermost body. Each loop iterates its entry in `arrays` (by default
     a different array per level) through its own item variable."""
     arrays = arrays or [f"arr{n}" for n in range(depth)]
     steps: list[dict] = []
@@ -5360,7 +5483,7 @@ def _nested_loops(
         steps.append(_loop(f"l{n}", parent, name, f"item{n}", 0))
         closers.append(_s(f"n{n}", f"l{n}", "next_or_finish", 0))
         parent = f"l{n}"
-    steps.append(_s("leave", parent, "exit_loop", 0))
+    steps.append(_s("inner", parent, "delay", 0))
     return steps + closers[::-1]
 
 
@@ -5450,11 +5573,11 @@ def test_loop_on_a_condition_yes_branch(patch_live_lookups):
     assert _fan_out_lines(_preview(spec)) == []
 
 
-def test_nested_loops_with_an_exit_loop(patch_live_lookups):
+def test_nested_loops(patch_live_lookups):
     spec = _authored_loop_spec(_nested_loops(2), record_based=False)
     by_key = _built_steps(spec)
     assert by_key["l1"]["parent_key"] == "l0"
-    assert by_key["leave"]["parent_key"] == "l1"
+    assert by_key["inner"]["parent_key"] == "l1"
     assert (by_key["n0"]["parent_key"], by_key["n1"]["parent_key"]) == ("l0", "l1")
     assert "warnings" not in _preview(spec)
 
@@ -6416,9 +6539,7 @@ def test_stop_execution_maps_to_its_config_block():
     AutomationDef.model_validate(spec)
 
 
-@pytest.mark.parametrize(
-    "step_type", ["branch", "merge_branches", "next_or_finish", "exit_loop"]
-)
+@pytest.mark.parametrize("step_type", ["branch", "merge_branches", "next_or_finish"])
 def test_configless_step_with_stop_execution_block_rejected(step_type):
     spec = _merged_condition_spec()
     merge = next(s for s in spec["steps"] if s["step_type"] == "merge_branches")

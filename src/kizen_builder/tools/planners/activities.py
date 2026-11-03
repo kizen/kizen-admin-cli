@@ -12,7 +12,11 @@ from typing import Any
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ActivityDef, ActivityFieldDef
 from kizen_builder.models.spec.activities import check_association_keys
-from kizen_builder.tools.activities import get_activity, list_activities
+from kizen_builder.tools.activities import (
+    describe_visibility_rule,
+    get_activity,
+    list_activities,
+)
 from kizen_builder.tools.plans import (
     Plan,
     PlanError,
@@ -48,6 +52,14 @@ def plan_create_activity(spec: dict[str, Any] | ActivityDef) -> Plan:
     act_def = (
         spec if isinstance(spec, ActivityDef) else ActivityDef.model_validate(spec)
     )
+    if any("rule" not in r for r in act_def.visibility_rules or []):
+        raise PlanError(
+            "visibility rules by name need the fields to exist; create the type, "
+            "then run kizen activities update "
+            f"{act_def.api_name or '<api_name>'} --visibility-rules-file <f>"
+        )
+    for n, rule in enumerate(act_def.visibility_rules or [], 1):
+        _check_raw_rule(n, rule)
     env = load_env_config().name
 
     existing = next(
@@ -142,7 +154,13 @@ def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
         raise PlanError(str(e)) from e
     changes = _with_associated_objects(changes, create=False)
     env = load_env_config().name
-    current = _load_activity(identifier, include_fields=False)
+    rules = changes.get("visibility_rules")
+    current = _load_activity(identifier, include_fields=rules is not None)
+    if rules is not None:
+        changes = {
+            **changes,
+            "visibility_rules": _expand_visibility_rules(rules, current, identifier),
+        }
 
     raw = current.get("raw") or {}
     payload: dict[str, Any] = {}
@@ -161,7 +179,14 @@ def plan_update_activity(identifier: str, changes: dict[str, Any]) -> Plan:
                 _association_labels(new, stored),
             )
             continue
-        if key in ("visibility_rules", "loggable_sharing_settings"):
+        if key == "visibility_rules":
+            payload[wire] = new
+            diff[wire] = (
+                _describe_rules(current.get("visibility_rules"), current["fields"]),
+                _describe_rules(new, current["fields"]),
+            )
+            continue
+        if key == "loggable_sharing_settings":
             payload[wire] = new
             diff[wire] = ("…", "(updated)")
             continue
@@ -488,6 +513,212 @@ def plan_remove_activity_field_option(
         env=env,
         summary=f"Remove option '{target.get('name')}' from {activity.get('name')}.{field_api_name}",
         operations=[op],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Visibility rules
+# ---------------------------------------------------------------------------
+
+_RULE_OPTION_TYPES = ("dropdown", "radio", "yesnomaybe")
+
+# The editor's option lookup, verbatim from a UI-built rule.
+_OPTION_NAMES_TRANSFORM = [
+    "xf_hoist",
+    [
+        "xf_concat",
+        [
+            "xf_map",
+            "@result_path/not_found/activity_options",
+            {
+                "id": ["xf_pick", "$", ["id"]],
+                "name": ["xf_join", "[Deleted] ", ["xf_pick", "$", ["display_name"]]],
+                "not_found": True,
+                "error_message": "The option has been deleted",
+            },
+        ],
+        [
+            "xf_map",
+            "@result_path/results/activity_options",
+            {
+                "id": ["xf_pick", "$", ["id"]],
+                "name": ["xf_pick", "$", ["display_name"]],
+            },
+        ],
+    ],
+]
+
+
+def _expand_visibility_rules(
+    rules: list[Any], activity: dict[str, Any], identifier: str
+) -> list[Any]:
+    """Raw rules (a ``rule`` key) as given; each ``{show, when}`` rule expanded
+    to the wire shape the Kizen editor writes."""
+    if not isinstance(rules, list):
+        raise PlanError("visibility rules must be a JSON array")
+    out = []
+    for n, entry in enumerate(rules, 1):
+        if isinstance(entry, dict) and "rule" in entry:
+            _check_raw_rule(n, entry)
+            out.append(entry)
+        else:
+            out.append(_expand_rule(n, entry, activity, identifier))
+    return out
+
+
+def _check_raw_rule(n: int, entry: dict[str, Any]) -> None:
+    """The editor loads each filter from its ``view_model``. One filter without
+    it, on any rule, leaves the type's Advanced Rules list empty."""
+    body = entry.get("rule")
+    filters = body.get("filters") if isinstance(body, dict) else None
+    for m, f in enumerate(filters or [], 1):
+        if not isinstance(f, dict) or not f.get("view_model"):
+            raise PlanError(
+                f"visibility rule {n}: filter {m} has no view_model, and Kizen's "
+                "editor then lists none of the type's rules. Write the rule by "
+                'name ({"show": [...], "when": {...}}), or copy one the editor '
+                "saved from kizen activities get --json"
+            )
+
+
+def _expand_rule(
+    n: int, entry: Any, activity: dict[str, Any], identifier: str
+) -> dict[str, Any]:
+    def fail(message: str) -> PlanError:
+        return PlanError(f"visibility rule {n}: {message}")
+
+    if not isinstance(entry, dict):
+        raise fail("a rule takes show and when")
+    for key in entry:
+        if key not in ("show", "when"):
+            raise fail(f"unknown key '{key}'. A rule takes show and when")
+    show, when = entry.get("show"), entry.get("when")
+    if not isinstance(show, list) or not show or not isinstance(when, dict):
+        raise fail(
+            'a rule takes show (a list of fields) and when ({"field": ..., '
+            '"is_any_of": [...]} or {"field": ..., "is_checked": true})'
+        )
+    for key in when:
+        if key not in ("field", "is_any_of", "is_checked"):
+            raise fail(
+                f"unknown key '{key}' in when. when takes field, and is_any_of "
+                "or is_checked"
+            )
+    if "field" not in when:
+        raise fail("when.field names the field to test")
+
+    def field(token: Any) -> dict[str, Any]:
+        match = next(
+            (f for f in activity["fields"] if token in (f.get("api_name"), f["id"])),
+            None,
+        )
+        if match is None:
+            raise fail(
+                f"no field '{token}' on {identifier}. "
+                f"kizen activities get {identifier} lists them"
+            )
+        return match
+
+    tested = field(when["field"])
+    label = tested.get("api_name") or tested["id"]
+    field_type = _rule_field_type(tested)
+    if field_type == "checkbox":
+        if "is_any_of" in when or not isinstance(when.get("is_checked"), bool):
+            raise fail(
+                f'{label} is a checkbox field; test it with "is_checked": true or false'
+            )
+    elif field_type in _RULE_OPTION_TYPES:
+        if "is_checked" in when:
+            raise fail(f"{label} is a {field_type} field; test it with is_any_of")
+    else:
+        raise fail(
+            f"{label} is a {field_type} field; rules can test dropdown, radio, "
+            "yesnomaybe and checkbox fields"
+        )
+    shown = [field(token) for token in show]
+    if any(f["id"] == tested["id"] for f in shown):
+        raise fail(f"{label} can't be shown by its own answer")
+    option_ids = []
+    if field_type != "checkbox":
+        wanted = when.get("is_any_of")
+        if not isinstance(wanted, list) or not wanted:
+            raise fail("when.is_any_of needs at least one option")
+        options = tested.get("options") or []
+        for token in wanted:
+            match = next(
+                (o for o in options if token in (o.get("name"), o["id"])), None
+            )
+            if match is None:
+                raise fail(
+                    f"'{token}' isn't an option of {label}. "
+                    f"Options: {', '.join(o.get('name') or o['id'] for o in options)}"
+                )
+            option_ids.append(match["id"])
+
+    field_ref = {
+        "url": f"/activities/{activity['id']}/fields/{tested['id']}",
+        "method": "GET",
+        "error_message": {"404": "The field has been deleted"},
+        "error_response": {"field_type": field_type},
+    }
+    if field_type == "checkbox":
+        checked = when["is_checked"]
+        filters = [
+            {
+                "type": "activity_field",
+                "value": checked,
+                "condition": "=",
+                "view_model": [
+                    ["field_id", field_ref],
+                    ["condition", "is_checked" if checked else "is_not_checked"],
+                ],
+                "activity_field_id": tested["id"],
+            }
+        ]
+    else:
+        filters = [
+            {
+                "type": "activity_field",
+                "value": option_id,
+                "condition": "=",
+                "view_model": [
+                    ["field_id", field_ref],
+                    ["condition", "equals"],
+                    [
+                        "value",
+                        {
+                            "url": "/records/display-names",
+                            "body": {"activity_option_ids": [option_id]},
+                            "method": "POST",
+                            "result_path": [],
+                            "result_transform": _OPTION_NAMES_TRANSFORM,
+                        },
+                    ],
+                ],
+                "activity_field_id": tested["id"],
+            }
+            for option_id in option_ids
+        ]
+    return {
+        "rule": {"and": False, "filters": filters},
+        "layout_items": [{"field_id": f["id"]} for f in shown],
+    }
+
+
+def _rule_field_type(field: dict[str, Any]) -> str:
+    """A linked field is tested, and named in the editor, by its record field's type."""
+    linked = field.get("custom_object_field")
+    if field.get("field_type") == "activity_custom_field" and isinstance(linked, dict):
+        return linked.get("field_type") or "activity_custom_field"
+    return field.get("field_type") or ""
+
+
+def _describe_rules(rules: list[Any] | None, fields: list[dict[str, Any]]) -> str:
+    if not rules:
+        return "(none)"
+    return "; ".join(
+        (isinstance(r, dict) and describe_visibility_rule(r, fields)) or "raw rule"
+        for r in rules
     )
 
 

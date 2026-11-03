@@ -16,8 +16,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
-    parse_json,
-    read_text_file,
+    load_filter_spec,
 )
 from kizen_builder.tools import records as record_tools
 
@@ -155,20 +154,11 @@ def records_list(
     record.
     """
     fmt = out.resolve_format(output, json_out)
-    if filter_json and filter_file:
-        err_console.print("[red]error:[/red] pass --filter or --filter-file, not both.")
-        raise typer.Exit(code=2)
-
     filters = None
-    filter_text = (
-        read_text_file(filter_file, "--filter-file") if filter_file else filter_json
-    )
-    if filter_text:
+    spec = load_filter_spec(filter_json, filter_file)
+    if spec is not None:
         from kizen_builder import filtering
 
-        spec = parse_json(
-            filter_text, f"--filter-file {filter_file}" if filter_file else "--filter"
-        )
         # A bad filter is a usage error (exit 2) with its own wording; failing
         # to reach Kizen while resolving the filter's fields is not.
         with cli_errors():

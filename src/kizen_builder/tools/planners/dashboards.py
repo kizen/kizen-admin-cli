@@ -3,7 +3,8 @@
 Dashboards follow the passthrough model: the dashlet ``config`` surface is wide
 and largely undocumented, so a spec carries ``config``/``layout`` opaquely
 (copy them from a live dashlet via ``kizen dashboards get <id> -o json --raw``).
-Only the envelope (name, api_name, type, sharing) is typed.
+Only the envelope (name, api_name, type, sharing) is typed. The one exception
+is a filter spec in ``config.filters``, compiled against the dashlet's object.
 
 A create plan is one ``dashboard`` op followed by one ``dashlet`` op per
 dashlet; the dashlet ops carry ``deferred_parent_object_key`` pointing at the
@@ -19,11 +20,14 @@ from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import DashboardDef, DashletDef
 from kizen_builder.tools.dashboards import (
     DEFAULT_STYLE_SETTINGS,
+    compile_filters,
     default_sharing_settings,
     get_dashboard_detail,
+    is_filter_spec,
     list_dashboards,
     normalize_sharing_settings,
 )
+from kizen_builder.tools.dashlet_templates import FILTERABLE_TYPES_TEXT
 from kizen_builder.tools.plans import (
     Plan,
     PlanError,
@@ -79,12 +83,39 @@ def _dashboard_payload(d: DashboardDef) -> dict[str, Any]:
     return payload
 
 
+def _dashlet_config(dl: DashletDef) -> dict[str, Any]:
+    """``dl.config``, with a filter spec in ``filters`` compiled to the wire.
+
+    Wire filters (a ``custom_filters`` block, as a live read returns) pass
+    through untouched.
+    """
+    filters = dl.config.get("filters")
+    if not is_filter_spec(filters):
+        return dl.config
+    entity_type = dl.config.get("entity_type")
+    if entity_type != "custom_object":
+        raise PlanError(
+            f"dashlet '{dl.name}': entity_type '{entity_type}' has no record "
+            f"filter. A filter spec works on {FILTERABLE_TYPES_TEXT}."
+        )
+    object_id = dl.custom_object or dl.config.get("object_id")
+    if not object_id:
+        raise PlanError(
+            f"dashlet '{dl.name}': a filter spec needs the dashlet's "
+            "custom_object to resolve field names against"
+        )
+    try:
+        return {**dl.config, "filters": compile_filters(filters, object_id)}
+    except ValueError as e:
+        raise PlanError(f"dashlet '{dl.name}': {e}") from e
+
+
 def _dashlet_payload(dl: DashletDef) -> dict[str, Any]:
     return {
         "name": dl.name,
         "custom_object": dl.custom_object,
         "layout": dl.layout,
-        "config": dl.config,
+        "config": _dashlet_config(dl),
     }
 
 

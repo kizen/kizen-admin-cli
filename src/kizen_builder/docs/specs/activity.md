@@ -91,6 +91,75 @@ Outcome was No Answer took the yes branch. Logging an activity is a UI action
 (`POST /api/activities/{id}/log-activity` answered 500 to every body tried), so
 the runs were started by hand.
 
+## Show a field only for some answers
+
+A visibility rule shows fields on the logging form only when another field
+has one of a set of answers. Write it with field and option names, and set it
+with `update` once the fields exist. `activities create` refuses a rule by
+name, because its fields have no ids yet:
+
+```bash
+kizen activities update call --visibility-rules-file call.visibility_rules.json
+```
+
+This file shows Call Notes only when the Outcome was Connected or Left
+Voicemail:
+
+<!-- fixture: examples/first_build/call.visibility_rules.json -->
+```json
+[
+  { "show": ["call_notes"],
+    "when": { "field": "outcome", "is_any_of": ["Connected", "Left Voicemail"] } }
+]
+```
+
+- `show`: the activity fields to show, by api_name or UUID.
+- `when.field`: a dropdown, radio, yesnomaybe or checkbox field, or a linked
+  field (`activity_custom_field`) over one. Other types are a plan error.
+- `when.is_any_of`: for a dropdown, radio or yesnomaybe field, option names or
+  UUIDs, matched exactly.
+- `when.is_checked`: for a checkbox, `true` (the editor's "Is Checked") or
+  `false` ("Isn't Checked"):
+
+  ```json
+  { "show": ["follow_up_reason"], "when": { "field": "needs_follow_up", "is_checked": true } }
+  ```
+
+The CLI expands each rule to the one the Kizen editor writes: one `=` filter
+per option, OR'd, each with the editor's `view_model`, plus `layout_items` for
+the fields shown:
+
+```json
+{ "rule": { "and": false, "filters": [
+    { "type": "activity_field", "activity_field_id": "<outcome field uuid>",
+      "condition": "=", "value": "<Connected option uuid>",
+      "view_model": [["field_id", "…"], ["condition", "equals"], ["value", "…"]] },
+    "…one filter per option…" ] },
+  "layout_items": [ { "field_id": "<call_notes field uuid>" } ] }
+```
+
+A checkbox rule is one `=` filter on `true` or `false`, whose `view_model`
+stops at the condition (`is_checked` or `is_not_checked`), as the editor's
+does.
+
+`--dry-run` and `activities get` print a rule of that shape in words: `show
+call_notes when outcome is any of Connected, Left Voicemail`, or `show
+follow_up_reason when needs_follow_up is checked`. Any other rule, such as one
+built in the UI on a date or with "is not", is a raw rule. `activities get
+--json` returns it, and an entry with a `rule` key is sent exactly as given, so
+a rule read back re-applies unchanged. One file can mix both kinds. The file
+replaces the whole set, so list every rule you keep.
+
+Every filter in a raw rule needs its `view_model`. The editor's Advanced Rules
+tab loads each rule from it, and one filter without it leaves the list empty
+for every rule on the type, while the field list still marks the fields. So a
+raw rule with a filter that lacks it is a plan error: write that rule by name
+instead.
+
+Confirmed live 2026-10-30 and 2026-11-02: this file, dropdown rules and a
+checkbox rule saved and read back exactly as sent, and a UI-built type's four
+raw rules planned unchanged.
+
 ---
 
 ## `ActivityDef` fields
@@ -104,7 +173,7 @@ the runs were started by hand.
 | `association_mode` | enum | `all_objects_associated`, `selected_objects_associated` (needs `selected_object_ids`), or `no_objects_associated`. |
 | `selected_object_ids` | UUID[] | Object UUIDs. The CLI sends them as `associated_objects`, optional, and sets the mode by default. |
 | `associated_objects` | object[] | The wire/read shape, passed through; use it to set `is_required`/`is_readonly`. Sets the mode by default too. Not with `selected_object_ids`. |
-| `visibility_rules` | object[] | Conditional field-visibility rules (opaque). |
+| `visibility_rules` | object[] | Conditional field-visibility rules: short form by name, or the raw rule dicts a read returns. Set short ones with `update` ([below](#show-a-field-only-for-some-answers)). |
 | `submission_action` | enum | `redirect` or `trigger_webhook` (+ `webhook_url`/`redirect_url`). |
 | `fields` | `ActivityFieldDef[]` | Optional — create fields in the same plan. |
 
@@ -197,10 +266,10 @@ every type.
   replacement — body key is `option_id`, which the spec mislabels `id` — and
   does **not** delete the old option, so you must DELETE it afterward. (The
   custom-object replace endpoint does both. This is the divergence.)
-- **Visibility rules** (`visibility_rules`) are opaque rule dicts with a rich
-  `view_model`: field-ref URLs, condition tokens, option display-name lookups.
-  They round-trip through PATCH byte-for-byte if passed through untouched — do
-  **not** synthesize them by hand. Author in the UI, then read and round-trip.
+- **Visibility rules** (`visibility_rules`) carry the editor's `view_model`:
+  a field-ref URL, a condition token and an option display-name lookup. They
+  round-trip through PATCH byte-for-byte. Write them by name, as in
+  [Show a field only for some answers](#show-a-field-only-for-some-answers).
 - **Two kinds of field.** The editor offers plain *activity fields* (native to
   the type) and *custom fields* that surface an existing custom-object field on
   the activity — view-only, or editable back onto the record. The latter is
