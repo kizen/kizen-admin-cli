@@ -183,7 +183,32 @@ def test_goal_step_nested_trigger_id_forwarded_when_set_in_spec(patch_live_looku
 def test_stop_execution_emits_config_block(patch_live_lookups):
     payload = _build(BRANCHING_SPEC)
     stop = next(s for s in payload["steps"] if s["key"] == "stop_yes")
-    assert stop["action_stop_execution"] == {}
+    assert stop["action_stop_execution"] == {"action": "stop_and_complete"}
+
+
+@pytest.mark.parametrize(
+    "block, sent",
+    [
+        (None, {"action": "stop_and_complete"}),
+        ({}, {"action": "stop_and_complete"}),
+        ({"notify": False}, {"action": "stop_and_complete", "notify": False}),
+        ({"notify": True}, {"action": "stop_and_complete", "notify": True}),
+        ({"action": None}, {"action": "stop_and_complete"}),
+    ],
+)
+def test_stop_execution_without_an_action_sends_stop_and_complete(
+    patch_live_lookups, block, sent
+):
+    """Kizen saves a stop with no action, and a run that reaches it never
+    finishes (confirmed live 2026-10-30)."""
+    spec = dict(BRANCHING_SPEC)
+    spec["steps"] = [
+        dict(s, action_stop_execution=block) if s["key"] == "stop_yes" else s
+        for s in spec["steps"]
+    ]
+    payload = _build(spec)
+    stop = next(s for s in payload["steps"] if s["key"] == "stop_yes")
+    assert stop["action_stop_execution"] == sent
 
 
 @pytest.mark.parametrize(
@@ -3150,6 +3175,107 @@ def _webhook_spec(raw: dict, *, auth: bool = False, ids: bool = True) -> dict:
             }
         ],
     }
+
+
+@pytest.fixture
+def stop_live(webhook_live, monkeypatch):
+    """`webhook_live`, served as edited: a test sets the live stop's block."""
+    import kizen_builder.tools.planners.automations as ma
+
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": webhook_live})
+    return webhook_live
+
+
+def _stop_spec(raw: dict, live_block: dict, spec_block: dict | None) -> dict:
+    """`_webhook_spec` with the live stop set to ``live_block`` and the spec's
+    stop block set to ``spec_block`` (None leaves it out). The step-level
+    keys match live, so `keeps_live` names the stop only for its block."""
+    raw["steps"][0]["action_stop_execution"] = live_block
+    spec = _webhook_spec(raw, auth=True)
+    spec["steps"][0].update(_live_step_keys(raw["steps"][0]))
+    if spec_block is None:
+        del spec["steps"][0]["action_stop_execution"]
+    else:
+        spec["steps"][0]["action_stop_execution"] = spec_block
+    return spec
+
+
+_FAIL_NOTIFY = {"action": "stop_and_fail", "notify": True}
+
+
+@pytest.mark.parametrize(
+    "live_block, spec_block, sent, kept",
+    [
+        (_FAIL_NOTIFY, None, _FAIL_NOTIFY, True),
+        (_FAIL_NOTIFY, {}, _FAIL_NOTIFY, True),
+        (_FAIL_NOTIFY, {"notify": False}, {**_FAIL_NOTIFY, "notify": False}, True),
+        (_FAIL_NOTIFY, {"action": "pause"}, {**_FAIL_NOTIFY, "action": "pause"}, True),
+        (
+            _FAIL_NOTIFY,
+            {"action": "pause", "notify": False},
+            {"action": "pause", "notify": False},
+            False,
+        ),
+        (
+            {"action": None, "notify": False},
+            None,
+            {"action": "stop_and_complete", "notify": False},
+            False,
+        ),
+        (
+            {"action": None, "notify": True},
+            None,
+            {"action": "stop_and_complete", "notify": True},
+            True,
+        ),
+        (
+            {"action": "stop_and_complete", "notify": False},
+            None,
+            {"action": "stop_and_complete", "notify": False},
+            False,
+        ),
+    ],
+)
+def test_update_stop_keeps_the_live_action_and_notify_it_leaves_out(
+    stop_live, live_block, spec_block, sent, kept
+):
+    """Kizen keeps the live block on a `{}` PUT (confirmed live 2026-10-30);
+    what it does with half a block is unprobed, so both keys are sent."""
+    spec = _stop_spec(stop_live, live_block, spec_block)
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["steps"][0]["action_stop_execution"] == sent
+    assert ("stop" in op.preview.get("keeps_live", [])) is kept
+
+
+def test_update_new_stop_keeps_nothing_live(stop_live):
+    spec = _stop_spec(stop_live, _FAIL_NOTIFY, None)
+    del spec["steps"][0]["id"]
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["steps"][0]["action_stop_execution"] == {
+        "action": "stop_and_complete"
+    }
+
+
+@pytest.mark.parametrize(
+    "live_block, lines",
+    [
+        (_FAIL_NOTIFY, []),
+        (
+            {"action": None, "notify": False},
+            [("action", "<absent>", "stop_and_complete")],
+        ),
+    ],
+)
+def test_diff_stop_without_a_block_shows_only_a_real_change(
+    stop_live, live_block, lines
+):
+    spec = _stop_spec(stop_live, live_block, None)
+    diff = diff_automation(spec)["diff"]
+    assert [
+        (d["path"].rsplit(".", 1)[-1], d["before"], d["after"])
+        for d in diff
+        if ".action_stop_execution." in d["path"]
+    ] == lines
 
 
 def _webhook_blocks(payload: dict) -> dict[str, dict]:

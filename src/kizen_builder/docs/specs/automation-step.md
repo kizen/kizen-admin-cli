@@ -92,7 +92,9 @@ Consequences worth knowing:
   insert or remove mid-graph renames every later step. Always re-run `show`
   before the next step operation.
 - **`edit` is a merge patch, but config blocks replace wholesale.** Send a
-  complete config block, not a partial one.
+  complete config block, not a partial one. One exception: a
+  `stop_execution` block keeps the live `action` and `notify` it leaves
+  out, and gets `stop_and_complete` when the step has no action.
 - **`add` inserts into the chain by default** — the parent's children move under
   the new step. `--leaf` appends without adopting them, `--branch yes|no` targets
   a condition/goal branch, `--root` puts the new step first. A
