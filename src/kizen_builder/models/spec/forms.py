@@ -45,8 +45,8 @@ FormFieldType = Literal[
     "yesnomaybe",
 ]
 """Field types valid on a form/survey field — the same 24 custom-object types
-minus `activity_custom_field` (forms are standalone data-capture surfaces, not
-tied to a custom object like activities are)."""
+minus `activity_custom_field`. A form field links to its related object's field
+through `custom_object_field` instead."""
 
 
 _FORM_TYPES_REQUIRING_OPTIONS = _TYPES_REQUIRING_OPTIONS | {"yesnomaybe"}
@@ -56,14 +56,26 @@ explicit options), the forms/surveys API 400s with "options: This field is
 required for yesnomaybe" if it's omitted."""
 
 
+_LINKED_FIELD_BLOCKS = (
+    "options",
+    "status_options",
+    "money_options",
+    "rating",
+    "decimal_options",
+    "phone_options",
+)
+
+
 class FormFieldDef(BaseModel):
     """A single field on a form or survey.
 
-    Structurally identical to :class:`ActivityFieldDef` minus the
-    `activity_custom_field` / `custom_object_field` linked-field concept,
-    which doesn't apply here. Fields order within one flat list via `order`
-    (no categories). ``api_name`` is optional — Kizen derives one from the
-    display name when omitted.
+    Structurally close to :class:`ActivityFieldDef`. ``custom_object_field``
+    names a field on the form's ``related_object``; the planner resolves it
+    and takes ``field_type`` from it when omitted. Kizen copies a linked
+    field's options and type settings from the record's field and drops any
+    sent, so a linked field takes none. Fields order within one flat list via
+    ``order`` (no categories). ``api_name`` is optional — Kizen derives one
+    from the display name when omitted.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -77,12 +89,24 @@ class FormFieldDef(BaseModel):
         default=None,
         description="Stable identifier (wire `name`). Kizen derives one if omitted.",
     )
-    field_type: FormFieldType
+    field_type: FormFieldType | None = Field(
+        default=None,
+        description="Required unless `custom_object_field` is set, which supplies it.",
+    )
     description: str | None = Field(default=None, max_length=500)
     required: bool = False
     read_only: bool = False
-    hidden: bool = False
+    hidden: bool = Field(
+        default=False,
+        description="Sent as `is_hidden`, the record-view hidden flag. "
+        "The form still shows the field.",
+    )
     order: int | None = Field(default=None, ge=0, le=32767)
+    custom_object_field: str | None = Field(
+        default=None,
+        description="api_name or UUID of a field on the form's `related_object`. "
+        "A submission writes this answer to that field of the record it creates.",
+    )
 
     # Type-specific config (same blocks as FieldDef / ActivityFieldDef).
     options: list[str] | None = Field(default=None)
@@ -99,7 +123,21 @@ class FormFieldDef(BaseModel):
 
     @model_validator(mode="after")
     def _validate_type_specific_config(self) -> Self:
-        check_type_blocks(self, f"field '{self.name}'", _FORM_TYPES_REQUIRING_OPTIONS)
+        label = f"field '{self.name}'"
+        if self.custom_object_field is not None:
+            given = [k for k in _LINKED_FIELD_BLOCKS if getattr(self, k) is not None]
+            if given:
+                raise ValueError(
+                    f"{label} is linked to '{self.custom_object_field}', whose "
+                    f"{', '.join(given)} Kizen copies: remove them"
+                )
+            return self
+        if self.field_type is None:
+            raise ValueError(
+                f"{label} needs 'field_type', or 'custom_object_field' to take it "
+                "from the record's field"
+            )
+        check_type_blocks(self, label, _FORM_TYPES_REQUIRING_OPTIONS)
         return self
 
 

@@ -320,6 +320,17 @@ The object and its fields, applied as in `kizen docs show examples`:
       "name": "Subject",
       "api_name": "subject",
       "field_type": "text"
+    },
+    {
+      "name": "Message",
+      "api_name": "message",
+      "field_type": "longtext"
+    },
+    {
+      "name": "Channel",
+      "api_name": "channel",
+      "field_type": "dropdown",
+      "options": ["Web Form", "Email", "Chat"]
     }
   ]
 }
@@ -575,6 +586,16 @@ take the activity type's api_name, display name or UUID (`kizen activities
 list`). An unknown name is a plan error. A workflow reads what was logged through the record
 fields the activity's custom fields are linked to: see `kizen docs show
 activity`, "Branching on what someone logged". Confirmed live 2026-10-30.
+
+`form_submitted` → `trigger_form_submitted: {form_name}` and `survey_submitted`
+→ `trigger_survey_submitted: {survey_name}` take the form's or survey's
+api_name, display name or UUID (`form_id` / `survey_id` for a raw UUID). They
+run on any object, Contacts or custom, but the form or survey must be on the
+automation's `target_object` (its `related_object`). Otherwise Kizen 400s with
+"Form with ID '…' does not exist.", though the form exists. The write sends
+`{form_id}` / `{survey_id}`, and reads return `{form: {id, name, deleted}}` /
+`{survey: …}`. Confirmed live 2026-11-02. To tie a form's answers to the
+record, see `kizen docs show form`.
 
 `stage_updated` → `trigger_stage_updated: {from_stage, to_stage,
 fire_on_create}` fires when a record moves between stages, on pipeline

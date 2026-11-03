@@ -248,6 +248,7 @@ kizen forms create [--spec-file f | < stdin]                           # FormDef
 kizen forms update <form> [--spec-file f | < stdin]                    # FormDef changes
 kizen forms set-ui <form> [--spec-file f | < stdin]                    # form_ui page layout (required to render)
 kizen forms fields create <form> [--spec-file f | < stdin]             # FormFieldDef list
+kizen forms fields create <form> --name X --custom-object-field <field>   # an answer tied to the record's field
 kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
 # a form needs BOTH fields and a form_ui layout to render/submit, and every field
 # must be on a page before `update` or `set-ui`, or Kizen deletes it.

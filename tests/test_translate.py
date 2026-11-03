@@ -39,6 +39,7 @@ ALL_FIXTURES = [
     "automations/create_and_modify_related.raw.json",
     "automations/email_received.raw.json",
     "automations/extraction_input_sources.raw.json",
+    "automations/form_and_survey_triggers.raw.json",
     "automations/form_submission.raw.json",
     "automations/kitchen_sink_triggers.raw.json",
     "automations/llm_comparison.raw.json",

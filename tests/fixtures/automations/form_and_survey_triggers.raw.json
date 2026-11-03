@@ -1,0 +1,155 @@
+{
+  "id": "40c04e5c-61a8-4ad3-b433-7b548d12940e",
+  "name": "Form or survey sets the channel",
+  "api_name": "form_or_survey_sets_channel",
+  "ai_description": null,
+  "active": false,
+  "type": "record_based",
+  "custom_object": {
+    "id": "c67f9af4-58c9-4c8c-bcae-d9b26ff264f6",
+    "name": "support_requests",
+    "description": null,
+    "entity_name": "Support Request",
+    "object_name": "Support Requests",
+    "object_class": "custom_objects",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+  },
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "8c588673-d646-4097-990b-abbc887208e5",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    },
+    {
+      "id": "d27748d5-7466-4f0a-9a2e-4ca7c7b192c9",
+      "order": 1,
+      "description": "Form Submitted",
+      "user_description": "",
+      "trigger_type": "form_submitted",
+      "trigger_form_submitted": {
+        "form": {
+          "id": "15b8fbd8-7dbb-475c-9059-a7011643919f",
+          "name": "Contact Support",
+          "deleted": false
+        }
+      },
+      "stats": {
+        "number_completed": 0
+      }
+    },
+    {
+      "id": "669c8886-8c67-48f0-9c53-439c62fed7c9",
+      "order": 2,
+      "description": "Survey submitted",
+      "user_description": "",
+      "trigger_type": "survey_submitted",
+      "trigger_survey_submitted": {
+        "survey": {
+          "id": "1d6fd00f-59e6-417e-b83b-66d748973d96",
+          "name": "Support Survey",
+          "deleted": false
+        }
+      },
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "373313b6-384c-47b5-b942-74d5e29f9e6b",
+      "step_type": "change_field_value",
+      "order": 0,
+      "description": "Action: Change Field Value",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_change_field_value": {
+        "actions": [
+          {
+            "id": "c6d997b0-ebfb-4598-8c77-39377a0fcc16",
+            "change_type": "specific_value",
+            "field_resolution": "overwrite",
+            "field_to_modify": {
+              "id": "9ce57597-69fc-41a1-bf89-c57dc30c23e6",
+              "name": "channel",
+              "display_name": "Channel",
+              "deleted": false,
+              "field_type": "dropdown",
+              "options": [
+                {
+                  "id": "90b41676-5b3c-4c14-b76d-389c2fb834d2",
+                  "code": "Web Form",
+                  "name": "Web Form",
+                  "order": 1,
+                  "meta": {}
+                },
+                {
+                  "id": "4347e4e3-9b44-49bb-9fb7-a33658d0c6da",
+                  "code": "Email",
+                  "name": "Email",
+                  "order": 2,
+                  "meta": {}
+                },
+                {
+                  "id": "ff7e31e1-5640-4c1c-9226-e81688ada7c3",
+                  "code": "Chat",
+                  "name": "Chat",
+                  "order": 3,
+                  "meta": {}
+                }
+              ],
+              "relation": null,
+              "rating": null
+            },
+            "specific_field_value": {
+              "id": "90b41676-5b3c-4c14-b76d-389c2fb834d2",
+              "name": "Web Form",
+              "deleted": false
+            },
+            "automation_target_relationship_field": null,
+            "related_object": null,
+            "related_object_field": null,
+            "field_value_mappings": [],
+            "variable": null,
+            "fields_to_clear": [],
+            "update_mode": "update_fields"
+          }
+        ]
+      },
+      "action_on_failure": "notify_continue",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [],
+  "revision": 1,
+  "error_notification_email": "",
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-11-02T11:26:00.845379-06:00",
+  "updated": "2026-11-02T11:26:00.845390-06:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

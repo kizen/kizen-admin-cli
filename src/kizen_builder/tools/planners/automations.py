@@ -1687,13 +1687,10 @@ def _trigger_field_updated(block: dict[str, Any], ctx: LiveContext) -> dict[str,
 
 @honours_all
 def _trigger_form_submitted(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
-    # WIRE SHAPE UNVERIFIED: no live capture of this trigger type exists yet
-    # (unlike every other builder here, which was reverse-engineered from a
-    # captured UI payload). This follows the bare-scalar-id convention used
-    # by the majority of other triggers (on_or_around_date's field_id,
-    # activity_logged's activity_type_id) as the best guess. Verify against
-    # a real `kizen automations create` before trusting this live, and
-    # capture a fixture once confirmed.
+    # Writes a bare `form_id`; reads come back as `{form: {id, name, deleted}}`
+    # (fixtures/automations/form_and_survey_triggers.raw.json, captured on a
+    # custom object 2026-11-02). Kizen 400s a form that isn't on the
+    # automation's object with "Form with ID '…' does not exist."
     form_id = _unwrap_id(block.get("form")) or block.get("form_id")
     if not form_id and block.get("form_name"):
         form_id = ctx.form_uuid(block["form_name"])
@@ -1711,7 +1708,7 @@ def _trigger_form_submitted(block: dict[str, Any], ctx: LiveContext) -> dict[str
 def _trigger_survey_submitted(
     block: dict[str, Any], ctx: LiveContext
 ) -> dict[str, Any]:
-    # Same wire-shape caveat as _trigger_form_submitted above.
+    # Same shapes as _trigger_form_submitted, with `survey_id` / `survey`.
     survey_id = _unwrap_id(block.get("survey")) or block.get("survey_id")
     if not survey_id and block.get("survey_name"):
         survey_id = ctx.survey_uuid(block["survey_name"])

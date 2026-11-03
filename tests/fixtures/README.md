@@ -81,7 +81,11 @@ field with no `--option`s given auto-generates a 5-point scale with codes
 `"1"`-`"5"`, confirmed live.)
 
 Trigger types covered: manual, new_entity_created, activity_logged,
-on_or_around_date, webhook, schedule (unsupported-type error path).
+on_or_around_date, webhook, schedule (unsupported-type error path),
+form_submitted, survey_submitted. The last two are
+`automations/form_and_survey_triggers.raw.json`, a CLI-built automation on a
+custom object captured 2026-11-02; no UI-built one with either trigger exists
+on the test environment.
 Step types covered: condition, code_step, stop_execution, archive_record,
 go_to_automation_step, start_automation, change_field_value,
 modify_related_entities, create_related_entity, initialize_variable,

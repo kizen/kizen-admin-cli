@@ -62,7 +62,8 @@ class TriggerActivityLoggedConfig(BaseModel):
 class TriggerFormSubmittedConfig(BaseModel):
     """Config for `trigger_type: form_submitted`.
 
-    WIRE SHAPE UNVERIFIED — see the caveat on `_trigger_form_submitted` in
+    Runs on any object; the form must be on the automation's `target_object`.
+    Wire shapes are on `_trigger_form_submitted` in
     tools/planners/automations.py. `form_name` is resolved live (api_name,
     UUID, or display name, via `kizen forms list`'s matching) rather than
     through a `kizen lookup` command, which doesn't exist.
@@ -82,7 +83,8 @@ class TriggerFormSubmittedConfig(BaseModel):
 class TriggerSurveySubmittedConfig(BaseModel):
     """Config for `trigger_type: survey_submitted`.
 
-    WIRE SHAPE UNVERIFIED — see the caveat on `_trigger_survey_submitted` in
+    Runs on any object; the survey must be on the automation's `target_object`.
+    Wire shapes are on `_trigger_survey_submitted` in
     tools/planners/automations.py. `survey_name` is resolved live (api_name,
     UUID, or display name, via `kizen surveys list`'s matching) rather than
     through a `kizen lookup` command, which doesn't exist.

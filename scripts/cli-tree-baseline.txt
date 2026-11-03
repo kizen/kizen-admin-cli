@@ -2062,19 +2062,23 @@
 │ *    identifier      <str>  Form api_name or UUID. [required]                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --api-name             <str>  Field api_name (optional; server derives one).                     │
-│ --name                 <str>  Field display name (single-field mode).                            │
-│ --type                 <str>  Field type (text, dropdown, rating, etc.).                         │
-│ --description          <str>  Field description.                                                 │
-│ --required                    Mark the field required.                                           │
-│ --hidden                      Hide the field by default.                                         │
-│ --option               <str>  Choice option (repeatable).                                        │
-│ --spec-file            <str>  Bulk mode: JSON list of FormFieldDef objects (or an object with a  │
-│                               "fields" list). Omit with stdin to read from stdin.                │
-│ --dry-run                     Show the plan without applying.                                    │
-│ --yes          -y             Skip the y/N confirmation prompt.                                  │
-│ --json                        Emit JSON (plan with --dry-run, results otherwise).                │
-│ --help                        Show this message and exit.                                        │
+│ --api-name                     <str>  Field api_name (optional; server derives one).             │
+│ --name                         <str>  Field display name (single-field mode).                    │
+│ --type                         <str>  Field type (text, dropdown, rating, etc.).                 │
+│ --custom-object-field          <str>  Link the answer to this field (api_name or UUID) of the    │
+│                                       form's related object. Its type and options come from that │
+│                                       field.                                                     │
+│ --description                  <str>  Field description.                                         │
+│ --required                            Mark the field required.                                   │
+│ --hidden                              Set the record-view hidden flag. The form still shows the  │
+│                                       field.                                                     │
+│ --option                       <str>  Choice option (repeatable).                                │
+│ --spec-file                    <str>  Bulk mode: JSON list of FormFieldDef objects (or an object │
+│                                       with a "fields" list). Omit with stdin to read from stdin. │
+│ --dry-run                             Show the plan without applying.                            │
+│ --yes                  -y             Skip the y/N confirmation prompt.                          │
+│ --json                                Emit JSON (plan with --dry-run, results otherwise).        │
+│ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Bulk spec shape (a FormFieldDef list): see `kizen docs show form`                                  
@@ -4358,19 +4362,23 @@
 │ *    identifier      <str>  Survey api_name or UUID. [required]                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --api-name             <str>  Field api_name (optional; server derives one).                     │
-│ --name                 <str>  Field display name (single-field mode).                            │
-│ --type                 <str>  Field type (text, dropdown, rating, etc.).                         │
-│ --description          <str>  Field description.                                                 │
-│ --required                    Mark the field required.                                           │
-│ --hidden                      Hide the field by default.                                         │
-│ --option               <str>  Choice option (repeatable).                                        │
-│ --spec-file            <str>  Bulk mode: JSON list of FormFieldDef objects (or an object with a  │
-│                               "fields" list). Omit with stdin to read from stdin.                │
-│ --dry-run                     Show the plan without applying.                                    │
-│ --yes          -y             Skip the y/N confirmation prompt.                                  │
-│ --json                        Emit JSON (plan with --dry-run, results otherwise).                │
-│ --help                        Show this message and exit.                                        │
+│ --api-name                     <str>  Field api_name (optional; server derives one).             │
+│ --name                         <str>  Field display name (single-field mode).                    │
+│ --type                         <str>  Field type (text, dropdown, rating, etc.).                 │
+│ --custom-object-field          <str>  Link the answer to this field (api_name or UUID) of the    │
+│                                       survey's related object. Its type and options come from    │
+│                                       that field.                                                │
+│ --description                  <str>  Field description.                                         │
+│ --required                            Mark the field required.                                   │
+│ --hidden                              Set the record-view hidden flag. The form still shows the  │
+│                                       field.                                                     │
+│ --option                       <str>  Choice option (repeatable).                                │
+│ --spec-file                    <str>  Bulk mode: JSON list of FormFieldDef objects (or an object │
+│                                       with a "fields" list). Omit with stdin to read from stdin. │
+│ --dry-run                             Show the plan without applying.                            │
+│ --yes                  -y             Skip the y/N confirmation prompt.                          │
+│ --json                                Emit JSON (plan with --dry-run, results otherwise).        │
+│ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Bulk spec shape (a FormFieldDef list): see `kizen docs show form`                                  

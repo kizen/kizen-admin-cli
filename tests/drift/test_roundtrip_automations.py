@@ -1010,10 +1010,11 @@ def test_trigger_reference_fields_round_trip_as_expanded_objects(
 def test_form_and_survey_trigger_wire_shapes_are_accepted(
     drift_triggers, drift_form, drift_survey
 ):
-    """`form_submitted`/`survey_submitted` were built to the bare-scalar-id
-    convention as a *guess* — no live capture of either existed. This is the
-    confirmation; if it starts failing, the guess was wrong and the builders
-    in ``planners/automations.py`` need the real shape."""
+    """`form_submitted`/`survey_submitted` write a bare `form_id`/`survey_id`
+    and read back `{form|survey: {id, name, deleted}}`, as captured in
+    ``fixtures/automations/form_and_survey_triggers.raw.json``. If this starts
+    failing, Kizen changed the shape the builders in
+    ``planners/automations.py`` send."""
     sent = {t["type"]: t for t in drift_triggers["sent"]["triggers"]}
     live = {t["trigger_type"]: t for t in drift_triggers["live"]["triggers"]}
     assert sent["form_submitted"]["trigger_form_submitted"] == {

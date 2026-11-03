@@ -231,6 +231,7 @@ def test_get_form_includes_normalized_fields_by_default():
         "api_name": "summary",
         "display_name": "Summary",
         "field_type": "dropdown",
+        "custom_object_field": None,
         "is_required": True,
         "is_read_only": None,
         "is_hidden": None,

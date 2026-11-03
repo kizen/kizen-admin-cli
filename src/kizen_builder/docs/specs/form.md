@@ -25,15 +25,20 @@ and `kizen surveys …`.
 
 ```json
 {
-  "name": "Lead Capture",
-  "related_object": "accounts",
+  "name": "Contact Support",
+  "related_object": "support_requests",
   "template_type": "modern",
   "fields": [
-    { "name": "Full Name", "field_type": "text",  "order": 0, "required": true },
-    { "name": "Email",     "field_type": "email", "order": 1, "required": true }
+    { "name": "Your email", "api_name": "customer_email",
+      "custom_object_field": "customer_email", "order": 1, "required": true },
+    { "name": "Order number", "api_name": "order_number", "field_type": "text",
+      "order": 2 }
   ]
 }
 ```
+
+Kizen adds a required `name` field linked to the record's name. Your email is
+saved to the record's `customer_email`; Order number is form-only.
 
 ---
 
@@ -52,21 +57,114 @@ and `kizen surveys …`.
 
 ## `FormFieldDef` fields
 
-Structurally identical to `ActivityFieldDef` (see `activity.md`) **minus** the
-`activity_custom_field` linked-field concept — forms are standalone
-data-capture surfaces. Flat list ordered by `order`; `api_name` optional; same
-type-specific blocks as `field.md`. Unknown keys are rejected exactly as in
-`field.md`.
+Structurally close to `ActivityFieldDef` (see `activity.md`), **plus**
+`custom_object_field`, which ties the answer to the related record's field.
+Flat list ordered by `order`; `api_name` optional; same type-specific blocks as
+`field.md`. Unknown keys are rejected exactly as in `field.md`.
+
+| Key | Notes |
+|-----|-------|
+| `custom_object_field` | api_name or UUID of a field on the form's `related_object`, resolved at plan time. An unknown name is a plan error. `field_type` comes from that field when omitted; a different one is refused. Takes no `options` or type block: Kizen copies them from the record's field. |
+| `hidden` | Sent as `is_hidden`, the field's record-view hidden flag. It has no effect on the form: the field still shows. See "A field the submitter doesn't see". |
+
+A field without `custom_object_field` is form-only (`custom_object_field: null`
+on read): a submission doesn't write its answer anywhere on the record it
+creates. Link every answer the record needs.
+
+Give a linked field an `api_name`. Without one Kizen derives a name with a
+random suffix (`channel_cafd4d`), and `set-ui` places fields by api_name.
+`forms fields create --custom-object-field <api_name>` adds one linked field.
+`fields update` can't change a link: delete the field and create it again.
+Confirmed live 2026-11-02.
 
 ## Gotchas
 
 - **`yesnomaybe` requires an `options` list on forms/surveys** (unlike custom-object
-  and activity fields, where it needs none). The API 400s without it.
+  and activity fields, where it needs none). The API 400s without it. A linked
+  one takes none: the CLI sends them for you.
 - **`related_object` is mandatory** — a form with no target object won't create.
 - **Fields-without-`form_ui` renders nothing** — always pair schema with a layout.
 - **Saving a form deletes every field that isn't on a page**, so place each
   field with `set-ui` before any `update`. See "Saving a form deletes unplaced
   fields" below.
+
+## A field the submitter doesn't see
+
+A form can't hide a field or fill one in. The form builder has no hide
+setting, no default value and no visibility rules, and the API has no value
+key. `hidden` (`is_hidden`) is the record-view hidden flag, which has nothing
+to do with whether the field shows on a form. Confirmed live 2026-11-02: a
+dropdown sent with `hidden: true` showed on the public form with no default,
+and the submitter's pick landed on the record. So leave a value the submitter
+mustn't choose off the form, and set it in an automation.
+
+This form ties every answer to a `support_requests` record and leaves Channel
+off. The object and its fields are in `kizen docs show automation`, "Find or
+create a Contact by email".
+
+<!-- fixture: examples/support_desk/contact_support.form.json -->
+```json
+{
+  "name": "Contact Support",
+  "api_name": "contact_support",
+  "related_object": "support_requests",
+  "fields": [
+    {
+      "name": "Your email",
+      "api_name": "customer_email",
+      "custom_object_field": "customer_email",
+      "required": true
+    },
+    {
+      "name": "Subject",
+      "api_name": "subject",
+      "custom_object_field": "subject",
+      "required": true
+    },
+    {
+      "name": "How can we help?",
+      "api_name": "message",
+      "custom_object_field": "message",
+      "required": true
+    }
+  ]
+}
+```
+
+Kizen adds a required `name` field, linked to the request's name, so the page
+places it too:
+
+```json
+{ "pages": [ { "simple": true, "heading": "Contact support",
+  "fields": ["name", "customer_email", "subject", "message"] } ] }
+```
+
+An automation on the object sets Channel: a `new_entity_created` trigger, a
+condition that Channel is blank, then `change_field_value` with the option's
+label. A submission leaves Channel blank only because the form doesn't offer
+it. The blank check keeps the step off requests that arrived another way and
+were created with a channel. Triggers and steps are in `kizen docs show
+automation`.
+
+```json
+{ "name": "Default the channel", "type": "record_based",
+  "target_object": "support_requests",
+  "triggers": [ { "trigger_type": "new_entity_created", "order": 0,
+                  "trigger_new_entity_created": { "action": "create_only" } } ],
+  "steps": [
+    { "key": "no_channel", "parent_key": null, "step_type": "condition", "order": 0,
+      "step_condition": { "type": "custom_filter",
+        "filter_config": { "all": [ { "field": "channel", "op": "is_blank" } ] } } },
+    { "key": "web_form", "parent_key": "no_channel", "parent_branch": "yes",
+      "step_type": "change_field_value", "order": 1,
+      "action_change_field_value": { "field_ref": "support_requests.channel",
+        "change_type": "specific_value", "specific_field_value": "Web Form" } } ] }
+```
+
+Confirmed live 2026-11-02: the form applied with every field linked and
+placed as a `CustomField`, a submission wrote each linked answer to the new
+record, and the automation saved, read back, and round-tripped with no drift.
+The automation hasn't run against a submission yet.
 
 ---
 
@@ -123,8 +221,8 @@ the `redirect` / `trigger_webhook` values activities use), `redirect_url`,
 `business_merge_fields`, `form_ui`.
 
 Read responses report the submission count as **`number_submissions`** (not
-`n_submissions`) and the target object as **`related_object`** (a plain string,
-not expanded).
+`n_submissions`) and the target object as **`related_object`**, expanded to
+`{id, name, object_type, …}`. Confirmed live 2026-11-02.
 
 ## Fields are a sub-resource, not embedded
 
@@ -155,10 +253,24 @@ list with no categories. **Three divergences that bite:**
   value hasn't changed. Custom-object and activity field reads do carry it,
   and diff it. `confirmed live 2026-10-01`
 
-The field type enum also includes `custom_object_field` (a linked-field type
-mirroring an existing custom-object field, like activities'
-`activity_custom_field`) — not wired here, since forms aren't inherently tied to
-one custom object the way activities are.
+**A field links to the related object's field through `custom_object_field`**
+(the field's UUID on write; the 6-key stub described under `form_ui` on read).
+A form or survey on a custom object starts with one field, `name`, linked to
+the record's `name`, required, and of the native `custom_object_field` type.
+For any other link:
+
+- Kizen copies the record field's options and settings. A dropdown sent with
+  other options got the record field's three, and a `money` field sent EUR got
+  the record field's USD `money_options`. A `money` link sent without
+  `money_options` 400s, so the CLI sends the default block. A `yesnomaybe`
+  link sent without `options` 400s too, so the CLI sends the record field's
+  `yes`/`no`/`maybe` codes, and Kizen stores the record field's own options.
+- A `field_type` different from the record field's is saved as sent: `text` on
+  a longtext link, and a `dropdown` with no options on an email link. The CLI
+  refuses it.
+- `field_type` is required on the wire even with a link.
+
+Confirmed live 2026-11-02.
 
 ## ⚠️ Saving a form deletes unplaced fields
 
@@ -168,8 +280,9 @@ placed when a page's `page_data` holds a `CustomField` or `FormField` node whose
 `props.field.id` is the field's id. The deleted fields' ids 404 on
 `GET …/fields/{id}` afterwards, so the loss can't be undone.
 
-- A new form has `form_ui: {}` and 3 unplaced default fields (`first_name`,
-  `last_name`, `email`), so its first update empties it.
+- A new form has `form_ui: {}` and unplaced default fields (`first_name`,
+  `last_name`, `email` on Contacts; `name` on a custom object), so its first
+  update empties it.
 - `set-ui` with a partial layout deletes the fields it leaves out.
 - A field added with `fields create` after the layout is unplaced, and the next
   update deletes it.
@@ -219,6 +332,20 @@ includes a non-form page.
 `CustomField`, `FormField`, `Button` (`props.action="submit"` +
 `custom.isSubmitButton=true` for the submit button), `Divider`, `Image`.
 
+### Pages and buttons
+
+A form moves between pages only through `Button` blocks. Each button's
+**Action** in the builder is one of:
+
+- **Submit and Finish**: `props.action: "submit"`, on every form and survey
+  read so far (2026-11-02).
+- **Submit and Go To Page** and **Do Not Submit and Go To Page**: the
+  builder's code maps these to `go-to-page-submit` and `go-to-page`, with the
+  target page in `props.goToPage`. No saved form with either has been read.
+
+`set-ui` has no target-page setting, so it writes only a Submit and Finish
+button. Set up multi-page navigation in the form builder.
+
 ### A field input is one of TWO node types
 
 Getting this wrong produces a real crash — `TypeError: undefined is not an
@@ -265,7 +392,7 @@ neither the form field's own GET nor the full custom-object field record.
 
 ### Not modeled
 
-Multi-`Section` pages; file uploads for `Image` blocks (an image block needs a
+Multi-`Section` pages; go-to-page buttons (see "Pages and buttons"); file uploads for `Image` blocks (an image block needs a
 file id from a file uploaded some other way — `kizen docs show files`); and the
 `custom_object_field`-**type** form field, meaning the form's own native
 "primary field" wrapper type, as distinct from a regular field that merely

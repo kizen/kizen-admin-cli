@@ -777,3 +777,218 @@ def test_plan_update_form_field_always_sends_description():
     (op,) = plan.operations
     assert op.action == "update"
     assert op.payload == {"description": ""}
+
+
+# ---------------------------------------------------------------------------
+# custom_object_field — a form field tied to the related record's field
+# ---------------------------------------------------------------------------
+
+SUBJECT_ID = "00000000-0000-4000-8000-000000000f11"
+MESSAGE_ID = "00000000-0000-4000-8000-000000000f12"
+CHANNEL_ID = "00000000-0000-4000-8000-000000000f13"
+AMOUNT_ID = "00000000-0000-4000-8000-000000000f14"
+URGENT_ID = "00000000-0000-4000-8000-000000000f15"
+
+REQUESTS = {
+    "id": OBJ_ID,
+    "api_name": "requests",
+    "fields": [
+        {"id": SUBJECT_ID, "api_name": "subject", "field_type": "text"},
+        {"id": MESSAGE_ID, "api_name": "message", "field_type": "longtext"},
+        {"id": CHANNEL_ID, "api_name": "channel", "field_type": "dropdown"},
+        {"id": AMOUNT_ID, "api_name": "amount", "field_type": "money"},
+        {
+            "id": URGENT_ID,
+            "api_name": "urgent",
+            "field_type": "yesnomaybe",
+            "options": [
+                {"id": "y", "name": "Yes", "code": "yes"},
+                {"id": "n", "name": "No", "code": "no"},
+                {"id": "m", "name": "Maybe", "code": "maybe"},
+            ],
+        },
+        {"id": "gone", "api_name": "old", "field_type": "text", "deleted": True},
+    ],
+}
+
+
+@pytest.fixture
+def requests_object(monkeypatch):
+    import kizen_builder.tools.planners.forms as forms_planners
+
+    seen: list[str] = []
+
+    def _get_object(ref):
+        seen.append(ref)
+        assert ref in ("requests", OBJ_ID)
+        return REQUESTS
+
+    monkeypatch.setattr(forms_planners, "get_object", _get_object)
+    return seen
+
+
+def _create_with(*fields: dict, related: dict | None = None):
+    spec = {"name": "Contact Us", **(related or {"related_object": "requests"})}
+    return plan_create_form({**spec, "fields": list(fields)})
+
+
+@pytest.mark.parametrize(
+    "related", [{"related_object": "requests"}, {"related_object_id": OBJ_ID}]
+)
+@respx.mock
+def test_linked_field_by_name_borrows_the_record_fields_type(requests_object, related):
+    _mock_list("/api/forms")
+    plan = _create_with(
+        {"name": "What's it about?", "custom_object_field": "subject"},
+        {"name": "Channel", "custom_object_field": "channel", "hidden": True},
+        related=related,
+    )
+    _form, subject, channel = plan.operations
+    assert subject.payload["custom_object_field"] == SUBJECT_ID
+    assert subject.payload["field_type"] == "text"
+    assert subject.preview["field_type"] == "text"
+    # Kizen copies a linked dropdown's options from the record's field.
+    assert channel.payload["field_type"] == "dropdown"
+    assert channel.payload["is_hidden"] is True
+    assert "options" not in channel.payload
+
+
+@respx.mock
+def test_linked_field_by_uuid_passes_through(requests_object):
+    _mock_list("/api/forms")
+    _form, op = _create_with(
+        {"name": "Message", "field_type": "longtext", "custom_object_field": MESSAGE_ID}
+    ).operations
+    assert op.payload["custom_object_field"] == MESSAGE_ID
+    assert op.payload["field_type"] == "longtext"
+
+
+@respx.mock
+def test_linked_money_field_sends_the_block_kizen_requires(requests_object):
+    """Kizen 400s a money field without money_options, then stores the linked
+    field's own (confirmed live 2026-11-02)."""
+    _mock_list("/api/forms")
+    _form, op = _create_with(
+        {"name": "Amount", "custom_object_field": "amount"}
+    ).operations
+    assert op.payload["money_options"] == {"currency": "USD"}
+
+
+@respx.mock
+def test_linked_yesnomaybe_sends_the_options_kizen_requires(requests_object):
+    """Kizen 400s a yesnomaybe without options, and any code but yes/no/maybe,
+    linked or not (confirmed live 2026-11-02)."""
+    _mock_list("/api/forms")
+    _form, op = _create_with(
+        {"name": "Urgent?", "custom_object_field": "urgent"}
+    ).operations
+    assert [o["code"] for o in op.payload["options"]] == ["yes", "no", "maybe"]
+
+
+@pytest.mark.parametrize("ref", ["nope", "old"])
+@respx.mock
+def test_linked_field_unknown_name_is_a_plan_error(requests_object, ref):
+    _mock_list("/api/forms")
+    with pytest.raises(PlanError) as exc:
+        _create_with({"name": "Subject", "custom_object_field": ref})
+    assert str(exc.value) == (
+        f"form field 'Subject': '{ref}' is not a field on requests — "
+        "kizen objects get requests lists them"
+    )
+
+
+@respx.mock
+def test_linked_field_with_a_different_type_is_refused(requests_object):
+    """Kizen saves a mismatched type as sent (a `text` field on a longtext
+    link, a `dropdown` with no options on an email link), so the answer would
+    not match the record's field."""
+    _mock_list("/api/forms")
+    with pytest.raises(PlanError, match="doesn't match requests.message, a 'longtext'"):
+        _create_with(
+            {"name": "Message", "field_type": "text", "custom_object_field": "message"}
+        )
+
+
+def test_linked_field_refuses_options_kizen_would_drop():
+    with pytest.raises(ValueError, match="whose options Kizen copies"):
+        FormFieldDef.model_validate(
+            {"name": "Channel", "custom_object_field": "channel", "options": ["A"]}
+        )
+
+
+def test_unlinked_field_still_needs_a_field_type():
+    with pytest.raises(ValueError, match="needs 'field_type'"):
+        FormFieldDef.model_validate({"name": "Notes"})
+
+
+@respx.mock
+def test_unlinked_fields_skip_the_object_lookup(requests_object):
+    _mock_list("/api/forms")
+    plan = _create_with(
+        {"name": "Notes", "field_type": "text"}, related={"related_object_id": OBJ_ID}
+    )
+    assert "custom_object_field" not in plan.operations[1].payload
+    assert requests_object == []
+
+
+@pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
+@respx.mock
+def test_fields_create_links_against_the_forms_related_object(
+    requests_object, base_path, kind
+):
+    _mock_detail(
+        base_path, body={**FORM_DETAIL, "related_object": {"id": OBJ_ID, "name": "x"}}
+    )
+    _mock_fields(base_path)
+    (op,) = plan_create_form_fields(
+        "contact_us",
+        [{"name": "Subject", "custom_object_field": "subject"}],
+        base_path=base_path,
+        kind=kind,
+    ).operations
+    assert op.payload["custom_object_field"] == SUBJECT_ID
+    assert requests_object == [OBJ_ID]
+
+
+@respx.mock
+def test_forms_fields_create_takes_the_link_flag(requests_object):
+    _mock_detail("/api/forms", body={**FORM_DETAIL, "related_object": {"id": OBJ_ID}})
+    _mock_fields("/api/forms")
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "forms", "fields", "create", "contact_us", "--name", "Channel",
+            "--custom-object-field", "channel", "--hidden", "--dry-run", "--json",
+        ],
+    )  # fmt: skip
+    assert result.exit_code == 0, result.stderr
+    (op,) = json.loads(result.stdout)["operations"]
+    assert op["payload"]["custom_object_field"] == CHANNEL_ID
+    assert op["payload"]["field_type"] == "dropdown"
+    assert op["payload"]["is_hidden"] is True
+
+
+LINKED_FIELD = {
+    **DROPDOWN_FIELD,
+    "custom_object_field": {"id": CHANNEL_ID, "name": "channel"},
+}
+
+
+@pytest.mark.parametrize("ref", ["subject", SUBJECT_ID])
+@respx.mock
+def test_update_that_changes_the_link_is_refused(ref):
+    _mock_detail("/api/forms")
+    _mock_fields("/api/forms", body=[LINKED_FIELD])
+    with pytest.raises(PlanError, match="is linked to channel, and an update"):
+        plan_update_form_field("contact_us", "outcome", {"custom_object_field": ref})
+
+
+@pytest.mark.parametrize("ref", ["channel", CHANNEL_ID])
+@respx.mock
+def test_update_naming_the_same_link_is_a_no_op(ref):
+    _mock_detail("/api/forms")
+    _mock_fields("/api/forms", body=[LINKED_FIELD])
+    (op,) = plan_update_form_field(
+        "contact_us", "outcome", {"custom_object_field": ref}
+    ).operations
+    assert op.action == "skip"
