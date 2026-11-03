@@ -41,7 +41,8 @@ An automation is triggers + a step graph, sent as one atomic POST/PUT.
         "specific_field_value": true
       } },
     { "key": "done", "parent_key": "check", "parent_branch": "no",
-      "step_type": "stop_execution", "order": 2 }
+      "step_type": "stop_execution", "order": 2,
+      "action_stop_execution": { "action": "stop_and_complete" } }
   ]
 }
 ```
@@ -105,7 +106,8 @@ branches) and 2026-09-29 (goals).
 { "key": "small", "parent_key": "check", "parent_branch": "no",
   "step_type": "delay", "order": 2, "step_delay": { "minutes": 5 } },
 { "key": "rejoin", "parent_key": "check", "step_type": "merge_branches", "order": 3 },
-{ "key": "after", "parent_key": "rejoin", "step_type": "stop_execution", "order": 4 }
+{ "key": "after", "parent_key": "rejoin", "step_type": "stop_execution", "order": 4,
+  "action_stop_execution": { "action": "stop_and_complete" } }
 ```
 
 **Parallel branches** are the children of a `branch` step, none with a
@@ -154,7 +156,6 @@ automation-step`):
 4. **The body**, hanging off the loop.
 5. **One `next_or_finish` child of the loop**, which closes the body. The steps
    after the loop hang off it.
-6. **Optional `exit_loop` steps** inside the body.
 
 Both variable steps go at the front of the automation, like every
 `initialize_variable`. Confirmed live 2026-10-27.
@@ -206,10 +207,6 @@ Both variable steps go at the front of the automation, like every
   the server adds to the item variable from the loop. It reads a null key in a
   top-level or `initialize_variable` variable definition as absent. Confirmed
   live 2026-10-27.
-- **`exit_loop`** ends the innermost loop it sits in, and an outer loop carries
-  on with its next item. It can be the loop's direct child, sit under a
-  condition in the body, or follow an inner loop inside an outer body. After
-  the loop's `next_or_finish` it is a 400. Confirmed live 2026-10-27.
 - **Body lanes:** a body can be empty or have two lanes. Two lanes get the
   fan-out warning, like any plain fan-out. Confirmed live 2026-10-27.
 - **Nesting:** a loop can sit in another loop's body, up to three levels, and a
@@ -496,7 +493,7 @@ one was observed.
 | `condition` | `step_condition` | branch on a filter / group membership / LLM decision |
 | `delay` | `step_delay` | wait a duration or until a time |
 | `goal` | `step_goal` | wait for a condition/event |
-| `stop_execution` | `action_stop_execution` | end this branch — the "Action Options" choice below is required in the UI |
+| `stop_execution` | `action_stop_execution` | end this branch. `action` sets the run's final status (see the options below); omitted, the CLI sends `stop_and_complete` |
 | `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
 | `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
 | `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
@@ -521,7 +518,6 @@ one was observed.
 | `merge_branches` | none | rejoin a branch group — see Branch groups |
 | `loop` | `step_loop` | run its body once per item of an array variable — see Loops |
 | `next_or_finish` | none | close a loop body — see Loops |
-| `exit_loop` | none | leave the loop from inside its body |
 
 `search_records` (the automation-builder equivalent of `records list
 --filter`) needs its own `custom_object` — independent of the automation's
@@ -1220,13 +1216,16 @@ Confirmed live 2026-10-30, in this order.
   | Pause | `pause` | **pauses** (doesn't stop) |
 
   Pair any of these with `"notify": true` to also fire the corresponding
-  notification (the UI's separate "Send Notification" toggle). The API
-  still accepts an omitted/`null` `action` (a bare `{}` block, or no block
-  at all) and reads back `null` — but nothing built through the UI leaves
-  it unset, so pick one explicitly if the run's final status matters
-  rather than relying on whatever `null` defaults to. Previously this
-  entire option set was undocumented and untyped, so specs always left it
-  unset even when e.g. "stop and mark as failed" was the intent.
+  notification (the UI's separate "Send Notification" toggle). Kizen
+  accepts a block without `action` and reads it back `null`, but that step
+  never finishes. The run stays active while the step retries ("unexpected
+  failure"), and the editor shows the action as "Unknown" (confirmed live
+  2026-10-30). So the CLI never sends one. A new step without `action` gets
+  `stop_and_complete`. On `update` and `steps edit`, a step whose `id`
+  matches keeps its live `action` and `notify` when you leave them out, and
+  a live `null` becomes `stop_and_complete`. `translate`, `steps get` and
+  `roundtrip` show and resend a saved `null` as it is. Fix one with
+  `steps edit`.
 - **`change_field_value.specific_field_value` is a bare scalar** — not
   `{value: …}`. The planner wraps it in the `actions: [...]` array. For an
   option field (dropdown, radio, status, checkboxes, choices, yesnomaybe, a
@@ -1272,10 +1271,11 @@ Confirmed live 2026-10-30, in this order.
     `is_advanced` (on a condition, `llm_decision.merge_field_validation`),
     and on `call_llm` also its MCP server and run-as account (as a pair),
     `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
-    server)**).
+    server)**). On a `stop_execution` whose `id` matches, its `action` and
+    `notify`.
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
-    A Kizen PUT without them resets each to its default (confirmed live
-    2026-10-30).
+    A Kizen PUT without them resets each to its default, except the stop's,
+    which Kizen keeps when the block is empty (confirmed live 2026-10-30).
   - A step or trigger without `id` is new to Kizen, so what its spec leaves
     out gets Kizen's defaults: the type's default description, an empty
     note, not skipped.
@@ -1393,7 +1393,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
 | `value_html` on an `update_variable` source | `''` |
-| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
+| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ### Read→write transforms
 
@@ -1417,7 +1417,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
-| `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` and `exit_loop` are read with no config block, and none is written. Confirmed live 2026-10-27 |
+| `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` is read with no config block, and none is written. Confirmed live 2026-10-27 |
 | A loop's item variable read with `is_array_item_variable: true` and `source_array_variable: <array>` | echoed as read. The server sets both itself from the loop, so sending them is harmless and omitting them changes nothing. `diff` ignores both. Confirmed live 2026-10-27 |
 | Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
 | `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
@@ -1455,8 +1455,6 @@ inconsistent:
   - a `loop` has exactly one `next_or_finish` child;
   - a `loop` has no `merge_branches` child;
   - a `next_or_finish` hangs directly off a `loop`;
-  - an `exit_loop` is inside a loop body: walking up its parents, it reaches a
-    loop through a body step, not through that loop's `next_or_finish`;
   - a loop iterates an array variable of records, strings or UUIDs, declared
     by an `initialize_variable` step;
   - its item variable is declared by an `initialize_variable` step as a single

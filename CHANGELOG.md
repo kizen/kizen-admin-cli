@@ -65,6 +65,10 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Removed
 
+- **Automation specs and `steps add` no longer take an `exit_loop` step.**
+  Kizen doesn't support it as a feature yet, so a step that names it is
+  refused as an unknown step type. `loop` and `next_or_finish` are
+  unchanged.
 - `automations update --dry-run` no longer prints `detaches_mcp_server` or
   `clears_run_tools_as`; those steps now keep their tools and are listed
   under `keeps_live`.
@@ -125,6 +129,10 @@ called out explicitly under **Changed** or **Removed**.
   own help through `npx @kizenapps/cli admin`. Facts that several topics
   repeated now live in one place, and `kizen docs show reference` routes to
   every topic, including `team` and `examples`.
+- **A `stop_execution` step written without an `action` now gets
+  `stop_and_complete`.** Before, Kizen saved it with no action: the editor
+  showed "Unknown", and a run that reached it never finished. An update or
+  step edit that leaves `action` out keeps the step's live action.
 
 ## [0.4.0] — 2026-10-27
 
