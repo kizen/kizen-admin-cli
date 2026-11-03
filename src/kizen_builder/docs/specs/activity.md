@@ -31,6 +31,66 @@
 }
 ```
 
+## Branching on what someone logged
+
+A workflow can't read a plain activity field. A variable's
+`logged_activity_trigger` source offers only `logged_at`, `logged_by`,
+`due_datetime`, `scheduled_activity_id` and `record_association` (a UI-built
+capture), and none of them is an answer on the form. So put each answer a
+workflow needs on the **record**:
+
+1. Make the question an `activity_custom_field` linked to a field on the
+   record, with `read_only` left `false`. The form shows the record's field,
+   and an answer entered there is saved to the record (the editor's "editable"
+   custom field; the CLI can't log an activity to confirm it).
+2. Trigger the workflow with `activity_logged` on the activity type.
+3. Branch with an ordinary condition on the record field.
+
+This Call type puts its Outcome and notes on the deal. Its two tokens are the
+`id`s of `deals.call_outcome` and `deals.call_notes` in `kizen objects get deals
+--json`, and `<deals_object_uuid>` is the object's own `id`:
+
+<!-- fixture: examples/first_build/call.activity.json -->
+```json
+{
+  "name": "Call",
+  "api_name": "call",
+  "association_mode": "selected_objects_associated",
+  "selected_object_ids": ["<deals_object_uuid>"],
+  "fields": [
+    { "name": "Outcome", "field_type": "activity_custom_field", "order": 0,
+      "custom_object_field": "<deals.call_outcome_field_uuid>" },
+    { "name": "Call Notes", "field_type": "activity_custom_field", "order": 1,
+      "custom_object_field": "<deals.call_notes_field_uuid>" }
+  ]
+}
+```
+
+The workflow starts when a Call is logged, and the condition reads the Outcome
+off the deal:
+
+<!-- fixture: examples/first_build/log_call.automation.json#/triggers/0 -->
+```json
+{ "trigger_type": "activity_logged", "order": 0,
+  "trigger_activity_logged": { "activity_type": "call" } }
+```
+
+<!-- fixture: examples/first_build/log_call.automation.json#/steps/4 -->
+```json
+{ "key": "no_conversation", "parent_key": "rate_health", "step_type": "condition",
+  "order": 4,
+  "step_condition": { "type": "custom_filter", "filter_config": { "all": [
+    { "field": "call_outcome", "op": "is_any_of",
+      "value": ["Left Voicemail", "No Answer"] } ] } } }
+```
+
+The rest of that workflow, which stamps the date, rates the deal and
+schedules a follow-up, is in `kizen docs show automation`. Confirmed live
+2026-10-30: the type saved with both fields linked, and a run on a deal whose
+Outcome was No Answer took the yes branch. Logging an activity is a UI action
+(`POST /api/activities/{id}/log-activity` answered 500 to every body tried), so
+the runs were started by hand.
+
 ---
 
 ## `ActivityDef` fields
@@ -148,7 +208,8 @@ every type.
   (bare UUID on write; reads expand it to source object + field; the CLI shows
   it as `→ obj.field`). **It references the live record field — it is not a
   copy**, and the activity's associated object set must include that custom
-  object.
+  object. It's how a workflow reads an answer: see
+  [Branching on what someone logged](#branching-on-what-someone-logged).
 
 ## Reading logged instances (read-only)
 

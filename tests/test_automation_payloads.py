@@ -169,7 +169,7 @@ def test_goal_step_nested_trigger_id_forwarded_when_set_in_spec(patch_live_looku
                         "trigger_type": "activity_logged",
                         "order": 0,
                         "id": "goal-trigger-uuid-789",
-                        "trigger_activity_logged": {"activity_type_id": "act-1"},
+                        "trigger_activity_logged": {"activity_type": "call"},
                     }
                 ],
             },
@@ -6664,3 +6664,258 @@ def test_steps_edit_checks_value_resolution_on_a_scalar_variable(patch_live_look
     }
     with pytest.raises(PlanError, match="isn't an array variable"):
         normalize_step_patch(patch, "bump", "update_variable", payload, "patients")
+
+
+# ---------------------------------------------------------------------------
+# Activity types by api_name, and start_automation into an inactive target
+# ---------------------------------------------------------------------------
+
+_CALL_ID = "a0000000-0000-4000-8000-0000000000c1"
+_FOLLOW_UP_ID = "a0000000-0000-4000-8000-0000000000c2"
+
+
+def _activity_slot_spec(activity: object, *, goal: bool = False) -> dict:
+    trigger = {
+        "trigger_type": "activity_logged",
+        "order": 0,
+        "trigger_activity_logged": {"activity_type": activity},
+    }
+    overdue = {
+        "trigger_type": "scheduled_activity_overdue",
+        "order": 1,
+        "trigger_scheduled_activity_overdue": {"activity": activity},
+    }
+    steps: list[dict] = [
+        {
+            "key": "sched",
+            "parent_key": None,
+            "step_type": "schedule_activity",
+            "order": 0,
+            "action_schedule_activity": {
+                "activity_type": activity,
+                "schedule": {"type": "immediately"},
+            },
+        }
+    ]
+    if goal:
+        steps.append(
+            {
+                "key": "wait",
+                "parent_key": "sched",
+                "step_type": "goal",
+                "order": 1,
+                "step_goal": {"wait_type": "never", "triggers": [trigger]},
+            }
+        )
+    return {
+        "api_name": "activity_slots",
+        "name": "Activity Slots",
+        "type": "record_based",
+        "target_object": "patients",
+        "triggers": [{**trigger, "order": 1}, {**overdue, "order": 2}],
+        "steps": steps,
+    }
+
+
+def _activity_slot_ids(payload: dict) -> list:
+    triggers = {t["type"]: t for t in payload["triggers"]}
+    steps = {s["key"]: s for s in payload["steps"]}
+    ids = [
+        triggers["activity_logged"]["trigger_activity_logged"]["activity_type_id"],
+        triggers["scheduled_activity_overdue"]["trigger_scheduled_activity_overdue"][
+            "activity"
+        ],
+        steps["sched"]["action_schedule_activity"]["activity_type_id"],
+    ]
+    if "wait" in steps:
+        goal_trigger = steps["wait"]["step_goal"]["triggers"][0]
+        ids.append(goal_trigger["trigger_activity_logged"]["activity_type_id"])
+    return ids
+
+
+def test_activity_types_resolve_by_api_name_in_every_slot(patch_live_lookups):
+    ids = _activity_slot_ids(_build(_activity_slot_spec("call", goal=True)))
+    assert ids == [_CALL_ID, {"id": _CALL_ID}, _CALL_ID, _CALL_ID]
+
+
+@pytest.mark.parametrize("ref", [_FOLLOW_UP_ID, {"id": _FOLLOW_UP_ID}])
+def test_activity_type_uuids_and_id_dicts_need_no_lookup(monkeypatch, ref):
+    def no_lookup(self, identifier):
+        raise AssertionError(f"looked up {identifier}")
+
+    monkeypatch.setattr(LiveContext, "activity_type_uuid", no_lookup)
+    monkeypatch.setattr(
+        "kizen_builder.tools.planners.automations.get_object",
+        lambda name: load_fixture("objects/patients.json"),
+    )
+    ids = _activity_slot_ids(_build(_activity_slot_spec(ref)))
+    assert ids == [_FOLLOW_UP_ID, {"id": _FOLLOW_UP_ID}, _FOLLOW_UP_ID]
+
+
+def test_schedule_activity_activity_type_id_takes_an_api_name(patch_live_lookups):
+    spec = _one_step_spec(
+        "schedule_activity",
+        {"activity_type_id": "follow_up", "schedule": {"type": "immediately"}},
+    )
+    action = _build(spec)["steps"][0]["action_schedule_activity"]
+    assert action["activity_type_id"] == _FOLLOW_UP_ID
+
+
+def test_unknown_activity_type_is_a_plan_error_naming_the_list_command(
+    patch_live_lookups,
+):
+    with pytest.raises(PlanError) as e:
+        _build(_activity_slot_spec("cal"))
+    assert str(e.value).startswith("trigger '")
+    assert (
+        "activity type 'cal' not found — kizen activities list shows the api_names"
+        in str(e.value)
+    )
+
+
+def test_activity_type_uuid_asks_kizen_by_api_name():
+    import respx
+
+    from tests.conftest import FAKE_BASE_URL
+
+    with respx.mock(assert_all_called=True) as router:
+        route = router.get(f"{FAKE_BASE_URL}/api/activities/call").respond(
+            json={"id": _CALL_ID, "name": "Call", "api_name": "call"}
+        )
+        ctx = LiveContext()
+        assert ctx.activity_type_uuid("call") == _CALL_ID
+        assert ctx.activity_type_uuid("call") == _CALL_ID
+    assert route.call_count == 1
+
+
+# `daily_trigger` is inactive in automations/list.json, `record_test` active.
+_INACTIVE_TARGET = "714f5af6-62d6-4e43-9883-142a2954e60a"
+_INACTIVE_MESSAGE = (
+    "start_automation target 'daily_trigger' is inactive. Kizen rejects the step "
+    'with "Automation not found". Run kizen automations activate daily_trigger '
+    "first."
+)
+
+
+def _start_block(target: str) -> dict:
+    return {"record_source": "this_record", "automation_ids": [target]}
+
+
+@pytest.mark.parametrize("target", ["daily_trigger", _INACTIVE_TARGET])
+def test_create_refuses_a_start_automation_into_an_inactive_target(
+    patch_live_lookups, target
+):
+    spec = _one_step_spec("start_automation", _start_block(target))
+    with pytest.raises(PlanError) as e:
+        plan_create_automation(spec)
+    assert str(e.value) == f"step 'only': {_INACTIVE_MESSAGE}"
+
+
+def test_an_active_start_automation_target_plans(patch_live_lookups):
+    spec = _one_step_spec("start_automation", _start_block("record_test"))
+    action = _build(spec)["steps"][0]["action_start_automation"]
+    assert action["automation_ids"] == ["0d517638-a465-462f-9c05-37ca64d01f5c"]
+
+
+def test_steps_add_and_edit_refuse_an_inactive_start_target(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step, normalize_step_patch
+
+    block = _start_block("daily_trigger")
+    with pytest.raises(PlanError, match="is inactive"):
+        build_wire_step(
+            {"step_type": "start_automation", "action_start_automation": block},
+            _LIVE_PAYLOAD,
+            "patients",
+        )
+    with pytest.raises(PlanError, match="is inactive"):
+        normalize_step_patch(
+            {"action_start_automation": dict(block)},
+            "kick",
+            "start_automation",
+            _LIVE_PAYLOAD,
+            "patients",
+        )
+
+
+def test_update_refuses_and_diff_warns_on_an_inactive_start_target(
+    patch_live_lookups, monkeypatch
+):
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/branching_test.raw.json")
+    rows = [
+        *load_fixture("automations/list.json"),
+        {"api_name": raw["api_name"], "id": raw["id"], "active": False},
+    ]
+    monkeypatch.setattr(ma, "list_automations", lambda: rows)
+    spec = _branching_test_spec()
+    start = next(s for s in spec["steps"] if s["step_type"] == "start_automation")
+    start["action_start_automation"]["automation_ids"] = [_INACTIVE_TARGET]
+
+    with pytest.raises(PlanError, match="is inactive"):
+        plan_update_automation(spec)
+    result = diff_automation(spec)
+    assert result["warnings"] == [f"step '{start['key']}': {_INACTIVE_MESSAGE}"]
+
+
+def test_inactive_start_targets_skips_active_and_unknown_targets():
+    from kizen_builder.tools.planners.automations import inactive_start_targets
+
+    rows = [
+        {"id": "a", "api_name": "on", "active": True},
+        {"id": "b", "api_name": "off", "active": False},
+    ]
+    steps = [
+        {"key": "s1", "type": "start_automation",
+         "action_start_automation": {"automation_ids": ["a", "b", "gone"]}},
+        {"key": "s2", "type": "change_field_value"},
+    ]  # fmt: skip
+    [message] = inactive_start_targets(steps, rows)
+    assert message.startswith("step 's1': start_automation target 'off' is inactive.")
+
+
+def test_a_bad_schedule_activity_delay_type_400_lists_the_valid_values():
+    """The 400 body as captured live 2026-10-30 for `delay_type: "days"`."""
+    from kizen_builder.tools.planners.automations import known_choices_addendum
+
+    raw = {
+        "sched": {
+            "action_schedule_activity": {
+                "schedule": {
+                    "with_delay": {"delay_type": ['"days" is not a valid choice.']}
+                }
+            }
+        }
+    }
+    assert known_choices_addendum(raw) == (
+        "Known valid values for schedule_activity.schedule.with_delay.delay_type: "
+        "minute, hour, day (source: GET /api/docs/schema, 2026-10-30)."
+    )
+
+
+def test_read_back_verbs_warn_about_an_inactive_start_target():
+    """`show`, `roundtrip` and `activate`/`deactivate` don't refuse: Kizen
+    400s the PUT, so they say why before it is sent."""
+    import respx
+
+    from kizen_builder.tools import automations as auto_tools
+    from tests.conftest import AUTOMATIONS_URL
+
+    raw = load_fixture("automations/branching_test.raw.json")
+    start = next(s for s in raw["steps"] if s.get("action_start_automation"))
+    target = start["action_start_automation"]["automations"][0]["id"]
+    rows = [
+        {"id": raw["id"], "api_name": raw["api_name"], "active": True},
+        {"id": target, "api_name": "the_target", "active": False},
+    ]
+    with respx.mock() as router:
+        router.get(AUTOMATIONS_URL).respond(json={"results": rows, "next": None})
+        router.get(f"{AUTOMATIONS_URL}/{raw['id']}").respond(json=raw)
+        results = [
+            auto_tools.show_automation(raw["api_name"]),
+            auto_tools.roundtrip_automation(raw["api_name"]),
+            auto_tools.set_active(raw["api_name"], False),
+        ]
+    for result in results:
+        [warning] = result["warnings"]
+        assert "start_automation target 'the_target' is inactive." in warning

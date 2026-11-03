@@ -234,13 +234,16 @@ class ActionScheduleActivityConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    activity_type: dict[str, Any] | None = Field(
+    activity_type: str | dict[str, Any] | None = Field(
         default=None,
-        description="Expanded {id, ...} activity type, as returned by a live read.",
+        description=(
+            "Activity type api_name or UUID (`kizen activities list`), or the "
+            "expanded {id, ...} a live read returns."
+        ),
     )
     activity_type_id: str | None = Field(
         default=None,
-        description="Activity type UUID. Wire key for authoring from scratch.",
+        description="Activity type api_name or UUID. Same as `activity_type`.",
     )
     schedule: dict[str, Any] | None = Field(
         default=None,

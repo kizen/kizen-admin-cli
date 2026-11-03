@@ -1589,12 +1589,13 @@ def test_roundtrip_execute_previews_without_writing_then_puts(monkeypatch, termi
 
 
 def test_roundtrip_execute_yes_makes_one_execute_call(monkeypatch):
+    """The preview read still comes first, so its warnings print before the PUT."""
     calls = _fake_roundtrip(monkeypatch)
     result = runner.invoke(
         cli.app, ["automations", "roundtrip", "flow", "--execute", "--yes"]
     )
     assert result.exit_code == 0, result.output
-    assert calls == [True]
+    assert calls == [False, True]
 
 
 def test_roundtrip_without_execute_never_executes(monkeypatch):

@@ -43,6 +43,12 @@ autos_app = typer.Typer(
 app.add_typer(autos_app, name="automations")
 
 
+def print_warnings(result: dict[str, Any]) -> None:
+    """A result's `warnings`, on stderr so `--json` stdout stays parseable."""
+    for w in result.get("warnings") or []:
+        err_console.print(f"[yellow]warning:[/yellow] {escape(w)}", emoji=False)
+
+
 @autos_app.command("list")
 def autos_list(
     folder: str = typer.Option(
@@ -255,20 +261,23 @@ def autos_roundtrip(
     for every step/trigger type in this automation. Writes live: asks to
     confirm unless --yes, after a preview that PUTs nothing.
     """
+    # Preview first, even under --yes: a warning says why the PUT will fail.
     with cli_errors(LookupError, PlanError):
-        result = auto_tools.roundtrip_automation(api_name, execute=execute and yes)
-    if execute and not yes and not result["validation_problems"]:
-        (err_console if json_out else console).print(
-            f"[bold]{api_name}[/bold] in {result['env']}  [dim](rev "
-            f"{result['revision_before']}, {result['n_triggers']} triggers, "
-            f"{result['n_steps']} steps)[/dim]"
-        )
-        _confirm_or_abort(
-            "PUT this automation's translated payload back live?",
-            yes=False,
-            hint=f"Run `kizen automations roundtrip {api_name}` without --execute "
-            "to preview only.",
-        )
+        result = auto_tools.roundtrip_automation(api_name)
+    print_warnings(result)
+    if execute and not result["validation_problems"]:
+        if not yes:
+            (err_console if json_out else console).print(
+                f"[bold]{api_name}[/bold] in {result['env']}  [dim](rev "
+                f"{result['revision_before']}, {result['n_triggers']} triggers, "
+                f"{result['n_steps']} steps)[/dim]"
+            )
+            _confirm_or_abort(
+                "PUT this automation's translated payload back live?",
+                yes=False,
+                hint=f"Run `kizen automations roundtrip {api_name}` without "
+                "--execute to preview only.",
+            )
         with cli_errors(LookupError, PlanError):
             result = auto_tools.roundtrip_automation(api_name, execute=True)
 
@@ -360,6 +369,7 @@ def autos_diff(
     except ValidationError as e:
         exit_spec_errors(e)
 
+    print_warnings(result)
     if json_out:
         typer.echo(json.dumps(result, indent=2))
         return
@@ -470,6 +480,7 @@ def autos_show(
     with cli_errors(LookupError, PlanError):
         result = auto_tools.show_automation(api_name)
 
+    print_warnings(result)
     if json_out:
         typer.echo(json.dumps(result, indent=2))
         return

@@ -215,6 +215,142 @@ Both variable steps go at the front of the automation, like every
   it). The API accepts both: six levels, and one array at two levels, each
   confirmed live 2026-10-27.
 
+### Working with the records a search found
+
+A `search_records` step writes an **entity array** variable, even when the
+filter matches one record. An array can be written only into a to-many
+relationship field; into a to-one relationship it's a 400 ("Variable can't be
+cased to a field"), and no step turns an array into a single record.
+
+To use one found record, loop over the array and work with the loop's item
+variable inside the body:
+
+- `change_field_value` with `change_type: variable` and the item variable sets
+  a relationship field to that record.
+- `change_type: entity_variable_field` with the item variable and
+  `related_object_field` (a field UUID on the found record's object) copies one
+  of its fields onto this record.
+
+Every pass of the loop sets the field again, so when the search finds several
+records the last one wins. Narrow the filter until it matches one record.
+
+This links each new hire to the playbook named "Sales Onboarding", and copies
+the playbook's text. Both variable steps sit at the front, as the loop section
+above requires:
+
+```json
+{ "key": "find", "parent_key": "v_item", "step_type": "search_records", "order": 2,
+  "action_search_records": { "custom_object": "playbooks",
+    "filter_type": "custom_filter",
+    "filter_config": { "all": [ { "field": "name", "op": "=", "value": "Sales Onboarding" } ] },
+    "destination_variable": "playbooks", "destination_variable_resolution": "overwrite" } },
+{ "key": "each", "parent_key": "find", "step_type": "loop", "order": 3,
+  "description": "For each item in 'playbooks'",
+  "step_loop": { "array_variable": "playbooks", "item_variable": "playbooks_item" } },
+{ "key": "link", "parent_key": "each", "step_type": "change_field_value", "order": 4,
+  "action_change_field_value": { "field_ref": "hires.hire_playbook",
+    "change_type": "variable", "variable": "playbooks_item" } },
+{ "key": "copy", "parent_key": "link", "step_type": "change_field_value", "order": 5,
+  "action_change_field_value": { "field_ref": "hires.hire_copied",
+    "change_type": "entity_variable_field", "variable": "playbooks_item",
+    "related_object_field": "<playbooks.pb_text field uuid>" } },
+{ "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 6 }
+```
+
+Confirmed live 2026-11-02: the search found one playbook, and the loop's one
+pass linked it and copied its text. With the filter widened to `contains`
+"Sales", it found two, the loop ran twice, and the hire ended linked to the
+second. To read the linked record's fields in a later step, see
+[Reading a related record's field into a variable](#reading-a-related-records-field-into-a-variable).
+
+### Running once per record on a schedule
+
+A nightly or weekday job that does something to every matching record is two
+automations. A **global** automation with a `schedule` trigger finds the
+records, and a `start_automation` step starts a record-based automation on each
+one. `start_automation` takes the search result's array directly
+(`record_source: automation_variable`), so no loop is needed:
+
+<!-- fixture: examples/first_build/daily_deal_summary.automation.json#/triggers -->
+```json
+[ { "trigger_type": "schedule", "order": 0,
+    "trigger_schedule": {
+      "rrule": "DTSTART:20261102T130000Z\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+      "is_advanced": false } } ]
+```
+
+The schedule trigger has no time-zone field. Write `DTSTART` in UTC with the
+trailing `Z`, the form Kizen's own builder saves, converted from the business's
+time zone (in Kizen's business settings). For "every weekday at 7am" in a
+US/Central business that is `DTSTART:20261102T130000Z` (7am CST) with
+`RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR`. Treat it as a fixed UTC time: across
+a daylight-saving change the local run time should move an hour (13:00Z is 8am
+CDT). `DTSTART;TZID=US/Central:…` and a `DTSTART` without `Z` also save, but
+nothing shows which zone the scheduler gives them, so don't use them. With no
+`description` in the spec, Kizen writes one that misreads a `DTSTART` rrule
+("Every day starting <save time>"), and `show` prints that, so set
+`description` yourself (`"Weekdays at 7am Central"`). Confirmed live 2026-10-30
+for save and read-back only. No scheduled run was observed, so the DST
+behaviour is RFC 5545's, unconfirmed.
+
+<!-- fixture: examples/first_build/daily_deal_summary.automation.json#/steps -->
+```json
+[ { "key": "deals_to_refresh", "parent_key": null, "step_type": "initialize_variable",
+    "order": 0,
+    "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
+      "variable": { "name": "deals_to_refresh", "data_type": "entity", "is_array": true,
+                    "data_subtype": "<deals_object_uuid>" } } },
+  { "key": "find_deals", "parent_key": "deals_to_refresh", "step_type": "search_records",
+    "order": 1,
+    "action_search_records": { "custom_object": "deals", "filter_type": "all_records",
+      "destination_variable": "deals_to_refresh",
+      "destination_variable_resolution": "overwrite" } },
+  { "key": "refresh_each", "parent_key": "find_deals", "step_type": "start_automation",
+    "order": 2,
+    "action_start_automation": { "record_source": "automation_variable",
+      "automation_variable_name": "deals_to_refresh",
+      "automation_ids": ["refresh_deal_brief"] } } ]
+```
+
+`<deals_object_uuid>` is the `id` from `kizen objects get deals --json`. The
+started automation is an ordinary record-based one, here writing an AI brief
+from the deal's account (see
+[Reading a related record's field into a variable](#reading-a-related-records-field-into-a-variable)):
+
+<!-- fixture: examples/first_build/refresh_deal_brief.automation.json#/triggers -->
+```json
+[ { "trigger_type": "manual", "order": 0, "trigger_manual": {} } ]
+```
+
+<!-- fixture: examples/first_build/refresh_deal_brief.automation.json#/steps -->
+```json
+[ { "key": "account_industry", "parent_key": null, "step_type": "initialize_variable",
+    "order": 0,
+    "action_initialize_variable": {
+      "sources": [ { "source_type": "field_value",
+                     "source_subtype": "primary_related_object_field",
+                     "relationship_field": "<deals.account_field_uuid>",
+                     "field": "<accounts.industry_field_uuid>" } ],
+      "variable": { "name": "account_industry", "data_type": "string" } } },
+  { "key": "write_brief", "parent_key": "account_industry", "step_type": "call_llm",
+    "order": 1,
+    "action_call_llm": {
+      "model_name": "kizen/lite",
+      "merge_field_validation": "default_to_unknown",
+      "prompt": "Write a two-sentence brief on this deal for its owner.\nDeal: {{ custom_objects.name }}\nAccount industry: {{ automation_variable.account_industry }}\nClose date: {{ custom_objects.close_date }}\nLatest call notes: {{ custom_objects.call_notes }}",
+      "destinations": [ { "field_ref": "deals.ai_deal_brief" } ] } } ]
+```
+
+**The started automation must be active first.** Kizen rejects a POST or PUT
+carrying a `start_automation` whose target is inactive with "Automation not
+found", whatever the record source. So `create`, `update`, `steps add` and
+`steps edit` refuse it at plan time, naming the target and the `kizen
+automations activate` command to run. `show`, `diff`, `roundtrip`, `activate`
+and `deactivate` warn instead, because Kizen also refuses a PUT of an
+automation whose target was deactivated later. Build the target, activate it,
+then create the scheduled one. Confirmed live 2026-10-30: the manual run found
+two deals and started the target once on each, and both briefs were written.
+
 ---
 
 ## Wired trigger types (12)
@@ -236,10 +372,19 @@ custom object gets 400 "only client custom object is allowed". Confirmed live
 {rrule, is_advanced}` — a recurring trigger (works on global automations too,
 where it's the only "time-based" option since `on_or_around_date` needs a
 target_object field); the wire shape matches a live read exactly (`rrule` is
-a full RFC 5545 string including `DTSTART`). Other trigger types exist in
+a full RFC 5545 string including `DTSTART`, written in UTC: see
+[Running once per record on a schedule](#running-once-per-record-on-a-schedule)
+for converting a local time). Other trigger types exist in
 Kizen (e.g. `email_interaction`, `email_link_clicked`,
 `contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
 you try to spec them.
+
+`activity_logged` → `trigger_activity_logged: {activity_type}` and
+`scheduled_activity_overdue` → `trigger_scheduled_activity_overdue: {activity}`
+take the activity type's api_name, display name or UUID (`kizen activities
+list`). An unknown name is a plan error. A workflow reads what was logged through the record
+fields the activity's custom fields are linked to: see `kizen docs show
+activity`, "Branching on what someone logged". Confirmed live 2026-10-30.
 
 `stage_updated` → `trigger_stage_updated: {from_stage, to_stage,
 fire_on_create}` fires when a record moves between stages, on pipeline
@@ -306,6 +451,41 @@ A goal counts only an event that happens while the run is waiting at it, so a
 `stage_updated` goal misses a move made before the run reaches the goal, and
 stays pending (confirmed live 2026-10-30).
 
+### Date trigger (`on_or_around_date`)
+
+Fires on a date field of the record, or a number of days before or after it,
+at a time of day. This one fires three days before each deal's close date, at
+9 am:
+
+<!-- fixture: examples/first_build/closing_soon.automation.json#/triggers/0 -->
+```json
+{ "trigger_type": "on_or_around_date", "order": 0,
+  "trigger_on_or_around_date": { "field_ref": "deals.close_date",
+    "date_offset": "days_before", "date_offset_days": 3,
+    "time": "09:00", "period": "am" } }
+```
+
+| Key | Values | Omitted |
+|---|---|---|
+| `field_ref` | `"object.field"`, or a bare field name on `target_object` (sent as `field_id`) | required |
+| `date_offset` | `on_day`, `on_day_and_time`, `days_before`, `days_after` | required |
+| `date_offset_days` | 0 or more | `0` |
+| `time` | `hh:mm` on a 12-hour clock: `09:00`, `05:00` | required |
+| `period` | `am` or `pm` | required |
+| `every_year` | bool | `false` |
+| `skip_non_working_days` | bool | `null` |
+| `past_date_action` | `proceed_down_met_path`, `proceed_down_not_met_path`, `wait_for_not_met_path_delay` | `proceed_down_met_path` |
+
+- `"09:00:00"` and `"21:00"` are each a 400: "Time has wrong format. Use one of
+  these formats instead: hh:mm." Write 9 pm as `"09:00"` with `"pm"`.
+- `time` without `period` is a 400 ("This field is required."), and so is a
+  trigger with neither. Kizen's schema says `period` doesn't apply with
+  `on_day_and_time`; that case is unprobed.
+
+Confirmed live 2026-10-30: four configs saved and read back as sent, with the
+defaults above filled in. A date trigger fires only on its date, so no run of
+one was observed.
+
 ## Wired step types (30)
 
 | step_type | config block | purpose |
@@ -324,7 +504,7 @@ stays pending (confirmed live 2026-10-30).
 | `archive_record` | `action_archive_record` | archive the record |
 | `create_related_entity` | `action_create_related_entity` | create a related record — see [`create_related_entity`](#create_related_entity) |
 | `modify_related_entities` | `action_modify_related_entities` | update related records |
-| `start_automation` | `action_start_automation` | start another automation |
+| `start_automation` | `action_start_automation` | start another automation, which must be active (see [Running once per record on a schedule](#running-once-per-record-on-a-schedule)) |
 | `assign_team_member` | `action_assign_team_member` | assign owner (round-robin, role, field, …) |
 | `schedule_activity` | `action_schedule_activity` | schedule an activity |
 | `initialize_variable` / `update_variable` | `action_initialize_variable` / `action_update_variable` | automation variables — see root-chain rule below |
@@ -824,6 +1004,43 @@ field UUID on the object that relationship points to, not on
 `target_object` itself — look it up via `kizen objects get <related_object>`
 first.
 
+This reads the industry of the deal's account. The tokens are the `id`s of
+`deals.account` and `accounts.industry` in `kizen objects get deals --json` and
+`kizen objects get accounts --json`. A dropdown arrives as its option label
+(`Insurance`). Confirmed live 2026-10-30:
+
+<!-- fixture: examples/first_build/log_call.automation.json#/steps/1 -->
+```json
+{ "key": "account_industry", "parent_key": "today", "step_type": "initialize_variable",
+  "order": 1,
+  "action_initialize_variable": {
+    "sources": [ { "source_type": "field_value",
+                   "source_subtype": "primary_related_object_field",
+                   "relationship_field": "<deals.account_field_uuid>",
+                   "field": "<accounts.industry_field_uuid>" } ],
+    "variable": { "name": "account_industry", "data_type": "string" } } }
+```
+
+**Set a date field to today** with a `trigger_time` source, which holds the
+run's start date, then write the variable with `change_type: variable`.
+Confirmed live 2026-10-30:
+
+<!-- fixture: examples/first_build/log_call.automation.json#/steps/0 -->
+```json
+{ "key": "today", "parent_key": null, "step_type": "initialize_variable", "order": 0,
+  "action_initialize_variable": {
+    "sources": [ { "source_type": "trigger_time" } ],
+    "variable": { "name": "today", "data_type": "date" } } }
+```
+
+<!-- fixture: examples/first_build/log_call.automation.json#/steps/2 -->
+```json
+{ "key": "stamp_last_activity", "parent_key": "account_industry",
+  "step_type": "change_field_value", "order": 2,
+  "action_change_field_value": { "field_ref": "deals.last_activity_date",
+    "change_type": "variable", "variable": "today" } }
+```
+
 ### Merge-field namespace tokens by step type
 
 A merge field is not a bare `{{ <namespace>.<field_api_name> }}` token — the
@@ -840,7 +1057,33 @@ this isn't one global convention:
 | Step type | Namespace for the trigger record's own fields |
 |-----------|------------------------------------------------|
 | `notify_member_via_email`, `notify_member_via_text`, `send_related_contact_email`, `send_related_contact_text` | `entity_record.<field>` |
-| `call_llm` (`prompt`), `initialize_variable`/`update_variable` ("static" sources) | `custom_objects.<field>` — a **literal token**, regardless of the target object's real api_name |
+| `call_llm` (`prompt`), `schedule_activity` (`note`), `initialize_variable`/`update_variable` ("static" sources) | `custom_objects.<field>` — a **literal token**, regardless of the target object's real api_name |
+
+Two tokens render empty rather than fail (confirmed live 2026-10-30):
+
+- `entity_record.<field>` in a `schedule_activity` note.
+- A hop to a related record, `{{ custom_objects.<relationship>.<field> }}`, in
+  a `call_llm` prompt, even with `merge_field_validation: default_to_unknown`.
+
+To use a related record's field, copy it into a variable first (see
+[Reading a related record's field into a variable](#reading-a-related-records-field-into-a-variable)),
+then write `{{ automation_variable.<name> }}`. This prompt reads the deal's own
+call notes and its account's industry, and Kizen sent it with both filled in
+(confirmed live 2026-10-30):
+
+<!-- fixture: examples/first_build/log_call.automation.json#/steps/3 -->
+```json
+{ "key": "rate_health", "parent_key": "stamp_last_activity", "step_type": "call_llm",
+  "order": 3,
+  "action_call_llm": {
+    "model_name": "kizen/lite",
+    "merge_field_validation": "default_to_unknown",
+    "prompt": "Rate this deal's health as On Track, Needs Attention or At Risk. Answer with the rating only.\nAccount industry: {{ automation_variable.account_industry }}\nLatest call notes: {{ custom_objects.call_notes }}",
+    "destinations": [ { "field_ref": "deals.health" } ] } }
+```
+
+The destination is a dropdown, so the CLI fills its `options` and the model's
+answer sets one of them.
 
 Other reserved namespaces (not real object fields, no API-queryable
 catalog, never carry `data-merge-field-objectname`): `team_member.<field>`
@@ -852,6 +1095,39 @@ description), and `entity_record` pseudo-fields like
 `link_url`/`created`/`estimated_close_date`. Any OTHER namespace is treated
 as a real custom object's own api_name, and its span gets
 `data-merge-field-objectname` holding that object's display name.
+
+### Email steps: build order
+
+A `notify_member_via_email` step points at an automation message, and a
+message belongs to one automation. So the order is fixed:
+
+1. **A template.** A blank business may have none: `kizen messages templates
+   list`, then `kizen messages templates create --spec-file <f>` (`kizen docs
+   show email-templates`).
+2. **The automation, without the email step.** An automation with `"steps":
+   []` saves.
+3. **The message:** `kizen messages create <automation> --template <name> --yes
+   --json | jq -r '.results[0].server_uuid'`. A message built from raw content
+   instead shows as *unselected* in the UI.
+4. **The step**, with that id as `email_template_id`, through `kizen
+   automations update --spec-file`:
+
+<!-- fixture: examples/first_build/closing_soon.automation.json#/steps/0 -->
+```json
+{ "key": "tell_owner", "parent_key": null, "step_type": "notify_member_via_email",
+  "order": 0,
+  "action_notify_member_via_email": {
+    "team_member": { "type": "owner" },
+    "email_template_id": "<closing_soon_message_uuid>" } }
+```
+
+- `send_related_contact_email` takes the message as `email: {"id": <id>}`.
+- **Messages outlive their automation.** Deleting the automation leaves its
+  messages bound to the deleted id, and Kizen answers a `DELETE` of one with
+  405. A recreated automation can't use them, so it needs new ones (confirmed
+  live 2026-10-30).
+
+Confirmed live 2026-10-30, in this order.
 
 ---
 
@@ -958,12 +1234,8 @@ as a real custom object's own api_name, and its span gets
   unknown label. Kizen itself answers a label with a 500, or saves an
   automation it then can't read (confirmed live 2026-10-30).
 - **`notify_member_via_email` content is a separate resource, not inline.** Its
-  config points at an `AutomationMessage` by `id`. Create it correctly with
-  `kizen messages create <automation> --template <name>` first, then reference
-  that message's id — a message built from raw content shows as *unselected*
-  in the UI. With `--json` the id is `.results[0].server_uuid`:
-  `kizen messages create <automation> --template <name> --yes --json | jq -r
-  '.results[0].server_uuid'`.
+  config points at an `AutomationMessage` by `id`, made from a template after
+  the automation exists. See [Email steps: build order](#email-steps-build-order).
 - **`code_step.secrets` are env-specific** — the spec carries secret *names*; the
   target env must have each configured or the step fails at runtime. Surface
   this when authoring.
@@ -1206,14 +1478,14 @@ Beyond the step/trigger tables above:
 | where | the key |
 |---|---|
 | `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. **`from_value`/`to_value` write as bare UUIDs** — an expanded dict is silently stored as null |
-| `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object` |
-| `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}` |
+| `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it. The other keys: [Date trigger](#date-trigger-on_or_around_date) |
+| `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}`; the spec takes an api_name or UUID |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
 | `stage_updated` trigger | `from_stage`/`to_stage` (bare stage UUIDs, both required, null = any); the spec's stage name resolves; `stage_field` is ignored by Kizen and never sent |
 | `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see [Extraction input](#extraction-input) |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string, or a list of them for checkboxes; a spec label resolves to it |
-| `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record` |
+| `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record`. Every target must be active, or Kizen 400s "Automation not found" for any record source; the CLI refuses it at plan time ([Running once per record on a schedule](#running-once-per-record-on-a-schedule)) |
 | `archive_record` | `relationship_field_ids` (entries accept `"object.field"` refs), `automation_variable_name` |
 | `assign_team_member` | the `*_id` dialect: `role_id`, `employee_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum — see below |
 | `go_to_automation_step` | `step_key`, pointing at a synthesized key |
@@ -1244,7 +1516,68 @@ global automation doesn't have at all.
 
 Kizen stores the two separately, and a PUT without `html_note` clears it
 while `note` survives. Set both when you want the note in both forms.
-Confirmed live 2026-10-06.
+Confirmed live 2026-10-06. The note's merge fields use the `custom_objects`
+namespace (see [Merge-field namespace tokens by step type](#merge-field-namespace-tokens-by-step-type)).
+
+### When a scheduled activity is due
+
+`activity_type` (or `activity_type_id`) takes the type's api_name, display
+name or UUID. `schedule.type` picks one of three shapes:
+
+| `schedule.type` | with |
+|---|---|
+| `immediately` | nothing else: due when the step runs |
+| `with_delay` | a `with_delay` block |
+| `on_or_around_date` | an `on_or_around_date` block |
+
+`skip_non_working_days` (bool) sits on `schedule` itself. This step schedules a
+Follow Up for the deal's owner two working days after the run:
+
+<!-- fixture: examples/first_build/log_call.automation.json#/steps/5 -->
+```json
+{ "key": "schedule_follow_up", "parent_key": "no_conversation", "parent_branch": "yes",
+  "step_type": "schedule_activity", "order": 5,
+  "action_schedule_activity": {
+    "activity_type": "follow_up",
+    "schedule": { "type": "with_delay",
+                  "with_delay": { "delay_type": "day", "delay_value_type": "static",
+                                  "delay_value": 2 },
+                  "skip_non_working_days": true },
+    "assigned_to": { "assignment_type": "owner" },
+    "note": "Try again. Last call: {{ custom_objects.call_notes }}" } }
+```
+
+**`with_delay`:**
+
+- `delay_type` (required): `minute`, `hour` or `day`. `days` is a 400, and the
+  CLI's error lists the three.
+- `delay_value`: a whole number, 1 or more. `delay_value_type` is `static`
+  (the default, read back when omitted) or `automation_variable`, which reads
+  the number from `delay_variable: {"name": <variable>}`.
+- `time_offset`: `automation_time` (the default: the run's time of day),
+  `specific_time` (with `time` as `HH:MM` on a 24-hour clock: `"21:00"` saves,
+  unlike the date trigger's 12-hour `time`), `hours_before`, `hours_after`,
+  `minutes_before` or `minutes_after` (with `time_offset_value`).
+- With `skip_non_working_days: true`, a `day` delay counts working days and
+  keeps the run's time of day. Started on a Friday at 19:48 UTC, the step
+  above was due the next Tuesday at 19:48 UTC.
+
+**`on_or_around_date`:**
+
+- `field_id` (a date or datetime field's UUID) or `variable: {"name": …}`.
+  The CLI doesn't resolve names inside `schedule`, so give the UUID.
+- `date_offset` (required): `on_day`, `on_day_and_time`, `days_before` or
+  `days_after`, with `date_offset_days` 1 or more.
+- `time_offset`: `specific_time` (the default, with `time` as `HH:MM`),
+  `from_field`, `from_variable`, `hours_before`, `hours_after`,
+  `minutes_before` or `minutes_after`.
+- `{"field_id": "<start date field uuid>", "date_offset": "days_after",
+  "date_offset_days": 1, "time_offset": "specific_time", "time": "10:00"}` on a
+  record starting 2026-11-16 was due 2026-11-17 at 10:00 in the business's
+  time zone.
+
+Confirmed live 2026-10-30. The values are those in `GET /api/docs/schema` that
+day.
 
 ### `schedule_activity.target_variable` and `variable_field_resolution`
 
@@ -1390,8 +1723,8 @@ The reliable way to set an owner today is `kizen records update <object> <id>
 The error is nested: `{step_key: {action_block_name: {field_name: [message]}}}`.
 Work inside-out — which step, which config block, which wire field. A
 "not a valid choice" rejection for `create_related_entity`,
-`notify_member_via_text`, or `on_or_around_date`: the error lists the valid
-values the CLI knows. Common causes:
+`notify_member_via_text`, `schedule_activity`'s `schedule`, or
+`on_or_around_date`: the error lists the valid values the CLI knows. Common causes:
 
 - `null` for a non-nullable field (often a model default leaking through).
 - `action_on_failure: notify_continue` on a condition step — use `notify_pause`.
@@ -1423,3 +1756,5 @@ Usually one of two things:
   `code_step`.
 - `kizen docs show email-templates` — the `notify_member_via_email` message
   resource and merge-field namespaces.
+- `kizen docs show activity` — the activity types `activity_logged` and
+  `schedule_activity` name, and branching on what someone logged.

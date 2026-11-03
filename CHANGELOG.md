@@ -33,6 +33,15 @@ called out explicitly under **Changed** or **Removed**.
 - **Automations can start when a record changes stage.** The
   `stage_updated` trigger takes from/to stage names (or any stage), on
   pipeline automations and as a goal step's wait condition.
+- **A bad Schedule Activity timing value now lists the valid values.** When
+  Kizen rejects a `schedule` value, such as `delay_type: "days"`, the error
+  names the choices (`minute`, `hour`, `day`). The same goes for a date
+  trigger's `period` and `past_date_action`.
+- **The automation and activity docs cover a first build.** Worked examples
+  show a scheduled follow-up, a date trigger, linking a record a search
+  found, setting a date to today, a prompt that reads a related record, the
+  email build order, a nightly run over many records, and branching on what
+  someone logged.
 
 ### Changed
 
@@ -42,6 +51,17 @@ called out explicitly under **Changed** or **Removed**.
   the number.
 - An `update_pipeline_status` step in a spec is refused with a pointer to
   the stage field update.
+- **Automation specs name activity types by api_name.** The `activity_logged`
+  and `scheduled_activity_overdue` triggers and the Schedule Activity step
+  take an activity type's api_name or display name as well as its UUID. An
+  unknown name is an error at plan time that names the trigger or step.
+- **A Start Automation step whose target is inactive is refused at plan
+  time.** Kizen rejects it with "Automation not found". `create`, `update`
+  and `steps add|edit` now say the target is inactive and how to activate
+  it. `show`, `diff`, `roundtrip`, `activate` and `deactivate` warn instead,
+  since Kizen also refuses to save an automation whose target was turned off
+  later. `roundtrip --execute --yes` now reads the automation once before
+  the write, so the warning comes first.
 
 ### Removed
 

@@ -1,0 +1,27 @@
+{
+  "name": "Refresh Deal Brief",
+  "api_name": "refresh_deal_brief",
+  "type": "record_based",
+  "target_object": "deals",
+  "active": false,
+  "triggers": [
+    { "trigger_type": "manual", "order": 0, "trigger_manual": {} }
+  ],
+  "steps": [
+    { "key": "account_industry", "parent_key": null, "step_type": "initialize_variable",
+      "order": 0,
+      "action_initialize_variable": {
+        "sources": [ { "source_type": "field_value",
+                       "source_subtype": "primary_related_object_field",
+                       "relationship_field": "<deals.account_field_uuid>",
+                       "field": "<accounts.industry_field_uuid>" } ],
+        "variable": { "name": "account_industry", "data_type": "string" } } },
+    { "key": "write_brief", "parent_key": "account_industry", "step_type": "call_llm",
+      "order": 1,
+      "action_call_llm": {
+        "model_name": "kizen/lite",
+        "merge_field_validation": "default_to_unknown",
+        "prompt": "Write a two-sentence brief on this deal for its owner.\nDeal: {{ custom_objects.name }}\nAccount industry: {{ automation_variable.account_industry }}\nClose date: {{ custom_objects.close_date }}\nLatest call notes: {{ custom_objects.call_notes }}",
+        "destinations": [ { "field_ref": "deals.ai_deal_brief" } ] } }
+  ]
+}

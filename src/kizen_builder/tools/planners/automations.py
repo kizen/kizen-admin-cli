@@ -90,6 +90,9 @@ class LiveContext:
         self._folders: list[dict[str, Any]] | None = None
         self._secret_descriptions: dict[str, str] | None = None
         self._step_pickers: dict[str, list[dict[str, Any]]] = {}
+        self._activity_types: dict[str, str] = {}
+        # `diff` previews an update without refusing it, so it warns instead.
+        self.refuse_inactive_start_targets = True
 
     def mcp_server_uuid(self, api_name: str) -> str:
         """UUID of an MCP server a call_llm step can attach, by api_name."""
@@ -243,10 +246,32 @@ class LiveContext:
         return matches[0]["id"] if len(matches) == 1 else None
 
     def automation_uuid(self, api_name: str) -> str | None:
+        rec = next((a for a in self.automations() if a["api_name"] == api_name), None)
+        return rec["id"] if rec else None
+
+    def automations(self) -> list[dict[str, Any]]:
+        """Every live automation's `list_automations` row (id, api_name, active, …)."""
         if self._automations_by_api is None:
             self._automations_by_api = {a["api_name"]: a for a in list_automations()}
-        rec = self._automations_by_api.get(api_name)
-        return rec["id"] if rec else None
+        return list(self._automations_by_api.values())
+
+    def activity_type_uuid(self, identifier: str) -> str:
+        """UUID of an activity type, by api_name or UUID."""
+        if identifier not in self._activity_types:
+            from kizen_builder.api.client import KizenClient
+            from kizen_builder.tools.activities import resolve_activity_id
+
+            with KizenClient(load_env_config()) as client:
+                try:
+                    self._activity_types[identifier] = resolve_activity_id(
+                        client, identifier
+                    )[0]
+                except LookupError as e:
+                    raise PlanError(
+                        f"activity type '{identifier}' not found — kizen "
+                        "activities list shows the api_names"
+                    ) from e
+        return self._activity_types[identifier]
 
     def folder(self, identifier: str) -> dict[str, Any]:
         """The live automation folder with this name or UUID."""
@@ -472,6 +497,7 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     auto = auto.model_copy(update={"active": resolved_active})
 
     live_payload = live_to_payload(current)
+    ctx.refuse_inactive_start_targets = False
     spec_payload, _ = _update_payload(auto, ctx, current)
     # Neither side carries the live folder, so a spec that names one would
     # always show a change. Compare against the live folder instead.
@@ -479,12 +505,14 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
         live_payload["folder_id"] = current["folder"]["id"]
         spec_payload.setdefault("folder_id", live_payload["folder_id"])
 
+    warnings = inactive_start_targets(spec_payload["steps"], ctx.automations())
     return {
         "env": env,
         "api_name": auto.api_name,
         "id": existing["id"],
         "revision": current.get("revision"),
         "diff": diff_wire_payloads(live_payload, spec_payload),
+        **({"warnings": warnings} if warnings else {}),
     }
 
 
@@ -1238,6 +1266,16 @@ def _resolve_field(value: Any, auto: AutomationDef, ctx: LiveContext) -> str | N
     return None
 
 
+def _resolve_activity_type(value: Any, ctx: LiveContext) -> str | None:
+    """An activity type reference as a UUID: a UUID, an api_name, or a
+    dict with ``id`` (a live read) or ``api_name``."""
+    if isinstance(value, dict):
+        value = value.get("id") or value.get("api_name")
+    if not isinstance(value, str) or not value:
+        return None
+    return value if is_uuid(value) else ctx.activity_type_uuid(value)
+
+
 def _resolve_object(value: Any, ctx: LiveContext) -> str | None:
     """Resolve an object reference to a UUID (handles dict, api_name, or UUID)."""
     if value is None:
@@ -1498,7 +1536,10 @@ def _build_trigger_payload(
     )
     if description:
         p["description"] = description
-    p[cfg_field] = builder(block_dict, ctx)
+    try:
+        p[cfg_field] = builder(block_dict, ctx)
+    except PlanError as e:
+        raise PlanError(f"trigger '{p['key']}': {e}") from e
     problem = _inbox_selection_problem([p])
     if problem:
         raise PlanError(problem)
@@ -1518,11 +1559,10 @@ def _trigger_new_entity_created(
 
 
 @honours("activity_type", "activity_type_id")
-def _trigger_activity_logged(
-    block: dict[str, Any], _ctx: LiveContext
-) -> dict[str, Any]:
-    activity = block.get("activity_type")
-    activity_id = _unwrap_id(activity) or block.get("activity_type_id")
+def _trigger_activity_logged(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
+    activity_id = _resolve_activity_type(
+        block.get("activity_type") or block.get("activity_type_id"), ctx
+    )
     out: dict[str, Any] = {}
     if activity_id:
         out["activity_type_id"] = activity_id
@@ -1695,12 +1735,12 @@ def _trigger_schedule(block: dict[str, Any], _ctx: LiveContext) -> dict[str, Any
 
 @honours_all
 def _trigger_scheduled_activity_overdue(
-    block: dict[str, Any], _ctx: LiveContext
+    block: dict[str, Any], ctx: LiveContext
 ) -> dict[str, Any]:
     # Reads expand `activity` to {id, name, deleted}; write wants an {id}
     # association. Null keys (skip_non_working_days) are dropped.
     out = {k: v for k, v in _strip(block).items() if k != "activity" and v is not None}
-    activity_id = _unwrap_id(block.get("activity"))
+    activity_id = _resolve_activity_type(block.get("activity"), ctx)
     if activity_id:
         out["activity"] = {"id": activity_id}
     return out
@@ -1769,6 +1809,8 @@ class KnownChoices:
     source: str
 
 
+_SCHEMA_2026_10_30 = "GET /api/docs/schema, 2026-10-30"
+
 # `KNOWN_ENUM_CHOICES` (steps, next to `_STEP_BUILDERS` below) and
 # `KNOWN_ENUM_CHOICES_TRIGGERS` (triggers, here) are keyed by
 # `(step_or_trigger_type, dotted_field_path)`, never by bare field name —
@@ -1778,8 +1820,8 @@ class KnownChoices:
 #
 # Not exhaustive. Add an entry the moment a value is confirmed elsewhere in
 # this repo (a fixture, a docstring, a drift finding, or a captured live
-# session) — do not also write the list into `automation.md` prose (check
-# the registry, not the prose).
+# session). The registry is the error-path source. `automation.md` may show
+# the values a user needs to write a first spec.
 KNOWN_ENUM_CHOICES_TRIGGERS: dict[str, dict[str, KnownChoices]] = {
     "email_received": {
         "receiving_inbox": KnownChoices(
@@ -1794,6 +1836,15 @@ KNOWN_ENUM_CHOICES_TRIGGERS: dict[str, dict[str, KnownChoices]] = {
                 "tests/fixtures/automations/kitchen_sink_triggers.raw.json, "
                 "on_or_around_date_goto.raw.json"
             ),
+        ),
+        "period": KnownChoices(values=("am", "pm"), source=_SCHEMA_2026_10_30),
+        "past_date_action": KnownChoices(
+            values=(
+                "proceed_down_met_path",
+                "proceed_down_not_met_path",
+                "wait_for_not_met_path_delay",
+            ),
+            source=_SCHEMA_2026_10_30,
         ),
     },
 }
@@ -2120,7 +2171,40 @@ def _built_block_problem(
         return _assign_team_member_problem(key, block, auto, ctx)
     if step_type == "call_llm":
         return _llm_tools_pairing_problem(key, block)
+    if step_type == "start_automation" and ctx.refuse_inactive_start_targets:
+        problems = inactive_start_targets(
+            [{"key": key, "type": step_type, "action_start_automation": block}],
+            ctx.automations(),
+        )
+        return problems[0] if problems else None
     return None
+
+
+def inactive_start_targets(
+    steps: list[dict[str, Any]], automations: list[dict[str, Any]]
+) -> list[str]:
+    """One message per `start_automation` target in wire ``steps`` that is
+    inactive in ``automations`` (`list_automations` rows). Kizen rejects a
+    POST or PUT carrying such a step with "Automation not found", whatever
+    the record source (confirmed live 2026-10-30)."""
+    by_id = {a.get("id"): a for a in automations}
+    out = []
+    for step in steps:
+        if step.get("type") != "start_automation":
+            continue
+        for target_id in (step.get("action_start_automation") or {}).get(
+            "automation_ids"
+        ) or []:
+            target = by_id.get(target_id)
+            if target is None or target.get("active"):
+                continue
+            name = target.get("api_name")
+            out.append(
+                f"step '{step.get('key')}': start_automation target '{name}' is "
+                'inactive. Kizen rejects the step with "Automation not found". '
+                f"Run kizen automations activate {name} first."
+            )
+    return out
 
 
 def _llm_tools_pairing_problem(key: str, block: dict[str, Any]) -> str | None:
@@ -3429,8 +3513,9 @@ def _step_schedule_activity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    activity = block.get("activity_type")
-    activity_id = _unwrap_id(activity) or block.get("activity_type_id")
+    activity_id = _resolve_activity_type(
+        block.get("activity_type") or block.get("activity_type_id"), ctx
+    )
     if activity_id:
         # Wire key is activity_type_id (UUID string), not activity_type
         out["activity_type_id"] = activity_id
@@ -4015,6 +4100,45 @@ KNOWN_ENUM_CHOICES: dict[str, dict[str, KnownChoices]] = {
                 "tests/fixtures/automations/create_and_modify_related.raw.json, "
                 "form_submission.raw.json"
             ),
+        ),
+    },
+    "schedule_activity": {
+        "schedule.type": KnownChoices(
+            values=("immediately", "with_delay", "on_or_around_date"),
+            source=_SCHEMA_2026_10_30,
+        ),
+        "schedule.with_delay.delay_type": KnownChoices(
+            values=("minute", "hour", "day"), source=_SCHEMA_2026_10_30
+        ),
+        "schedule.with_delay.delay_value_type": KnownChoices(
+            values=("static", "automation_variable"), source=_SCHEMA_2026_10_30
+        ),
+        "schedule.with_delay.time_offset": KnownChoices(
+            values=(
+                "automation_time",
+                "specific_time",
+                "hours_before",
+                "hours_after",
+                "minutes_before",
+                "minutes_after",
+            ),
+            source=_SCHEMA_2026_10_30,
+        ),
+        "schedule.on_or_around_date.date_offset": KnownChoices(
+            values=("on_day", "on_day_and_time", "days_before", "days_after"),
+            source=_SCHEMA_2026_10_30,
+        ),
+        "schedule.on_or_around_date.time_offset": KnownChoices(
+            values=(
+                "specific_time",
+                "from_field",
+                "from_variable",
+                "hours_before",
+                "hours_after",
+                "minutes_before",
+                "minutes_after",
+            ),
+            source=_SCHEMA_2026_10_30,
         ),
     },
     "notify_member_via_text": {

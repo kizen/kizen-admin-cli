@@ -127,6 +127,22 @@ def fake_get_object(api_name: str) -> dict[str, Any]:
     return obj
 
 
+# Activity types the planner can resolve by api_name in a test.
+ACTIVITY_TYPE_IDS = {
+    "call": "a0000000-0000-4000-8000-0000000000c1",
+    "follow_up": "a0000000-0000-4000-8000-0000000000c2",
+}
+
+
+def fake_resolve_activity_id(client: Any, identifier: str) -> tuple[str, str]:
+    """resolve_activity_id() stand-in serving ``ACTIVITY_TYPE_IDS``."""
+    if identifier in ACTIVITY_TYPE_IDS:
+        return ACTIVITY_TYPE_IDS[identifier], identifier
+    if identifier in ACTIVITY_TYPE_IDS.values():
+        return identifier, identifier
+    raise LookupError(f"activity '{identifier}' not found")
+
+
 def fake_get_automation(api_name: str) -> dict[str, Any]:
     """get_automation() stand-in serving tests/fixtures/automations/*.raw.json.
 
@@ -205,6 +221,9 @@ def patch_live_lookups(monkeypatch: pytest.MonkeyPatch):
 
     llm_metadata = load_fixture("automations/llm_metadata.json")
     monkeypatch.setattr(auto_api, "get_metadata", lambda client: llm_metadata)
+    monkeypatch.setattr(
+        "kizen_builder.tools.activities.resolve_activity_id", fake_resolve_activity_id
+    )
     return fake_get_object
 
 
