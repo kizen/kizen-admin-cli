@@ -169,6 +169,38 @@ TYPES: dict[str, DashletType] = {
 }
 
 
+# The custom-object types: the only dashlets whose config carries a record filter.
+FILTERABLE_TYPES: tuple[str, ...] = tuple(
+    k for k, t in TYPES.items() if t.entity_type == "custom_object"
+)
+FILTERABLE_TYPES_TEXT = f"{', '.join(FILTERABLE_TYPES[:-1])} and {FILTERABLE_TYPES[-1]}"
+
+
+def filter_problem(
+    dashlet_type: str, object_ref: str | None, filters: Any
+) -> str | None:
+    """Why ``--filter`` can't apply to this dashlet, or None when it can."""
+    if dashlet_type in TYPES and dashlet_type not in FILTERABLE_TYPES:
+        return (
+            f"dashlet type '{dashlet_type}' has no record filter. --filter works "
+            f"on {FILTERABLE_TYPES_TEXT}."
+        )
+    if not object_ref:
+        return "--filter names fields, so it needs --object to resolve them against"
+    is_wire = (
+        isinstance(filters, dict)
+        and len(filters) == 1
+        and next(iter(filters))
+        in ("custom_filters", "in_group_ids", "not_in_group_ids")
+    )
+    if not (dash.is_filter_spec(filters) or is_wire):
+        return (
+            '--filter must be a filter spec ({"all"|"any": [...]}) or a wire block '
+            "with exactly one key: custom_filters, in_group_ids or not_in_group_ids"
+        )
+    return None
+
+
 def available_types() -> list[DashletType]:
     """The catalog of authorable dashlet types, in display order."""
     return list(TYPES.values())
@@ -240,6 +272,7 @@ def generate(
     chart_type: str | None = None,
     metric_type: str | None = None,
     frequency: str | None = None,
+    filter_spec: dict[str, Any] | None = None,
 ) -> GeneratedDashlet:
     """Resolve refs once, then build the config and its dashlet-envelope fields.
 
@@ -247,13 +280,25 @@ def generate(
     also carries the dashlet-level ``custom_object`` — needed because some
     dashlets (``table_of_records``) reference their object *only* through the
     envelope, not the config.
+
+    ``filter_spec`` (a ``FILTERABLE_TYPES`` dashlet with ``object_ref`` only)
+    is compiled against the resolved object into ``config.filters``.
     """
     dt = TYPES.get(dashlet_type)
     if dt is None:
         raise ValueError(
             f"unknown dashlet type {dashlet_type!r}. Valid types: " + ", ".join(TYPES)
         )
+    if filter_spec is not None and (
+        problem := filter_problem(dashlet_type, object_ref, filter_spec)
+    ):
+        raise ValueError(problem)
     object_id, field_id, field_label = _resolve_refs(dt, object_ref, field_ref)
+    filters = (
+        dash.compile_filters(filter_spec, object_id)
+        if filter_spec is not None
+        else None
+    )
     config = _dispatch(
         dashlet_type,
         object_id,
@@ -263,6 +308,7 @@ def generate(
         chart_type,
         metric_type,
         frequency,
+        filters,
     )
     # The dashlet's custom_object links object-bound dashlets to their object.
     # (Activity/email/marketing dashlets don't set it; their object, if any,
@@ -284,13 +330,14 @@ def build_dashlet_config(
     chart_type: str | None = None,
     metric_type: str | None = None,
     frequency: str | None = None,
+    filter_spec: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build one dashlet ``config`` for ``dashlet_type`` (a key from TYPES).
 
     ``object_ref``/``field_ref`` are *api_names* (never UUIDs); omit them for a
     placeholder template. ``report_type``/``chart_type``/``metric_type``/
     ``frequency`` tune the parameterized metric families and are ignored by the
-    fixed types.
+    fixed types. ``filter_spec`` is as in :func:`generate`.
     """
     return generate(
         dashlet_type,
@@ -300,6 +347,7 @@ def build_dashlet_config(
         chart_type=chart_type,
         metric_type=metric_type,
         frequency=frequency,
+        filter_spec=filter_spec,
     ).config
 
 
@@ -312,6 +360,7 @@ def _dispatch(
     chart_type: str | None,
     metric_type: str | None,
     frequency: str | None,
+    filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Call the right builder for an already-resolved ``dashlet_type``."""
     dt = TYPES[dashlet_type]
@@ -320,11 +369,12 @@ def _dispatch(
         return dash.table_of_records_config(
             object_id,
             columns=[dash.col(field_id, field_label or "Column Label")],
+            filters=filters,
         )
     if dashlet_type == "field_breakdown":
-        return dash.field_breakdown_config(object_id, field_id)
+        return dash.field_breakdown_config(object_id, field_id, filters=filters)
     if dashlet_type == "field_sum":
-        return dash.field_sum_config(object_id, field_id)
+        return dash.field_sum_config(object_id, field_id, filters=filters)
     if dashlet_type == "field_range_breakdown":
         return dash.field_range_breakdown_config(
             object_id,
@@ -333,12 +383,14 @@ def _dispatch(
                 {"min": 0, "max": 100, "label": "0–100"},
                 {"min": 100, "max": 1000, "label": "100–1000"},
             ],
+            filters=filters,
         )
     if dashlet_type == "pivot_table":
         return dash.pivot_table_config(
             object_id,
             row_fields=[{"id": field_id, "label": field_label or "Row Field"}],
             column_field={"id": FIELD_PLACEHOLDER, "label": "Column Field"},
+            filters=filters,
         )
     if dashlet_type == "pipeline_metric":
         rt = report_type or dt.report_type

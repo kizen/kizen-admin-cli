@@ -42,6 +42,19 @@ called out explicitly under **Changed** or **Removed**.
   found, setting a date to today, a prompt that reads a related record, the
   email build order, a nightly run over many records, and branching on what
   someone logged.
+- **Activity visibility rules can be written with field and option names.**
+  `activities update --visibility-rules-file` takes `{"show": [...], "when":
+  {"field": ..., "is_any_of": [...]}}`, or `"is_checked": true` / `false` for
+  a checkbox, and writes the rule the Kizen editor writes. Raw rules still pass
+  through unchanged, unless a filter lacks its `view_model`: that empties the
+  editor's rule list, so it is now a plan error. `--dry-run` and `activities
+  get` describe rules of those shapes in words.
+- **Dashlets can be filtered by field name, including to the viewer's own
+  records.** `kizen dashboards dashlet-config --filter` (or `--filter-file`)
+  takes a filter spec such as `{"all": [{"field": "owner", "op": "is_me"}]}`.
+  A dashboard spec's `config.filters` may also be a filter spec; the plan
+  compiles it against the dashlet's object. Filters read back from Kizen
+  pass through unchanged.
 - **The code-steps doc covers reading and writing records from a script.**
   It names all five `kizen.api` verbs, shows what a read, create, update,
   search and archive send and return, and works through an AI step whose
@@ -87,6 +100,10 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Removed
 
+- **Automation specs and `steps add` no longer take an `exit_loop` step.**
+  Kizen doesn't support it as a feature yet, so a step that names it is
+  refused as an unknown step type. `loop` and `next_or_finish` are
+  unchanged.
 - `automations update --dry-run` no longer prints `detaches_mcp_server` or
   `clears_run_tools_as`; those steps now keep their tools and are listed
   under `keeps_live`.
@@ -147,6 +164,10 @@ called out explicitly under **Changed** or **Removed**.
   own help through `npx @kizenapps/cli admin`. Facts that several topics
   repeated now live in one place, and `kizen docs show reference` routes to
   every topic, including `team` and `examples`.
+- **A `stop_execution` step written without an `action` now gets
+  `stop_and_complete`.** Before, Kizen saved it with no action: the editor
+  showed "Unknown", and a run that reached it never finished. An update or
+  step edit that leaves `action` out keeps the step's live action.
 
 ## [0.4.0] — 2026-10-27
 

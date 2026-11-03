@@ -92,14 +92,15 @@ Consequences worth knowing:
   insert or remove mid-graph renames every later step. Always re-run `show`
   before the next step operation.
 - **`edit` is a merge patch, but config blocks replace wholesale.** Send a
-  complete config block, not a partial one.
+  complete config block, not a partial one. One exception: a
+  `stop_execution` block keeps the live `action` and `notify` it leaves
+  out, and gets `stop_and_complete` when the step has no action.
 - **`add` inserts into the chain by default** — the parent's children move under
   the new step. `--leaf` appends without adopting them, `--branch yes|no` targets
   a condition/goal branch, `--root` puts the new step first. A
   `next_or_finish` or `merge_branches` child is never adopted, so `--parent
   <loop>` puts the new step at the head of the loop body, and `--parent
-  <next_or_finish>` puts it right after the loop. An `exit_loop` adds like any
-  step.
+  <next_or_finish>` puts it right after the loop.
 - **`add` of a `loop` adds its `next_or_finish` and its item variable too**, as
   Kizen's builder does. The spec is `{"step_type": "loop", "step_loop":
   {"array_variable": "<array>"}}`, and the array must already be declared by

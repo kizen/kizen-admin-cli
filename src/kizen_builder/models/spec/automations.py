@@ -90,7 +90,6 @@ _STEP_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "branch": None,
     "merge_branches": None,
     "next_or_finish": None,
-    "exit_loop": None,
 }
 
 

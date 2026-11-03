@@ -237,3 +237,92 @@ def test_generate_null_custom_object_for_activity_family(monkeypatch):
     gen = tpl.generate("scheduled_activities", object_ref="call")
     assert gen.custom_object is None
     assert gen.config["object_id"] == ACTIVITY_ID
+
+
+# ---------------------------------------------------------------------------
+# --filter: a filter spec compiled into config.filters
+# ---------------------------------------------------------------------------
+
+MINE = {"all": [{"field": "owner", "op": "is_me"}]}
+
+
+@pytest.fixture
+def policies(monkeypatch, kizen):
+    """'policies' resolves to the filter stub's object, so specs compile offline."""
+    from tests.filter_stub import POLICIES_OBJ_ID
+
+    obj = {"id": POLICIES_OBJ_ID, "api_name": "policies", "fields": []}
+    monkeypatch.setattr(tpl, "get_object", lambda ref: obj)
+    return POLICIES_OBJ_ID
+
+
+@pytest.mark.parametrize("dashlet_type", tpl.FILTERABLE_TYPES)
+def test_filter_spec_compiles_owner_and_team_member_is_me(policies, dashlet_type):
+    spec = {
+        "all": [
+            {"field": "owner", "op": "is_me"},
+            {"field": "fteammember", "op": "is_me"},
+        ]
+    }
+    cfg = tpl.build_dashlet_config(
+        dashlet_type, object_ref="policies", filter_spec=spec
+    )
+    assert cfg["filters"] == {
+        "custom_filters": {
+            "and": True,
+            "query": [
+                {
+                    "id": "query-0",
+                    "and": True,
+                    "filters": [
+                        {
+                            "type": "fields",
+                            "subtype": "non_custom",
+                            "field": "owner",
+                            "condition": "=",
+                            "value": "is_me",
+                        },
+                        {
+                            "type": "fields_v2",
+                            "subtype": "custom",
+                            "field": '"custom"::0a40f245-a9bd-47df-bf1c-8a88583d29c5',
+                            "condition": "=",
+                            "value": "is_me",
+                        },
+                    ],
+                }
+            ],
+        }
+    }
+
+
+def test_filter_spec_leaves_the_rest_of_the_config_alone(policies):
+    plain = tpl.build_dashlet_config("field_sum", object_ref="policies")
+    filtered = tpl.build_dashlet_config(
+        "field_sum", object_ref="policies", filter_spec=MINE
+    )
+    assert plain["filters"] == {"custom_filters": {"and": True, "query": []}}
+    assert {k: v for k, v in filtered.items() if k != "filters"} == {
+        k: v for k, v in plain.items() if k != "filters"
+    }
+
+
+def test_filter_spec_needs_an_object():
+    with pytest.raises(ValueError, match="needs --object"):
+        tpl.build_dashlet_config("field_sum", filter_spec=MINE)
+
+
+def test_filter_spec_on_a_type_without_record_filters_errors():
+    with pytest.raises(ValueError, match="has no record filter"):
+        tpl.build_dashlet_config(
+            "pipeline_metric", object_ref="deals", filter_spec=MINE
+        )
+
+
+def test_bad_filter_field_is_the_dsl_message_prefixed(policies):
+    with pytest.raises(ValueError, match="^invalid filter spec: Unknown field 'nope'"):
+        tpl.build_dashlet_config(
+            "field_sum",
+            object_ref="policies",
+            filter_spec={"all": [{"field": "nope", "op": "is_me"}]},
+        )

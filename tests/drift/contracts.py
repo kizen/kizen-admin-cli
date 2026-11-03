@@ -328,9 +328,8 @@ def tracked() -> tuple[Contract, ...]:
 #: does something here turning up documented (delete the entry when it does).
 KNOWN_UNDOCUMENTED_BLOCKS: dict[str, str] = {
     "schema:WriteStepRequest.action_stop_execution": (
-        "undeclared entirely; the API accepts `action_stop_execution: {}` and "
-        "the round-trip half creates two such steps every run "
-        "(confirmed live 2026-08-05)"
+        "undeclared entirely; the API accepts the block, one with no `action` "
+        "included (confirmed live 2026-10-30)"
     ),
     "schema:WriteTriggerRequest.trigger_manual": (
         "undeclared; a manual trigger carries no config block and the planner "
