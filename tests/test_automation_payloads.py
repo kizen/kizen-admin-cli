@@ -7,6 +7,7 @@ field_ref resolution, and the unsupported-type error contract.
 
 from __future__ import annotations
 
+import copy
 import json
 
 import pytest
@@ -1416,6 +1417,29 @@ def test_create_related_entity_reduces_expanded_variable_refs(patch_live_lookups
     assert action["new_entity_owner_variable"] == "owner"
     assert action["new_entity_stage"] == "22222222-2222-2222-2222-222222222222"
     assert action["target_variable"] == "new_record"
+
+
+@pytest.mark.parametrize(
+    "target", ["client_client", {"name": "client_client"}, {"id": "client_client"}]
+)
+def test_create_related_entity_on_contacts_refused(patch_live_lookups, target):
+    spec = _one_step_spec(
+        "create_related_entity",
+        {
+            "target_custom_object": target,
+            "new_entity_name": "x",
+            "new_entity_name_html": "<p>x</p>",
+            "new_entity_owner_type": "assign_from_context_record",
+        },
+    )
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value) == (
+        "step 'only': Kizen can't create a Contact from create_related_entity "
+        '("contact creation not supported"). Create it in a code_step with POST '
+        '/records/client_client/add — see "Find or create a Contact by email" in '
+        "kizen docs show automation."
+    )
 
 
 def test_notify_member_via_email_normalizes_team_member_and_message_id(
@@ -4296,16 +4320,92 @@ def test_condition_variable_checked_against_the_spec_declarations(
     assert str(e.value) == message
 
 
-def test_search_records_filter_rejects_a_variable(
+def test_search_records_filter_compares_to_a_declared_string_variable(
     patch_live_lookups, patients_filter_schema
 ):
-    rule = {"field": "name", "op": "is_any_of", "variable": "found"}
+    rule = {"field": "name", "op": "=", "variable": "wanted"}
+    spec = _variable_spec(
+        {"field": "gender", "op": "is_blank"},
+        _init_variable("wanted", "string", is_array=False),
+        _search_into("found", filter_config={"all": [rule]}),
+    )
+    search = _build(spec)["steps"][1]["action_search_records"]
+    (clause,) = search["filter_config"]["query"][0]["filters"]
+    assert (clause["condition"], clause["value"], clause["value_type"]) == (
+        "=",
+        "wanted",
+        "variable",
+    )
+    assert clause["view_model"][2:] == [
+        ["condition", "equals"],
+        ["value_type", "variable"],
+        ["variable", {"name": "wanted", "is_array": False, "data_type": "string"}],
+    ]
+
+
+def test_search_records_filter_variable_checked_against_the_declarations(
+    patch_live_lookups, patients_filter_schema
+):
+    rule = {"field": "name", "op": "=", "variable": "wanted"}
     spec = _variable_spec(
         {"field": "gender", "op": "is_blank"},
         _search_into("found", filter_config={"all": [rule]}),
     )
-    with pytest.raises(PlanError, match="only works in a condition step"):
+    with pytest.raises(PlanError) as e:
         _build(spec)
+    assert str(e.value) == (
+        "step 'declare0': variable 'wanted' isn't declared in this automation "
+        "(declared arrays: found)"
+    )
+
+
+_MERGE_FIELD_RULE = {"field": "name", "op": "=", "value": "{{ custom_objects.name }}"}
+
+
+@pytest.mark.parametrize(
+    "filter_config",
+    [
+        {"all": [_MERGE_FIELD_RULE]},
+        {"any": [{"all": [{"field": "name", "op": "is_blank"}, _MERGE_FIELD_RULE]}]},
+        {"all": [{**_MERGE_FIELD_RULE, "op": "is_any_of", "value": ["{{ x }}"]}]},
+    ],
+)
+def test_search_records_refuses_a_merge_field_in_a_filter_value(
+    patch_live_lookups, patients_filter_schema, filter_config
+):
+    spec = _variable_spec(
+        {"field": "gender", "op": "is_blank"},
+        _search_into("found", filter_config=filter_config),
+    )
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value) == (
+        "step 'declare0': Kizen doesn't fill merge fields in a filter value; it "
+        'stores "{{ … }}" as text and matches nothing. Copy the value into a string '
+        'variable and compare with "variable": "<name>" — kizen docs show filters.'
+    )
+
+
+def test_condition_refuses_a_merge_field_in_a_filter_value(
+    patch_live_lookups, patients_filter_schema
+):
+    with pytest.raises(PlanError, match="^step 'check': Kizen doesn't fill merge"):
+        _build(_condition_spec({"all": [_MERGE_FIELD_RULE]}))
+
+
+def test_search_records_passes_a_raw_merge_field_through(
+    patch_live_lookups, patients_filter_schema
+):
+    raw = copy.deepcopy(NAME_IS_X)
+    raw["query"][0]["filters"][0]["value"] = "{{ custom_objects.name }}"
+    spec = _variable_spec(
+        {"field": "gender", "op": "is_blank"},
+        _search_into("found", filter_config=raw),
+    )
+    search = _build(spec)["steps"][0]["action_search_records"]
+    assert search["filter_config"]["query"][0]["filters"][0]["value"] == (
+        "{{ custom_objects.name }}"
+    )
 
 
 # A condition with no rules is accepted by the API, but the Kizen UI shows an

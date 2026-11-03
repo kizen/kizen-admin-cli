@@ -1,0 +1,9 @@
+{
+  "api_name": "support_requests",
+  "name": "Support Requests",
+  "entity_name": "Support Request",
+  "description": "A request to the support desk, from a customer's email address.",
+  "categories": [
+    { "api_name": "request_details", "name": "Request Details" }
+  ]
+}

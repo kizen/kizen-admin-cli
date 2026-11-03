@@ -233,16 +233,22 @@ _STAGE_CONDITIONS = {
 }
 
 
-# Comparing a field to an automation variable (condition steps only). The
-# field types the Kizen UI offers "Variable" on, and the variable kinds
-# (data_type, is_array) its picker lists for each, as captured from the UI
-# 2026-10-14. An entity array must hold the relationship's related object.
+# Comparing a field to an automation variable (condition and search_records
+# steps). The field types the Kizen UI offers "Variable" on, and the variable
+# kinds (data_type, is_array) its picker lists for each, as captured from the
+# UI 2026-10-14 (email: 2026-10-30). An entity array must hold the
+# relationship's related object.
 _VARIABLE_KINDS = {
     "dropdown": {("string", True), ("uuid", True)},
     "checkboxes": {("string", True), ("uuid", True)},
     "team_selector": {("string", True), ("uuid", True), ("employee", False)},
     "relationship": {("string", True), ("uuid", True), ("entity", True)},
+    "text": {("string", False)},
+    "email": {("string", False)},
 }
+# The field types compared to one string variable, with _STRING_VARIABLE_OPS.
+# The others take an array, with _ARRAY_VARIABLE_OPS.
+_STRING_VARIABLE_FIELDS = {"text", "email"}
 
 
 class VariableReferenceError(ValueError):
@@ -338,6 +344,13 @@ _EDITOR_RULES = {
     ("stage", "time_in_stage", ">"): _Layout("time_in_stage", "stage", "more_than"),
     ("stage", "entered_stage", "<"): _Layout("entered_stage", "stage", "earlier_than"),
     ("stage", "left_stage", ">="): _Layout("left_stage", "stage", "later_than_or_on"),
+    # Compared to a string variable (the qualifier "variable"):
+    # condition_variable_rhs_contacts.raw.json's condition step. `=` and text
+    # take the literal rule's token.
+    ("email", "contains", "variable"): _Layout("contains", "variable"),
+    ("email", "=", "variable"): _Layout("equals", "variable"),
+    ("text", "contains", "variable"): _Layout("contains", "variable"),
+    ("text", "=", "variable"): _Layout("equals", "variable"),
 }
 
 # Value entries the editor writes with no `value_type`.
@@ -783,6 +796,20 @@ class FilterCondition:
                 f"field '{self.field}' ({field_type}) can't be compared to a "
                 f"variable. Field types that can: {', '.join(sorted(_VARIABLE_KINDS))}"
             )
+        takes_string = field_type in _STRING_VARIABLE_FIELDS
+        ops = _STRING_VARIABLE_OPS if takes_string else _ARRAY_VARIABLE_OPS
+        if self.condition not in ops.values():
+            op = next(k for k, v in _VARIABLE_OPS.items() if v == self.condition)
+            raise VariableReferenceError(
+                f"op '{op}' can't compare field '{self.field}' ({field_type}) to a "
+                f"variable. Use one of: {', '.join(ops)}"
+            )
+        if takes_string and (data_type, is_array) != ("string", False):
+            kind = f"{data_type} array" if is_array else data_type
+            raise VariableReferenceError(
+                f"field '{self.field}' ({field_type}) can't be compared to a "
+                f"{kind} variable; it takes a single string variable"
+            )
         relation = field.get("relation") or {}
         subtype = None
         if data_type == "entity" and var.get("data_subtype"):
@@ -826,9 +853,12 @@ class FilterCondition:
                 "object_name": subtype.get("object_name"),
                 "object_type": subtype.get("object_type"),
             }
+        token = condition
+        if takes_string:
+            token = _EDITOR_RULES[(field_type, condition, "variable")].token
         view_model = [
             *_view_model_head(field, client, obj_id, obj),
-            ["condition", condition],
+            ["condition", token],
             ["value_type", "variable"],
             ["variable", var_vm],
         ]
@@ -1855,8 +1885,8 @@ def as_custom_filters(expr):
 # Field names, option labels, and tag names resolve to UUIDs exactly as in
 # the DSL (the spec compiles TO the DSL). Ops with no value (is_blank,
 # is_me, ...) omit "value"; list ops (is_any_of, between, ...) take a list.
-# "variable" (condition steps only) compares the field to an automation
-# variable instead of a literal, with the two ops in _VARIABLE_OPS.
+# "variable" (condition and search_records steps only) compares the field to
+# an automation variable instead of a literal, with the ops in _VARIABLE_OPS.
 # ---------------------------------------------------------------------------
 
 _NO_VALUE_OPS = {
@@ -1911,7 +1941,10 @@ VALID_SPEC_OPS = sorted(
     {*_NO_VALUE_OPS, *_SCALAR_OPS, *_LIST_OPS, *_STAGE_OP_COMPARISONS}
 )
 
-_VARIABLE_OPS = {"is_any_of": "is_any_of", "not_any_of": "is_none_of"}
+# Spec op -> wire condition.
+_ARRAY_VARIABLE_OPS = {"is_any_of": "is_any_of", "not_any_of": "is_none_of"}
+_STRING_VARIABLE_OPS = {"=": "=", "contains": "contains"}
+_VARIABLE_OPS = {**_ARRAY_VARIABLE_OPS, **_STRING_VARIABLE_OPS}
 
 
 def _spec_op_condition_map():
@@ -1982,8 +2015,9 @@ def from_spec(spec, variables=None):
     UI-supportability checks happen later, at serialization time.
 
     ``variables`` maps the automation's declared variable names to their
-    ``{data_type, is_array[, data_subtype]}``. Only a condition step passes
-    it; without it a ``"variable"`` key is rejected."""
+    ``{data_type, is_array[, data_subtype]}``. Only condition and
+    search_records steps pass it; without it a ``"variable"`` key is
+    rejected."""
     if not isinstance(spec, dict):
         raise ValueError(
             f"filter spec must be a JSON object, got {type(spec).__name__}"
@@ -2078,7 +2112,7 @@ def _variable_condition(spec, variables):
     if variables is None:
         raise ValueError(
             '"variable" compares to an automation variable and only works in a '
-            "condition step's filter_config"
+            "condition or search_records step's filter_config"
         )
     if "value" in spec:
         raise ValueError('a condition takes "value" or "variable", not both')

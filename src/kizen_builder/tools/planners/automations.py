@@ -2036,6 +2036,7 @@ def _step_condition(
         "llm_decision": _normalize_llm_decision(block.get("llm_decision")),
     }
     if block.get("filter_config") is not None:
+        _refuse_merge_fields(block["filter_config"])
         out["filter_config"] = _render_filter_config(
             block["filter_config"], auto.target_object, _declared_variables(auto.steps)
         )
@@ -2171,6 +2172,8 @@ def _built_block_problem(
         return _assign_team_member_problem(key, block, auto, ctx)
     if step_type == "call_llm":
         return _llm_tools_pairing_problem(key, block)
+    if step_type == "create_related_entity":
+        return _contact_creation_problem(key, block, ctx)
     if step_type == "start_automation" and ctx.refuse_inactive_start_targets:
         problems = inactive_start_targets(
             [{"key": key, "type": step_type, "action_start_automation": block}],
@@ -2205,6 +2208,22 @@ def inactive_start_targets(
                 f"Run kizen automations activate {name} first."
             )
     return out
+
+
+def _contact_creation_problem(
+    key: str, block: dict[str, Any], ctx: LiveContext
+) -> str | None:
+    """Kizen rejects a create_related_entity on Contacts at create, with a
+    400 that doesn't say what to do instead (confirmed live 2026-10-30)."""
+    target = block.get("target_custom_object")
+    if not target or target != ctx.object_uuid("client_client"):
+        return None
+    return (
+        f"step '{key}': Kizen can't create a Contact from create_related_entity "
+        '("contact creation not supported"). Create it in a code_step with POST '
+        '/records/client_client/add — see "Find or create a Contact by email" in '
+        "kizen docs show automation."
+    )
 
 
 def _llm_tools_pairing_problem(key: str, block: dict[str, Any]) -> str | None:
@@ -2269,8 +2288,8 @@ def _render_filter_config(
     values rejected). Raw is the only form for clause types the DSL doesn't
     cover (e.g. a variable compared to a static value).
 
-    ``variables`` (condition steps only) are the automation's declared
-    variables, which a spec condition's ``"variable"`` may name.
+    ``variables`` (condition and search_records steps) are the automation's
+    declared variables, which a spec condition's ``"variable"`` may name.
 
     A compiled spec writes the Kizen editor's ``view_model`` on each rule
     whose layout has been captured; see ``filtering._EDITOR_RULES``.
@@ -3032,7 +3051,7 @@ def _step_create_related_entity(
     "destination_variable_resolution",
 )
 def _step_search_records(
-    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     """Searches `custom_object` and writes the result into an array-type
     automation variable. Confirmed live (2026-07-22) against the
@@ -3063,8 +3082,12 @@ def _step_search_records(
             "destination_variable_resolution", "overwrite"
         ),
     }
-    if block.get("filter_config") is not None:
-        out["filter_config"] = _render_filter_config(block["filter_config"], object_api)
+    fc = block.get("filter_config")
+    if fc is not None:
+        _refuse_merge_fields(fc)
+        out["filter_config"] = _render_filter_config(
+            fc, object_api, _declared_variables(auto.steps)
+        )
     else:
         out["filter_config"] = None
     groups: list[dict[str, str]] = []
@@ -3088,6 +3111,34 @@ def _step_search_records(
             groups.append({"id": gid})
     out["filter_groups"] = groups
     return out
+
+
+def _refuse_merge_fields(fc: dict[str, Any]) -> None:
+    """Refuse a filter spec ``value`` holding a ``{{ … }}`` merge field.
+    Condition and search steps store it as text and match nothing
+    (confirmed live 2026-10-30 and 2026-11-02). A raw wire filter_config
+    passes unchecked."""
+    if "all" not in fc and "any" not in fc:
+        return
+
+    def has_merge_field(node: Any) -> bool:
+        if isinstance(node, list):
+            return any(has_merge_field(n) for n in node)
+        if not isinstance(node, dict):
+            return False
+        if "field" in node:
+            values = node.get("value")
+            values = values if isinstance(values, list) else [values]
+            return any(isinstance(v, str) and "{{" in v for v in values)
+        return any(has_merge_field(v) for v in node.values())
+
+    if has_merge_field(fc):
+        raise PlanError(
+            "Kizen doesn't fill merge fields in a filter value; it stores "
+            '"{{ … }}" as text and matches nothing. Copy the value into a '
+            'string variable and compare with "variable": "<name>" — kizen '
+            "docs show filters."
+        )
 
 
 def _api_name_of(value: Any) -> str | None:

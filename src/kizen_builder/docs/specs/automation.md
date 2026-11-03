@@ -263,6 +263,189 @@ pass linked it and copied its text. With the filter widened to `contains`
 second. To read the linked record's fields in a later step, see
 [Reading a related record's field into a variable](#reading-a-related-records-field-into-a-variable).
 
+### Find or create a Contact by email
+
+A support request arrives with the customer's email address. This links the
+request to the Contact with that email, and creates the Contact when there is
+none. It is the search-and-link pattern above, with three differences:
+
+- **The search compares to a variable, not a merge field.** Kizen doesn't fill
+  `{{ … }}` in a filter value. It stores the text and matches nothing, so the
+  CLI refuses one in a condition or `search_records` filter spec. Copy the
+  field into a string variable and compare with `"variable"` (see
+  `kizen docs show filters`).
+- **The Contact is created in a code step.** `create_related_entity` can't
+  create a Contact (see [`create_related_entity`](#create_related_entity)).
+  The script posts to `/records/client_client/add`, and its `field` output
+  links the new Contact.
+- **Kizen refuses a second Contact with the same email**, with a 400 "Entity
+  record email must be unique". Confirmed live 2026-10-30.
+
+The object and its fields, applied as in `kizen docs show examples`:
+
+<!-- fixture: examples/support_desk/support_requests.object.json -->
+```json
+{
+  "api_name": "support_requests",
+  "name": "Support Requests",
+  "entity_name": "Support Request",
+  "description": "A request to the support desk, from a customer's email address.",
+  "categories": [
+    { "api_name": "request_details", "name": "Request Details" }
+  ]
+}
+```
+
+<!-- fixture: examples/support_desk/support_requests.fields.json -->
+```json
+{
+  "category": "Request Details",
+  "fields": [
+    {
+      "name": "Customer Email",
+      "api_name": "customer_email",
+      "field_type": "email"
+    },
+    {
+      "name": "Customer",
+      "api_name": "customer",
+      "field_type": "relationship",
+      "relation": {
+        "target_object": "client_client",
+        "relation_type": "many_to_one",
+        "related_name": "Support Requests"
+      }
+    }
+  ]
+}
+```
+
+The automation runs when a request is created:
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/triggers -->
+```json
+[ { "trigger_type": "new_entity_created", "order": 0,
+    "trigger_new_entity_created": { "action": "create_only" } } ]
+```
+
+The three variable steps sit at the front. `customer_email` copies the
+request's email from a merge field, which a variable source does fill:
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/0 -->
+```json
+{ "key": "found", "parent_key": null, "step_type": "initialize_variable", "order": 0,
+  "description": "found_contacts = []",
+  "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
+    "variable": { "name": "found_contacts", "data_type": "entity", "is_array": true,
+                  "data_subtype": "<client_client_object_uuid>" } } }
+```
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/1 -->
+```json
+{ "key": "found_item", "parent_key": "found", "step_type": "initialize_variable",
+  "order": 1, "description": "Item Reference Variable",
+  "action_initialize_variable": { "sources": [],
+    "variable": { "name": "found_contacts_item", "data_type": "entity",
+                  "data_subtype": "<client_client_object_uuid>" } } }
+```
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/2 -->
+```json
+{ "key": "email", "parent_key": "found_item", "step_type": "initialize_variable",
+  "order": 2,
+  "action_initialize_variable": {
+    "sources": [ { "source_type": "static", "source_subtype": "string",
+                   "value": "{{ custom_objects.customer_email }}" } ],
+    "variable": { "name": "customer_email", "data_type": "string" } } }
+```
+
+`<client_client_object_uuid>` is the `id` from `kizen objects get client_client
+--json`. The search compares the Contacts `email` field to the variable, and
+the editor shows it as "Email Equals Variable 'customer_email'":
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/3 -->
+```json
+{ "key": "find", "parent_key": "email", "step_type": "search_records", "order": 3,
+  "action_search_records": { "custom_object": "client_client",
+    "filter_type": "custom_filter",
+    "filter_config": { "all": [ { "field": "email", "op": "=", "variable": "customer_email" } ] },
+    "destination_variable": "found_contacts",
+    "destination_variable_resolution": "overwrite" } }
+```
+
+The loop links the Contact the search found. Each pass sets `customer` again,
+so if the search ever found several Contacts, the last one would be linked:
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/4 -->
+```json
+{ "key": "each", "parent_key": "find", "step_type": "loop", "order": 4,
+  "description": "For each item in 'found_contacts'",
+  "step_loop": { "array_variable": "found_contacts", "item_variable": "found_contacts_item" } }
+```
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/5 -->
+```json
+{ "key": "link", "parent_key": "each", "step_type": "change_field_value", "order": 5,
+  "action_change_field_value": { "field_ref": "support_requests.customer",
+    "change_type": "variable", "variable": "found_contacts_item" } }
+```
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/6 -->
+```json
+{ "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 6 }
+```
+
+After the loop, `customer` is still blank only when nothing was found. The
+condition's yes branch creates the Contact. Its no branch is empty, so the run
+ends there:
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/7 -->
+```json
+{ "key": "no_customer", "parent_key": "next", "step_type": "condition", "order": 7,
+  "step_condition": { "type": "custom_filter",
+    "filter_config": { "all": [ { "field": "customer", "op": "is_blank" } ] } } }
+```
+
+<!-- fixture: examples/support_desk/find_contact.automation.json#/steps/8 -->
+```json
+{ "key": "create_contact", "parent_key": "no_customer", "parent_branch": "yes",
+  "step_type": "code_step", "order": 8,
+  "action_code_step": {
+    "script": "# Create a Contact for an email no Contact has yet; the output links it.\nemail = (inputs.customer_email or \"\").strip()\nif not email:\n    raise Exception(\"customer_email is blank: no Contact to create\")\nresp = kizen.api.post(\n    \"/records/client_client/add\", json={\"fields\": [{\"name\": \"email\", \"value\": email}]}\n)\nif resp.status_code != 201:\n    raise Exception(\n        f\"creating a Contact for {email} failed: {resp.status_code} {resp.text[:200]}\"\n    )\noutputs.customer = resp.json()[\"id\"]",
+    "inputs": [ { "name": "customer_email", "input_type": "field",
+                  "field_ref": "support_requests.customer_email", "data_type": "string" } ],
+    "outputs": [ { "name": "customer", "output_type": "field",
+                   "field_ref": "support_requests.customer" } ] } }
+```
+
+That step's `script`, unescaped:
+
+```python
+# Create a Contact for an email no Contact has yet; the output links it.
+email = (inputs.customer_email or "").strip()
+if not email:
+    raise Exception("customer_email is blank: no Contact to create")
+resp = kizen.api.post(
+    "/records/client_client/add", json={"fields": [{"name": "email", "value": email}]}
+)
+if resp.status_code != 201:
+    raise Exception(
+        f"creating a Contact for {email} failed: {resp.status_code} {resp.text[:200]}"
+    )
+outputs.customer = resp.json()["id"]
+```
+
+A 4xx comes back as a response rather than raising, so the script checks the
+status itself. If another run has just created a Contact with that email,
+Kizen answers 400 "Entity record email must be unique" and the step fails
+instead of linking a duplicate. For what else a script can read and write, see
+`kizen docs show code-steps`.
+
+Confirmed live 2026-11-02, on a copy of these files with the object renamed: a
+request whose email matched a Contact was linked to it (the search found 1),
+and a request with a new email got a new Contact, linked (the search found 0,
+the create answered 201). Activate the automation after creating it.
+
 ### Running once per record on a schedule
 
 A nightly or weekday job that does something to every matching record is two
@@ -529,7 +712,11 @@ own `target_object` (global automations have none) — plus `filter_type`
 `filter_groups` names/ids one or more saved filter groups on `custom_object`
 (same resource as `kizen filter-groups`). For `custom_filter`, `filter_config`
 is the same DSL shape as a condition step's, resolved against `custom_object`
-instead of the automation's target_object. Confirmed live 2026-07-22 — see
+instead of the automation's target_object. A filter value doesn't take merge
+fields: to search on a value from the record, copy it into a string variable
+and compare with `"variable"` (`kizen docs show filters`, and
+[Find or create a Contact by email](#find-or-create-a-contact-by-email)).
+Confirmed live 2026-07-22 — see
 the "four fields that break the bare-scalar convention" section below for the wire
 quirks (custom_object/filter_groups/destination_variable are each
 `{"id"|"name": ...}` objects on write, unlike most other action steps' bare
@@ -649,6 +836,11 @@ Creates one record on another object and links it to the triggering record.
   values in a following
   [`modify_related_entities`](#modify_related_entities--field-shape) step
   whose hop is the same `context_entity_field`.
+- **It can't create a Contact.** Kizen rejects the step at create with a 400,
+  "contact creation not supported", so the CLI refuses a `target_custom_object`
+  of `client_client` at plan time. Create the Contact in a `code_step` instead:
+  see [Find or create a Contact by email](#find-or-create-a-contact-by-email).
+  Confirmed live 2026-10-30.
 
 ### Moving a record to a stage
 
@@ -962,13 +1154,15 @@ The clause's rules — `view_model`, the operator mapping, blank checks,
 `client_tag_field_id` — are in `kizen docs show filters`, 'Variable-comparison
 clauses'.
 
-### Field compared to an array variable
+### Field compared to a variable
 
-To test a record field against a variable's values, put `"variable"` in
-place of `"value"` in the condition's filter spec. The variable must be
-declared in the same automation, as an array (a team-member field also takes
-a single `employee` variable). For a dropdown the array holds option names or
-option UUIDs; a test run matched with each.
+To test a record field against a variable, put `"variable"` in place of
+`"value"` in a condition's or `search_records` step's filter spec. The
+variable must be declared in the same automation. A text or email field takes
+a single string variable, with `=` or `contains`. The other field types take
+an array (a team-member field also takes a single `employee` variable). For a
+dropdown the array holds option names or option UUIDs; a test run matched
+with each.
 
 ```json
 { "key": "allowed", "parent_key": null, "step_type": "initialize_variable",
@@ -1286,8 +1480,9 @@ Confirmed live 2026-10-30, in this order.
   `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
   dict for clause types the DSL doesn't cover (a variable compared to a static
   value — see "Variable-comparison condition step" above). A field compared to
-  an array variable is in the DSL ("Field compared to an array variable"
-  above). **A condition needs at least one
+  a variable is in the DSL ("Field compared to a variable" above). A filter
+  value can't hold a `{{ … }}` merge field: Kizen stores it as text and
+  matches nothing (confirmed live 2026-11-02), so the CLI refuses it. **A condition needs at least one
   rule.** An empty `query`, a group with no `filters`, or an `in_group`/
   `not_in_group` with no `group_ids` is rejected at plan time. The API accepts
   an empty filter, but the UI then shows an error on the step (reported
