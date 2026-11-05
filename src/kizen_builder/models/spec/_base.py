@@ -25,7 +25,6 @@ referenced from a spec.
 FieldType = Literal[
     "checkbox",
     "checkboxes",
-    "choices",
     "date",
     "datetime",
     "decimal",
@@ -40,15 +39,14 @@ FieldType = Literal[
     "radio",
     "rating",
     "relationship",
-    "selector",
     "status",
     "team_selector",
     "text",
-    "timezone",
     "wysiwyg",
     "yesnomaybe",
 ]
-"""All 24 custom-object field types supported by the Kizen API."""
+"""The 21 custom-object field types that can be created. `timezone`, `choices` and
+`selector` exist on the wire but are legacy or built-in only, so specs reject them."""
 
 
 RelationType = Literal[

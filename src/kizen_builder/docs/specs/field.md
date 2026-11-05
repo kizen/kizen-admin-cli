@@ -59,13 +59,13 @@ api_name — `kizen objects get <object>` lists the category display names.
 |-----|------|-------|
 | `name` | string (1–200) | **Required.** Human display name shown in the UI. |
 | `api_name` | string | **Required.** `^[A-Za-z0-9_]+$`, unique within the object. See reserved-names gotcha. |
-| `field_type` | enum | **Required.** One of the 24 types below. |
+| `field_type` | enum | **Required.** One of the 21 types below. |
 | `category` | string | Optional per-field override (bulk spec only; **the category's display name**; stripped before validation). |
 | `description` | string (≤500) | Optional. |
 | `required` | bool | Default `false`. |
 | `read_only` | bool | Default `false`. |
 | `hidden` | bool | Default `false`. Hides the field by default. |
-| `options` | string[] | **Required** for `dropdown`/`radio`/`checkboxes`/`choices`; forbidden otherwise. Option **labels**. |
+| `options` | string[] | **Required** for `dropdown`/`radio`/`checkboxes`; forbidden otherwise. Option **labels**. |
 | `status_options` | `StatusOption[]` | **Required** for `status`; forbidden otherwise. |
 | `relation` | `RelationConfig` | **Required** for `relationship`; forbidden otherwise. |
 | `money_options` | `MoneyConfig` | Only for `money` (defaults to USD if omitted). |
@@ -80,15 +80,20 @@ Any other key is a spec error. That includes the API's spellings that `get`
 prints (`is_required`, `is_read_only`, `is_hidden`, `display_name`,
 `phonenumber_options`), and the error names the key to write instead.
 
-### `field_type` values (24)
+### `field_type` values (21)
 
 ```
-checkbox      checkboxes    choices       date          datetime
-decimal       dropdown      dynamictags   email         files
-integer       longtext      money         phonenumber   radio
-rating        relationship  selector      status        team_selector
-text          timezone      wysiwyg       yesnomaybe
+checkbox      checkboxes    date          datetime      decimal
+dropdown      dynamictags   email         files         integer
+longtext      money         phonenumber   radio         rating
+relationship  status        team_selector text          wysiwyg
+yesnomaybe
 ```
+
+`get` can show three more types that a spec rejects, because they can't be
+created: `timezone` (only the built-in Contacts `timezone` field), and the
+legacy `choices` and `selector` (Kizen converted them to `dropdown` and
+`team_selector`; confirmed live 2026-11-04).
 
 `wysiwyg` is accepted and auto-translated to `longtext` + `meta.is_markdown`
 (the API has no real `wysiwyg` type — see "Type quirks on the wire" below).
