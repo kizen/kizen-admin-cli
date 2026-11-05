@@ -22,7 +22,6 @@ ActivityFieldType = Literal[
     "activity_custom_field",
     "checkbox",
     "checkboxes",
-    "choices",
     "date",
     "datetime",
     "decimal",
@@ -37,15 +36,13 @@ ActivityFieldType = Literal[
     "radio",
     "rating",
     "relationship",
-    "selector",
     "status",
     "team_selector",
     "text",
-    "timezone",
     "wysiwyg",
     "yesnomaybe",
 ]
-"""Field types valid on an activity — the 24 custom-object types plus
+"""Field types valid on an activity — the 21 custom-object types plus
 `activity_custom_field` (a field mirrored from a related custom object)."""
 
 

@@ -21,7 +21,6 @@ from kizen_builder.models.spec.objects import _TYPES_REQUIRING_OPTIONS
 FormFieldType = Literal[
     "checkbox",
     "checkboxes",
-    "choices",
     "date",
     "datetime",
     "decimal",
@@ -36,15 +35,13 @@ FormFieldType = Literal[
     "radio",
     "rating",
     "relationship",
-    "selector",
     "status",
     "team_selector",
     "text",
-    "timezone",
     "wysiwyg",
     "yesnomaybe",
 ]
-"""Field types valid on a form/survey field — the same 24 custom-object types
+"""Field types valid on a form/survey field — the same 21 custom-object types
 minus `activity_custom_field`. A form field links to its related object's field
 through `custom_object_field` instead."""
 

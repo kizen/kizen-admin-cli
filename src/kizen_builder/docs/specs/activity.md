@@ -184,7 +184,7 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
 - **No category** — fields order within one flat list via `order` (0–32767).
 - **No reserved-api_name restriction**; `api_name` is **optional** (Kizen
   derives one from the display name when omitted).
-- Field types: the same 24 as custom objects **plus `activity_custom_field`** —
+- Field types: the same 21 as custom objects **plus `activity_custom_field`** —
   a field mirrored from a related custom-object field, set via
   `custom_object_field: "<field_uuid>"` (CLI: `--linked-field object_api.field_api`).
 - Type-specific blocks (`options`, `status_options`, `money_options`, `rating`,

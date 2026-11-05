@@ -19,7 +19,7 @@ from kizen_builder.models.spec.field_configs import (
 )
 from kizen_builder.utils import derived_object_api_name
 
-_TYPES_REQUIRING_OPTIONS = {"dropdown", "radio", "checkboxes", "choices"}
+_TYPES_REQUIRING_OPTIONS = {"dropdown", "radio", "checkboxes"}
 
 
 _RESERVED_FIELD_API_NAMES = frozenset(
@@ -79,7 +79,7 @@ class FieldDef(BaseModel):
     # Type-specific config. Only the block matching field_type should be set.
     options: list[str] | None = Field(
         default=None,
-        description="For dropdown / radio / checkboxes / choices fields. A list of option labels.",
+        description="For dropdown / radio / checkboxes fields. A list of option labels.",
     )
     status_options: list[StatusOption] | None = Field(
         default=None,

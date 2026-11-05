@@ -14,6 +14,16 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Specs reject the `timezone`, `choices` and `selector` field types.**
+  None of them can be created in Kizen: `timezone` exists only as the built-in
+  Contacts field, and `choices` and `selector` are legacy types. The API still
+  accepted them, so a spec using one passed `--dry-run` and created a field the
+  UI can't build. Object, form and activity field specs now fail validation
+  instead. Existing fields of these types are still read, filtered and updated
+  as before.
+
 ## [0.5.0] — 2026-11-03
 
 ### Added

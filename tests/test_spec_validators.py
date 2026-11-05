@@ -205,6 +205,16 @@ def test_field_spec_rejects_an_unknown_key(model):
     assert err["loc"] == ("colour",)
 
 
+@pytest.mark.parametrize("model", FIELD_MODELS)
+@pytest.mark.parametrize("field_type", ["timezone", "choices", "selector"])
+def test_field_spec_rejects_a_type_kizen_cannot_create(model, field_type):
+    with pytest.raises(ValidationError) as e:
+        model.model_validate(_field(field_type=field_type))
+    (err,) = e.value.errors()
+    assert err["type"] == "literal_error"
+    assert err["loc"] == ("field_type",)
+
+
 def test_money_without_options_defaults_to_usd():
     field = FieldDef.model_validate(_field(field_type="money"))
     assert field.money_options == MoneyConfig()
