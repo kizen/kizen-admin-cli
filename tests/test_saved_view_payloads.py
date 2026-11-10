@@ -438,7 +438,8 @@ def test_create_quick_filter_minimal_payload(no_existing_views, live_objects):
         "name": "Open",
         "filters": {"quick_filter_settings": [], "quick_filtering_facets": False},
         "filter_count": 0,
-        "sharing_settings": _default_sharing(),
+        # The UI's save-modal default: private, no all-team access, Admin admin.
+        "sharing_settings": dict(_default_sharing(), private=True, all_team_members=0),
     }
     assert "owner" not in op.payload
 
@@ -609,6 +610,114 @@ def test_update_quick_filter_not_found_raises(monkeypatch):
     monkeypatch.setattr(sv_planners, "find_saved_view", _raise)
     with pytest.raises(PlanError, match="no saved view named"):
         sv_planners.plan_update_quick_filter("patients", "Nope", {"name": "Y"})
+
+
+def _live_sample_sharing() -> dict:
+    """A quick filter's sharing block as GET returns it (read shape)."""
+    return {
+        "private": True,
+        "all_team_members": 3,
+        "roles": {
+            "view": [],
+            "edit": [],
+            "admin": [{"id": ADMIN_ID, "display_name": "Admin"}],
+        },
+        "team_members": {
+            "view": [],
+            "edit": [],
+            "admin": [{"id": OWNER_ID, "display_name": "Owner"}],
+        },
+    }
+
+
+OWNER_ID = "d8a58788-8131-40f1-a36f-43af2d2075d4"
+SALES_ROLE_ID = "00000000-0000-4000-8000-0000000005a1"
+OTHER_USER_ID = "00000000-0000-4000-8000-0000000000b2"
+
+
+@pytest.fixture
+def sample_qf(monkeypatch):
+    monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
+    monkeypatch.setattr(
+        sv_planners,
+        "find_saved_view",
+        lambda *a, **k: _existing(
+            "filters",
+            id=QF_ID,
+            owner={"id": OWNER_ID, "display_name": "Owner"},
+            sharing_settings=_live_sample_sharing(),
+        ),
+    )
+    monkeypatch.setattr(sv_planners, "admin_role_id", lambda: ADMIN_ID)
+
+
+def test_share_quick_filter_same_access_is_skip(sample_qf):
+    """The read shape ({id, display_name}) must not count as a change."""
+    plan = sv_planners.plan_share_quick_filter(
+        "patients", "Open", all_level="admin", roles={ADMIN_ID: "admin"}
+    )
+    (op,) = plan.operations
+    assert op.action == "skip"
+
+
+def test_share_quick_filter_changes_only_what_is_passed(sample_qf):
+    plan = sv_planners.plan_share_quick_filter(
+        "patients",
+        "Open",
+        private=False,
+        all_level="view",
+        roles={SALES_ROLE_ID: "edit"},
+        users={OTHER_USER_ID: "view"},
+    )
+    (op,) = plan.operations
+    assert op.action == "update" and op.existing_uuid == QF_ID
+    assert op.payload == {
+        "sharing_settings": {
+            "private": False,
+            "all_team_members": 1,
+            "roles": {"view": [], "edit": [SALES_ROLE_ID], "admin": [ADMIN_ID]},
+            "team_members": {
+                "view": [OTHER_USER_ID],
+                "edit": [],
+                "admin": [OWNER_ID],
+            },
+        }
+    }
+    assert op.preview["diff"] == {
+        "sharing.private": "True → False",
+        "sharing.all_team_members": "3 → 1",
+        "sharing.roles.edit": f"[] → ['{SALES_ROLE_ID}']",
+        "sharing.team_members.view": f"[] → ['{OTHER_USER_ID}']",
+    }
+
+
+def test_share_quick_filter_removing_an_absent_role_is_skip(sample_qf):
+    plan = sv_planners.plan_share_quick_filter(
+        "patients", "Open", roles={SALES_ROLE_ID: "none"}
+    )
+    (op,) = plan.operations
+    assert op.action == "skip"
+
+
+@pytest.mark.parametrize(
+    ("grants", "match"),
+    [
+        ({"roles": {ADMIN_ID: "edit"}}, "Admin role already has admin"),
+        ({"roles": {ADMIN_ID: "none"}}, "Admin role already has admin"),
+        ({"users": {OWNER_ID: "view"}}, "owner already has admin"),
+        ({"users": {OWNER_ID: "none"}}, "owner already has admin"),
+    ],
+)
+def test_share_quick_filter_keeps_admin_role_and_owner_at_admin(
+    sample_qf, grants, match
+):
+    with pytest.raises(PlanError, match=match):
+        sv_planners.plan_share_quick_filter("patients", "Open", **grants)
+
+
+def test_share_quick_filter_requires_a_change():
+    with pytest.raises(PlanError, match="at least one"):
+        sv_planners.plan_share_quick_filter("patients", "Open")
 
 
 def test_delete_quick_filter(monkeypatch):

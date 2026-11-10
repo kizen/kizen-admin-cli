@@ -216,6 +216,7 @@ kizen filter-groups create <object> --name X [--filter '<json>'|--filter-file f]
 kizen filter-groups update <object> <uuid|name> [--name] [--filter ...] [--hidden/--visible] [--owner]
 kizen quick-filters create <object> --name X [--chip <field|relation:field|relation:in_groups> ...] [--facets] [--owner uuid]
 kizen quick-filters update <object> <uuid|name> [--name] [--chip ...] [--facets/--no-facets] [--owner]
+kizen quick-filters share <object> <uuid|name> [--private/--public] [--all <level>] [--role <name|uuid>=<level> ...] [--user <uuid>=<level> ...]
 kizen quick-filters apply-to-roles <object> <uuid|name> --role <name|uuid> [...]
 kizen quick-filters apply-to-users <object> <uuid|name> --user <uuid> [...]
 kizen columns create <object> --name X [--config-file f] [--owner uuid]     # configuration_json opaque, copy from `columns get --json`

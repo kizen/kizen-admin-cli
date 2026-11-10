@@ -18,6 +18,9 @@ called out explicitly under **Changed** or **Removed**.
 
 - **`kizen objects update --quick-filtering/--no-quick-filtering`** turns an
   object's quick filters on or off. Chips don't show until it's on.
+- **`kizen quick-filters share`** changes who can view, edit or admin a quick
+  filter: `--private/--public`, `--all <level>`, `--role NAME=LEVEL`,
+  `--user UUID=LEVEL`. Grants you don't pass are kept.
 
 ### Changed
 
@@ -30,6 +33,10 @@ called out explicitly under **Changed** or **Removed**.
   version, run `quick-filters update` with `--chip`. Users it was applied to
   need `apply-to-roles`/`apply-to-users` again, because apply copied the broken
   config onto them.
+- **New quick filters start private**, matching the UI: no access for all team
+  members and the Admin role as admin. Previously the CLI made them visible to
+  all team members. Use `quick-filters share --all view` for the old behavior.
+
 - **Specs reject the `timezone`, `choices` and `selector` field types.**
   None of them can be created in Kizen: `timezone` exists only as the built-in
   Contacts field, and `choices` and `selector` are legacy types. The API still

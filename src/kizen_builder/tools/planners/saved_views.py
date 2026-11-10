@@ -33,6 +33,7 @@ from kizen_builder.api.saved_views import (
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ColumnTemplateDef, FilterGroupDef, QuickFilterDef
 from kizen_builder.tools.dashboards import (
+    admin_role_id,
     default_sharing_settings,
     normalize_sharing_settings,
 )
@@ -290,6 +291,66 @@ def _chip_labels(filters: dict[str, Any]) -> list[str]:
     return [c.get("label", "?") for c in filters.get("quick_filter_settings") or []]
 
 
+# EntityPermission's PermissionLevel, as `all_team_members` stores it.
+PERMISSION_LEVELS = {"none": 0, "view": 1, "edit": 2, "admin": 3}
+_BUCKETS = ("roles", "team_members")
+_LEVEL_KEYS = ("view", "edit", "admin")
+
+
+def _quick_filter_default_sharing() -> dict[str, Any]:
+    """What the UI's save modal starts from: private, no access for all team
+    members, and the Admin role as admin."""
+    return {**default_sharing_settings(), "private": True, "all_team_members": 0}
+
+
+def _reshare(
+    current: dict[str, Any],
+    *,
+    private: bool | None = None,
+    all_level: str | None = None,
+    roles: dict[str, str] | None = None,
+    users: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return ``current`` (write shape) with the given grants applied.
+
+    ``roles``/``users`` map an id to a level name; each id moves to that
+    level's list, or out of every list for ``none``. Everything else is kept.
+    """
+    new = dict(current)
+    if private is not None:
+        new["private"] = private
+    if all_level is not None:
+        new["all_team_members"] = PERMISSION_LEVELS[all_level]
+    for bucket, grants in (("roles", roles), ("team_members", users)):
+        if not grants:
+            continue
+        old_block = current.get(bucket) or {}
+        block = {
+            lvl: [i for i in old_block.get(lvl, []) if i not in grants]
+            for lvl in _LEVEL_KEYS
+        }
+        for id_, level in grants.items():
+            if level != "none":
+                block[level].append(id_)
+        new[bucket] = block
+    return new
+
+
+def _sharing_diff(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Per-key ``(old, new)`` for two write-shape sharing blocks."""
+    out: dict[str, Any] = {}
+    for key in ("private", "all_team_members"):
+        if old.get(key) != new.get(key):
+            out[f"sharing.{key}"] = (old.get(key), new.get(key))
+    for bucket in _BUCKETS:
+        for lvl in _LEVEL_KEYS:
+            a = (old.get(bucket) or {}).get(lvl, [])
+            b = (new.get(bucket) or {}).get(lvl, [])
+            if sorted(a) != sorted(b):
+                out[f"sharing.{bucket}.{lvl}"] = (a, b)
+    return out
+
+
 def plan_create_quick_filter(
     object_api_name: str, spec: dict[str, Any] | QuickFilterDef
 ) -> Plan:
@@ -327,7 +388,9 @@ def plan_create_quick_filter(
             "quick_filtering_facets": qf.facets,
         },
         "filter_count": len(settings),
-        "sharing_settings": _sharing_payload(qf.sharing_settings),
+        "sharing_settings": normalize_sharing_settings(qf.sharing_settings)
+        if qf.sharing_settings
+        else _quick_filter_default_sharing(),
     }
     if qf.owner is not None:
         payload["owner"] = qf.owner
@@ -391,9 +454,13 @@ def plan_update_quick_filter(
         diff["owner"] = (_unwrap_owner(existing.get("owner")), changes["owner"])
     if changes.get("sharing_settings") is not None:
         normalized = normalize_sharing_settings(changes["sharing_settings"])
-        if normalized != existing.get("sharing_settings"):
+        sharing_diff = _sharing_diff(
+            normalize_sharing_settings(existing.get("sharing_settings") or {}),
+            normalized,
+        )
+        if sharing_diff:
             payload["sharing_settings"] = normalized
-            diff["sharing_settings"] = ("…", "…(changed)")
+            diff.update(sharing_diff)
 
     action = "update" if payload else "skip"
     label = existing.get("name") or existing["id"]
@@ -417,6 +484,49 @@ def plan_update_quick_filter(
         else f"No changes to quick filter '{label}' on {object_api_name}"
     )
     return Plan.build(env=env, summary=summary, operations=[op])
+
+
+def plan_share_quick_filter(
+    object_api_name: str,
+    id_or_name: str,
+    *,
+    private: bool | None = None,
+    all_level: str | None = None,
+    roles: dict[str, str] | None = None,
+    users: dict[str, str] | None = None,
+) -> Plan:
+    """Change who can view, edit or admin a quick filter template."""
+    if private is None and all_level is None and not roles and not users:
+        raise PlanError(
+            "pass at least one of --private/--public, --all, --role, --user."
+        )
+    try:
+        existing = find_saved_view(object_api_name, QUICK_FILTERS_BASE, id_or_name)
+    except LookupError as e:
+        raise PlanError(str(e)) from e
+    # Both always have admin (the API 400s without the Admin role). A grant
+    # moves an id between levels, so a lower one would take them out of admin.
+    if roles and roles.get(admin_role_id() or "", "admin") != "admin":
+        raise PlanError(
+            "the Admin role already has admin on a quick filter, so a lower "
+            "level has no effect; it can't be removed."
+        )
+    owner_id = _unwrap_owner(existing.get("owner"))
+    if users and users.get(owner_id or "", "admin") != "admin":
+        raise PlanError(
+            "the quick filter's owner already has admin, so a lower level has "
+            "no effect; change the owner to remove it."
+        )
+    new = _reshare(
+        normalize_sharing_settings(existing.get("sharing_settings") or {}),
+        private=private,
+        all_level=all_level,
+        roles=roles,
+        users=users,
+    )
+    return plan_update_quick_filter(
+        object_api_name, existing["id"], {"sharing_settings": new}
+    )
 
 
 def plan_delete_quick_filter(object_api_name: str, id_or_name: str) -> Plan:

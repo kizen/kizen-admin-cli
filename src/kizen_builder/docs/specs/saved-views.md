@@ -58,6 +58,33 @@ kizen quick-filters create accounts --name "Regional" \
   --chip account_region --chip primary_contact:in_groups --chip primary_contact:email --dry-run
 ```
 
+## Quick filter sharing (`share`)
+
+A new quick filter starts with the same sharing the UI's save dialog does:
+**private, `all_team_members: 0` (none), and the Admin role as admin**. The API
+caller owns it, so other users don't see the template until it's shared.
+
+`quick-filters share` changes only what you pass and keeps every other grant:
+
+```bash
+kizen quick-filters share accounts "Regional" --all view --dry-run        # all team members can view/use
+kizen quick-filters share accounts "Regional" --role Sales=edit --dry-run # role name or UUID
+kizen quick-filters share accounts "Regional" --user <uuid>=none --dry-run # remove a team member
+```
+
+Levels are `none`, `view`, `edit`, `admin`; `all_team_members` stores them as
+0–3. Two grants always have admin: the **Admin role** (the API 400s with "The
+'Admin' role must have Admin-level access" because quick filters set
+`sharing_settings_undeletable_admin_role`) and the **owner** (who has admin
+through `owner` regardless of the lists). The UI locks their admin entry but
+lets you also add them at a lower level, which has no effect because the
+highest level wins. In `share` a level moves an id rather than adding one, so
+it refuses a lower level for either; change the owner to remove the owner.
+
+`share` controls who can see and manage the template. `apply-to-roles` /
+`apply-to-users` are separate: they put the template's chips on those users'
+record lists.
+
 ## Column templates (`--config-file`)
 
 `configuration_json` is an **opaque, undocumented blob** (which columns show, in
@@ -164,9 +191,9 @@ What the UI POSTs (confirmed live 2026-11-10):
 
 **In the spec but not built:** `.../{entity_id}/admins`, `.../mine`,
 `.../other`, `.../visible` (filter groups only), `.../request-access` and
-`.../{request_access_id}/request-access-response`. Everything built here
-defaults to all-team-members-visible, so there's no private saved view yet that
-would need the access-request flow.
+`.../{request_access_id}/request-access-response`. Filter groups and column
+templates default to all-team-members-visible. Quick filters start private (see
+above) — share them rather than relying on the access-request flow.
 
 ## See also
 
