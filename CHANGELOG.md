@@ -16,6 +16,14 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Scheduled activities can be created, changed and deleted.**
+  `kizen activities scheduled create` takes the activity, `--due` (ISO with a
+  UTC offset), `--assignee` (email, name or UUID) or `--role`, `--record
+  object:record_uuid`, `--note` and repeatable `--notification email:1:day`.
+  `scheduled update` changes only what you pass, and `scheduled delete`
+  removes it for good. Logging, and so completing, an activity stays in the
+  Kizen UI. The activity docs' `associated_entities` example was wrong; it
+  now shows the nested `{custom_object: {id}, entity: {id}}` form.
 - **`kizen objects update --quick-filtering/--no-quick-filtering`** turns an
   object's quick filters on or off. Chips don't show until it's on.
 - **`kizen quick-filters share`** changes who can view, edit or admin a quick
@@ -44,6 +52,12 @@ called out explicitly under **Changed** or **Removed**.
   UI can't build. Object, form and activity field specs now fail validation
   instead. Existing fields of these types are still read, filtered and updated
   as before.
+
+### Fixed
+
+- **An activity `yesnomaybe` field can be created without `options`.** It
+  used to pass `--dry-run` and then fail with a 400. It now gets Yes/No/Maybe,
+  the way object fields already did.
 
 ## [0.5.0] — 2026-11-03
 

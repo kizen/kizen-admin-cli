@@ -217,8 +217,25 @@ def list_responses(
 
 
 # ---------------------------------------------------------------------------
-# Scheduled activities (instances) — read-only
+# Scheduled activities (instances)
 # ---------------------------------------------------------------------------
+
+
+def create_scheduled(client: KizenClient, payload: dict[str, Any]) -> dict[str, Any]:
+    """POST /api/activities/scheduled-activity — schedule one instance."""
+    return client.post("/api/activities/scheduled-activity", payload)
+
+
+def update_scheduled(
+    client: KizenClient, scheduled_id: str, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """PATCH /api/activities/scheduled-activity/{id} — change the keys sent."""
+    return client.patch(f"/api/activities/scheduled-activity/{scheduled_id}", payload)
+
+
+def delete_scheduled(client: KizenClient, scheduled_id: str) -> Any:
+    """DELETE /api/activities/scheduled-activity/{id} — a hard delete."""
+    return client.delete(f"/api/activities/scheduled-activity/{scheduled_id}")
 
 
 def list_scheduled(

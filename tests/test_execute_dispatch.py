@@ -42,6 +42,12 @@ SERVER_ID = "00000000-0000-4000-8000-0000000000ff"
 
 BODY = {"name": "Thing", "api_name": "thing"}
 FIELDS = [{"name": "name", "value": "Acme"}]
+SCHEDULE_BODY = {
+    "activity_object_id": P,
+    "due_datetime": "2026-11-16T15:30:00+00:00",
+    "employee_id": E,
+    "associated_entities": [{"custom_object": {"id": R}, "entity": {"id": N}}],
+}
 TEMPLATE = {
     "id": TEMPLATE_ID,
     "name": "Welcome",
@@ -371,6 +377,24 @@ ROWS = [
         parent=True,
     ),
     *_options("activity_field_option", f"/api/activities/{P}/fields", "option_id"),
+    _row(
+        "scheduled_activity",
+        "create",
+        {"payload": SCHEDULE_BODY},
+        [("POST", "/api/activities/scheduled-activity", SCHEDULE_BODY)],
+    ),
+    _row(
+        "scheduled_activity",
+        "update",
+        {"existing_uuid": E, "payload": {"note": "Moved"}},
+        [("PATCH", f"/api/activities/scheduled-activity/{E}", {"note": "Moved"})],
+    ),
+    _row(
+        "scheduled_activity",
+        "delete",
+        {"existing_uuid": E},
+        [("DELETE", f"/api/activities/scheduled-activity/{E}", None)],
+    ),
     *_crud(
         "stage",
         f"/api/pipelines/{P}/stages",
