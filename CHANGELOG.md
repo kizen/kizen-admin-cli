@@ -24,6 +24,12 @@ called out explicitly under **Changed** or **Removed**.
   instead. Existing fields of these types are still read, filtered and updated
   as before.
 
+### Fixed
+
+- **An activity `yesnomaybe` field can be created without `options`.** It
+  used to pass `--dry-run` and then fail with a 400. It now gets Yes/No/Maybe,
+  the way object fields already did.
+
 ## [0.5.0] — 2026-11-03
 
 ### Added

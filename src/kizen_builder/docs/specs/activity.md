@@ -190,6 +190,9 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
 - Type-specific blocks (`options`, `status_options`, `money_options`, `rating`,
   `decimal_options`, `phone_options`) behave as in `field.md`, except that
   `status_options` is optional on a `status` field.
+- A `yesnomaybe` field with no `options` gets Yes/No/Maybe from the planner, as
+  on objects. Kizen 400s an activity `yesnomaybe` field created without
+  options (confirmed live 2026-11-09).
 - Unknown keys are rejected exactly as in `field.md`.
 
 ## Gotchas

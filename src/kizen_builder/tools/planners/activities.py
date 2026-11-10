@@ -820,8 +820,16 @@ def _build_activity_field_payload(
     if field.custom_object_field:
         payload["custom_object_field"] = field.custom_object_field
 
-    if field.options is not None:
-        payload["options"] = [{"name": o, "code": o} for o in field.options]
+    options = field.options
+    if options is None and field.field_type == "yesnomaybe":
+        # Kizen 400s an activity yesnomaybe field without options
+        # (confirmed live 2026-11-09).
+        options = ["Yes", "No", "Maybe"]
+    if options is not None:
+        if field.field_type == "yesnomaybe":
+            payload["options"] = [{"name": o, "code": o.lower()} for o in options]
+        else:
+            payload["options"] = [{"name": o, "code": o} for o in options]
     if field.status_options is not None:
         payload["options"] = [
             {"name": s.name, "code": s.code or s.name.lower()}
