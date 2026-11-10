@@ -23,7 +23,6 @@ re-run through the DSL.
 |---|---|---|
 | `records list --filter` | search body `query` | `kizen docs show records` |
 | Filter groups (segments) | `config` | `kizen docs show saved-views` |
-| Quick filters | `filters` | same shape as filter groups |
 | Automation `condition` step | `step_condition.filter_config` | `kizen docs show automation` |
 | Automation `search_records` step | `filter_config` | resolved against the step's **own** `custom_object`, not the automation's `target_object` |
 | Dashlets (`dashboards dashlet-config --filter`, or a dashboard spec) | `config.filters.custom_filters` | a spec in `config.filters` compiles against the dashlet's object; an empty filter is a specific literal, not `{}` — `kizen docs show dashboard` |
@@ -330,7 +329,7 @@ automation variable instead of a literal. In the DSL, name the variable:
 - For a dropdown, the array can hold option names or option UUIDs: a test
   run on 2026-10-14 matched with each. The other field types were not run.
 - Every other filter surface rejects `"variable"`: records search, filter
-  groups, quick filters and dashlets.
+  groups and dashlets.
 
 Which variables the UI offers for each field type (confirmed live
 2026-10-14; email 2026-10-30):

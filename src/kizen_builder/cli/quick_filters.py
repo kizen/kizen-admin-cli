@@ -15,7 +15,6 @@ from kizen_builder.cli._shared import (
     app,
     cli_errors,
     console,
-    load_filter_spec,
 )
 from kizen_builder.cli.permissions import _resolve_role_id
 from kizen_builder.tools import saved_views as sv_tools
@@ -75,20 +74,20 @@ def quick_filters_get(
     out.render(fmt, json_data=item, table=table)
 
 
-@quick_filters_app.command(
-    "create",
-    epilog="Filter shape (the filtering DSL): see `kizen docs show saved-views`",
+CHIP_HELP = (
+    "A chip to show, in order (repeatable): `field`, `relation:related_field`, "
+    "or `relation:in_groups`. Users pick the values when they filter."
 )
+CHIPS_EPILOG = "Chip syntax and examples: see `kizen docs show saved-views`"
+
+
+@quick_filters_app.command("create", epilog=CHIPS_EPILOG)
 def quick_filters_create(
     object_api_name: str = typer.Argument(..., help="Parent object api_name."),
     name: str = typer.Option(..., "--name", help="Quick filter name."),
-    filter_json: str = typer.Option(
-        "",
-        "--filter",
-        help="Filter as JSON, same format as `filter-groups create --filter`.",
-    ),
-    filter_file: str = typer.Option(
-        "", "--filter-file", help="Path to a JSON filter (same format as --filter)."
+    chip: list[str] = typer.Option([], "--chip", help=CHIP_HELP),
+    facets: bool = typer.Option(
+        False, "--facets", help="Turn on quick_filtering_facets."
     ),
     owner: str = typer.Option(
         "", "--owner", help="Owning team member UUID (defaults to the API caller)."
@@ -105,14 +104,11 @@ def quick_filters_create(
 ) -> None:
     """Create one quick filter on an object.
 
-    Sharing defaults to visible to all team members. Use `apply-to-roles` /
-    `apply-to-users` afterward to push visibility to specific roles/users
-    without having to know the current sharing state.
+    Sharing starts where the UI's does: private, with the Admin role as admin.
+    Use `share` to open it up, and `apply-to-roles` / `apply-to-users` to put
+    its chips on people's record lists.
     """
-    spec: dict[str, Any] = {"name": name}
-    fc = load_filter_spec(filter_json, filter_file)
-    if fc is not None:
-        spec["filters"] = fc
+    spec: dict[str, Any] = {"name": name, "chips": chip, "facets": facets}
     if owner:
         spec["owner"] = owner
 
@@ -124,19 +120,16 @@ def quick_filters_create(
     )
 
 
-@quick_filters_app.command(
-    "update",
-    epilog="Filter shape (the filtering DSL): see `kizen docs show saved-views`",
-)
+@quick_filters_app.command("update", epilog=CHIPS_EPILOG)
 def quick_filters_update(
     object_api_name: str = typer.Argument(..., help="Parent object api_name."),
     quick_filter: str = typer.Argument(..., help="Quick filter UUID or exact name."),
     name: str = typer.Option("", "--name", help="New name."),
-    filter_json: str = typer.Option(
-        "", "--filter", help="New filter as JSON (same format as `create`)."
+    chip: list[str] = typer.Option(
+        [], "--chip", help=CHIP_HELP + " Replaces the whole chip list."
     ),
-    filter_file: str = typer.Option(
-        "", "--filter-file", help="Path to a JSON filter (same format as --filter)."
+    facets: bool | None = typer.Option(
+        None, "--facets/--no-facets", help="Turn quick_filtering_facets on or off."
     ),
     owner: str = typer.Option("", "--owner", help="New owning team member UUID."),
     dry_run: bool = typer.Option(
@@ -153,15 +146,84 @@ def quick_filters_update(
     changes: dict[str, Any] = {}
     if name:
         changes["name"] = name
-    fc = load_filter_spec(filter_json, filter_file)
-    if fc is not None:
-        changes["filters"] = fc
+    if chip:
+        changes["chips"] = chip
+    if facets is not None:
+        changes["facets"] = facets
     if owner:
         changes["owner"] = owner
 
     _run_mutation(
         lambda: sv_planners.plan_update_quick_filter(
             object_api_name, quick_filter, changes
+        ),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+    )
+
+
+def _grants(values: list[str], flag: str, resolve: Any) -> dict[str, str]:
+    """Parse repeated `REF=LEVEL` values into {resolved id: level}."""
+    out: dict[str, str] = {}
+    for value in values:
+        ref, sep, level = value.rpartition("=")
+        if not sep or level not in sv_planners.PERMISSION_LEVELS:
+            raise typer.BadParameter(
+                f"'{value}': expected REF=none|view|edit|admin", param_hint=flag
+            )
+        out[resolve(ref)] = level
+    return out
+
+
+@quick_filters_app.command("share")
+def quick_filters_share(
+    object_api_name: str = typer.Argument(..., help="Parent object api_name."),
+    quick_filter: str = typer.Argument(..., help="Quick filter UUID or exact name."),
+    private: bool | None = typer.Option(
+        None, "--private/--public", help="Set the template's private flag."
+    ),
+    all_level: str | None = typer.Option(
+        None,
+        "--all",
+        help="Access for all team members: none, view, edit or admin.",
+    ),
+    role: list[str] = typer.Option(
+        [],
+        "--role",
+        help="ROLE=LEVEL, role name or UUID (repeatable). none removes it.",
+    ),
+    user: list[str] = typer.Option(
+        [], "--user", help="UUID=LEVEL for a team member (repeatable). none removes it."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Change who can view, edit or admin a quick filter template.
+
+    Only what you pass changes; other roles and users keep their access.
+    """
+    if all_level is not None and all_level not in sv_planners.PERMISSION_LEVELS:
+        raise typer.BadParameter(
+            f"'{all_level}': expected none|view|edit|admin", param_hint="--all"
+        )
+    roles = _grants(role, "--role", _resolve_role_id)
+    users = _grants(user, "--user", lambda ref: ref)
+    _run_mutation(
+        lambda: sv_planners.plan_share_quick_filter(
+            object_api_name,
+            quick_filter,
+            private=private,
+            all_level=all_level,
+            roles=roles,
+            users=users,
         ),
         dry_run=dry_run,
         yes=yes,

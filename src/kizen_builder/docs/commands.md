@@ -194,7 +194,7 @@ kizen records create <object> --field api_name=value [...]      # one record (va
 kizen records create <object> [--spec-file f.csv|f.json | < stdin]   # bulk create from CSV/JSON
 
 # update — only the flags you set are changed; if no diff, op is "skip"
-kizen objects update <api_name> [--object-name X] [--description Y]
+kizen objects update <api_name> [--object-name X] [--description Y] [--quick-filtering/--no-quick-filtering]
 kizen categories update <object_api_name> <current_name> --name <new>
 kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [...]
 kizen automations update [--spec-file path | < stdin]
@@ -214,8 +214,9 @@ kizen records set-field <object> <uuid> [<uuid> ...] --field api_name=value [--r
 
 kizen filter-groups create <object> --name X [--filter '<json>'|--filter-file f] [--hidden] [--owner uuid]
 kizen filter-groups update <object> <uuid|name> [--name] [--filter ...] [--hidden/--visible] [--owner]
-kizen quick-filters create <object> --name X [--filter '<json>'|--filter-file f] [--owner uuid]
-kizen quick-filters update <object> <uuid|name> [--name] [--filter ...] [--owner]
+kizen quick-filters create <object> --name X [--chip <field|relation:field|relation:in_groups> ...] [--facets] [--owner uuid]
+kizen quick-filters update <object> <uuid|name> [--name] [--chip ...] [--facets/--no-facets] [--owner]
+kizen quick-filters share <object> <uuid|name> [--private/--public] [--all <level>] [--role <name|uuid>=<level> ...] [--user <uuid>=<level> ...]
 kizen quick-filters apply-to-roles <object> <uuid|name> --role <name|uuid> [...]
 kizen quick-filters apply-to-users <object> <uuid|name> --user <uuid> [...]
 kizen columns create <object> --name X [--config-file f] [--owner uuid]     # configuration_json opaque, copy from `columns get --json`

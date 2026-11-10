@@ -47,6 +47,13 @@ def list_objects() -> list[dict[str, Any]]:
     return out
 
 
+def get_object_detail(object_id: str) -> dict[str, Any]:
+    """GET one object's detail record. Carries keys the list omits, like
+    ``quick_filtering_enabled``."""
+    with KizenClient(load_env_config()) as client:
+        return co_api.get_object(client, object_id)
+
+
 def _relation_target(
     relation: dict[str, Any] | None, id_to_api_name: dict[str, Any]
 ) -> str | None:

@@ -233,6 +233,30 @@ def test_plan_update_object_can_change_every_supported_key(live):
     }
 
 
+@pytest.mark.parametrize(
+    ("live_value", "wanted", "action"),
+    [(False, True, "update"), (None, True, "update"), (True, True, "skip")],
+)
+def test_plan_update_object_quick_filtering_reads_the_detail_record(
+    live, monkeypatch, live_value, wanted, action
+):
+    """The object list omits quick_filtering_enabled, so the planner diffs
+    against the detail GET."""
+    live()
+    monkeypatch.setattr(
+        object_planners,
+        "get_object_detail",
+        lambda object_id: {"id": object_id, "quick_filtering_enabled": live_value},
+    )
+    plan = object_planners.plan_update_object(
+        "policies", {"quick_filtering_enabled": wanted}
+    )
+    (op,) = plan.operations
+    assert op.action == action
+    if action == "update":
+        assert op.payload == {"quick_filtering_enabled": True}
+
+
 def test_plan_update_object_treats_a_null_description_as_empty_string(live):
     """The API returns `description: null` for an unset description but the
     spec carries `""`, so setting it to `""` must not register as a change."""

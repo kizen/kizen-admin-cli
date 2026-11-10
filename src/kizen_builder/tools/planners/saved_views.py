@@ -5,20 +5,23 @@ templates — the three per-object "saved view" resources under
 All three share one CRUD shape and the dashboard-style ``EntityPermission``
 sharing block (see ``tools.dashboards.normalize_sharing_settings`` /
 ``default_sharing_settings``, reused here as-is — confirmed byte-identical
-schema in the full API spec). They differ only in the wire key for their
-opaque config blob: ``config`` (filter groups), ``filters`` (quick filters),
-``configuration_json`` (column templates, no filtering DSL — opaque
-passthrough only).
+schema in the full API spec). They differ in the wire key for their
+config blob: ``config`` (filter groups), ``filters`` (quick filters),
+``configuration_json`` (column templates, opaque passthrough only).
 
-Filter/quick-filter config accepts either a JSON filter spec (``{"all"|"any":
+A filter group's config accepts either a JSON filter spec (``{"all"|"any":
 [...]}``, resolved via the same ``kizen_builder.filtering`` DSL that backs
 ``records list --filter`` and automation condition steps) or a raw
 ``{"query": [...]}`` dict, mirroring
 ``tools.planners.automations._render_filter_config``.
+
+A quick filter's ``filters`` is not a query: it lists which chips show
+(``quick_filter_settings``), and users pick the values when they filter.
 """
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from kizen_builder import filtering
@@ -30,9 +33,11 @@ from kizen_builder.api.saved_views import (
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ColumnTemplateDef, FilterGroupDef, QuickFilterDef
 from kizen_builder.tools.dashboards import (
+    admin_role_id,
     default_sharing_settings,
     normalize_sharing_settings,
 )
+from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 from kizen_builder.tools.saved_views import (
     find_saved_view,
@@ -224,6 +229,127 @@ def plan_delete_filter_group(object_api_name: str, id_or_name: str) -> Plan:
 # Quick filters
 # ---------------------------------------------------------------------------
 
+# `relatedObjectFieldId` value for an "Is In Group(s)" relationship chip.
+IN_GROUPS = "in_groups"
+
+
+def _live_field(obj: dict[str, Any], api_name: str) -> dict[str, Any]:
+    for f in obj["fields"]:
+        if f["api_name"] == api_name and not f.get("deleted"):
+            return f
+    raise PlanError(f"no field '{api_name}' on '{obj['api_name']}'")
+
+
+def _build_chips(
+    object_api_name: str,
+    chips: list[str],
+    existing: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Resolve ``field`` / ``relation:related_field`` / ``relation:in_groups``
+    to ``quick_filter_settings`` entries, the shape the UI saves.
+
+    A chip already on the template keeps its ``id``; a new one gets a fresh
+    UUID, as the UI does.
+    """
+    obj = get_object(object_api_name)
+    existing_ids = {
+        (c.get("fieldId"), c.get("relatedObjectFieldId")): c.get("id") for c in existing
+    }
+    settings: list[dict[str, Any]] = []
+    for chip in chips:
+        field_name, _, related_name = chip.partition(":")
+        field = _live_field(obj, field_name)
+        related_id: str | None = None
+        label = field["display_name"]
+        if related_name:
+            if field["field_type"] != "relationship":
+                raise PlanError(
+                    f"chip '{chip}': '{field_name}' is a {field['field_type']} "
+                    "field; only relationship fields take ':<related field>'"
+                )
+            if related_name == IN_GROUPS:
+                related_id = IN_GROUPS
+                label = f"{label} Groups"
+            else:
+                related = _live_field(
+                    get_object(field["relation_target"]), related_name
+                )
+                related_id = related["id"]
+                label = f"{label}: {related['display_name']}"
+        setting: dict[str, Any] = {
+            "id": existing_ids.get((field["id"], related_id)) or str(uuid.uuid4()),
+            "fieldId": field["id"],
+        }
+        if related_id:
+            setting["relatedObjectFieldId"] = related_id
+        setting["label"] = label
+        settings.append(setting)
+    return settings
+
+
+def _chip_labels(filters: dict[str, Any]) -> list[str]:
+    return [c.get("label", "?") for c in filters.get("quick_filter_settings") or []]
+
+
+# EntityPermission's PermissionLevel, as `all_team_members` stores it.
+PERMISSION_LEVELS = {"none": 0, "view": 1, "edit": 2, "admin": 3}
+_BUCKETS = ("roles", "team_members")
+_LEVEL_KEYS = ("view", "edit", "admin")
+
+
+def _quick_filter_default_sharing() -> dict[str, Any]:
+    """What the UI's save modal starts from: private, no access for all team
+    members, and the Admin role as admin."""
+    return {**default_sharing_settings(), "private": True, "all_team_members": 0}
+
+
+def _reshare(
+    current: dict[str, Any],
+    *,
+    private: bool | None = None,
+    all_level: str | None = None,
+    roles: dict[str, str] | None = None,
+    users: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return ``current`` (write shape) with the given grants applied.
+
+    ``roles``/``users`` map an id to a level name; each id moves to that
+    level's list, or out of every list for ``none``. Everything else is kept.
+    """
+    new = dict(current)
+    if private is not None:
+        new["private"] = private
+    if all_level is not None:
+        new["all_team_members"] = PERMISSION_LEVELS[all_level]
+    for bucket, grants in (("roles", roles), ("team_members", users)):
+        if not grants:
+            continue
+        old_block = current.get(bucket) or {}
+        block = {
+            lvl: [i for i in old_block.get(lvl, []) if i not in grants]
+            for lvl in _LEVEL_KEYS
+        }
+        for id_, level in grants.items():
+            if level != "none":
+                block[level].append(id_)
+        new[bucket] = block
+    return new
+
+
+def _sharing_diff(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Per-key ``(old, new)`` for two write-shape sharing blocks."""
+    out: dict[str, Any] = {}
+    for key in ("private", "all_team_members"):
+        if old.get(key) != new.get(key):
+            out[f"sharing.{key}"] = (old.get(key), new.get(key))
+    for bucket in _BUCKETS:
+        for lvl in _LEVEL_KEYS:
+            a = (old.get(bucket) or {}).get(lvl, [])
+            b = (new.get(bucket) or {}).get(lvl, [])
+            if sorted(a) != sorted(b):
+                out[f"sharing.{bucket}.{lvl}"] = (a, b)
+    return out
+
 
 def plan_create_quick_filter(
     object_api_name: str, spec: dict[str, Any] | QuickFilterDef
@@ -254,10 +380,17 @@ def plan_create_quick_filter(
             f"(uuid {existing['id']}). Use update instead."
         )
 
+    settings = _build_chips(object_api_name, qf.chips, [])
     payload: dict[str, Any] = {
         "name": qf.name,
-        "filters": _render_filter_config(qf.filters, object_api_name),
-        "sharing_settings": _sharing_payload(qf.sharing_settings),
+        "filters": {
+            "quick_filter_settings": settings,
+            "quick_filtering_facets": qf.facets,
+        },
+        "filter_count": len(settings),
+        "sharing_settings": normalize_sharing_settings(qf.sharing_settings)
+        if qf.sharing_settings
+        else _quick_filter_default_sharing(),
     }
     if qf.owner is not None:
         payload["owner"] = qf.owner
@@ -265,7 +398,12 @@ def plan_create_quick_filter(
         action="create",
         kind="quick_filter",
         key=_op_key(object_api_name, qf.name),
-        preview={"env": env, "object": object_api_name, "name": qf.name},
+        preview={
+            "env": env,
+            "object": object_api_name,
+            "name": qf.name,
+            "chips": [s["label"] for s in settings],
+        },
         payload=payload,
         parent_object_uuid=object_id,
     )
@@ -291,19 +429,38 @@ def plan_update_quick_filter(
     if "name" in changes and changes["name"] != existing.get("name"):
         payload["name"] = changes["name"]
         diff["name"] = (existing.get("name"), changes["name"])
-    if "filters" in changes:
-        rendered = _render_filter_config(changes["filters"], object_api_name)
-        if rendered != existing.get("filters"):
-            payload["filters"] = rendered
-            diff["filters"] = ("…", "…(changed)")
+    if "chips" in changes or "facets" in changes:
+        old = existing.get("filters") or {}
+        settings = old.get("quick_filter_settings") or []
+        if "chips" in changes:
+            settings = _build_chips(object_api_name, changes["chips"], settings)
+        new = {
+            "quick_filter_settings": settings,
+            "quick_filtering_facets": changes.get(
+                "facets", old.get("quick_filtering_facets", False)
+            ),
+        }
+        if new != old:
+            payload["filters"] = new
+            payload["filter_count"] = len(settings)
+            diff["chips"] = (_chip_labels(old), _chip_labels(new))
+            if new["quick_filtering_facets"] != old.get("quick_filtering_facets"):
+                diff["facets"] = (
+                    old.get("quick_filtering_facets"),
+                    new["quick_filtering_facets"],
+                )
     if "owner" in changes and changes["owner"] != _unwrap_owner(existing.get("owner")):
         payload["owner"] = changes["owner"]
         diff["owner"] = (_unwrap_owner(existing.get("owner")), changes["owner"])
     if changes.get("sharing_settings") is not None:
         normalized = normalize_sharing_settings(changes["sharing_settings"])
-        if normalized != existing.get("sharing_settings"):
+        sharing_diff = _sharing_diff(
+            normalize_sharing_settings(existing.get("sharing_settings") or {}),
+            normalized,
+        )
+        if sharing_diff:
             payload["sharing_settings"] = normalized
-            diff["sharing_settings"] = ("…", "…(changed)")
+            diff.update(sharing_diff)
 
     action = "update" if payload else "skip"
     label = existing.get("name") or existing["id"]
@@ -327,6 +484,49 @@ def plan_update_quick_filter(
         else f"No changes to quick filter '{label}' on {object_api_name}"
     )
     return Plan.build(env=env, summary=summary, operations=[op])
+
+
+def plan_share_quick_filter(
+    object_api_name: str,
+    id_or_name: str,
+    *,
+    private: bool | None = None,
+    all_level: str | None = None,
+    roles: dict[str, str] | None = None,
+    users: dict[str, str] | None = None,
+) -> Plan:
+    """Change who can view, edit or admin a quick filter template."""
+    if private is None and all_level is None and not roles and not users:
+        raise PlanError(
+            "pass at least one of --private/--public, --all, --role, --user."
+        )
+    try:
+        existing = find_saved_view(object_api_name, QUICK_FILTERS_BASE, id_or_name)
+    except LookupError as e:
+        raise PlanError(str(e)) from e
+    # Both always have admin (the API 400s without the Admin role). A grant
+    # moves an id between levels, so a lower one would take them out of admin.
+    if roles and roles.get(admin_role_id() or "", "admin") != "admin":
+        raise PlanError(
+            "the Admin role already has admin on a quick filter, so a lower "
+            "level has no effect; it can't be removed."
+        )
+    owner_id = _unwrap_owner(existing.get("owner"))
+    if users and users.get(owner_id or "", "admin") != "admin":
+        raise PlanError(
+            "the quick filter's owner already has admin, so a lower level has "
+            "no effect; change the owner to remove it."
+        )
+    new = _reshare(
+        normalize_sharing_settings(existing.get("sharing_settings") or {}),
+        private=private,
+        all_level=all_level,
+        roles=roles,
+        users=users,
+    )
+    return plan_update_quick_filter(
+        object_api_name, existing["id"], {"sharing_settings": new}
+    )
 
 
 def plan_delete_quick_filter(object_api_name: str, id_or_name: str) -> Plan:

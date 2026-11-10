@@ -24,8 +24,26 @@ called out explicitly under **Changed** or **Removed**.
   removes it for good. Logging, and so completing, an activity stays in the
   Kizen UI. The activity docs' `associated_entities` example was wrong; it
   now shows the nested `{custom_object: {id}, entity: {id}}` form.
+- **`kizen objects update --quick-filtering/--no-quick-filtering`** turns an
+  object's quick filters on or off. Chips don't show until it's on.
+- **`kizen quick-filters share`** changes who can view, edit or admin a quick
+  filter: `--private/--public`, `--all <level>`, `--role NAME=LEVEL`,
+  `--user UUID=LEVEL`. Grants you don't pass are kept.
 
 ### Changed
+
+- **`kizen quick-filters create|update` now build chips, and `--filter` /
+  `--filter-file` are gone.** A quick filter picks which filter chips appear
+  on the record list, not a saved query, but the CLI was saving a filter query.
+  The API accepted it and the UI showed no chips. Pass `--chip field`,
+  `--chip relation:related_field` or `--chip relation:in_groups` instead, plus
+  `--facets` if you want them. To repair a quick filter made with an older
+  version, run `quick-filters update` with `--chip`. Users it was applied to
+  need `apply-to-roles`/`apply-to-users` again, because apply copied the broken
+  config onto them.
+- **New quick filters start private**, matching the UI: no access for all team
+  members and the Admin role as admin. Previously the CLI made them visible to
+  all team members. Use `quick-filters share --all view` for the old behavior.
 
 - **Specs reject the `timezone`, `choices` and `selector` field types.**
   None of them can be created in Kizen: `timezone` exists only as the built-in

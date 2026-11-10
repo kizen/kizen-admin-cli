@@ -6,7 +6,7 @@ from typing import Any
 
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FieldCategory, ObjectDef, PipelineStageSpec
-from kizen_builder.tools.objects import get_object, list_objects
+from kizen_builder.tools.objects import get_object, get_object_detail, list_objects
 from kizen_builder.tools.planners.records import archive_operations
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 from kizen_builder.tools.records import active_record_ids
@@ -250,6 +250,15 @@ def plan_update_object(object_api_name: str, changes: dict[str, Any]) -> Plan:
             raw.get("default_on_activities"),
             changes["default_on_activities"],
         )
+    if "quick_filtering_enabled" in changes:
+        # The object list leaves this key out, so read the detail record.
+        current = get_object_detail(obj["id"]).get("quick_filtering_enabled")
+        if changes["quick_filtering_enabled"] != bool(current):
+            payload["quick_filtering_enabled"] = changes["quick_filtering_enabled"]
+            diff["quick_filtering_enabled"] = (
+                current,
+                changes["quick_filtering_enabled"],
+            )
 
     action = "update" if payload else "skip"
     op = PlanOperation(

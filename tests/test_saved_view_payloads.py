@@ -9,11 +9,13 @@ Quirks pinned here, from ``docs/specs/saved-views.md``'s wire-format section:
 
   * ``owner`` is omitted from the payload entirely when unset, never sent as
     ``null`` — the API 500s on ``owner: null`` for quick filters/columns.
-  * A filter group's ``config`` / quick filter's ``filters`` render through
-    the same ``{"and", "query": [...], "invalid"}`` shape as an automation
-    condition step's ``filter_config`` (the DSL is shared across six
-    surfaces — see ``docs/filters.md``); a raw ``{"query": [...]}`` dict is
-    accepted too and merely normalized.
+  * A filter group's ``config`` renders through the same ``{"and", "query":
+    [...], "invalid"}`` shape as an automation condition step's
+    ``filter_config`` (the DSL is shared across surfaces — see
+    ``docs/filters.md``); a raw ``{"query": [...]}`` dict is accepted too and
+    merely normalized.
+  * A quick filter's ``filters`` is a chip list (``quick_filter_settings``),
+    not a query — the shape the UI POSTs.
   * ``sharing_settings`` defaults via ``default_sharing_settings()`` when
     unset, and a template's ``{id, display_name}`` shape is normalized to
     bare UUIDs on write — the same helper dashboards uses.
@@ -26,6 +28,8 @@ Quirks pinned here, from ``docs/specs/saved-views.md``'s wire-format section:
 """
 
 from __future__ import annotations
+
+import uuid
 
 import httpx
 import pytest
@@ -403,37 +407,91 @@ def test_delete_filter_group(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Quick filters — create/update/delete (same shape, "filters" key)
+# Quick filters — create/update/delete ("filters" holds chips, not a query)
 # ---------------------------------------------------------------------------
 
+PATIENT_FIRST_NAME_ID = "107925a9-19f0-41b5-8f44-28badfa44e58"
+ENCOUNTERS_REL_ID = "b69f1a9c-3f3b-4c4d-9989-60a83373c0e8"
+ENCOUNTER_CLASS_ID = "4e83924c-3c21-450b-8bbc-5e99d72f5501"
 
-def test_create_quick_filter_minimal_payload(no_existing_views):
+
+@pytest.fixture
+def live_objects(monkeypatch):
+    """Serve get_object() from the patients/encounters fixtures, with the
+    ``relation_target`` the real read adds."""
+    objs = {
+        name: load_fixture(f"objects/{name}.json")
+        for name in ("patients", "encounters")
+    }
+    for f in objs["patients"]["fields"]:
+        f["relation_target"] = (f.get("relation") or {}).get(
+            "related_object_object_name"
+        )
+    monkeypatch.setattr(sv_planners, "get_object", lambda api_name: objs[api_name])
+
+
+def test_create_quick_filter_minimal_payload(no_existing_views, live_objects):
     plan = sv_planners.plan_create_quick_filter("patients", {"name": "Open"})
     (op,) = plan.operations
     assert op.kind == "quick_filter" and op.action == "create"
     assert op.payload == {
         "name": "Open",
-        "filters": {},
-        "sharing_settings": _default_sharing(),
+        "filters": {"quick_filter_settings": [], "quick_filtering_facets": False},
+        "filter_count": 0,
+        # The UI's save-modal default: private, no all-team access, Admin admin.
+        "sharing_settings": dict(_default_sharing(), private=True, all_team_members=0),
     }
     assert "owner" not in op.payload
 
 
-def test_create_quick_filter_renders_filter_spec_via_dsl(
-    no_existing_views, filter_schema
-):
+def test_create_quick_filter_builds_chips_like_the_ui(no_existing_views, live_objects):
+    """Same shape the UI POSTs: a plain field chip, an "Is In Group(s)"
+    relationship chip and a related-field relationship chip."""
     plan = sv_planners.plan_create_quick_filter(
         "patients",
         {
-            "name": "MRN chip",
-            "filters": {"all": [{"field": "mrn", "op": "=", "value": "A-1"}]},
+            "name": "Front desk",
+            "chips": [
+                "patient_first_name",
+                "encounters:in_groups",
+                "encounters:encounter_class",
+            ],
         },
     )
     (op,) = plan.operations
-    fc = op.payload["filters"]
-    assert fc["invalid"] is False
-    (clause,) = fc["query"][0]["filters"]
-    assert clause["field"] == f'"custom"::{MRN_FIELD_ID}'
+    settings = op.payload["filters"]["quick_filter_settings"]
+    for s in settings:
+        uuid.UUID(s.pop("id"))
+    assert settings == [
+        {"fieldId": PATIENT_FIRST_NAME_ID, "label": "First Name"},
+        {
+            "fieldId": ENCOUNTERS_REL_ID,
+            "relatedObjectFieldId": "in_groups",
+            "label": "Encounters Groups",
+        },
+        {
+            "fieldId": ENCOUNTERS_REL_ID,
+            "relatedObjectFieldId": ENCOUNTER_CLASS_ID,
+            "label": "Encounters: Encounter Class",
+        },
+    ]
+    assert op.payload["filters"]["quick_filtering_facets"] is False
+    assert op.payload["filter_count"] == 3
+
+
+@pytest.mark.parametrize(
+    ("chip", "match"),
+    [
+        ("nope", "no field 'nope' on 'patients'"),
+        ("mrn:in_groups", "only relationship fields"),
+        ("encounters:nope", "no field 'nope' on 'encounters'"),
+    ],
+)
+def test_create_quick_filter_rejects_bad_chips(
+    no_existing_views, live_objects, chip, match
+):
+    with pytest.raises(PlanError, match=match):
+        sv_planners.plan_create_quick_filter("patients", {"name": "X", "chips": [chip]})
 
 
 def test_create_quick_filter_collision_raises(monkeypatch):
@@ -447,16 +505,88 @@ def test_create_quick_filter_collision_raises(monkeypatch):
         sv_planners.plan_create_quick_filter("patients", {"name": "Open"})
 
 
-def test_update_quick_filter_diffs_filters(monkeypatch, filter_schema):
+def _existing_chips() -> dict:
+    return {
+        "quick_filter_settings": [
+            {
+                "id": "36061311-ca15-4b76-8918-5fee12043efe",
+                "fieldId": PATIENT_FIRST_NAME_ID,
+                "label": "First Name",
+            }
+        ],
+        "quick_filtering_facets": False,
+    }
+
+
+def test_update_quick_filter_replaces_chips_and_keeps_known_ids(
+    monkeypatch, live_objects
+):
     monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
     monkeypatch.setattr(
-        sv_planners, "find_saved_view", lambda *a, **k: _existing("filters")
+        sv_planners,
+        "find_saved_view",
+        lambda *a, **k: _existing("filters", filters=_existing_chips()),
     )
-    changes = {"filters": {"all": [{"field": "mrn", "op": "=", "value": "A-2"}]}}
-    plan = sv_planners.plan_update_quick_filter("patients", "Open", changes)
+    plan = sv_planners.plan_update_quick_filter(
+        "patients", "Open", {"chips": ["patient_first_name", "encounters:in_groups"]}
+    )
     (op,) = plan.operations
     assert op.action == "update"
-    assert "filters" in op.payload
+    first, groups = op.payload["filters"]["quick_filter_settings"]
+    assert first["id"] == "36061311-ca15-4b76-8918-5fee12043efe"
+    assert groups["relatedObjectFieldId"] == "in_groups"
+    assert op.payload["filter_count"] == 2
+    assert op.preview["diff"] == {
+        "chips": "['First Name'] → ['First Name', 'Encounters Groups']"
+    }
+
+
+def test_update_quick_filter_same_chips_is_skip(monkeypatch, live_objects):
+    monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
+    monkeypatch.setattr(
+        sv_planners,
+        "find_saved_view",
+        lambda *a, **k: _existing("filters", filters=_existing_chips()),
+    )
+    plan = sv_planners.plan_update_quick_filter(
+        "patients", "Open", {"chips": ["patient_first_name"], "facets": False}
+    )
+    (op,) = plan.operations
+    assert op.action == "skip"
+
+
+def test_update_quick_filter_facets_only_keeps_chips(monkeypatch):
+    monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
+    monkeypatch.setattr(
+        sv_planners,
+        "find_saved_view",
+        lambda *a, **k: _existing("filters", filters=_existing_chips()),
+    )
+    plan = sv_planners.plan_update_quick_filter("patients", "Open", {"facets": True})
+    (op,) = plan.operations
+    assert op.payload["filters"] == dict(_existing_chips(), quick_filtering_facets=True)
+    assert op.payload["filter_count"] == 1
+
+
+def test_update_quick_filter_replaces_a_query_blob(monkeypatch, live_objects):
+    """Templates saved by older CLI versions hold a filter query in
+    ``filters``; setting chips overwrites it."""
+    monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
+    monkeypatch.setattr(
+        sv_planners,
+        "find_saved_view",
+        lambda *a, **k: _existing(
+            "filters", filters={"and": True, "query": [], "invalid": False}
+        ),
+    )
+    plan = sv_planners.plan_update_quick_filter(
+        "patients", "Open", {"chips": ["patient_first_name"]}
+    )
+    (op,) = plan.operations
+    assert set(op.payload["filters"]) == {
+        "quick_filter_settings",
+        "quick_filtering_facets",
+    }
 
 
 def test_update_quick_filter_no_changes_is_skip(monkeypatch):
@@ -480,6 +610,114 @@ def test_update_quick_filter_not_found_raises(monkeypatch):
     monkeypatch.setattr(sv_planners, "find_saved_view", _raise)
     with pytest.raises(PlanError, match="no saved view named"):
         sv_planners.plan_update_quick_filter("patients", "Nope", {"name": "Y"})
+
+
+def _live_sample_sharing() -> dict:
+    """A quick filter's sharing block as GET returns it (read shape)."""
+    return {
+        "private": True,
+        "all_team_members": 3,
+        "roles": {
+            "view": [],
+            "edit": [],
+            "admin": [{"id": ADMIN_ID, "display_name": "Admin"}],
+        },
+        "team_members": {
+            "view": [],
+            "edit": [],
+            "admin": [{"id": OWNER_ID, "display_name": "Owner"}],
+        },
+    }
+
+
+OWNER_ID = "d8a58788-8131-40f1-a36f-43af2d2075d4"
+SALES_ROLE_ID = "00000000-0000-4000-8000-0000000005a1"
+OTHER_USER_ID = "00000000-0000-4000-8000-0000000000b2"
+
+
+@pytest.fixture
+def sample_qf(monkeypatch):
+    monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
+    monkeypatch.setattr(
+        sv_planners,
+        "find_saved_view",
+        lambda *a, **k: _existing(
+            "filters",
+            id=QF_ID,
+            owner={"id": OWNER_ID, "display_name": "Owner"},
+            sharing_settings=_live_sample_sharing(),
+        ),
+    )
+    monkeypatch.setattr(sv_planners, "admin_role_id", lambda: ADMIN_ID)
+
+
+def test_share_quick_filter_same_access_is_skip(sample_qf):
+    """The read shape ({id, display_name}) must not count as a change."""
+    plan = sv_planners.plan_share_quick_filter(
+        "patients", "Open", all_level="admin", roles={ADMIN_ID: "admin"}
+    )
+    (op,) = plan.operations
+    assert op.action == "skip"
+
+
+def test_share_quick_filter_changes_only_what_is_passed(sample_qf):
+    plan = sv_planners.plan_share_quick_filter(
+        "patients",
+        "Open",
+        private=False,
+        all_level="view",
+        roles={SALES_ROLE_ID: "edit"},
+        users={OTHER_USER_ID: "view"},
+    )
+    (op,) = plan.operations
+    assert op.action == "update" and op.existing_uuid == QF_ID
+    assert op.payload == {
+        "sharing_settings": {
+            "private": False,
+            "all_team_members": 1,
+            "roles": {"view": [], "edit": [SALES_ROLE_ID], "admin": [ADMIN_ID]},
+            "team_members": {
+                "view": [OTHER_USER_ID],
+                "edit": [],
+                "admin": [OWNER_ID],
+            },
+        }
+    }
+    assert op.preview["diff"] == {
+        "sharing.private": "True → False",
+        "sharing.all_team_members": "3 → 1",
+        "sharing.roles.edit": f"[] → ['{SALES_ROLE_ID}']",
+        "sharing.team_members.view": f"[] → ['{OTHER_USER_ID}']",
+    }
+
+
+def test_share_quick_filter_removing_an_absent_role_is_skip(sample_qf):
+    plan = sv_planners.plan_share_quick_filter(
+        "patients", "Open", roles={SALES_ROLE_ID: "none"}
+    )
+    (op,) = plan.operations
+    assert op.action == "skip"
+
+
+@pytest.mark.parametrize(
+    ("grants", "match"),
+    [
+        ({"roles": {ADMIN_ID: "edit"}}, "Admin role already has admin"),
+        ({"roles": {ADMIN_ID: "none"}}, "Admin role already has admin"),
+        ({"users": {OWNER_ID: "view"}}, "owner already has admin"),
+        ({"users": {OWNER_ID: "none"}}, "owner already has admin"),
+    ],
+)
+def test_share_quick_filter_keeps_admin_role_and_owner_at_admin(
+    sample_qf, grants, match
+):
+    with pytest.raises(PlanError, match=match):
+        sv_planners.plan_share_quick_filter("patients", "Open", **grants)
+
+
+def test_share_quick_filter_requires_a_change():
+    with pytest.raises(PlanError, match="at least one"):
+        sv_planners.plan_share_quick_filter("patients", "Open")
 
 
 def test_delete_quick_filter(monkeypatch):
