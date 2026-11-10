@@ -21,6 +21,15 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **`kizen quick-filters create|update` now build chips, and `--filter` /
+  `--filter-file` are gone.** A quick filter picks which filter chips appear
+  on the record list, not a saved query, but the CLI was saving a filter query.
+  The API accepted it and the UI showed no chips. Pass `--chip field`,
+  `--chip relation:related_field` or `--chip relation:in_groups` instead, plus
+  `--facets` if you want them. To repair a quick filter made with an older
+  version, run `quick-filters update` with `--chip`. Users it was applied to
+  need `apply-to-roles`/`apply-to-users` again, because apply copied the broken
+  config onto them.
 - **Specs reject the `timezone`, `choices` and `selector` field types.**
   None of them can be created in Kizen: `timezone` exists only as the built-in
   Contacts field, and `choices` and `selector` are legacy types. The API still

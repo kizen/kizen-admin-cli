@@ -5,20 +5,23 @@ templates — the three per-object "saved view" resources under
 All three share one CRUD shape and the dashboard-style ``EntityPermission``
 sharing block (see ``tools.dashboards.normalize_sharing_settings`` /
 ``default_sharing_settings``, reused here as-is — confirmed byte-identical
-schema in the full API spec). They differ only in the wire key for their
-opaque config blob: ``config`` (filter groups), ``filters`` (quick filters),
-``configuration_json`` (column templates, no filtering DSL — opaque
-passthrough only).
+schema in the full API spec). They differ in the wire key for their
+config blob: ``config`` (filter groups), ``filters`` (quick filters),
+``configuration_json`` (column templates, opaque passthrough only).
 
-Filter/quick-filter config accepts either a JSON filter spec (``{"all"|"any":
+A filter group's config accepts either a JSON filter spec (``{"all"|"any":
 [...]}``, resolved via the same ``kizen_builder.filtering`` DSL that backs
 ``records list --filter`` and automation condition steps) or a raw
 ``{"query": [...]}`` dict, mirroring
 ``tools.planners.automations._render_filter_config``.
+
+A quick filter's ``filters`` is not a query: it lists which chips show
+(``quick_filter_settings``), and users pick the values when they filter.
 """
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from kizen_builder import filtering
@@ -33,6 +36,7 @@ from kizen_builder.tools.dashboards import (
     default_sharing_settings,
     normalize_sharing_settings,
 )
+from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 from kizen_builder.tools.saved_views import (
     find_saved_view,
@@ -224,6 +228,67 @@ def plan_delete_filter_group(object_api_name: str, id_or_name: str) -> Plan:
 # Quick filters
 # ---------------------------------------------------------------------------
 
+# `relatedObjectFieldId` value for an "Is In Group(s)" relationship chip.
+IN_GROUPS = "in_groups"
+
+
+def _live_field(obj: dict[str, Any], api_name: str) -> dict[str, Any]:
+    for f in obj["fields"]:
+        if f["api_name"] == api_name and not f.get("deleted"):
+            return f
+    raise PlanError(f"no field '{api_name}' on '{obj['api_name']}'")
+
+
+def _build_chips(
+    object_api_name: str,
+    chips: list[str],
+    existing: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Resolve ``field`` / ``relation:related_field`` / ``relation:in_groups``
+    to ``quick_filter_settings`` entries, the shape the UI saves.
+
+    A chip already on the template keeps its ``id``; a new one gets a fresh
+    UUID, as the UI does.
+    """
+    obj = get_object(object_api_name)
+    existing_ids = {
+        (c.get("fieldId"), c.get("relatedObjectFieldId")): c.get("id") for c in existing
+    }
+    settings: list[dict[str, Any]] = []
+    for chip in chips:
+        field_name, _, related_name = chip.partition(":")
+        field = _live_field(obj, field_name)
+        related_id: str | None = None
+        label = field["display_name"]
+        if related_name:
+            if field["field_type"] != "relationship":
+                raise PlanError(
+                    f"chip '{chip}': '{field_name}' is a {field['field_type']} "
+                    "field; only relationship fields take ':<related field>'"
+                )
+            if related_name == IN_GROUPS:
+                related_id = IN_GROUPS
+                label = f"{label} Groups"
+            else:
+                related = _live_field(
+                    get_object(field["relation_target"]), related_name
+                )
+                related_id = related["id"]
+                label = f"{label}: {related['display_name']}"
+        setting: dict[str, Any] = {
+            "id": existing_ids.get((field["id"], related_id)) or str(uuid.uuid4()),
+            "fieldId": field["id"],
+        }
+        if related_id:
+            setting["relatedObjectFieldId"] = related_id
+        setting["label"] = label
+        settings.append(setting)
+    return settings
+
+
+def _chip_labels(filters: dict[str, Any]) -> list[str]:
+    return [c.get("label", "?") for c in filters.get("quick_filter_settings") or []]
+
 
 def plan_create_quick_filter(
     object_api_name: str, spec: dict[str, Any] | QuickFilterDef
@@ -254,9 +319,14 @@ def plan_create_quick_filter(
             f"(uuid {existing['id']}). Use update instead."
         )
 
+    settings = _build_chips(object_api_name, qf.chips, [])
     payload: dict[str, Any] = {
         "name": qf.name,
-        "filters": _render_filter_config(qf.filters, object_api_name),
+        "filters": {
+            "quick_filter_settings": settings,
+            "quick_filtering_facets": qf.facets,
+        },
+        "filter_count": len(settings),
         "sharing_settings": _sharing_payload(qf.sharing_settings),
     }
     if qf.owner is not None:
@@ -265,7 +335,12 @@ def plan_create_quick_filter(
         action="create",
         kind="quick_filter",
         key=_op_key(object_api_name, qf.name),
-        preview={"env": env, "object": object_api_name, "name": qf.name},
+        preview={
+            "env": env,
+            "object": object_api_name,
+            "name": qf.name,
+            "chips": [s["label"] for s in settings],
+        },
         payload=payload,
         parent_object_uuid=object_id,
     )
@@ -291,11 +366,26 @@ def plan_update_quick_filter(
     if "name" in changes and changes["name"] != existing.get("name"):
         payload["name"] = changes["name"]
         diff["name"] = (existing.get("name"), changes["name"])
-    if "filters" in changes:
-        rendered = _render_filter_config(changes["filters"], object_api_name)
-        if rendered != existing.get("filters"):
-            payload["filters"] = rendered
-            diff["filters"] = ("…", "…(changed)")
+    if "chips" in changes or "facets" in changes:
+        old = existing.get("filters") or {}
+        settings = old.get("quick_filter_settings") or []
+        if "chips" in changes:
+            settings = _build_chips(object_api_name, changes["chips"], settings)
+        new = {
+            "quick_filter_settings": settings,
+            "quick_filtering_facets": changes.get(
+                "facets", old.get("quick_filtering_facets", False)
+            ),
+        }
+        if new != old:
+            payload["filters"] = new
+            payload["filter_count"] = len(settings)
+            diff["chips"] = (_chip_labels(old), _chip_labels(new))
+            if new["quick_filtering_facets"] != old.get("quick_filtering_facets"):
+                diff["facets"] = (
+                    old.get("quick_filtering_facets"),
+                    new["quick_filtering_facets"],
+                )
     if "owner" in changes and changes["owner"] != _unwrap_owner(existing.get("owner")):
         payload["owner"] = changes["owner"]
         diff["owner"] = (_unwrap_owner(existing.get("owner")), changes["owner"])

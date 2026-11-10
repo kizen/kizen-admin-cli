@@ -15,7 +15,6 @@ from kizen_builder.cli._shared import (
     app,
     cli_errors,
     console,
-    load_filter_spec,
 )
 from kizen_builder.cli.permissions import _resolve_role_id
 from kizen_builder.tools import saved_views as sv_tools
@@ -75,20 +74,20 @@ def quick_filters_get(
     out.render(fmt, json_data=item, table=table)
 
 
-@quick_filters_app.command(
-    "create",
-    epilog="Filter shape (the filtering DSL): see `kizen docs show saved-views`",
+CHIP_HELP = (
+    "A chip to show, in order (repeatable): `field`, `relation:related_field`, "
+    "or `relation:in_groups`. Users pick the values when they filter."
 )
+CHIPS_EPILOG = "Chip syntax and examples: see `kizen docs show saved-views`"
+
+
+@quick_filters_app.command("create", epilog=CHIPS_EPILOG)
 def quick_filters_create(
     object_api_name: str = typer.Argument(..., help="Parent object api_name."),
     name: str = typer.Option(..., "--name", help="Quick filter name."),
-    filter_json: str = typer.Option(
-        "",
-        "--filter",
-        help="Filter as JSON, same format as `filter-groups create --filter`.",
-    ),
-    filter_file: str = typer.Option(
-        "", "--filter-file", help="Path to a JSON filter (same format as --filter)."
+    chip: list[str] = typer.Option([], "--chip", help=CHIP_HELP),
+    facets: bool = typer.Option(
+        False, "--facets", help="Turn on quick_filtering_facets."
     ),
     owner: str = typer.Option(
         "", "--owner", help="Owning team member UUID (defaults to the API caller)."
@@ -109,10 +108,7 @@ def quick_filters_create(
     `apply-to-users` afterward to push visibility to specific roles/users
     without having to know the current sharing state.
     """
-    spec: dict[str, Any] = {"name": name}
-    fc = load_filter_spec(filter_json, filter_file)
-    if fc is not None:
-        spec["filters"] = fc
+    spec: dict[str, Any] = {"name": name, "chips": chip, "facets": facets}
     if owner:
         spec["owner"] = owner
 
@@ -124,19 +120,16 @@ def quick_filters_create(
     )
 
 
-@quick_filters_app.command(
-    "update",
-    epilog="Filter shape (the filtering DSL): see `kizen docs show saved-views`",
-)
+@quick_filters_app.command("update", epilog=CHIPS_EPILOG)
 def quick_filters_update(
     object_api_name: str = typer.Argument(..., help="Parent object api_name."),
     quick_filter: str = typer.Argument(..., help="Quick filter UUID or exact name."),
     name: str = typer.Option("", "--name", help="New name."),
-    filter_json: str = typer.Option(
-        "", "--filter", help="New filter as JSON (same format as `create`)."
+    chip: list[str] = typer.Option(
+        [], "--chip", help=CHIP_HELP + " Replaces the whole chip list."
     ),
-    filter_file: str = typer.Option(
-        "", "--filter-file", help="Path to a JSON filter (same format as --filter)."
+    facets: bool | None = typer.Option(
+        None, "--facets/--no-facets", help="Turn quick_filtering_facets on or off."
     ),
     owner: str = typer.Option("", "--owner", help="New owning team member UUID."),
     dry_run: bool = typer.Option(
@@ -153,9 +146,10 @@ def quick_filters_update(
     changes: dict[str, Any] = {}
     if name:
         changes["name"] = name
-    fc = load_filter_spec(filter_json, filter_file)
-    if fc is not None:
-        changes["filters"] = fc
+    if chip:
+        changes["chips"] = chip
+    if facets is not None:
+        changes["facets"] = facets
     if owner:
         changes["owner"] = owner
 

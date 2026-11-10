@@ -81,16 +81,19 @@ class FilterGroupDef(BaseModel):
 
 
 class QuickFilterDef(BaseModel):
-    """A per-object quick-filter chip. Endpoint: ``/quick-filters``.
+    """A per-object quick-filter template. Endpoint: ``/quick-filters``.
 
-    ``filters`` is the same opaque filter-config shape as
-    :class:`FilterGroupDef`'s ``config`` (different wire key, same DSL).
+    ``chips`` lists which filter chips show, not their values: ``field``,
+    ``relation:related_field`` or ``relation:in_groups`` (see
+    ``tools.planners.saved_views._build_chips``). ``facets`` is the wire's
+    ``quick_filtering_facets``.
     """
 
     model_config = ConfigDict(extra="allow")
 
     name: str
-    filters: dict[str, Any] = Field(default_factory=dict)
+    chips: list[str] = Field(default_factory=list)
+    facets: bool = False
     owner: str | None = None
     sharing_settings: dict[str, Any] | None = None
 
