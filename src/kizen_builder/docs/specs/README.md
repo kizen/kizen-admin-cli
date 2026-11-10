@@ -25,7 +25,7 @@ field Kizen rejected.
 | `dashboards create\|update\|dashlet-config` | [dashboard.md](dashboard.md) | `DashboardDef` + dashlets |
 | `mcp-servers create\|update` | [mcp-server.md](mcp-server.md) | `MCPServerDef` |
 | `layouts update` | [layout.md](layout.md) | `LayoutDef` (record layout) |
-| `filter-groups`, `quick-filters`, `columns` create\|update | [saved-views.md](saved-views.md) | filter DSL / `configuration_json` |
+| `filter-groups`, `quick-filters`, `columns` create\|update | [saved-views.md](saved-views.md) | filter DSL / chips / columns |
 | `permissions group-create\|group-update`, `roles …` | [permission-group.md](permission-group.md) | shaping-op list (`--settings-file`) |
 | `team search\|get\|update` | [team.md](team.md) | — |
 | `service-accounts …` (flag-driven) | [service-account.md](service-account.md) | — |

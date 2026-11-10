@@ -772,26 +772,151 @@ def test_apply_quick_filter_roles_only(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_create_column_template_minimal_payload(no_existing_views):
-    plan = sv_planners.plan_create_column_template(
-        "patients", {"name": "Ops columns", "configuration_json": {"cols": ["a"]}}
+PATIENT_NAME_ID = "c6a1233e-e31d-47c2-ab31-468e79be991c"
+PATIENT_OWNER_ID = "35b02ad4-0d62-4cfb-90d4-dbe4b9dc5904"
+PATIENT_DISPLAY_NAME_ID = "290227f1-fddc-45d4-92f9-90900ec4dbf9"
+PATIENT_GENDER_ID = "7a55629f-6265-435e-b5a3-6c1be2d73164"
+
+
+@pytest.fixture
+def column_objects(monkeypatch):
+    objs = {
+        name: load_fixture(f"objects/{name}.json")
+        for name in ("patients", "deals", "client_client")
+    }
+    # The deals fixture is trimmed to stage + value; every real object has name.
+    objs["deals"]["fields"].append(
+        {
+            "id": "3daeb857-d8bd-4933-b7bd-44cf7754ebe2",
+            "api_name": "name",
+            "display_name": "Deal Name",
+            "field_type": "text",
+        }
     )
+    monkeypatch.setattr(sv_planners, "get_object", lambda api_name: objs[api_name])
+
+
+def _column(col_id: str, field_id: str, label: str, disabled: bool = False) -> dict:
+    """One configuration_json column, as the UI POSTs it."""
+    return {
+        "id": col_id,
+        "fieldId": field_id,
+        "visible": True,
+        "sortable": True,
+        "width": "200px",
+        "disabled": disabled,
+        "label": label,
+    }
+
+
+def test_create_column_template_minimal_payload(no_existing_views, column_objects):
+    """No columns given: just the name column, private like the UI's default."""
+    plan = sv_planners.plan_create_column_template("patients", {"name": "Ops columns"})
     (op,) = plan.operations
     assert op.kind == "column_template" and op.action == "create"
     assert op.payload == {
         "name": "Ops columns",
-        "configuration_json": {"cols": ["a"]},
-        "sharing_settings": _default_sharing(),
+        "configuration_json": {
+            "columnOrder": ["name"],
+            "columns": {
+                "name": _column("name", PATIENT_NAME_ID, "Patient Name", disabled=True)
+            },
+        },
+        "sharing_settings": dict(_default_sharing(), private=True, all_team_members=0),
     }
     assert "owner" not in op.payload
+
+
+def test_create_column_template_builds_columns_like_the_ui(
+    no_existing_views, column_objects
+):
+    """Built-in fields get a camelCase id, other fields their UUID, and the
+    left-out name column goes first."""
+    plan = sv_planners.plan_create_column_template(
+        "patients",
+        {"name": "Ops columns", "columns": ["owner", "display_name", "gender"]},
+    )
+    (op,) = plan.operations
+    assert op.payload["configuration_json"] == {
+        "columnOrder": ["name", "owner", "displayName", PATIENT_GENDER_ID],
+        "columns": {
+            "name": _column("name", PATIENT_NAME_ID, "Patient Name", disabled=True),
+            "owner": _column("owner", PATIENT_OWNER_ID, "Owner"),
+            "displayName": _column(
+                "displayName", PATIENT_DISPLAY_NAME_ID, "Display Name"
+            ),
+            PATIENT_GENDER_ID: _column(PATIENT_GENDER_ID, PATIENT_GENDER_ID, "Gender"),
+        },
+    }
+    assert op.preview["columns"] == ["Patient Name", "Owner", "Display Name", "Gender"]
+
+
+def test_create_column_template_keeps_name_where_given(
+    no_existing_views, column_objects
+):
+    plan = sv_planners.plan_create_column_template(
+        "patients", {"name": "X", "columns": ["owner", "name"]}
+    )
+    (op,) = plan.operations
+    assert op.payload["configuration_json"]["columnOrder"] == ["owner", "name"]
+
+
+def test_create_column_template_pipeline_builtins(no_existing_views, column_objects):
+    plan = sv_planners.plan_create_column_template(
+        "deals", {"name": "X", "columns": ["stage", "deal_value"]}
+    )
+    (op,) = plan.operations
+    assert op.payload["configuration_json"]["columnOrder"] == [
+        "name",
+        "stage",
+        "44444444-4444-4444-8444-444444444444",
+    ]
+
+
+def test_create_column_template_contacts_full_name(no_existing_views, column_objects):
+    """Contacts lead with fullName, which points at first_name."""
+    plan = sv_planners.plan_create_column_template(
+        "client_client",
+        {"name": "X", "columns": ["email", "mobile_phone", "titles", "tags"]},
+    )
+    (op,) = plan.operations
+    config = op.payload["configuration_json"]
+    assert config["columnOrder"] == [
+        "fullName",
+        "email",
+        "mobilePhone",
+        "titles",
+        "tags",
+    ]
+    first_name = next(
+        f
+        for f in load_fixture("objects/client_client.json")["fields"]
+        if f["api_name"] == "first_name"
+    )
+    assert config["columns"]["fullName"] == _column(
+        "fullName", first_name["id"], "Full Name", disabled=True
+    )
+
+
+@pytest.mark.parametrize(
+    ("spec", "match"),
+    [
+        ({"columns": ["nope"]}, "no field 'nope' on 'patients'"),
+        ({"columns": ["owner"], "configuration_json": {}}, "not both"),
+    ],
+)
+def test_create_column_template_rejects_bad_columns(
+    no_existing_views, column_objects, spec, match
+):
+    with pytest.raises(PlanError, match=match):
+        sv_planners.plan_create_column_template("patients", {"name": "X", **spec})
 
 
 def test_create_column_template_configuration_json_is_opaque_passthrough(
     no_existing_views,
 ):
-    """No filter DSL applies here — whatever blob is given passes through
-    byte-for-byte."""
-    blob = {"columns": [{"field": "name", "width": 120}], "order": ["name"]}
+    """A raw blob passes through byte-for-byte."""
+    blob = {"columnOrder": ["name"], "columns": {"name": {"id": "name"}}}
     plan = sv_planners.plan_create_column_template(
         "patients", {"name": "X", "configuration_json": blob}
     )
@@ -810,27 +935,92 @@ def test_create_column_template_collision_raises(monkeypatch):
         sv_planners.plan_create_column_template("patients", {"name": "Ops columns"})
 
 
-def test_update_column_template_diffs_configuration_json(monkeypatch):
+def _existing_columns() -> dict:
+    """A column template as GET returns it after a UI PATCH: the slim
+    {id, label, visible} entries."""
+    return _existing(
+        "configuration_json",
+        id=CT_ID,
+        configuration_json={
+            "columnOrder": ["name", "owner"],
+            "columns": {
+                "name": {"id": "name", "label": "Patient Name", "visible": True},
+                "owner": {"id": "owner", "label": "Owner", "visible": True},
+            },
+        },
+    )
+
+
+def test_update_column_template_replaces_columns(monkeypatch, column_objects):
     monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
     monkeypatch.setattr(
-        sv_planners, "find_saved_view", lambda *a, **k: _existing("configuration_json")
+        sv_planners, "find_saved_view", lambda *a, **k: _existing_columns()
     )
-    changes = {"configuration_json": {"cols": ["b"]}}
-    plan = sv_planners.plan_update_column_template("patients", "Big deals", changes)
+    plan = sv_planners.plan_update_column_template(
+        "patients", "Big deals", {"columns": ["gender"]}
+    )
     (op,) = plan.operations
-    assert op.payload == {"configuration_json": {"cols": ["b"]}}
+    assert op.action == "update"
+    assert op.payload["configuration_json"]["columnOrder"] == [
+        "name",
+        PATIENT_GENDER_ID,
+    ]
+    assert op.preview["diff"] == {
+        "columns": "['Patient Name', 'Owner'] → ['Patient Name', 'Gender']"
+    }
+
+
+def test_update_column_template_diffs_raw_configuration_json(monkeypatch):
+    monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
+    monkeypatch.setattr(
+        sv_planners, "find_saved_view", lambda *a, **k: _existing_columns()
+    )
+    blob = {"columnOrder": ["name"], "columns": {"name": {"id": "name"}}}
+    plan = sv_planners.plan_update_column_template(
+        "patients", "Big deals", {"configuration_json": blob}
+    )
+    (op,) = plan.operations
+    assert op.payload == {"configuration_json": blob}
 
 
 def test_update_column_template_no_changes_is_skip(monkeypatch):
     monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
     monkeypatch.setattr(
-        sv_planners, "find_saved_view", lambda *a, **k: _existing("configuration_json")
+        sv_planners, "find_saved_view", lambda *a, **k: _existing_columns()
     )
     plan = sv_planners.plan_update_column_template(
         "patients", "Big deals", {"name": "Big deals"}
     )
     (op,) = plan.operations
     assert op.action == "skip"
+
+
+def test_share_column_template_changes_only_what_is_passed(monkeypatch):
+    monkeypatch.setattr(sv_planners, "resolve_object_id", lambda a: OBJ_ID)
+    monkeypatch.setattr(
+        sv_planners,
+        "find_saved_view",
+        lambda *a, **k: _existing(
+            "configuration_json",
+            id=CT_ID,
+            owner={"id": OWNER_ID, "display_name": "Owner"},
+            sharing_settings=_live_sample_sharing(),
+        ),
+    )
+    monkeypatch.setattr(sv_planners, "admin_role_id", lambda: ADMIN_ID)
+    plan = sv_planners.plan_share_column_template(
+        "patients", "Big deals", private=False, roles={SALES_ROLE_ID: "view"}
+    )
+    (op,) = plan.operations
+    assert op.action == "update" and op.existing_uuid == CT_ID
+    assert op.preview["diff"] == {
+        "sharing.private": "True → False",
+        "sharing.roles.view": f"[] → ['{SALES_ROLE_ID}']",
+    }
+    with pytest.raises(PlanError, match="Admin role already has admin on a column"):
+        sv_planners.plan_share_column_template(
+            "patients", "Big deals", roles={ADMIN_ID: "view"}
+        )
 
 
 def test_delete_column_template(monkeypatch):

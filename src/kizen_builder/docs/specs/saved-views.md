@@ -7,7 +7,7 @@ which flag each uses:
 |----------|---------|-----------|-------|
 | Filter group (segment) | `filter-groups create\|update` | `--filter '<json>'` / `--filter-file` | filter DSL |
 | Quick filter | `quick-filters create\|update` | `--chip` (repeatable) | chip list |
-| Column template | `columns create\|update` | `--config-file` | opaque `configuration_json` |
+| Column template | `columns create\|update` | `--column` (repeatable) | column list |
 
 ---
 
@@ -85,15 +85,25 @@ it refuses a lower level for either; change the owner to remove the owner.
 `apply-to-users` are separate: they put the template's chips on those users'
 record lists.
 
-## Column templates (`--config-file`)
+## Column templates (`--column`)
 
-`configuration_json` is an **opaque, undocumented blob** (which columns show, in
-what order/width) — no DSL. **Copy one from a live template and edit:**
+Each `--column` is a field api_name, in display order. The CLI builds the
+`configuration_json` the UI saves (see the wire format below).
 
 ```bash
-kizen columns get accounts "My View" -o json > cols.json   # grab configuration_json
-kizen columns create accounts --name "Ops columns" --config-file cols.json --dry-run
+kizen columns create deals --name "Pipeline" \
+  --column owner --column stage --column estimated_close_date --column deal_value --dry-run
+kizen columns create client_client --name "Contacts" --column email --column tags --dry-run
 ```
+
+- **The name column is always kept.** Leave it out and it goes first; list
+  it (`name`, or `full_name` on contacts) to put it somewhere else.
+- **`update --column` replaces the whole list.** Widths reset to `200px`.
+- **New templates start private**, with the Admin role as admin, like the UI.
+  `columns share` changes that and takes the same flags as `quick-filters
+  share`.
+- `--config-file` sends a raw `configuration_json` as-is, instead of
+  `--column`.
 
 ## Gotchas
 
@@ -122,12 +132,41 @@ They differ only in the wire key holding their config blob:
 |---|---|---|
 | Filter group | `config` | the filter wire format — `{"and", "query": […], "invalid"}` |
 | Quick filter | `filters` | a chip list — see below, **not** the filter wire format |
-| Column template | `configuration_json` | **opaque, undocumented** — column visibility/order/width |
+| Column template | `configuration_json` | column order and settings — see below |
 
 A filter group's `config` is the **same shape as an automation condition step's
 `filter_config`** — confirmed by reading a real live filter group carrying a
-`field: "owner", value: "is_me"` clause. Column templates have no DSL: copy a
-live one (`columns get <object> <id> --json`) and edit it.
+`field: "owner", value: "is_me"` clause.
+
+## Column template `configuration_json`
+
+What the UI POSTs (confirmed live 2026-11-10):
+
+```json
+{
+  "columnOrder": ["name", "owner", "estimatedCloseDate", "<field uuid>"],
+  "columns": {
+    "name": {"id": "name", "fieldId": "<uuid>", "visible": true, "sortable": true,
+             "width": "200px", "disabled": true, "label": "Deal Name"},
+    "<field uuid>": {"id": "<field uuid>", "fieldId": "<field uuid>", "...": "..."}
+  }
+}
+```
+
+- **Column `id`:** built-in fields use their camelCased api_name. On custom
+  objects that's `name`, `owner`, `created`, `updated`, `entityValue`,
+  `displayName`, `stage`, `estimatedCloseDate`, `actualCloseDate` and
+  `percentageChanceToClose`. On contacts it's `fullName`, `email`,
+  `mobilePhone`, `titles`, `tags`, `created` and `updated`. Every other field
+  uses its UUID.
+- **`fullName`** (contacts) points at the `first_name` field, labeled "Full
+  Name". The list shows first and last name together and sorts by
+  `full_name`.
+- **`disabled: true`** only on `name` / `fullName`, which the UI won't let you
+  hide.
+- `label` is the field's display name.
+- The UI's columns editor PATCHes slimmer entries (`id`, `label`, `visible`
+  only). The UI reads both.
 
 ## Quick filter `filters`
 

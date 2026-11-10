@@ -7,7 +7,8 @@ sharing block (see ``tools.dashboards.normalize_sharing_settings`` /
 ``default_sharing_settings``, reused here as-is — confirmed byte-identical
 schema in the full API spec). They differ in the wire key for their
 config blob: ``config`` (filter groups), ``filters`` (quick filters),
-``configuration_json`` (column templates, opaque passthrough only).
+``configuration_json`` (column templates, built from a field list by
+``_build_columns``).
 
 A filter group's config accepts either a JSON filter spec (``{"all"|"any":
 [...]}``, resolved via the same ``kizen_builder.filtering`` DSL that backs
@@ -297,7 +298,7 @@ _BUCKETS = ("roles", "team_members")
 _LEVEL_KEYS = ("view", "edit", "admin")
 
 
-def _quick_filter_default_sharing() -> dict[str, Any]:
+def _ui_default_sharing() -> dict[str, Any]:
     """What the UI's save modal starts from: private, no access for all team
     members, and the Admin role as admin."""
     return {**default_sharing_settings(), "private": True, "all_team_members": 0}
@@ -390,7 +391,7 @@ def plan_create_quick_filter(
         "filter_count": len(settings),
         "sharing_settings": normalize_sharing_settings(qf.sharing_settings)
         if qf.sharing_settings
-        else _quick_filter_default_sharing(),
+        else _ui_default_sharing(),
     }
     if qf.owner is not None:
         payload["owner"] = qf.owner
@@ -486,6 +487,50 @@ def plan_update_quick_filter(
     return Plan.build(env=env, summary=summary, operations=[op])
 
 
+def _reshare_template(
+    object_api_name: str,
+    base: str,
+    noun: str,
+    id_or_name: str,
+    *,
+    private: bool | None,
+    all_level: str | None,
+    roles: dict[str, str] | None,
+    users: dict[str, str] | None,
+) -> tuple[str, dict[str, Any]]:
+    """Find a quick filter or column template and return its id and its
+    sharing block with the given grants applied."""
+    if private is None and all_level is None and not roles and not users:
+        raise PlanError(
+            "pass at least one of --private/--public, --all, --role, --user."
+        )
+    try:
+        existing = find_saved_view(object_api_name, base, id_or_name)
+    except LookupError as e:
+        raise PlanError(str(e)) from e
+    # Both always have admin (the API 400s without the Admin role). A grant
+    # moves an id between levels, so a lower one would take them out of admin.
+    if roles and roles.get(admin_role_id() or "", "admin") != "admin":
+        raise PlanError(
+            f"the Admin role already has admin on a {noun}, so a lower "
+            "level has no effect; it can't be removed."
+        )
+    owner_id = _unwrap_owner(existing.get("owner"))
+    if users and users.get(owner_id or "", "admin") != "admin":
+        raise PlanError(
+            f"the {noun}'s owner already has admin, so a lower level has "
+            "no effect; change the owner to remove it."
+        )
+    new = _reshare(
+        normalize_sharing_settings(existing.get("sharing_settings") or {}),
+        private=private,
+        all_level=all_level,
+        roles=roles,
+        users=users,
+    )
+    return existing["id"], new
+
+
 def plan_share_quick_filter(
     object_api_name: str,
     id_or_name: str,
@@ -496,37 +541,17 @@ def plan_share_quick_filter(
     users: dict[str, str] | None = None,
 ) -> Plan:
     """Change who can view, edit or admin a quick filter template."""
-    if private is None and all_level is None and not roles and not users:
-        raise PlanError(
-            "pass at least one of --private/--public, --all, --role, --user."
-        )
-    try:
-        existing = find_saved_view(object_api_name, QUICK_FILTERS_BASE, id_or_name)
-    except LookupError as e:
-        raise PlanError(str(e)) from e
-    # Both always have admin (the API 400s without the Admin role). A grant
-    # moves an id between levels, so a lower one would take them out of admin.
-    if roles and roles.get(admin_role_id() or "", "admin") != "admin":
-        raise PlanError(
-            "the Admin role already has admin on a quick filter, so a lower "
-            "level has no effect; it can't be removed."
-        )
-    owner_id = _unwrap_owner(existing.get("owner"))
-    if users and users.get(owner_id or "", "admin") != "admin":
-        raise PlanError(
-            "the quick filter's owner already has admin, so a lower level has "
-            "no effect; change the owner to remove it."
-        )
-    new = _reshare(
-        normalize_sharing_settings(existing.get("sharing_settings") or {}),
+    id_, new = _reshare_template(
+        object_api_name,
+        QUICK_FILTERS_BASE,
+        "quick filter",
+        id_or_name,
         private=private,
         all_level=all_level,
         roles=roles,
         users=users,
     )
-    return plan_update_quick_filter(
-        object_api_name, existing["id"], {"sharing_settings": new}
-    )
+    return plan_update_quick_filter(object_api_name, id_, {"sharing_settings": new})
 
 
 def plan_delete_quick_filter(object_api_name: str, id_or_name: str) -> Plan:
@@ -616,6 +641,88 @@ def plan_apply_quick_filter(
 # Column templates
 # ---------------------------------------------------------------------------
 
+# Built-in fields whose column id is the camelCased field name. Every other
+# field's column id is its UUID. Mirrors react-app's DefaultColumns helpers.
+_OBJECT_BUILTIN_COLUMNS = {
+    "name",
+    "owner",
+    "created",
+    "updated",
+    "entity_value",
+    "display_name",
+    "stage",
+    "estimated_close_date",
+    "actual_close_date",
+    "percentage_chance_to_close",
+}
+_CONTACT_BUILTIN_COLUMNS = {
+    "email",
+    "mobile_phone",
+    "titles",
+    "tags",
+    "created",
+    "updated",
+}
+# Contacts' "Full Name" column points at first_name; the list renders it as
+# first + last name.
+FULL_NAME = "full_name"
+
+
+def _camel(name: str) -> str:
+    first, *rest = name.split("_")
+    return first + "".join(p.capitalize() for p in rest)
+
+
+def _build_columns(object_api_name: str, names: list[str]) -> dict[str, Any]:
+    """Resolve field api_names to the ``configuration_json`` the UI saves.
+
+    The name column (``full_name`` on contacts) is always kept: it's added
+    first when left out, and it's the only one the UI won't let you hide.
+    """
+    obj = get_object(object_api_name)
+    contacts = obj["api_name"] == "client_client"
+    lead = FULL_NAME if contacts else "name"
+    if lead not in names:
+        names = [lead, *names]
+    builtins = _CONTACT_BUILTIN_COLUMNS if contacts else _OBJECT_BUILTIN_COLUMNS
+    columns: dict[str, Any] = {}
+    for name in names:
+        if name == lead:
+            field = _live_field(obj, "first_name" if contacts else "name")
+            col_id = _camel(name)
+            label = "Full Name" if contacts else field["display_name"]
+        else:
+            field = _live_field(obj, name)
+            col_id = _camel(name) if name in builtins else field["id"]
+            label = field["display_name"]
+        columns[col_id] = {
+            "id": col_id,
+            "fieldId": field["id"],
+            "visible": True,
+            "sortable": True,
+            "width": "200px",
+            "disabled": name == lead,
+            "label": label,
+        }
+    return {"columnOrder": list(columns), "columns": columns}
+
+
+def _column_labels(config: dict[str, Any]) -> list[str]:
+    columns = config.get("columns") or {}
+    return [
+        (columns.get(c) or {}).get("label", c) for c in config.get("columnOrder") or []
+    ]
+
+
+def _column_config(
+    object_api_name: str, columns: list[str] | None, config: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    if columns is not None and config is not None:
+        raise PlanError("pass columns or configuration_json, not both.")
+    if columns is not None:
+        return _build_columns(object_api_name, columns)
+    return config
+
 
 def plan_create_column_template(
     object_api_name: str, spec: dict[str, Any] | ColumnTemplateDef
@@ -646,10 +753,15 @@ def plan_create_column_template(
             f"(uuid {existing['id']}). Use update instead."
         )
 
+    config = _column_config(
+        object_api_name, ct.columns, ct.configuration_json
+    ) or _build_columns(object_api_name, [])
     payload: dict[str, Any] = {
         "name": ct.name,
-        "configuration_json": ct.configuration_json,
-        "sharing_settings": _sharing_payload(ct.sharing_settings),
+        "configuration_json": config,
+        "sharing_settings": normalize_sharing_settings(ct.sharing_settings)
+        if ct.sharing_settings
+        else _ui_default_sharing(),
     }
     if ct.owner is not None:
         payload["owner"] = ct.owner
@@ -657,7 +769,12 @@ def plan_create_column_template(
         action="create",
         kind="column_template",
         key=_op_key(object_api_name, ct.name),
-        preview={"env": env, "object": object_api_name, "name": ct.name},
+        preview={
+            "env": env,
+            "object": object_api_name,
+            "name": ct.name,
+            "columns": _column_labels(config),
+        },
         payload=payload,
         parent_object_uuid=object_id,
     )
@@ -683,19 +800,25 @@ def plan_update_column_template(
     if "name" in changes and changes["name"] != existing.get("name"):
         payload["name"] = changes["name"]
         diff["name"] = (existing.get("name"), changes["name"])
-    if "configuration_json" in changes and changes[
-        "configuration_json"
-    ] != existing.get("configuration_json"):
-        payload["configuration_json"] = changes["configuration_json"]
-        diff["configuration_json"] = ("…", "…(changed)")
+    config = _column_config(
+        object_api_name, changes.get("columns"), changes.get("configuration_json")
+    )
+    old_config = existing.get("configuration_json") or {}
+    if config is not None and config != old_config:
+        payload["configuration_json"] = config
+        diff["columns"] = (_column_labels(old_config), _column_labels(config))
     if "owner" in changes and changes["owner"] != _unwrap_owner(existing.get("owner")):
         payload["owner"] = changes["owner"]
         diff["owner"] = (_unwrap_owner(existing.get("owner")), changes["owner"])
     if changes.get("sharing_settings") is not None:
         normalized = normalize_sharing_settings(changes["sharing_settings"])
-        if normalized != existing.get("sharing_settings"):
+        sharing_diff = _sharing_diff(
+            normalize_sharing_settings(existing.get("sharing_settings") or {}),
+            normalized,
+        )
+        if sharing_diff:
             payload["sharing_settings"] = normalized
-            diff["sharing_settings"] = ("…", "…(changed)")
+            diff.update(sharing_diff)
 
     action = "update" if payload else "skip"
     label = existing.get("name") or existing["id"]
@@ -719,6 +842,29 @@ def plan_update_column_template(
         else f"No changes to column template '{label}' on {object_api_name}"
     )
     return Plan.build(env=env, summary=summary, operations=[op])
+
+
+def plan_share_column_template(
+    object_api_name: str,
+    id_or_name: str,
+    *,
+    private: bool | None = None,
+    all_level: str | None = None,
+    roles: dict[str, str] | None = None,
+    users: dict[str, str] | None = None,
+) -> Plan:
+    """Change who can view, edit or admin a column template."""
+    id_, new = _reshare_template(
+        object_api_name,
+        COLUMNS_BASE,
+        "column template",
+        id_or_name,
+        private=private,
+        all_level=all_level,
+        roles=roles,
+        users=users,
+    )
+    return plan_update_column_template(object_api_name, id_, {"sharing_settings": new})
 
 
 def plan_delete_column_template(object_api_name: str, id_or_name: str) -> Plan:

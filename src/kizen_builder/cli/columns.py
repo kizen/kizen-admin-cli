@@ -18,6 +18,7 @@ from kizen_builder.cli._shared import (
     read_json_file,
 )
 from kizen_builder.cli.permissions import _resolve_group_id, _resolve_role_id
+from kizen_builder.cli.quick_filters import _grants
 from kizen_builder.tools import saved_views as sv_tools
 from kizen_builder.tools.planners import saved_views as sv_planners
 
@@ -77,19 +78,22 @@ def columns_get(
     out.render(fmt, json_data=item, table=table)
 
 
-@columns_app.command(
-    "create",
-    epilog="Config-file shape (opaque configuration_json; copy from a live template): see `kizen docs show saved-views`",
+COLUMN_HELP = (
+    "A field api_name to show as a column, in order (repeatable). The name "
+    "column (`full_name` on contacts) is always kept, first if you leave it out."
 )
+COLUMNS_EPILOG = "Column rules and examples: see `kizen docs show saved-views`"
+
+
+@columns_app.command("create", epilog=COLUMNS_EPILOG)
 def columns_create(
     object_api_name: str = typer.Argument(..., help="Parent object api_name."),
     name: str = typer.Option(..., "--name", help="Column template name."),
+    column: list[str] = typer.Option([], "--column", help=COLUMN_HELP),
     config_file: str = typer.Option(
         "",
         "--config-file",
-        help="Path to a JSON configuration_json blob. Opaque, undocumented shape — "
-        "copy one from `columns get <object> <id> --json` and edit rather than "
-        "authoring from scratch. Omit for an empty starter template.",
+        help="Path to a raw configuration_json, sent as-is. Instead of --column.",
     ),
     owner: str = typer.Option(
         "", "--owner", help="Owning team member UUID (defaults to the API caller)."
@@ -104,8 +108,14 @@ def columns_create(
         False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
     ),
 ) -> None:
-    """Create one column template (saved list-view column layout) on an object."""
+    """Create one column template (saved list-view column layout) on an object.
+
+    Sharing starts where the UI's does: private, with the Admin role as admin.
+    Use `share` to open it up.
+    """
     spec: dict[str, Any] = {"name": name}
+    if column:
+        spec["columns"] = column
     if config_file:
         spec["configuration_json"] = read_json_file(config_file, "--config-file")
     if owner:
@@ -119,18 +129,20 @@ def columns_create(
     )
 
 
-@columns_app.command(
-    "update",
-    epilog="Config-file shape (opaque configuration_json; copy from a live template): see `kizen docs show saved-views`",
-)
+@columns_app.command("update", epilog=COLUMNS_EPILOG)
 def columns_update(
     object_api_name: str = typer.Argument(..., help="Parent object api_name."),
     column_template: str = typer.Argument(
         ..., help="Column template UUID or exact name."
     ),
     name: str = typer.Option("", "--name", help="New name."),
+    column: list[str] = typer.Option(
+        [], "--column", help=COLUMN_HELP + " Replaces the whole column list."
+    ),
     config_file: str = typer.Option(
-        "", "--config-file", help="Path to a new JSON configuration_json blob."
+        "",
+        "--config-file",
+        help="Path to a raw configuration_json, sent as-is. Instead of --column.",
     ),
     owner: str = typer.Option("", "--owner", help="New owning team member UUID."),
     dry_run: bool = typer.Option(
@@ -147,6 +159,8 @@ def columns_update(
     changes: dict[str, Any] = {}
     if name:
         changes["name"] = name
+    if column:
+        changes["columns"] = column
     if config_file:
         changes["configuration_json"] = read_json_file(config_file, "--config-file")
     if owner:
@@ -155,6 +169,63 @@ def columns_update(
     _run_mutation(
         lambda: sv_planners.plan_update_column_template(
             object_api_name, column_template, changes
+        ),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+    )
+
+
+@columns_app.command("share")
+def columns_share(
+    object_api_name: str = typer.Argument(..., help="Parent object api_name."),
+    column_template: str = typer.Argument(
+        ..., help="Column template UUID or exact name."
+    ),
+    private: bool | None = typer.Option(
+        None, "--private/--public", help="Set the template's private flag."
+    ),
+    all_level: str | None = typer.Option(
+        None,
+        "--all",
+        help="Access for all team members: none, view, edit or admin.",
+    ),
+    role: list[str] = typer.Option(
+        [],
+        "--role",
+        help="ROLE=LEVEL, role name or UUID (repeatable). none removes it.",
+    ),
+    user: list[str] = typer.Option(
+        [], "--user", help="UUID=LEVEL for a team member (repeatable). none removes it."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Change who can view, edit or admin a column template.
+
+    Only what you pass changes; other roles and users keep their access.
+    """
+    if all_level is not None and all_level not in sv_planners.PERMISSION_LEVELS:
+        raise typer.BadParameter(
+            f"'{all_level}': expected none|view|edit|admin", param_hint="--all"
+        )
+    roles = _grants(role, "--role", _resolve_role_id)
+    users = _grants(user, "--user", lambda ref: ref)
+    _run_mutation(
+        lambda: sv_planners.plan_share_column_template(
+            object_api_name,
+            column_template,
+            private=private,
+            all_level=all_level,
+            roles=roles,
+            users=users,
         ),
         dry_run=dry_run,
         yes=yes,
