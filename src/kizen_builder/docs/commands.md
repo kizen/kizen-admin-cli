@@ -219,8 +219,9 @@ kizen quick-filters update <object> <uuid|name> [--name] [--chip ...] [--facets/
 kizen quick-filters share <object> <uuid|name> [--private/--public] [--all <level>] [--role <name|uuid>=<level> ...] [--user <uuid>=<level> ...]
 kizen quick-filters apply-to-roles <object> <uuid|name> --role <name|uuid> [...]
 kizen quick-filters apply-to-users <object> <uuid|name> --user <uuid> [...]
-kizen columns create <object> --name X [--config-file f] [--owner uuid]     # configuration_json opaque, copy from `columns get --json`
-kizen columns update <object> <uuid|name> [--name] [--config-file f] [--owner]
+kizen columns create <object> --name X [--column <field> ...] [--config-file f] [--owner uuid]
+kizen columns update <object> <uuid|name> [--name] [--column ...] [--config-file f] [--owner]
+kizen columns share <object> <uuid|name> [--private/--public] [--all <level>] [--role <name|uuid>=<level> ...] [--user <uuid>=<level> ...]
 kizen columns apply-to-roles/apply-to-users/apply-to-permission-groups <object> <uuid|name> --role/--user/--group <name|uuid> [...]
 
 # delete — objects, categories, records, fields (and field options)

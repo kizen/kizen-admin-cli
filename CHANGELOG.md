@@ -21,6 +21,12 @@ called out explicitly under **Changed** or **Removed**.
 - **`kizen quick-filters share`** changes who can view, edit or admin a quick
   filter: `--private/--public`, `--all <level>`, `--role NAME=LEVEL`,
   `--user UUID=LEVEL`. Grants you don't pass are kept.
+- **`kizen columns create|update --column <field>`** builds a column template
+  from field api_names, in order, the way the UI saves it. You no longer need
+  to copy `configuration_json` from a live template; `--config-file` still
+  works. The name column is always kept, first if you leave it out.
+- **`kizen columns share`** changes who can view, edit or admin a column
+  template, with the same flags as `quick-filters share`.
 
 ### Changed
 
@@ -36,6 +42,10 @@ called out explicitly under **Changed** or **Removed**.
 - **New quick filters start private**, matching the UI: no access for all team
   members and the Admin role as admin. Previously the CLI made them visible to
   all team members. Use `quick-filters share --all view` for the old behavior.
+- **New column templates start private** the same way. Use
+  `columns share --all view` for the old behavior. A `columns create` with no
+  `--column` now makes a template showing just the name column, instead of an
+  empty one.
 
 - **Specs reject the `timezone`, `choices` and `selector` field types.**
   None of them can be created in Kizen: `timezone` exists only as the built-in

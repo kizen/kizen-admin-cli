@@ -101,16 +101,18 @@ class QuickFilterDef(BaseModel):
 class ColumnTemplateDef(BaseModel):
     """A per-object saved column layout. Endpoint: ``/columns``.
 
-    ``configuration_json`` is an opaque, undocumented blob (which columns show,
-    in what order/width) — no DSL exists for it here. Copy one from a live
-    ``columns get <object> <id> --raw`` and edit rather than authoring from
-    scratch.
+    ``columns`` lists field api_names in order and is built into the
+    ``configuration_json`` the UI saves (see
+    ``tools.planners.saved_views._build_columns``). ``configuration_json`` is
+    the raw alternative, passed through as-is. Set one, not both; with neither,
+    the template shows just the name column.
     """
 
     model_config = ConfigDict(extra="allow")
 
     name: str
-    configuration_json: dict[str, Any] = Field(default_factory=dict)
+    columns: list[str] | None = None
+    configuration_json: dict[str, Any] | None = None
     owner: str | None = None
     sharing_settings: dict[str, Any] | None = None
 
