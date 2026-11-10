@@ -14,6 +14,17 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **Scheduled activities can be created, changed and deleted.**
+  `kizen activities scheduled create` takes the activity, `--due` (ISO with a
+  UTC offset), `--assignee` (email, name or UUID) or `--role`, `--record
+  object:record_uuid`, `--note` and repeatable `--notification email:1:day`.
+  `scheduled update` changes only what you pass, and `scheduled delete`
+  removes it for good. Logging, and so completing, an activity stays in the
+  Kizen UI. The activity docs' `associated_entities` example was wrong; it
+  now shows the nested `{custom_object: {id}, entity: {id}}` form.
+
 ### Changed
 
 - **Specs reject the `timezone`, `choices` and `selector` field types.**

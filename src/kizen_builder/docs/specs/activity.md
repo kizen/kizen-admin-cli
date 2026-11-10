@@ -294,11 +294,53 @@ POST /api/activities/{id}/responses     # list instances — POST because the bo
 
 ## Scheduled activities
 
+```bash
+kizen activities scheduled create call --due 2026-11-16T15:30:00-05:00 \
+  --assignee rep@example.com --record deals:<record_uuid> --note "Pricing follow-up" \
+  --notification email:1:day --dry-run
+kizen activities scheduled update <uuid> --due 2026-11-17T10:00:00-05:00 --role Sales
+kizen activities scheduled delete <uuid>
+```
+
+- **create.** `--due` needs a UTC offset or `Z`. Pass `--assignee` (a team
+  member's email, name or UUID) or `--role` (name or UUID), exactly one;
+  Kizen has no default. A role assignment stays on the role: any member sees
+  it, and calendar sync skips it. `--notification type:amount:unit`
+  (`email|text`, amount at least 1, `minute|hour|day`) is repeatable.
+- **update** sends only the options passed. `--record` and `--notification`
+  replace their whole lists; `--clear-notifications` empties the reminders.
+  Records can't be cleared, because the API ignores an empty list. The
+  activity type can't change. Reassigning to a person clears the role, and the
+  reverse.
+- **Completing** a scheduled activity means logging it, which users do in the
+  Kizen UI. The CLI has no complete command.
+- **delete** is a hard delete; the scheduled activity can't be restored.
+
+Each command ran on staging and read back as described, confirmed live
+2026-11-09: a create for a role with a reminder; an update that moved the due
+time, reassigned from the role to a person and replaced the reminder; and a
+delete.
+
+Also confirmed live 2026-11-09 against the raw API:
+
+- `due_datetime` without an offset is read in the **business's** timezone:
+  `2026-11-20T15:00:00` saved as `15:00-06:00` on a Central business. The
+  CLI refuses one, so the time is never ambiguous.
+- PUT is a full replace: a partial body gets 400 `"role_id" or "employee_id"
+  must be set.`, and one without records gets 400 `Associations are required
+  for this activity.` when the activity requires them. Use PATCH.
+- A completed scheduled activity still accepts a PATCH (200) and stays
+  completed.
+- DELETE answers 204; a GET afterwards is 404.
+- `associated_entities: [{"custom_object": "<uuid>", "entity_id": ...}]`, a
+  bare id under `custom_object`, gets 400 `Invalid data. Expected a
+  dictionary, but got str.`
+
 ```
 GET    /api/activities/scheduled-activity?from_date=<ISO>&employee_ids=<uuid>,<uuid>&completed=false
 POST   /api/activities/scheduled-activity
 GET    /api/activities/scheduled-activity/<id>
-PUT    /api/activities/scheduled-activity/<id>     # full replace
+PUT    /api/activities/scheduled-activity/<id>     # full replace; prefer PATCH
 PATCH  /api/activities/scheduled-activity/<id>     # partial
 DELETE /api/activities/scheduled-activity/<id>
 ```
@@ -309,14 +351,22 @@ DELETE /api/activities/scheduled-activity/<id>
   "due_datetime": "2026-07-01T14:00:00Z",
   "employee_id": "<team-member-uuid>",
   "note": "Optional note",
-  "associated_entities": [ {"custom_object": "<object-uuid>", "entity_id": "<record-uuid>"} ]
+  "associated_entities": [
+    { "custom_object": { "id": "<object-uuid>" }, "entity": { "id": "<record-uuid>" } }
+  ]
 }
 ```
 
-`activity_object_id` is the activity **type**'s UUID. In
-`associated_entities`, `custom_object` is the object UUID and `entity_id` the
-record UUID — note both are bare ids here, unlike the nested-dict shape the
-type's own `associated_objects` wants.
+- `activity_object_id` is the activity **type**'s UUID; `activity_object_name`
+  takes its api_name instead. Send one.
+- Exactly one of `employee_id` or `role_id` is required.
+- `due_datetime` is preferred; the older `due_date` + `due_time` pair is read
+  in the business's timezone.
+- `associated_entities` items nest the ids, as above. The older flat
+  `custom_object_id` + `entity_id` keys are still accepted. The object must be
+  enabled for activities.
+- `notifications` is an optional list of
+  `{type: email|text, time_amount, time_unit: minute|hour|day}`.
 
 ## See also
 

@@ -229,12 +229,15 @@ kizen filter-groups delete <object> <uuid|name>
 kizen quick-filters delete <object> <uuid|name>
 kizen columns delete <object> <uuid|name>
 kizen mcp-servers delete <uuid|api_name>                       # hard delete; Kizen-managed servers are refused
-# activities (activity types / loggable definitions) — logging/scheduling stays in the UI
+# activities (activity types / loggable definitions, and scheduled instances) — logging is done in the UI by users
 kizen activities create --name X [--api-name Y] [--association-mode ...] [--object <api_name> ...] [--editable] [--spec-file f]
 kizen activities update <activity> [--name] [--description] [--object <api_name> ...] \
     [--association-mode ...] [--visibility-rules-file f] [--spec-file f]
 kizen activities delete <activity>
 kizen activities duplicate <activity> [--name X]
+kizen activities scheduled create <activity> --due <ISO+offset> (--assignee <email|uuid> | --role <name|uuid>) [--record <object>:<record_uuid> ...] [--note X] [--notification email:1:day ...]
+kizen activities scheduled update <uuid> [--due] [--assignee | --role] [--note] [--record ...] [--notification ... | --clear-notifications]
+kizen activities scheduled delete <uuid>                                                        # hard delete
 kizen activities fields create <activity> --name X --type text [--option ...]   # native activity field
 kizen activities fields create <activity> --linked-field object_api.field_api    # surface an existing CO field
 kizen activities fields create <activity> [--spec-file f]                        # bulk (either kind)

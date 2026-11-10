@@ -92,6 +92,7 @@ Kind = Literal[
     "activity",
     "activity_field",
     "activity_field_option",
+    "scheduled_activity",
     "stage",
     "record_move",
     "record_archive",
@@ -850,6 +851,20 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
                 "remove it with `kizen activities delete {id}`",
             )
         return act_api.update_activity(client, op.existing_uuid, op.payload)
+
+    if op.kind == "scheduled_activity":
+        if op.action == "create":
+            return act_api.create_scheduled(client, op.payload)
+        if op.existing_uuid is None:
+            raise PlanError(
+                f"{op.action} scheduled_activity op '{op.key}' has no existing_uuid "
+                "— planning bug"
+            )
+        if op.action == "update":
+            return act_api.update_scheduled(client, op.existing_uuid, op.payload)
+        if op.action == "delete":
+            return act_api.delete_scheduled(client, op.existing_uuid)
+        raise PlanError(f"unsupported scheduled_activity action '{op.action}'")
 
     if op.kind == "activity_field":
         # parent_object_uuid carries the parent *activity* id (resolved from a

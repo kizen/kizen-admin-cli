@@ -45,9 +45,9 @@
 │ filter-groups     Per-object saved filters (segments): /filter-groups.                           │
 │ quick-filters     Per-object quick-filter chips: /quick-filters.                                 │
 │ columns           Per-object saved column layouts: /columns.                                     │
-│ activities        Read and edit activity types (loggable definitions), their fields, and read    │
-│                   logged/scheduled instances. An 'activity' here is the type/template — logging  │
-│                   and scheduling instances happen in the Kizen UI, not here.                     │
+│ activities        Read and edit activity types (loggable definitions) and their fields, read     │
+│                   logged instances, and manage scheduled ones. An 'activity' here is the         │
+│                   type/template; logging an activity is done in the Kizen UI by users.           │
 │ forms             Create, read, update, and delete forms, their fields, and their visual page    │
 │                   layout (form_ui).                                                              │
 │ surveys           Create, read, update, and delete surveys, their fields, and their visual page  │
@@ -72,9 +72,9 @@
                                                                                                     
  Usage: activities [OPTIONS] COMMAND [ARGS]...                                                      
                                                                                                     
- Read and edit activity types (loggable definitions), their fields, and read logged/scheduled       
- instances. An 'activity' here is the type/template — logging and scheduling instances happen in    
- the Kizen UI, not here.                                                                            
+ Read and edit activity types (loggable definitions) and their fields, read logged instances, and   
+ manage scheduled ones. An 'activity' here is the type/template; logging an activity is done in the 
+ Kizen UI by users.                                                                                 
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -88,7 +88,7 @@
 │ duplicate  Duplicate one activity type.                                                          │
 │ fields     Manage the fields on an activity type.                                                │
 │ logged     Read logged activity instances (read-only).                                           │
-│ scheduled  Read scheduled activity instances (read-only).                                        │
+│ scheduled  Read and schedule activity instances.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: activities create [OPTIONS]                                                                 
@@ -366,14 +366,58 @@
                                                                                                     
  Usage: activities scheduled [OPTIONS] COMMAND [ARGS]...                                            
                                                                                                     
- Read scheduled activity instances (read-only).                                                     
+ Read and schedule activity instances.                                                              
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ list  List scheduled activity instances.                                                         │
-│ get   Show one scheduled activity instance.                                                      │
+│ list    List scheduled activity instances.                                                       │
+│ get     Show one scheduled activity instance.                                                    │
+│ create  Schedule one activity for a team member or a role, on one or more records.               │
+│ update  Change one scheduled activity. Only the options you pass are sent.                       │
+│ delete  Permanently delete one scheduled activity. It can't be restored.                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: activities scheduled create [OPTIONS] {identifier}                                          
+                                                                                                    
+ Schedule one activity for a team member or a role, on one or more records.                         
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    identifier      <str>  Activity api_name or UUID. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ *  --due                   <str>  Due date and time, ISO with a UTC offset                       │
+│                                   (2026-11-16T15:30:00-05:00).                                   │
+│                                   [required]                                                     │
+│    --assignee              <str>  Team member's email, name or UUID. Or use --role.              │
+│    --role                  <str>  Role name or UUID. Or use --assignee.                          │
+│    --record                <str>  Associate a record: --record object_api_name:record_uuid       │
+│                                   (repeatable).                                                  │
+│    --note                  <str>  Note text.                                                     │
+│    --notification          <str>  Remind the assignee: type:amount:unit, e.g. email:1:day        │
+│                                   (repeatable).                                                  │
+│    --dry-run                      Show the plan without applying.                                │
+│    --yes           -y             Skip the y/N confirmation prompt.                              │
+│    --json                         Emit JSON (plan with --dry-run, results otherwise).            │
+│    --help                         Show this message and exit.                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Wire body: see `kizen docs show activity`                                                          
+                                                                                                    
+                                                                                                    
+ Usage: activities scheduled delete [OPTIONS] {scheduled_id}                                        
+                                                                                                    
+ Permanently delete one scheduled activity. It can't be restored.                                   
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    scheduled_id      <str>  Scheduled-activity UUID. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: activities scheduled get [OPTIONS] {scheduled_id}                                           
@@ -401,6 +445,32 @@
 │ --json                               Alias for --output json.                                    │
 │ --help                               Show this message and exit.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: activities scheduled update [OPTIONS] {scheduled_id}                                        
+                                                                                                    
+ Change one scheduled activity. Only the options you pass are sent.                                 
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    scheduled_id      <str>  Scheduled-activity UUID. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --due                          <str>  New due date and time, ISO with a UTC offset.              │
+│ --assignee                     <str>  Reassign to a team member (email, name or UUID).           │
+│ --role                         <str>  Reassign to a role (name or UUID).                         │
+│ --note                         <str>  Replace the note.                                          │
+│ --record                       <str>  Replace the records: --record object_api_name:record_uuid  │
+│                                       (repeatable).                                              │
+│ --notification                 <str>  Replace the reminders: type:amount:unit, e.g. email:1:day  │
+│                                       (repeatable).                                              │
+│ --clear-notifications                 Remove every reminder.                                     │
+│ --dry-run                             Show the plan without applying.                            │
+│ --yes                  -y             Skip the y/N confirmation prompt.                          │
+│ --json                                Emit JSON (plan with --dry-run, results otherwise).        │
+│ --help                                Show this message and exit.                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Wire body and replace rules: see `kizen docs show activity`                                        
+                                                                                                    
                                                                                                     
  Usage: activities update [OPTIONS] {identifier}                                                    
                                                                                                     
@@ -4703,10 +4773,19 @@
 ===== activities scheduled =====
 
 
+===== activities scheduled create =====
+
+
+===== activities scheduled delete =====
+
+
 ===== activities scheduled get =====
 
 
 ===== activities scheduled list =====
+
+
+===== activities scheduled update =====
 
 
 ===== activities update =====
