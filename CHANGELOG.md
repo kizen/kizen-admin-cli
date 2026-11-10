@@ -14,6 +14,11 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **`kizen objects update --quick-filtering/--no-quick-filtering`** turns an
+  object's quick filters on or off. Chips don't show until it's on.
+
 ### Changed
 
 - **Specs reject the `timezone`, `choices` and `selector` field types.**

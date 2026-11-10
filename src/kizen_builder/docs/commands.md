@@ -194,7 +194,7 @@ kizen records create <object> --field api_name=value [...]      # one record (va
 kizen records create <object> [--spec-file f.csv|f.json | < stdin]   # bulk create from CSV/JSON
 
 # update — only the flags you set are changed; if no diff, op is "skip"
-kizen objects update <api_name> [--object-name X] [--description Y]
+kizen objects update <api_name> [--object-name X] [--description Y] [--quick-filtering/--no-quick-filtering]
 kizen categories update <object_api_name> <current_name> --name <new>
 kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [...]
 kizen automations update [--spec-file path | < stdin]

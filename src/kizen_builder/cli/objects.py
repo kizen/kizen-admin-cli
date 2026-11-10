@@ -297,6 +297,11 @@ def objects_update(
     ),
     entity_name: str = typer.Option("", "--entity-name", help="New singular form."),
     description: str = typer.Option("", "--description", help="New description."),
+    quick_filtering: bool | None = typer.Option(
+        None,
+        "--quick-filtering/--no-quick-filtering",
+        help="Turn quick filters on or off for this object.",
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the plan without applying."
     ),
@@ -315,6 +320,8 @@ def objects_update(
         changes["entity_name"] = entity_name
     if description:
         changes["description"] = description
+    if quick_filtering is not None:
+        changes["quick_filtering_enabled"] = quick_filtering
 
     _run_mutation(
         lambda: object_planners.plan_update_object(object_api_name, changes),
