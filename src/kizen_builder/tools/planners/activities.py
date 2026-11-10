@@ -7,16 +7,22 @@ close ports of ``planners/fields.py``.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
+from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ActivityDef, ActivityFieldDef
 from kizen_builder.models.spec.activities import check_association_keys
 from kizen_builder.tools.activities import (
     describe_visibility_rule,
     get_activity,
+    get_scheduled,
     list_activities,
 )
+from kizen_builder.tools.objects import list_objects
+from kizen_builder.tools.permissions import resolve_role
 from kizen_builder.tools.plans import (
     Plan,
     PlanError,
@@ -24,6 +30,7 @@ from kizen_builder.tools.plans import (
     copy_name_preview,
     fetch_existing,
 )
+from kizen_builder.tools.team import resolve_team_member_id
 
 _OPTION_FIELD_TYPES = {
     "dropdown",
@@ -820,8 +827,16 @@ def _build_activity_field_payload(
     if field.custom_object_field:
         payload["custom_object_field"] = field.custom_object_field
 
-    if field.options is not None:
-        payload["options"] = [{"name": o, "code": o} for o in field.options]
+    options = field.options
+    if options is None and field.field_type == "yesnomaybe":
+        # Kizen 400s an activity yesnomaybe field without options
+        # (confirmed live 2026-11-09).
+        options = ["Yes", "No", "Maybe"]
+    if options is not None:
+        if field.field_type == "yesnomaybe":
+            payload["options"] = [{"name": o, "code": o.lower()} for o in options]
+        else:
+            payload["options"] = [{"name": o, "code": o} for o in options]
     if field.status_options is not None:
         payload["options"] = [
             {"name": s.name, "code": s.code or s.name.lower()}
@@ -838,3 +853,233 @@ def _build_activity_field_payload(
             exclude_none=True
         )
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Scheduled activities (instances)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_records(records: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """``(object api_name or UUID, record UUID)`` → ``(object UUID, record UUID)``."""
+    objects = list_objects()
+    by_ref = {o["api_name"]: o for o in objects} | {o["id"]: o for o in objects}
+    resolved = []
+    for obj_ref, record_id in records:
+        obj = by_ref.get(obj_ref)
+        if obj is None:
+            raise PlanError(
+                f"object '{obj_ref}' not found. "
+                f"Available: {sorted(o['api_name'] for o in objects)}"
+            )
+        resolved.append((obj["id"], record_id))
+    return resolved
+
+
+_NOTIFICATION_TYPES = ("email", "text")
+_NOTIFICATION_UNITS = ("minute", "hour", "day")
+
+
+def _due_datetime(due: str) -> str:
+    """An ISO datetime with an offset or ``Z`` → its normalized ISO string."""
+    try:
+        due_at = datetime.fromisoformat(due)
+    except ValueError as e:
+        raise PlanError(f"--due '{due}' is not an ISO datetime") from e
+    if due_at.tzinfo is None:
+        raise PlanError(
+            f"--due '{due}' has no UTC offset; add one, e.g. {due}Z or {due}-05:00"
+        )
+    return due_at.isoformat()
+
+
+def _notification(spec: str) -> dict[str, Any]:
+    """``type:amount:unit`` (``email:1:day``) → a notification dict."""
+    parts = spec.split(":")
+    if (
+        len(parts) != 3
+        or parts[0] not in _NOTIFICATION_TYPES
+        or not parts[1].isdigit()
+        or int(parts[1]) < 1
+        or parts[2] not in _NOTIFICATION_UNITS
+    ):
+        raise PlanError(
+            f"--notification '{spec}' must be type:amount:unit, with type "
+            f"{'|'.join(_NOTIFICATION_TYPES)}, amount at least 1 and unit "
+            f"{'|'.join(_NOTIFICATION_UNITS)} (e.g. email:1:day)"
+        )
+    return {"type": parts[0], "time_amount": int(parts[1]), "time_unit": parts[2]}
+
+
+def _assignment(assignee: str | None, role: str | None) -> dict[str, str]:
+    """``{"employee_id": ...}`` or ``{"role_id": ...}``; exactly one is allowed."""
+    if bool(assignee) == bool(role):
+        raise PlanError("pass exactly one of --assignee or --role")
+    if role:
+        try:
+            return {"role_id": resolve_role(role)["id"]}
+        except LookupError as e:
+            raise PlanError(str(e)) from e
+    with KizenClient(load_env_config()) as client:
+        try:
+            return {"employee_id": resolve_team_member_id(client, str(assignee))}
+        except LookupError as e:
+            raise PlanError(str(e)) from e
+
+
+def _associated_entities(records: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    return [
+        {"custom_object": {"id": obj_id}, "entity": {"id": record_id}}
+        for obj_id, record_id in _resolve_records(records)
+    ]
+
+
+def plan_schedule_activity(
+    identifier: str,
+    due: str,
+    records: list[tuple[str, str]],
+    *,
+    assignee: str | None = None,
+    role: str | None = None,
+    note: str | None = None,
+    notifications: Sequence[str] = (),
+) -> Plan:
+    """Plan scheduling one instance of an activity type.
+
+    ``due`` is an ISO datetime with an offset or ``Z``. Assign it to a team
+    member (``assignee``: email, name or UUID) or a ``role`` (name or UUID).
+    ``records`` are ``(object api_name or UUID, record UUID)`` pairs, and each
+    of ``notifications`` is ``type:amount:unit``.
+    """
+    due_datetime = _due_datetime(due)
+    notification_list = [_notification(n) for n in notifications]
+    config = load_env_config()
+    activity = _load_activity(identifier, include_fields=False)
+
+    payload: dict[str, Any] = {
+        "activity_object_id": activity["id"],
+        "due_datetime": due_datetime,
+        **_assignment(assignee, role),
+        "associated_entities": _associated_entities(records),
+    }
+    if note:
+        payload["note"] = note
+    if notification_list:
+        payload["notifications"] = notification_list
+
+    op = PlanOperation(
+        action="create",
+        kind="scheduled_activity",
+        key=f"{activity['api_name']}#schedule",
+        preview={
+            "env": config.name,
+            "activity": activity["api_name"],
+            "due": due_datetime,
+            **({"assignee": assignee} if assignee else {"role": role}),
+            "records": [f"{o}:{r}" for o, r in records],
+            **({"note": note} if note else {}),
+            **({"notifications": list(notifications)} if notifications else {}),
+        },
+        payload=payload,
+    )
+    return Plan.build(
+        env=config.name,
+        summary=f"Schedule one '{activity['name']}' activity",
+        operations=[op],
+    )
+
+
+def _load_scheduled(scheduled_id: str) -> dict[str, Any]:
+    return fetch_existing(
+        "scheduled activity", scheduled_id, lambda: get_scheduled(scheduled_id)
+    )
+
+
+def _scheduled_summary(scheduled: dict[str, Any]) -> dict[str, Any]:
+    """The parts of a scheduled activity a preview shows."""
+    employee = scheduled.get("employee") or {}
+    role = scheduled.get("role") or {}
+    return {
+        "activity": (scheduled.get("activity_object") or {}).get("name"),
+        "due": scheduled.get("due_datetime"),
+        "assignee": employee.get("email") or role.get("name"),
+        "records": [
+            e.get("display_name") or e.get("entity_id")
+            for e in scheduled.get("associated_entities") or []
+        ],
+        "completed": scheduled.get("completed_at") is not None,
+    }
+
+
+def plan_update_scheduled_activity(
+    scheduled_id: str,
+    *,
+    due: str | None = None,
+    assignee: str | None = None,
+    role: str | None = None,
+    note: str | None = None,
+    records: list[tuple[str, str]] | None = None,
+    notifications: Sequence[str] | None = None,
+    clear_notifications: bool = False,
+) -> Plan:
+    """Plan a PATCH of one scheduled activity, sending only what's given.
+
+    ``records`` and ``notifications`` replace their whole lists. Records
+    can't be cleared: the API ignores an empty list.
+    """
+    if notifications and clear_notifications:
+        raise PlanError("pass --notification or --clear-notifications, not both")
+    if records == []:
+        raise PlanError("records can't be cleared; pass at least one --record")
+    scheduled = _load_scheduled(scheduled_id)
+
+    payload: dict[str, Any] = {}
+    if due:
+        payload["due_datetime"] = _due_datetime(due)
+    if assignee or role:
+        payload.update(_assignment(assignee, role))
+    if note is not None:
+        payload["note"] = note
+    if records:
+        payload["associated_entities"] = _associated_entities(records)
+    if notifications:
+        payload["notifications"] = [_notification(n) for n in notifications]
+    if clear_notifications:
+        payload["notifications"] = []
+    if not payload:
+        raise PlanError("nothing to change; pass at least one option")
+
+    env = load_env_config().name
+    op = PlanOperation(
+        action="update",
+        kind="scheduled_activity",
+        key=f"scheduled:{scheduled_id}",
+        preview={
+            "env": env,
+            **_scheduled_summary(scheduled),
+            "changes": sorted(payload),
+        },
+        payload=payload,
+        existing_uuid=scheduled_id,
+    )
+    return Plan.build(
+        env=env, summary=f"Update scheduled activity {scheduled_id}", operations=[op]
+    )
+
+
+def plan_delete_scheduled_activity(scheduled_id: str) -> Plan:
+    """Plan a hard delete of one scheduled activity."""
+    scheduled = _load_scheduled(scheduled_id)
+    env = load_env_config().name
+    op = PlanOperation(
+        action="delete",
+        kind="scheduled_activity",
+        key=f"scheduled:{scheduled_id}",
+        preview={"env": env, **_scheduled_summary(scheduled), "permanent": True},
+        existing_uuid=scheduled_id,
+    )
+    return Plan.build(
+        env=env,
+        summary=f"Permanently delete scheduled activity {scheduled_id}",
+        operations=[op],
+    )

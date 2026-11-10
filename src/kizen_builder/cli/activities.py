@@ -76,9 +76,9 @@ def _resolve_linked_field(spec: str) -> tuple[str, str]:
 
 activities_app = typer.Typer(
     help=(
-        "Read and edit activity types (loggable definitions), their fields, and "
-        "read logged/scheduled instances. An 'activity' here is the type/template "
-        "— logging and scheduling instances happen in the Kizen UI, not here."
+        "Read and edit activity types (loggable definitions) and their fields, "
+        "read logged instances, and manage scheduled ones. An 'activity' here is "
+        "the type/template; logging an activity is done in the Kizen UI by users."
     ),
     no_args_is_help=True,
 )

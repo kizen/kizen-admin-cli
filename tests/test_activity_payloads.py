@@ -201,6 +201,18 @@ def test_field_dropdown_options_shape_and_required():
     ]
 
 
+def test_field_yesnomaybe_gets_default_options():
+    # Kizen 400s an activity yesnomaybe field with no options (live 2026-11-09).
+    fd = ActivityFieldDef.model_validate(
+        {"name": "Yes No Maybe", "field_type": "yesnomaybe"}
+    )
+    assert _build_activity_field_payload(fd)["options"] == [
+        {"name": "Yes", "code": "yes"},
+        {"name": "No", "code": "no"},
+        {"name": "Maybe", "code": "maybe"},
+    ]
+
+
 def test_field_rating_defaults_applied():
     fd = ActivityFieldDef.model_validate({"name": "Score", "field_type": "rating"})
     payload = _build_activity_field_payload(fd)

@@ -1,4 +1,8 @@
-"""`kizen activities logged` / `scheduled` — activity instances (read-only)."""
+"""`kizen activities logged` / `scheduled` — activity instances.
+
+Logged instances are read-only: logging an activity is done in the Kizen UI
+by users. Scheduled instances can be read, created, changed and deleted.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ import typer
 from rich.table import Table
 
 from kizen_builder import output as out
+from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import (
     JSON_OPTION,
     OUTPUT_OPTION,
@@ -17,6 +22,7 @@ from kizen_builder.cli._shared import (
 )
 from kizen_builder.cli.activities import _resolve_object_id, activities_app
 from kizen_builder.tools import activities as act_tools
+from kizen_builder.tools.planners import activities as act_planners
 
 act_logged_app = typer.Typer(
     help="Read logged activity instances (read-only).", no_args_is_help=True
@@ -131,8 +137,21 @@ def act_logged_list(
     )
 
 
+def _parse_record_flags(records: list[str]) -> list[tuple[str, str]]:
+    """Turn repeatable `--record object:record_uuid` into pairs."""
+    pairs = []
+    for item in records:
+        obj, sep, record_id = item.partition(":")
+        if not sep or not obj or not record_id:
+            raise typer.BadParameter(
+                f"--record must be object:record_uuid (got {item!r})."
+            )
+        pairs.append((obj, record_id))
+    return pairs
+
+
 act_scheduled_app = typer.Typer(
-    help="Read scheduled activity instances (read-only).", no_args_is_help=True
+    help="Read and schedule activity instances.", no_args_is_help=True
 )
 activities_app.add_typer(act_scheduled_app, name="scheduled")
 
@@ -219,4 +238,138 @@ def act_scheduled_get(
             out.Column("due_datetime", "due_datetime"),
             out.Column("completed_at", "completed_at"),
         ],
+    )
+
+
+@act_scheduled_app.command(
+    "create",
+    epilog="Wire body: see `kizen docs show activity`",
+)
+def act_scheduled_create(
+    identifier: str = typer.Argument(..., help="Activity api_name or UUID."),
+    due: str = typer.Option(
+        ...,
+        "--due",
+        help="Due date and time, ISO with a UTC offset (2026-11-16T15:30:00-05:00).",
+    ),
+    assignee: str = typer.Option(
+        "", "--assignee", help="Team member's email, name or UUID. Or use --role."
+    ),
+    role: str = typer.Option(
+        "", "--role", help="Role name or UUID. Or use --assignee."
+    ),
+    record: list[str] = typer.Option(
+        [],
+        "--record",
+        help="Associate a record: --record object_api_name:record_uuid (repeatable).",
+    ),
+    note: str = typer.Option("", "--note", help="Note text."),
+    notification: list[str] = typer.Option(
+        [],
+        "--notification",
+        help="Remind the assignee: type:amount:unit, e.g. email:1:day (repeatable).",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Schedule one activity for a team member or a role, on one or more records."""
+    records = _parse_record_flags(record)
+    _run_mutation(
+        lambda: act_planners.plan_schedule_activity(
+            identifier,
+            due,
+            records,
+            assignee=assignee or None,
+            role=role or None,
+            note=note or None,
+            notifications=notification,
+        ),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+    )
+
+
+@act_scheduled_app.command(
+    "update",
+    epilog="Wire body and replace rules: see `kizen docs show activity`",
+)
+def act_scheduled_update(
+    scheduled_id: str = typer.Argument(..., help="Scheduled-activity UUID."),
+    due: str = typer.Option(
+        "", "--due", help="New due date and time, ISO with a UTC offset."
+    ),
+    assignee: str = typer.Option(
+        "", "--assignee", help="Reassign to a team member (email, name or UUID)."
+    ),
+    role: str = typer.Option("", "--role", help="Reassign to a role (name or UUID)."),
+    note: str | None = typer.Option(None, "--note", help="Replace the note."),
+    record: list[str] = typer.Option(
+        [],
+        "--record",
+        help="Replace the records: --record object_api_name:record_uuid (repeatable).",
+    ),
+    notification: list[str] = typer.Option(
+        [],
+        "--notification",
+        help="Replace the reminders: type:amount:unit, e.g. email:1:day (repeatable).",
+    ),
+    clear_notifications: bool = typer.Option(
+        False, "--clear-notifications", help="Remove every reminder."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Change one scheduled activity. Only the options you pass are sent."""
+    records = _parse_record_flags(record) if record else None
+    _run_mutation(
+        lambda: act_planners.plan_update_scheduled_activity(
+            scheduled_id,
+            due=due or None,
+            assignee=assignee or None,
+            role=role or None,
+            note=note,
+            records=records,
+            notifications=notification or None,
+            clear_notifications=clear_notifications,
+        ),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+    )
+
+
+@act_scheduled_app.command("delete")
+def act_scheduled_delete(
+    scheduled_id: str = typer.Argument(..., help="Scheduled-activity UUID."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the plan without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the y/N confirmation prompt."
+    ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
+    ),
+) -> None:
+    """Permanently delete one scheduled activity. It can't be restored."""
+    _run_mutation(
+        lambda: act_planners.plan_delete_scheduled_activity(scheduled_id),
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
     )

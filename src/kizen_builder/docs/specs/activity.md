@@ -11,7 +11,9 @@
 > [--object <api_name> ...]`,
 > `activities fields create <activity> --name X --type text`. Reach for a spec
 > file to create a type **with its fields in one plan**, or for the advanced
-> update surface. Logging/scheduling of instances stays in the UI.
+> update surface. Logging an activity is done in the Kizen UI by users; the
+> CLI only reads logged instances. Scheduled instances can be created, changed
+> and deleted; see [Scheduled activities](#scheduled-activities).
 
 ---
 
@@ -42,7 +44,7 @@ workflow needs on the **record**:
 1. Make the question an `activity_custom_field` linked to a field on the
    record, with `read_only` left `false`. The form shows the record's field,
    and an answer entered there is saved to the record (the editor's "editable"
-   custom field; the CLI can't log an activity to confirm it).
+   custom field).
 2. Trigger the workflow with `activity_logged` on the activity type.
 3. Branch with an ordinary condition on the record field.
 
@@ -87,9 +89,8 @@ off the deal:
 The rest of that workflow, which stamps the date, rates the deal and
 schedules a follow-up, is in `kizen docs show automation`. Confirmed live
 2026-10-30: the type saved with both fields linked, and a run on a deal whose
-Outcome was No Answer took the yes branch. Logging an activity is a UI action
-(`POST /api/activities/{id}/log-activity` answered 500 to every body tried), so
-the runs were started by hand.
+Outcome was No Answer took the yes branch. Logging an activity is done in the
+Kizen UI by users, so the runs were started by logging a call by hand.
 
 ## Show a field only for some answers
 
@@ -190,6 +191,14 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
 - Type-specific blocks (`options`, `status_options`, `money_options`, `rating`,
   `decimal_options`, `phone_options`) behave as in `field.md`, except that
   `status_options` is optional on a `status` field.
+- The CLI can't create a native `relationship` field on an activity type yet:
+  `ActivityFieldDef` has no `relation` block, and the API 400s without one.
+  The API takes `"relation": {"related_object": "<object-uuid>",
+  "cardinality": "many_to_one"}` on `POST /api/activities/{id}/fields`
+  (confirmed live 2026-11-09).
+- A `yesnomaybe` field with no `options` gets Yes/No/Maybe from the planner, as
+  on objects. Kizen 400s an activity `yesnomaybe` field created without
+  options (confirmed live 2026-11-09).
 - Unknown keys are rejected exactly as in `field.md`.
 
 ## Gotchas
@@ -209,8 +218,9 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
 
 An "activity" under `/api/activities` is the activity **TYPE** — a loggable
 definition: name + custom fields + visibility rules — **not** a logged instance.
-`kizen activities` wraps the type; logging and scheduling instances stays in the
-Kizen UI (except scheduled activities, below).
+`kizen activities` wraps the type. `activities logged` reads logged instances,
+and `activities scheduled` manages scheduled ones. Logging an activity is done
+in the Kizen UI by users.
 
 ## Type CRUD
 
@@ -289,13 +299,60 @@ POST /api/activities/{id}/responses     # list instances — POST because the bo
                                         # can carry filters; empty body lists all
 ```
 
+## Logging activities
+
+Logging an activity is done only in the Kizen UI, by users. The CLI reads
+logged instances (`activities logged get|list`) but doesn't create them.
+
 ## Scheduled activities
+
+```bash
+kizen activities scheduled create call --due 2026-11-16T15:30:00-05:00 \
+  --assignee rep@example.com --record deals:<record_uuid> --note "Pricing follow-up" \
+  --notification email:1:day --dry-run
+kizen activities scheduled update <uuid> --due 2026-11-17T10:00:00-05:00 --role Sales
+kizen activities scheduled delete <uuid>
+```
+
+- **create.** `--due` needs a UTC offset or `Z`. Pass `--assignee` (a team
+  member's email, name or UUID) or `--role` (name or UUID), exactly one;
+  Kizen has no default. A role assignment stays on the role: any member sees
+  it, and calendar sync skips it. `--notification type:amount:unit`
+  (`email|text`, amount at least 1, `minute|hour|day`) is repeatable.
+- **update** sends only the options passed. `--record` and `--notification`
+  replace their whole lists; `--clear-notifications` empties the reminders.
+  Records can't be cleared, because the API ignores an empty list. The
+  activity type can't change. Reassigning to a person clears the role, and the
+  reverse.
+- **Completing** a scheduled activity means logging it, which users do in the
+  Kizen UI. The CLI has no complete command.
+- **delete** is a hard delete; the scheduled activity can't be restored.
+
+Each command ran on staging and read back as described, confirmed live
+2026-11-09: a create for a role with a reminder; an update that moved the due
+time, reassigned from the role to a person and replaced the reminder; and a
+delete.
+
+Also confirmed live 2026-11-09 against the raw API:
+
+- `due_datetime` without an offset is read in the **business's** timezone:
+  `2026-11-20T15:00:00` saved as `15:00-06:00` on a Central business. The
+  CLI refuses one, so the time is never ambiguous.
+- PUT is a full replace: a partial body gets 400 `"role_id" or "employee_id"
+  must be set.`, and one without records gets 400 `Associations are required
+  for this activity.` when the activity requires them. Use PATCH.
+- A completed scheduled activity still accepts a PATCH (200) and stays
+  completed.
+- DELETE answers 204; a GET afterwards is 404.
+- `associated_entities: [{"custom_object": "<uuid>", "entity_id": ...}]`, a
+  bare id under `custom_object`, gets 400 `Invalid data. Expected a
+  dictionary, but got str.`
 
 ```
 GET    /api/activities/scheduled-activity?from_date=<ISO>&employee_ids=<uuid>,<uuid>&completed=false
 POST   /api/activities/scheduled-activity
 GET    /api/activities/scheduled-activity/<id>
-PUT    /api/activities/scheduled-activity/<id>     # full replace
+PUT    /api/activities/scheduled-activity/<id>     # full replace; prefer PATCH
 PATCH  /api/activities/scheduled-activity/<id>     # partial
 DELETE /api/activities/scheduled-activity/<id>
 ```
@@ -306,14 +363,22 @@ DELETE /api/activities/scheduled-activity/<id>
   "due_datetime": "2026-07-01T14:00:00Z",
   "employee_id": "<team-member-uuid>",
   "note": "Optional note",
-  "associated_entities": [ {"custom_object": "<object-uuid>", "entity_id": "<record-uuid>"} ]
+  "associated_entities": [
+    { "custom_object": { "id": "<object-uuid>" }, "entity": { "id": "<record-uuid>" } }
+  ]
 }
 ```
 
-`activity_object_id` is the activity **type**'s UUID. In
-`associated_entities`, `custom_object` is the object UUID and `entity_id` the
-record UUID — note both are bare ids here, unlike the nested-dict shape the
-type's own `associated_objects` wants.
+- `activity_object_id` is the activity **type**'s UUID; `activity_object_name`
+  takes its api_name instead. Send one.
+- Exactly one of `employee_id` or `role_id` is required.
+- `due_datetime` is preferred; the older `due_date` + `due_time` pair is read
+  in the business's timezone.
+- `associated_entities` items nest the ids, as above. The older flat
+  `custom_object_id` + `entity_id` keys are still accepted. The object must be
+  enabled for activities.
+- `notifications` is an optional list of
+  `{type: email|text, time_amount, time_unit: minute|hour|day}`.
 
 ## See also
 
