@@ -11,7 +11,9 @@
 > [--object <api_name> ...]`,
 > `activities fields create <activity> --name X --type text`. Reach for a spec
 > file to create a type **with its fields in one plan**, or for the advanced
-> update surface. Logging/scheduling of instances stays in the UI.
+> update surface. Logging an activity is done in the Kizen UI by users; the
+> CLI only reads logged instances. Scheduled instances can be created, changed
+> and deleted; see [Scheduled activities](#scheduled-activities).
 
 ---
 
@@ -42,7 +44,7 @@ workflow needs on the **record**:
 1. Make the question an `activity_custom_field` linked to a field on the
    record, with `read_only` left `false`. The form shows the record's field,
    and an answer entered there is saved to the record (the editor's "editable"
-   custom field; the CLI can't log an activity to confirm it).
+   custom field).
 2. Trigger the workflow with `activity_logged` on the activity type.
 3. Branch with an ordinary condition on the record field.
 
@@ -87,9 +89,8 @@ off the deal:
 The rest of that workflow, which stamps the date, rates the deal and
 schedules a follow-up, is in `kizen docs show automation`. Confirmed live
 2026-10-30: the type saved with both fields linked, and a run on a deal whose
-Outcome was No Answer took the yes branch. Logging an activity is a UI action
-(`POST /api/activities/{id}/log-activity` answered 500 to every body tried), so
-the runs were started by hand.
+Outcome was No Answer took the yes branch. Logging an activity is done in the
+Kizen UI by users, so the runs were started by logging a call by hand.
 
 ## Show a field only for some answers
 
@@ -190,6 +191,11 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
 - Type-specific blocks (`options`, `status_options`, `money_options`, `rating`,
   `decimal_options`, `phone_options`) behave as in `field.md`, except that
   `status_options` is optional on a `status` field.
+- The CLI can't create a native `relationship` field on an activity type yet:
+  `ActivityFieldDef` has no `relation` block, and the API 400s without one.
+  The API takes `"relation": {"related_object": "<object-uuid>",
+  "cardinality": "many_to_one"}` on `POST /api/activities/{id}/fields`
+  (confirmed live 2026-11-09).
 - A `yesnomaybe` field with no `options` gets Yes/No/Maybe from the planner, as
   on objects. Kizen 400s an activity `yesnomaybe` field created without
   options (confirmed live 2026-11-09).
@@ -212,8 +218,9 @@ Structurally close to `FieldDef` (see `field.md`), with differences:
 
 An "activity" under `/api/activities` is the activity **TYPE** — a loggable
 definition: name + custom fields + visibility rules — **not** a logged instance.
-`kizen activities` wraps the type; logging and scheduling instances stays in the
-Kizen UI (except scheduled activities, below).
+`kizen activities` wraps the type. `activities logged` reads logged instances,
+and `activities scheduled` manages scheduled ones. Logging an activity is done
+in the Kizen UI by users.
 
 ## Type CRUD
 
@@ -291,6 +298,11 @@ GET  /api/activities/logged/{id}        # fields+values, notes, associated_entit
 POST /api/activities/{id}/responses     # list instances — POST because the body
                                         # can carry filters; empty body lists all
 ```
+
+## Logging activities
+
+Logging an activity is done only in the Kizen UI, by users. The CLI reads
+logged instances (`activities logged get|list`) but doesn't create them.
 
 ## Scheduled activities
 

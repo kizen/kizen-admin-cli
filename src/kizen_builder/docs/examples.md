@@ -431,13 +431,12 @@ the same `stop_execution` the yes-branch reaches directly. `kizen activities
 scheduled list` reads the scheduled `Site Visit` back.
 
 **Logging an activity instance is a browser-only step — the doc doesn't run
-this part headless.** `activity.md` is explicit: "Logging/scheduling of
-instances stays in the UI," and the CLI reads logged and scheduled instances
-but can't create them — there is no `activities logged create`. Wiring an
+this part headless.** Logging an activity is done in the Kizen UI by users;
+the CLI reads logged instances but doesn't create them. Wiring an
 `activity_logged` trigger, a `schedule_activity` step (used above), or a
 `scheduled_activity_overdue` trigger into an automation is fully CLI-wired;
-**firing** an `activity_logged` trigger specifically requires logging one
-instance by hand in the Kizen UI first.
+**firing** an `activity_logged` trigger requires a user to log one instance in
+the Kizen UI first.
 
 The read side is still real: after logging one `Site Visit` instance by hand
 against a ticket in the browser,
