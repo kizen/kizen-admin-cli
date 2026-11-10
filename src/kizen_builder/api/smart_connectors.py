@@ -122,7 +122,7 @@ def update_smart_connector(
 
     Everything past creation is a PATCH against this endpoint:
     ``source_file_id``, ``execution_variables``, ``flow``, ``kizen_data_seeds``,
-    and the ``status`` flip to ``operational``.
+    ``sql_parameters``, and the ``status`` flip to ``operational``.
     """
     return client.patch(f"{_BASE}/{connector}", json=payload)
 

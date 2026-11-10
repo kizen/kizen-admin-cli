@@ -526,3 +526,79 @@ def test_run_executes_sql_when_chdb_present(tmp_path):
     assert meta["stats"]["num_rows"] == 2
     assert any(f["file_name"] == "out.csv" for f in meta["output_files"])
     assert Path(meta["output_files"][0]["file_path"]).exists()
+
+
+# ---------------------------------------------------------------------------
+# set-sql-params
+# ---------------------------------------------------------------------------
+
+
+def _set_sql_params(*args):
+    return CliRunner().invoke(
+        cli.app, ["smart-connectors", "set-sql-params", "upload_counties", *args]
+    )
+
+
+@respx.mock
+def test_set_sql_params_dry_run_merges_over_live_and_writes_nothing():
+    detail = {**DETAIL, "sql_parameters": {"region": "west"}}
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    write = respx.patch(f"{BASE}/conn-uuid")
+
+    result = _set_sql_params("--param", "wtsc_parameter_1=test value", "--dry-run")
+
+    assert result.exit_code == 0, result.output
+    assert "+ wtsc_parameter_1 = 'test value'" in result.output
+    assert "region" not in result.output
+    assert not write.called
+
+
+@respx.mock
+def test_set_sql_params_patches_the_whole_merged_dict():
+    detail = {**DETAIL, "sql_parameters": {"region": "west", "wtsc_parameter_1": "old"}}
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    merged = {"region": "west", "wtsc_parameter_1": "test value"}
+    write = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200, json={"api_name": "upload_counties", "sql_parameters": merged}
+        )
+    )
+
+    result = _set_sql_params(
+        "--param", "wtsc_parameter_1=test value", "--yes", "--json"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(write.calls.last.request.content) == {"sql_parameters": merged}
+    assert json.loads(result.stdout) == {
+        "connector": "upload_counties",
+        "sql_parameters": merged,
+    }
+
+
+@respx.mock
+def test_set_sql_params_skips_the_write_when_nothing_changes():
+    detail = {**DETAIL, "sql_parameters": {"wtsc_parameter_1": "test value"}}
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    write = respx.patch(f"{BASE}/conn-uuid")
+
+    result = _set_sql_params("--param", "wtsc_parameter_1=test value", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert "already has those SQL parameters" in result.output
+    assert not write.called
+
+
+@respx.mock
+def test_set_sql_params_rejects_a_param_without_equals_before_any_call():
+    result = _set_sql_params("--param", "wtsc_parameter_1", "--dry-run")
+
+    assert result.exit_code == 2
+    assert "name=value" in result.output
+    assert not respx.calls

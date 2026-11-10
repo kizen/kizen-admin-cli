@@ -14,6 +14,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **SmartConnector SQL parameters can be set.** `kizen smart-connectors
+  set-sql-params <connector> --param name=value` (repeatable) sets the values a
+  script reads from `meta.parameters`. Names you don't pass keep their value,
+  and the change applies to the next run with no publish.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The

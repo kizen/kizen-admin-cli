@@ -283,6 +283,7 @@ kizen smart-connectors suggest-variables <connector> [--spec]    # infer executi
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
 kizen smart-connectors activate <connector>                # a LIVE run without this sits queued forever, silently
 kizen smart-connectors deactivate <connector>                      # status inactive: no live runs; every edit and dry runs still work
+kizen smart-connectors set-sql-params <connector> --param name=value [...]   # connector sql_parameters; merged over live, no publish needed
 kizen smart-connectors start-flow <connector> [--write-records] [--ignore-blockers]   # queue a run; dry run unless --write-records
 # `set-input` on a connector that already has a file replaces it, keeping your SQL. What that leaves stale:
 # kizen docs show smart-connectors (Replacing the reference file).

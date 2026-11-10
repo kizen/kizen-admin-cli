@@ -20,6 +20,7 @@ GET   /api/smart-connectors/{connector}                      # full detail — U
 GET   /api/smart-connectors/metadata                         # connector-type / matching-rule catalog
 GET   .../{connector}/executions                             # run history; ?ids=<eid> for one run
 GET   .../{connector}/executions/{eid}/sql-script            # the SQL used in one run
+PATCH /api/smart-connectors/{connector}                      # partial update (flow, status, sql_parameters, …)
 GET   .../{connector}/sql-scripts  ·  .../sql-scripts/{id}   # draft / live scripts
 PATCH .../sql-scripts/{id}                                   # edit the draft (user_script)
 POST  .../sql-scripts/{id}/publish                           # promote draft → live
@@ -52,6 +53,24 @@ A SQL script's `config_metadata` comes back **as a dict** (the OpenAPI types it
 `seed_tables`, and a `triggered` block. That dict, plus the connector's
 `sql_parameters` / `integration_secrets`, is exactly what the local dev
 package's `__config.json` is built from.
+
+## SQL parameters (`sql_parameters`)
+
+A connector-level name → value hash, e.g. `{"wtsc_parameter_1": "test value"}`.
+The script reads it as the table `meta.parameters` (`name String, value
+String`); the runner stringifies each value. `set-sql-params` writes it.
+
+- **It lives on the connector, not the script**, so there's no draft or
+  publish: `PATCH /api/smart-connectors/{connector}` with `{"sql_parameters":
+  {...}}`, and the next run reads the new values.
+- **The PATCH replaces the whole hash** (a plain `JSONField` on the model,
+  per the webapp source; not yet confirmed live). `set-sql-params` reads the
+  live values and sends the merged hash, so names you don't pass keep their
+  value. Read confirmed live 2026-11-10.
+- `start-connector-flow` also accepts `sql_parameters`, merged over the
+  connector's for that one run only.
+- `pull` copies them into `__config.json`; re-`pull` after changing them to
+  run locally with the new values.
 
 ## The local dev loop
 
@@ -518,7 +537,7 @@ produced, and warns when they differ from the connector's recognized scopes
 
 Authoring: `create` → `set-input` → `generate-sample` → `push --publish` →
 `configure-flow` → `activate` → `start-flow`, and `deactivate`. Plus
-`seeds list|add|remove`, and for webhook connectors `webhook-sample` and
+`set-sql-params`, `seeds list|add|remove`, and for webhook connectors `webhook-sample` and
 `send-webhook`.
 
 Every write previews and confirms first (`--dry-run` to stop after the preview,
