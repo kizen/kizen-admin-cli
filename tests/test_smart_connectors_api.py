@@ -102,7 +102,8 @@ def test_get_execution_reads_one_row_through_the_ids_filter(client):
     assert sc.get_execution(client, "c1", "e1") == {"id": "e1", "status": "ok"}
     q = route.calls.last.request.url.params
     assert q["ids"] == "e1"
-    assert q["include_dry_run"] == "true"
+    # include_dry_run=true means "dry runs only" — sending it hid every live run.
+    assert "include_dry_run" not in q
 
 
 @respx.mock

@@ -199,10 +199,14 @@ def get_execution(
     scoped to the connector, so another connector's execution is not found.
     The row is matched by id rather than trusted, because ``ids`` also takes a
     comma list and an ignored filter would return the whole history.
+
+    ``include_dry_run`` is deliberately not sent: despite its name,
+    ``include_dry_run=true`` narrows the list to dry runs *only*, while
+    omitting it returns both live and dry runs (confirmed live 2026-11-11).
     """
     if "," in execution_id:
         raise LookupError(f"expected one execution id, got '{execution_id}'.")
-    rows = list_executions(client, connector, ids=execution_id, include_dry_run=True)
+    rows = list_executions(client, connector, ids=execution_id)
     for row in rows:
         if str(row.get("id", "")).lower() == execution_id.lower():
             return row
