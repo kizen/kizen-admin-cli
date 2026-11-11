@@ -1546,7 +1546,7 @@ Confirmed live 2026-10-30, in this order.
   | `add_only` | `[a, b]` (and `[a, c]` gives `[a, a, c]`) | not observed |
   | `overwrite` | `[b]` | `[]` |
   | `overwrite_except_null` | `[b]` | `[a]`: kept |
-  | null / omitted | `[b]` | `[]` |
+  | null (stored) | `[b]` (re-confirmed 2026-11-11) | `[]` |
 
   - It works on array variables only. On a scalar variable the server 400s
     with "Value resolution is supported for array variables only." The
@@ -1555,12 +1555,21 @@ Confirmed live 2026-10-30, in this order.
   - Only `update_variable` takes it. On `initialize_variable` the server
     drops it silently, so the planner refuses it there.
   - Any other value is a plan error.
+  - **Left out on a step without an `id`** (`automations create`, `steps
+    add`, or a step an `update` adds), the CLI sends `add_only` when the
+    automation declares the variable as an array (by `initialize_variable`,
+    or as a `search_records` destination). Otherwise it sends nothing, and
+    a POST without it stores `null` (confirmed live 2026-11-11).
   - **A PUT that omits it keeps the stored value** on a step whose `id` is
-    carried. Only an explicit `null` resets it, and the planner drops nulls,
+    carried. `update` now sends the live value itself, so `diff` shows no
+    change. Only an explicit `null` resets it, and the planner drops nulls,
     so deleting the key from a spec doesn't clear it. Set `overwrite`
-    instead, which behaved the same as null.
-  - The builder UI has no control for it as of 2026-10-14, and opening the
-    step doesn't show a stored value.
+    instead, which behaves the same as null.
+  - In the builder it is "Append or Replace": *Append Values to End of
+    Array* is `add_only`, *Overwrite with These Sources (Clear if Blank)* is
+    `overwrite`, and *Overwrite with These Sources (But Skip if Blank)* is
+    `overwrite_except_null`. The builder picks Append for a new step, and
+    existing steps keep what they have. Observed 2026-11-11.
 - **`stop_execution`'s "Action Options" dropdown is a required choice in
   the builder UI, and two of its five options don't stop anything.**
   Confirmed live (one automation with all 5 steps built through the UI,
@@ -1632,15 +1641,18 @@ Confirmed live 2026-10-30, in this order.
     `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
     server)**). On a `stop_execution` whose `id` matches, its `action` and
     `notify`. On a `plugin_code_step` whose `id` matches, its
-    `preview_user_id`.
+    `preview_user_id`. On an `update_variable` whose `id` matches, its
+    `value_resolution`.
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
-    A Kizen PUT without them resets each to its default, except the stop's,
-    which Kizen keeps when the block is empty (confirmed live 2026-10-30).
+    A Kizen PUT without them resets each to its default, except the stop's
+    and `value_resolution`, which Kizen keeps (confirmed live 2026-10-30 and
+    2026-11-11).
     For `preview_user_id` that reset is unconfirmed: Kizen only accepts a
     pin on a business app's preview.
   - A step or trigger without `id` is new to Kizen, so what its spec leaves
     out gets Kizen's defaults: the type's default description, an empty
-    note, not skipped.
+    note, not skipped. The exception is an array `update_variable`'s
+    `value_resolution`, which the CLI sets to `add_only`.
 - **`condition.filter_config`** uses the filtering DSL (`{"all"|"any": [...]}`,
   single conditions wrapped in `{"all": [...]}`) — same as `saved-views.md`.
   Fields are **bare api_names**; **ops are per field type** (e.g. dropdown uses

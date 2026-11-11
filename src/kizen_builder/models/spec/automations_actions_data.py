@@ -224,11 +224,15 @@ class ActionUpdateVariableConfig(BaseModel):
         default=None,
         description=(
             "Array variables only; the server 400s it on a scalar variable. "
-            "How the sources combine with the array's current value: "
-            "'add_only' appends (duplicates kept when deduplicate_array is false), "
-            "'overwrite' replaces it, even with an empty array, "
-            "'overwrite_except_null' replaces it unless the sources are empty. "
-            "Null (the default) behaved like 'overwrite'."
+            "How the sources combine with the array's current value (the "
+            "builder's 'Append or Replace'): 'add_only' is 'Append Values to "
+            "End of Array' (duplicates kept when deduplicate_array is false), "
+            "'overwrite' is 'Overwrite with These Sources (Clear if Blank)', "
+            "'overwrite_except_null' is 'Overwrite with These Sources (But Skip "
+            "if Blank)'. Left out on a new step whose variable this automation "
+            "declares as an array, the CLI sends 'add_only', the builder's "
+            "default. A step with an id keeps its live value; a stored null "
+            "behaves like 'overwrite'."
         ),
     )
 

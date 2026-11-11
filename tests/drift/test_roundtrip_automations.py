@@ -1704,16 +1704,40 @@ def drift_array_variable_steps(drift_client, scratch, drift_object) -> dict[str,
                 "value_resolution": "add_only",
             },
         },
+        {
+            "key": "default_tags",
+            "step_type": "update_variable",
+            "order": 2,
+            "parent_key": "append_tags",
+            "action_update_variable": {
+                "variable": {"name": "drift_tags", "data_type": "string"},
+                "sources": [{**source, "value": ["c"]}],
+                "array_aggregation_mode": "add_all",
+            },
+        },
     ]
     return _create_automation(drift_client, scratch, spec)
 
 
+def _live_array_updates(record: dict[str, Any]) -> list[dict[str, Any]]:
+    steps = _live_steps_by_type(record)["update_variable"]
+    return [
+        s["action_update_variable"] for s in sorted(steps, key=lambda s: s["order"])
+    ]
+
+
 def test_update_variable_value_resolution_reads_back(drift_array_variable_steps):
-    (live,) = _live_steps_by_type(drift_array_variable_steps)["update_variable"]
-    block = live["action_update_variable"]
+    block, _ = _live_array_updates(drift_array_variable_steps)
     assert block["value_resolution"] == "add_only"
     assert block["array_aggregation_mode"] == "add_all"
     assert block["deduplicate_array"] is True
+
+
+def test_new_array_update_without_value_resolution_reads_back_add_only(
+    drift_array_variable_steps,
+):
+    _, block = _live_array_updates(drift_array_variable_steps)
+    assert block["value_resolution"] == "add_only"
 
 
 def test_archive_record_uses_the_id_suffixed_write_keys(drift_data_steps):
