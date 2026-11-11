@@ -128,11 +128,11 @@ def _declared_blocks(openapi_schema):
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         _TRIGGER_BUILDERS,
-        _prefix_for,
+        _block_field_for,
     )
 
     blocks = {
-        f"schema:WriteStepRequest.{_prefix_for(t)}_{t}": b
+        f"schema:WriteStepRequest.{_block_field_for(t)}": b
         for t, b in _STEP_BUILDERS.items()
     } | {
         f"schema:WriteTriggerRequest.{trigger_config_field(t)}": b

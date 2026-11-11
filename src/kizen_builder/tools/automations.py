@@ -236,12 +236,16 @@ def _inactive_target_warnings(
 def show_automation(api_name: str) -> dict[str, Any]:
     """The automation as a translated wire payload — synthesized step keys
     included — for tree rendering and as the source of step-edit handles."""
-    from kizen_builder.translate import live_to_payload
+    from kizen_builder.translate import exit_loop_dead_end_warnings, live_to_payload
 
     config = load_env_config()
     with KizenClient(config) as client:
         raw, listing = _fetch_with_listing(client, api_name)
     payload = live_to_payload(raw)
+    warnings = [
+        *_inactive_target_warnings(payload, listing).get("warnings", []),
+        *exit_loop_dead_end_warnings(payload["steps"]),
+    ]
     return {
         "env": config.name,
         "api_name": api_name,
@@ -251,7 +255,7 @@ def show_automation(api_name: str) -> dict[str, Any]:
         "name": raw.get("name"),
         "custom_object_name": (raw.get("custom_object") or {}).get("name"),
         "payload": payload,
-        **_inactive_target_warnings(payload, listing),
+        **({"warnings": warnings} if warnings else {}),
     }
 
 
@@ -268,7 +272,9 @@ def patch_steps(
     the before/after semantic diff as evidence of exactly what changed.
     """
     from kizen_builder.translate import (
+        exit_loop_dead_end_warnings,
         live_to_payload,
+        resolve_exit_loop_targets,
         semantic_diff,
         validate_payload,
     )
@@ -278,7 +284,9 @@ def patch_steps(
         before = _fetch_raw(client, api_name)
         payload = live_to_payload(before)
         report = mutate(payload, before)
+        resolve_exit_loop_targets(payload["steps"])
         problems = validate_payload(payload)
+        warnings = exit_loop_dead_end_warnings(payload["steps"])
         result: dict[str, Any] = {
             "env": config.name,
             "api_name": api_name,
@@ -286,6 +294,7 @@ def patch_steps(
             "revision_before": before.get("revision"),
             "report": report,
             "validation_problems": problems,
+            **({"warnings": warnings} if warnings else {}),
             "payload": payload,
             "executed": False,
         }
