@@ -253,9 +253,9 @@ def mcp_servers_create(
     """Create an MCP server from a JSON MCPServerDef.
 
     `name` and `api_name` are required. Tool names are checked against
-    `kizen mcp-servers tools`. With no `sharing_settings`, it starts as the
-    UI's New MCP Server dialog does: no access for all team members and no
-    role or team member grants.
+    `kizen mcp-servers tools`, and `upstreams` against the upstream servers.
+    With no `sharing_settings`, it starts as the UI's New MCP Server dialog
+    does: no access for all team members and no role or team member grants.
     """
     spec, from_stdin = _read_spec(spec_file, what="MCP server")
     _run_mutation(
@@ -277,8 +277,9 @@ def mcp_servers_update(
 ) -> None:
     """Update an MCP server from a JSON MCPServerDef.
 
-    Only the keys the spec sets are compared. `get --raw` output works as a
-    spec: its read-only keys are ignored. A Kizen-managed server takes only
+    Only the keys the spec sets are compared; omitting `upstreams` keeps them.
+    `get --raw` output works as a spec: its read-only keys are ignored. A
+    Kizen-managed server takes only
     `{"is_default_for_business": true}`, which makes it the default again.
     """
     spec, from_stdin = _read_spec(spec_file, what="MCP server")

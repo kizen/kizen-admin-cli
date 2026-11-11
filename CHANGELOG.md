@@ -20,6 +20,10 @@ called out explicitly under **Changed** or **Removed**.
   variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
+- **MCP server specs can pick upstream server tools.** `upstreams` takes each
+  upstream's `api_name` and `include_all: true` or `tool_names`; the CLI maps
+  them to ids and refuses unknown ones. Creating and authorizing upstreams
+  stays in Kizen.
 
 ### Fixed
 
@@ -27,6 +31,9 @@ called out explicitly under **Changed** or **Removed**.
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+- **`kizen mcp-servers get --raw` output works as an `update` spec again.**
+  Since Kizen's 2026-11-10 release it failed with `upstreams: Extra inputs are
+  not permitted`.
 
 ## [0.7.0] — 2026-11-16
 
