@@ -17,8 +17,10 @@ The builders are pure, so no live-API stubbing is needed.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 from kizen_builder.tools.form_ui import (
+    FORM_PAGE_DEFAULTS,
     build_content_tree,
     build_form_ui,
     button_block,
@@ -280,16 +282,343 @@ def test_divider_and_image_blocks_render():
     assert image_node["props"]["width"] == 200
 
 
-def test_root_props_default_and_overridable():
-    tree = build_content_tree([section([row([cell([text_block("x")])])])])
-    assert tree["ROOT"]["props"]["backgroundColor"] == "#F8FAFF"
-    assert "containerBackgroundColor" in tree["ROOT"]["props"]
-
+def test_root_props_come_from_the_defaults_passed():
     custom_root = {"backgroundColor": "#000000"}
-    tree2 = build_content_tree(
-        [section([row([cell([text_block("x")])])])], root_props=custom_root
+    tree = build_content_tree(
+        [section([row([cell([text_block("x")])])])],
+        defaults=replace(FORM_PAGE_DEFAULTS, root=custom_root),
     )
-    assert tree2["ROOT"]["props"] == custom_root
+    assert tree["ROOT"]["props"] == custom_root
+
+
+# ---------------------------------------------------------------------------
+# Creation defaults: each node carries exactly the props the Kizen form
+# builder writes when a user adds it. Expected values are transcribed from
+# the Kizen web app source (react-app), 2026-11-11, not from the module's
+# own tables, so a drifted table fails here.
+# ---------------------------------------------------------------------------
+
+# packages/page-builder/nodes/containers/ElementContainer.tsx:14-37
+ELEMENT_CONTAINER = {
+    "containerBackgroundColor": "inherit",
+    "containerBackgroundImageName": "",
+    "containerBackgroundPositionX": "0%",
+    "containerBackgroundPositionY": "0%",
+    "containerBackgroundSize": "auto",
+    "containerBackgroundRepeat": "repeat",
+    "containerBorderColor": "#4A5660",
+    "containerBorderStyle": "solid",
+    "containerBorderWidth": "0",
+    "containerBorderRadius": True,
+    "containerBorderTopLeftRadius": "4",
+    "containerBorderTopRightRadius": "4",
+    "containerBorderBottomLeftRadius": "4",
+    "containerBorderBottomRightRadius": "4",
+    "containerMarginTop": "0",
+    "containerMarginRight": "0",
+    "containerMarginBottom": "0",
+    "containerMarginLeft": "0",
+    "containerPaddingTop": "0",
+    "containerPaddingRight": "0",
+    "containerPaddingBottom": "0",
+    "containerPaddingLeft": "0",
+}
+PADDING_10 = {
+    "containerPaddingTop": "10",
+    "containerPaddingRight": "10",
+    "containerPaddingBottom": "10",
+    "containerPaddingLeft": "10",
+}
+# What the form/survey Section and Row settings panel writes when it opens on
+# a newly added node (settings/SectionSettings.jsx:31-40,
+# settings/RowSettings.jsx:30-39), maxWidth being the form Root's "900".
+FORM_PANEL_SIZING = {"width": "100", "maxWidth": "900", "alignment": "center"}
+# SectionContainer.tsx:27-34 (background inherit), then the panel's keys
+FORM_SECTION = {**ELEMENT_CONTAINER, **PADDING_10, **FORM_PANEL_SIZING}
+# packages/page-builder/gen/defaults.ts:25-50 (undefined keys dropped)
+GEN_CONTAINER = {
+    **ELEMENT_CONTAINER,
+    "containerBackgroundColor": "rgba(0,0,0,0)",
+    "containerBorderColor": "rgba(74,86,96,1)",
+}
+# packages/page-builder/nodes/Button/props.ts:10-36 + ButtonContainer.tsx:22-28
+FORM_BUTTON = {
+    "color": "#4BC7B4",
+    "label": "Submit",
+    "textColor": "#FFFFFF",
+    "action": "submit",
+    "url": "",
+    "borderSize": "0",
+    "borderRadius": "8",
+    "borderColor": "#2E373E",
+    "paddingTop": "10",
+    "paddingRight": "20",
+    "paddingBottom": "10",
+    "paddingLeft": "20",
+    "fontSize": "12",
+    "textStyles": [],
+    "alignment": "center",
+    "fontFamily": "Arial",
+    **ELEMENT_CONTAINER,
+    "containerPaddingTop": "10",
+    "containerPaddingRight": "0",
+    "containerPaddingBottom": "10",
+    "containerPaddingLeft": "0",
+    "enableRecaptcha": False,
+}
+
+STRUCTURAL_KEYS = {
+    "type",
+    "isCanvas",
+    "props",
+    "displayName",
+    "custom",
+    "parent",
+    "hidden",
+    "nodes",
+    "linkedNodes",
+}
+
+
+def _only(tree: dict, resolved_name: str) -> dict:
+    (node,) = [n for n in tree.values() if n["type"]["resolvedName"] == resolved_name]
+    return node
+
+
+def _every_kind_tree() -> dict:
+    return build_content_tree(
+        [
+            section(
+                [
+                    row(
+                        [
+                            cell([text_block("<p>t</p>")]),
+                            cell([custom_field_block(LINKED_FIELD)]),
+                        ]
+                    ),
+                    row([cell([custom_field_block(UNLINKED_FIELD)])]),
+                    row([cell([html_block("<div>h</div>")])]),
+                    row([cell([button_block("Send")])]),
+                    row([cell([divider_block()])]),
+                    row([cell([image_block("file-id", "https://x/i.png", "i.png")])]),
+                ]
+            )
+        ]
+    )
+
+
+def test_form_nodes_carry_exactly_the_form_builder_creation_defaults():
+    tree = _every_kind_tree()
+
+    section_props = _only(tree, "Section")["props"]
+    assert section_props == FORM_SECTION
+    assert list(section_props) == list(FORM_SECTION)
+    # RowContainer.tsx:27-33 after `columns` (Row.jsx:318-325), then the
+    # panel's keys
+    first_row = next(
+        n
+        for n in tree.values()
+        if n["type"]["resolvedName"] == "Row" and len(n["props"]["columns"]) == 2
+    )
+    expected_row = {
+        "columns": [0.5, 0.5],
+        **ELEMENT_CONTAINER,
+        **PADDING_10,
+        **FORM_PANEL_SIZING,
+    }
+    assert first_row["props"] == expected_row
+    assert list(first_row["props"]) == list(expected_row)
+    # TextContainer.tsx:19-25
+    assert _only(tree, "Text")["props"] == {**ELEMENT_CONTAINER, **PADDING_10}
+    # CustomField/props.js:3-9, FormField/props.js:3-9
+    for name in ("CustomField", "FormField"):
+        props = dict(_only(tree, name)["props"])
+        props.pop("field")
+        assert props == {**ELEMENT_CONTAINER, **PADDING_10}
+    # HTMLBlockContainer.tsx:15-22
+    assert _only(tree, "HTMLBlock")["props"] == {
+        **ELEMENT_CONTAINER,
+        **PADDING_10,
+        "htmlContent": "<div>h</div>",
+    }
+    # Button/props.ts:33-36: a submit button on a form page
+    assert _only(tree, "Button")["props"] == {**FORM_BUTTON, "label": "Send"}
+    # DividerContainer.tsx:15-22 + Divider/props.js:7-14
+    assert _only(tree, "Divider")["props"] == {
+        **ELEMENT_CONTAINER,
+        "containerBorderRadius": False,
+        **PADDING_10,
+        "alignment": "center",
+        "borderStyle": "solid",
+        "color": "#A8B3BC",
+        "size": "1",
+        "width": "100",
+    }
+    # ImageContainer.tsx:14 + utils/image.ts:33-47, no natural size known
+    assert _only(tree, "Image")["props"] == {
+        **ELEMENT_CONTAINER,
+        "src": "https://x/i.png",
+        "name": "i.png",
+        "fileId": "file-id",
+        "size": "auto",
+        "unit": "pixel",
+        "height": None,
+        "width": None,
+        "display": "flex",
+        "position": "center",
+        "alt": "",
+        "link": "",
+    }
+
+
+def test_form_nodes_keep_every_structural_key():
+    for node in _every_kind_tree().values():
+        assert set(node) == STRUCTURAL_KEYS
+        assert node["displayName"] == node["type"]["resolvedName"]
+
+
+def test_form_page_root_matches_a_new_form_page():
+    # gen/defaults.ts:144-148 compiled with PageBuilder/utils/pages.js:11-14
+    tree = build_content_tree([section([row([cell([text_block("x")])])])])
+    assert tree["ROOT"]["props"] == {
+        **GEN_CONTAINER,
+        "backgroundColor": "#F8FAFF",
+        "width": "100",
+        "maxWidth": "900",
+        "alignment": "center",
+        "mobileBreak": "414",
+        "color": "rgba(74,86,96,1)",
+        "fontFamily": "Arial",
+        "fontSize": "14",
+        "linkColor": "rgba(82,142,249,1)",
+        "lineHeight": "1.25",
+        "tabletBreak": "768",
+    }
+
+
+def test_explicit_spec_values_win_over_defaults_including_falsy_ones():
+    tree = build_content_tree(
+        [
+            section(
+                [
+                    row(
+                        [
+                            cell([button_block("Go", color="")]),
+                            cell([divider_block("")]),
+                        ],
+                        columns=[0.7, 0.3],
+                    ),
+                    row(
+                        [cell([image_block("f", "https://x/i.png", "i.png", width=0)])]
+                    ),
+                ],
+                background_color="",
+            )
+        ]
+    )
+    assert _only(tree, "Section")["props"]["containerBackgroundColor"] == ""
+    assert _only(tree, "Button")["props"]["color"] == ""
+    assert _only(tree, "Divider")["props"]["color"] == ""
+    image = _only(tree, "Image")["props"]
+    assert (image["size"], image["width"], image["dimension"]) == (
+        "dynamic",
+        0,
+        "width",
+    )
+    assert any(
+        n["props"].get("columns") == [0.7, 0.3]
+        for n in tree.values()
+        if n["type"]["resolvedName"] == "Row"
+    )
+
+
+def test_explicit_colours_and_sizes_are_sent_as_given():
+    tree = build_content_tree(
+        [
+            section(
+                [
+                    row([cell([button_block("Go", color="#123456")])]),
+                    row([cell([divider_block("#654321")])]),
+                    row(
+                        [
+                            cell(
+                                [
+                                    image_block(
+                                        "f",
+                                        "https://x/i.png",
+                                        "i.png",
+                                        width=200,
+                                        natural_width=400,
+                                        natural_height=100,
+                                    )
+                                ]
+                            )
+                        ]
+                    ),
+                ],
+                background_color="#ABCDEF",
+            )
+        ]
+    )
+    assert _only(tree, "Section")["props"]["containerBackgroundColor"] == "#ABCDEF"
+    assert _only(tree, "Button")["props"]["color"] == "#123456"
+    assert _only(tree, "Divider")["props"]["color"] == "#654321"
+    image = _only(tree, "Image")["props"]
+    assert image["width"] == 200
+    assert (image["naturalWidth"], image["naturalHeight"]) == (400, 100)
+
+
+def test_url_button_opens_in_new_tab_only_where_the_ui_writes_it():
+    # A form page's button starts as submit, and switching it to URL writes
+    # openLinkInNewTab (ButtonSettings.jsx:261-263). A non-form page's button
+    # starts as URL (Button/props.ts:38-42), so nothing is written.
+    def button(is_form_page: bool, action: str) -> dict:
+        p = page(
+            "P",
+            [
+                section(
+                    [row([cell([button_block("B", action=action, url="https://x")])])]
+                )
+            ],
+            is_form_page=is_form_page,
+        )
+        return _only(json.loads(p["page_data"]), "Button")["props"]
+
+    assert button(True, "url")["openLinkInNewTab"] is True
+    assert "openLinkInNewTab" not in button(True, "submit")
+    assert "openLinkInNewTab" not in button(False, "url")
+
+
+def test_nodes_get_their_own_copy_of_mutable_defaults():
+    tree = build_content_tree(
+        [section([row([cell([button_block("A"), button_block("B")])])])]
+    )
+    first, second = (n for n in tree.values() if n["type"]["resolvedName"] == "Button")
+    first["props"]["textStyles"].append("bold")
+    assert second["props"]["textStyles"] == []
+    assert FORM_PAGE_DEFAULTS.button["textStyles"] == []
+
+
+def test_thank_you_page_text_uses_the_form_builder_text_defaults():
+    parsed = json.loads(thank_you_page()["page_data"])
+    assert _only(parsed, "Text")["props"] == {**ELEMENT_CONTAINER, **PADDING_10}
+
+
+def test_section_and_row_carry_the_settings_panel_sizing_on_every_form_page():
+    # The form and survey builders map Section/Row to the same settings panels
+    # on form and non-form pages (presets/node-settings.js:37-45), and both
+    # page kinds use the same Root maxWidth.
+    for is_form_page in (True, False):
+        p = page(
+            "P", [section([row([cell([text_block("x")])])])], is_form_page=is_form_page
+        )
+        tree = json.loads(p["page_data"])
+        assert _only(tree, "Section")["props"] == FORM_SECTION
+        row_props = _only(tree, "Row")["props"]
+        assert {k: row_props[k] for k in FORM_PANEL_SIZING} == FORM_PANEL_SIZING
+        assert list(row_props)[-3:] == ["width", "maxWidth", "alignment"]
+    ty = json.loads(thank_you_page()["page_data"])
+    assert _only(ty, "Section")["props"] == FORM_SECTION
 
 
 # ---------------------------------------------------------------------------

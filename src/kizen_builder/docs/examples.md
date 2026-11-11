@@ -348,12 +348,15 @@ invocation; running it once with a single `--field` (e.g. only
 2026-08-13`. An "open tickets" table worth looking at needs the ticket's own
 `name`, `priority`, `ticket_status`, and `scheduled_date` — call
 `dashlet-config` once per field and merge each call's one-entry `columns` list
-into the dashlet's `fe_extra_info.columns` before wrapping and applying:
+into the dashlet's `fe_extra_info.columns` before wrapping and applying.
+`--full` leaves the dashlet without a `layout`, so give it one in the same
+edit — pick the size from `kizen docs show dashboard`, "Layout & sizing":
 
 ```bash
 # dashlet 1: an open-tickets table with four real columns, wrapped in a full
-# DashboardDef — merge the four calls' single-entry `columns` lists into one
-# dashlet's `fe_extra_info.columns` before creating
+# DashboardDef — before creating, merge the four calls' single-entry `columns`
+# lists into one dashlet's `fe_extra_info.columns`, and add the dashlet's
+# `layout` (a full-width table here: {"x": 0, "y": 0, "w": 12, "h": 4})
 kizen dashboards dashlet-config --type table_of_records --object service_tickets --field name
 kizen dashboards dashlet-config --type table_of_records --object service_tickets --field priority
 kizen dashboards dashlet-config --type table_of_records --object service_tickets --field ticket_status

@@ -163,13 +163,18 @@ def _build_create_field_op(
         resolved_relation = {
             "related_object": rel_obj["id"],
             "related_category": rel_cat_id,
-            "relation_type": _resolve_relation_type(field_def.relation.relation_type),
             # Server-side 500s if this is omitted, despite being documented as
             # nullable — default to this object's label when not given explicitly.
             "related_name": field_def.relation.related_name
             or obj.get("entity_name")
             or obj["display_name"],
         }
+        # Unset → not sent: the server's model default (`additional`,
+        # many-to-many) is also what the UI's field wizard preselects.
+        if field_def.relation.relation_type is not None:
+            resolved_relation["relation_type"] = _resolve_relation_type(
+                field_def.relation.relation_type
+            )
 
     payload = _build_field_payload(
         field_def, category_uuid=cat_match["id"], resolved_relation=resolved_relation

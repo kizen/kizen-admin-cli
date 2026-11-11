@@ -253,8 +253,9 @@ def mcp_servers_create(
     """Create an MCP server from a JSON MCPServerDef.
 
     `name` and `api_name` are required. Tool names are checked against
-    `kizen mcp-servers tools`. With no `sharing_settings`, every team member
-    can view it.
+    `kizen mcp-servers tools`. With no `sharing_settings`, it starts as the
+    UI's New MCP Server dialog does: no access for all team members and no
+    role or team member grants.
     """
     spec, from_stdin = _read_spec(spec_file, what="MCP server")
     _run_mutation(

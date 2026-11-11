@@ -54,6 +54,97 @@ called out explicitly under **Changed** or **Removed**.
   `columns share --all view` for the old behavior. A `columns create` with no
   `--column` now makes a template showing just the name column, instead of an
   empty one.
+- **Dashboards no longer get CLI styling.** `dashboards create` used to send
+  its own `style_settings` when the spec had none, which gave every dashlet a
+  coloured title bar, and `dashlet-config` stamped a style block into each
+  dashlet's `fe_extra_info`, which also recoloured bar, donut, line, trend
+  and leaderboard charts. New dashboards now look like ones made in the Kizen
+  UI. Put `style_settings` in the spec to style one. Existing dashboards keep
+  their styling.
+- **New dashboards and filter groups start private**, like the UI: only the
+  owner and admins see them, and the Admin role keeps admin. They used to be
+  visible to all team members. For a dashboard, put `"private": false` and
+  `"all_team_members": 1` in the spec's `sharing_settings` for the old
+  behaviour. Filter groups have no CLI sharing flag, so share them in the
+  Kizen UI.
+- **`dashboards update` changes only what the spec sets.** A spec without
+  `published`, `hidden` or `type` no longer resets them on the live
+  dashboard, and a dashlet with an `id` but no `name`, `layout`, `config` or
+  `custom_object` keeps its live values instead of being renamed to
+  `[default]`, emptied or unlinked.
+- **`published` is no longer sent as true by default.** A new dashboard is
+  unpublished unless the spec says `"published": true` (Kizen uses the flag
+  for homepages). `dashlet-config --full` leaves `published` out too.
+- **`dashlet-config --full` no longer adds a dashlet `layout`.** Add one
+  before `create`; without it the dashlet is saved with an empty layout and
+  shows as a small tile in the top-left corner. A new dashlet with no
+  `config` is now refused when the plan is built, before anything is
+  created, instead of being created empty.
+- **Form and survey pages built by `set-ui` now look like pages built in the
+  Kizen form builder.** Where the spec sets no style, each block gets what the
+  builder gives a newly added one. Buttons are teal (`#4BC7B4`) with 12px
+  text instead of dark blue with 16px. Dividers are light grey (`#A8B3BC`)
+  and 1px instead of green and 3px. Sections have no white background of
+  their own, so the page's light background shows through. Images keep
+  their own size instead of being sized to 150px. A `url` button on the
+  thank-you page now opens in the same tab. A spec can bring back the old
+  button and divider colours (`color`), section background
+  (`background_color`) and 150px image width (`width`); an empty string is
+  now sent as given instead of being replaced. The old 16px button text and
+  3px divider thickness have no spec setting, so they can't be restored.
+- **Record-layout custom content blocks (`layouts.custom_content_block`)
+  use the layout builder's defaults instead of a form's.** Sections and rows
+  are capped at 1372px wide instead of 900px, and sections are transparent
+  instead of white. Buttons, dividers and images change as for forms above,
+  and a URL button opens in the same tab.
+- **Email templates built from a spec (`messages templates create|update
+  --spec-file`) now look like templates built in the Kizen email builder.**
+  Where the spec sets no style, each block gets what the builder gives a
+  newly added one, in both the saved design and the HTML that is sent.
+  Buttons are teal (`#4BC7B4`) with 12px text instead of dark blue with
+  16px. Dividers are light grey (`#A8B3BC`) and 1px instead of green and
+  3px. Sections have no white background of their own, so the template's
+  light background shows through. Images have no padding around them, and
+  paragraphs without a `size` no longer carry a 14px font size (they still
+  show at 14px). A spec can bring back the old button and divider colours
+  (`color`), divider thickness (`size`) and section background
+  (`background_color`); an empty string or `"0"` is now sent as given
+  instead of being replaced. The old 16px button text and the 10px padding
+  around images have no spec setting, so they can't be restored. Existing
+  templates don't change until you run `update --spec-file` on them again,
+  which rebuilds them with these defaults.
+- **HTML dashlets (`dashlet-config --type html`) look like a new block
+  made in the Kizen UI.** They are 335px tall instead of 450px, on
+  a white background instead of a transparent one, and full width (6
+  columns instead of 5). Buttons are teal (`#4BC7B4`), 12px Arial, radius 8
+  with no border, instead of purple, 16px Helvetica Neue, radius 20 with a
+  black border, and URL buttons open in the same tab. Text blocks lose their
+  10px margins. `dashlet-config` has no flags for these; in Python, pass
+  `background_color="transparent"` to `html_dashlet_config` for the old
+  background, and the `html_button_url` and `html_button_log_activity`
+  helpers now take a `color` argument.
+- **Relationship fields default to many-to-many**, as in the UI and the
+  API. A spec `relation` without `relation_type`, or `fields create
+  --relation-target` without `--relation-cardinality`, used to create a
+  many-to-one field. Set `"relation_type": "many_to_one"` or
+  `--relation-cardinality many_to_one` for the old behaviour.
+- **New MCP servers start with no access for all team members**, matching
+  the UI's New MCP Server dialog, when the spec has no `sharing_settings`.
+  They used to be viewable by every team member. For the old behaviour, put
+  this whole block in the spec (the CLI's spec needs all four keys):
+  `"sharing_settings": {"private": false, "all_team_members": 1, "roles":
+  {"view": [], "edit": [], "admin": []}, "team_members": {"view": [],
+  "edit": [], "admin": []}}`.
+- **`objects stages create` puts a stage last when you don't pass `--order`.**
+  The CLI used to send the stage count as its order, which put the stage
+  ahead of some existing ones when their orders had gaps. It also no longer
+  sends `status` when `--status` is left out; Kizen still makes the stage
+  `open`.
+- **Form and survey fields without an `order` follow the spec's list order
+  after the fields Kizen adds to every new form.** The CLI used to number
+  them itself, from 0 on create or from the field count on `forms fields
+  create` and `surveys fields create`, and those numbers could tie with
+  existing fields.
 
 - **Specs reject the `timezone`, `choices` and `selector` field types.**
   None of them can be created in Kizen: `timezone` exists only as the built-in
@@ -65,6 +156,8 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`messages templates update --spec-file` without a `subject` keeps the
+  template's subject.** It used to blank it. `"subject": ""` still clears it.
 - **An activity `yesnomaybe` field can be created without `options`.** It
   used to pass `--dry-run` and then fail with a 400. It now gets Yes/No/Maybe,
   the way object fields already did.

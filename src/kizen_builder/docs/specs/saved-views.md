@@ -230,9 +230,11 @@ What the UI POSTs (confirmed live 2026-11-10):
 
 **In the spec but not built:** `.../{entity_id}/admins`, `.../mine`,
 `.../other`, `.../visible` (filter groups only), `.../request-access` and
-`.../{request_access_id}/request-access-response`. Filter groups and column
-templates default to all-team-members-visible. Quick filters start private (see
-above) — share them rather than relying on the access-request flow.
+`.../{request_access_id}/request-access-response`. Filter groups, quick
+filters and column templates all start private (see `kizen docs show
+dashboard`). Share them rather than relying on the access-request flow:
+quick filters and column templates with their `share` command, filter groups
+in the Kizen UI (the CLI has no filter-group share command).
 
 ## See also
 

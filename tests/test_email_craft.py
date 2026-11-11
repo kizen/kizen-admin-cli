@@ -18,6 +18,7 @@ captured personal data), per the item's "no real customer data" rule.
 
 from __future__ import annotations
 
+import json
 import re
 import struct
 import zlib
@@ -216,7 +217,10 @@ def test_one_column_and_two_column_compiled_markup_matches_live_probe():
 
 
 def test_button_anchor_declarations_match_a_real_captured_template():
-    """Re-verified 2026-08-26, read-only, against a fresh capture of the
+    """Re-checked 2026-11-11 by running Kizen's own email compile
+    (`packages/mjml` + `mrml` 1.4.12 from the web app) on this tree: the
+    `<a>` tag below is byte-identical to its output. Earlier, 2026-08-26,
+    read-only, against a fresh capture of the
     reference template on `cli-testing`: the `<a>` tag's own `style`
     declarations (`color` as `_rgba_to_hex`-converted hex, and the five
     declarations — `font-weight:normal`, `line-height:120%`, `margin:0`,
@@ -269,8 +273,8 @@ def test_button_anchor_declarations_match_a_real_captured_template():
         "<tr><td "
         'style="border-radius:8px;background:#1B64F2;text-align:center;" '
         'bgcolor="#1B64F2"><a href="https://example.com" target="_blank" '
-        'style="display:inline-block;background:#1B64F2;color:#ffffff;'
-        "font-family:Arial;font-size:16px;font-weight:normal;line-height:120%;"
+        'style="display:inline-block;background:#1B64F2;color:#FFFFFF;'
+        "font-family:Arial;font-size:12px;font-weight:normal;line-height:120%;"
         "margin:0;text-decoration:none;text-transform:none;"
         "padding:10px 20px 10px 20px;mso-padding-alt:0px;"
         'border-radius:8px;">Click Here</a></td></tr></table>'
@@ -301,7 +305,7 @@ def test_divider_markup_pins_current_shape_not_checked_against_a_capture():
     ]
     _craft_json, content = ec.build_email_content(sections)
     assert (
-        '<p style="border-top:3px solid #E5E7EB;font-size:1px;margin:0 auto;'
+        '<p style="border-top:1px solid #E5E7EB;font-size:1px;margin:0 auto;'
         'width:100%;"> </p>'
     ) in content
 
@@ -362,16 +366,18 @@ def test_render_image_fixed_width_compiled_markup_matches_the_reference_shape():
     # Fixed mode: no `-auto` class, and no auto-mode CSS rule at all.
     assert f'class="{eh._image_auto_class(image_id)}"' not in content
     assert f".{eh._image_auto_class(image_id)} > table td" not in content
-    # The outer block-level <td> carries the image's own containerPadding.
+    # The outer block-level <td> carries the image's own containerPadding
+    # (0 on a new email image) and, with the builder's `inherit` background,
+    # no background, as Kizen's compile gives it.
     outer_td = re.search(
-        r'<td align="center" class="" style="background:rgba\(0,0,0,0\);'
+        r'<td align="center" class="" style="'
         r"font-size:0px;padding:10px 25px;padding-top:(\d+)px;"
         r"padding-right:(\d+)px;padding-bottom:(\d+)px;padding-left:(\d+)px;"
         r'word-break:break-word;">',
         content,
     )
     assert outer_td, "no block-level <td> wrapper found around the Image"
-    assert outer_td.groups() == ("10", "10", "10", "10")
+    assert outer_td.groups() == ("0", "0", "0", "0")
     # The inner nested table's own <td> carries the img's pixel width.
     assert '<td style="width:150px;">' in content
 
@@ -459,7 +465,7 @@ def test_render_image_auto_mode_uses_section_container_width_and_natural_width_r
     image_id = next(
         nid for nid, n in craft_json.items() if _resolved_name(n) == "Image"
     )
-    assert "width" not in craft_json[image_id]["props"]
+    assert craft_json[image_id]["props"]["width"] is None
     assert craft_json[image_id]["props"]["size"] == "auto"
 
     auto_class = eh._image_auto_class(image_id)
@@ -512,7 +518,7 @@ def test_render_image_auto_mode_falls_back_to_root_max_width_when_section_unset(
         nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
     )
     assert "containerWidth" not in craft_json[section_id]["props"]
-    # EMAIL_ROOT_PROPS["maxWidth"] == "900".
+    # The email Root's maxWidth is "900".
     assert 'width="900"' in content
     assert '<td style="width:900px;">' in content
 
@@ -775,12 +781,10 @@ def _all_props_of(craft_json: dict, kind: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def test_all_defaults_spec_is_byte_identical_to_the_pre_item_section_and_row_props():
-    """Pins BCLI-024's own regression-safety acceptance criterion: a spec
-    that sets none of the new layout fields must reproduce the *exact* key
-    set `form_ui._assemble_section`/`_assemble_row` produced before this
-    item — in particular, no `containerWidth` key at all (it was never
-    written before this item added the field)."""
+def test_section_and_row_left_unstyled_carry_no_container_width():
+    """`containerWidth` is measured by the builder when the template is
+    opened, never written on creation, so an unstyled spec sends none; the
+    sizing keys are the ones the Section/Row settings write on creation."""
     sections = [
         ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
     ]
@@ -789,6 +793,7 @@ def test_all_defaults_spec_is_byte_identical_to_the_pre_item_section_and_row_pro
     section_props = _props_of(craft_json, "Section")
     assert section_props["maxWidth"] == "900"
     assert section_props["width"] == "100"
+    assert section_props["alignment"] == "center"
     assert "containerWidth" not in section_props
     assert section_props["containerPaddingTop"] == "10"
     assert section_props["containerPaddingRight"] == "10"
@@ -1175,12 +1180,16 @@ def test_divider_size_is_emitted_when_set():
     assert "border-top:1px solid" in content
 
 
-def test_divider_size_defaults_to_3_when_unset():
+def test_divider_left_unstyled_keeps_the_email_builders_1px_grey():
+    """DEFAULT_FORM_DIVIDER_PROPS (nodes/Divider/props.js:7-14): gray-600
+    #A8B3BC, size "1"."""
     sections = [
         ec.section([ec.row([ec.cell([ec.divider_block()])], layout="1 Column")])
     ]
-    craft_json, _content = ec.build_email_content(sections)
-    assert _props_of(craft_json, "Divider")["size"] == "3"
+    craft_json, content = ec.build_email_content(sections)
+    props = _props_of(craft_json, "Divider")
+    assert (props["size"], props["color"]) == ("1", "#A8B3BC")
+    assert "border-top:1px solid #A8B3BC;" in content
 
 
 def test_button_layout_props_are_emitted_when_set_matching_the_reference_pattern():
@@ -1220,7 +1229,8 @@ def test_button_layout_props_are_emitted_when_set_matching_the_reference_pattern
     assert "padding:10px 30px 10px 30px;" in content
 
 
-def test_button_layout_props_default_to_todays_hardcoded_values_when_unset():
+def test_button_layout_props_left_unset_keep_the_email_builders_values():
+    """commonProps in packages/page-builder/nodes/Button/props.ts:10-31."""
     sections = [
         ec.section(
             [
@@ -1475,8 +1485,8 @@ def test_content_reflects_every_layout_prop_this_item_added():
     button_start = content.index('<table role="presentation" align="right"')
     button_fragment = content[button_start : button_start + 700]
     assert "border-radius:31px" in button_fragment
-    # Top/bottom stay this item's pre-existing hardcoded "10" — only
-    # left/right were added by ButtonBlockDef; order is top/right/bottom/left.
+    # Top/bottom stay the email builder's "10" — only left/right are
+    # ButtonBlockDef keys; order is top/right/bottom/left.
     assert "padding:10px 37px 10px 33px;" in button_fragment
 
     # --- SectionDef.container_width: DIRECT as of BCLI-025 (was
@@ -1520,8 +1530,8 @@ def test_font_family_reaches_every_text_blocks_wrapper(monkeypatch: pytest.Monke
     `kizen-text-styles` wrapper div Kizen's own compiler uses (confirmed
     structurally against the reference), sourced from `Root.props`, never
     `TextBlockDef`/`_render_paragraphs` (BCLI-023's scope — untouched)."""
-    monkeypatch.setitem(ec.EMAIL_ROOT_PROPS, "fontFamily", "Georgia")
-    monkeypatch.setitem(ec.EMAIL_ROOT_PROPS, "color", "rgba(10,20,30,1)")
+    monkeypatch.setitem(form_ui.EMAIL_DEFAULTS.root, "fontFamily", "Georgia")
+    monkeypatch.setitem(form_ui.EMAIL_DEFAULTS.root, "color", "rgba(10,20,30,1)")
     sections = [
         ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
     ]
@@ -1627,9 +1637,9 @@ def test_mobile_break_breakpoint_reads_root_props_not_hardcoded_480(
     """Divergence 4: the mobile-collapse media query's breakpoint must come
     from `craft_json["ROOT"]["props"]["mobileBreak"]`, not a hardcoded
     `480`. `mobileBreak` isn't spec-settable today (no `EmailTemplateDef`
-    field for it), so this monkeypatches `EMAIL_ROOT_PROPS` directly, per
-    the work item's own suggested approach for this test."""
-    monkeypatch.setitem(ec.EMAIL_ROOT_PROPS, "mobileBreak", "600")
+    field for it), so this monkeypatches the email Root's default table
+    (`form_ui.EMAIL_DEFAULTS.root`) directly."""
+    monkeypatch.setitem(form_ui.EMAIL_DEFAULTS.root, "mobileBreak", "600")
     sections = [
         ec.section(
             [
@@ -1658,7 +1668,7 @@ def test_body_background_color_reads_root_props(monkeypatch: pytest.MonkeyPatch)
     """Divergence 5 (body-background half): `Root.props.backgroundColor`
     must reach `<body>`'s inline style — confirmed against the reference
     that it also reaches an outer wrapping `<div>`, not just `<body>`."""
-    monkeypatch.setitem(ec.EMAIL_ROOT_PROPS, "backgroundColor", "#112233")
+    monkeypatch.setitem(form_ui.EMAIL_DEFAULTS.root, "backgroundColor", "#112233")
     sections = [
         ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])], layout="1 Column")])
     ]
@@ -1829,17 +1839,31 @@ def test_paragraphs_to_html_empty_spacer_paragraph_has_no_span():
     assert "<span" not in html
 
 
-def test_paragraphs_to_html_plain_body_defaults_size_to_email_root_font_size():
+def test_paragraphs_to_html_plain_body_writes_no_font_size():
+    """The editor writes a font size only once one is picked
+    (WYSIWYG/extensions/font-size.ts:32-40), so an unsized paragraph has no
+    `font-size` and no empty `<span>`; the text takes the template's 14px."""
     html = ec._paragraphs_to_html([ParagraphDef(text="Body copy")])
-    assert f"font-size: {ec.EMAIL_ROOT_PROPS['fontSize']}px;" in html
+    assert "font-size" not in html
     assert html == (
+        '<p data-line-height="default" style="line-height: 1.25;">Body copy</p>'
+    )
+    bold = ec._paragraphs_to_html([ParagraphDef(text="Body copy", bold=True)])
+    assert bold == (
         '<p data-line-height="default" style="line-height: 1.25;">'
-        '<span style="font-size: 14px;">Body copy</span></p>'
+        "<strong>Body copy</strong></p>"
     )
 
 
-def test_paragraphs_to_html_color_is_appended_to_span_style_after_size():
+def test_paragraphs_to_html_color_alone_gets_a_span_without_a_size():
     html = ec._paragraphs_to_html([ParagraphDef(text="Body copy", color="#1B64F2")])
+    assert '<span style="color: #1B64F2;">Body copy</span>' in html
+
+
+def test_paragraphs_to_html_color_is_appended_to_span_style_after_size():
+    html = ec._paragraphs_to_html(
+        [ParagraphDef(text="Body copy", size=14, color="#1B64F2")]
+    )
     assert '<span style="font-size: 14px; color: #1B64F2;">' in html
 
 
@@ -1856,12 +1880,21 @@ def test_paragraphs_to_html_align_appends_text_align_to_the_p_style():
 
 def test_paragraphs_to_html_link_wraps_the_whole_span_not_the_bare_text():
     html = ec._paragraphs_to_html(
-        [ParagraphDef(text="Read more", link="https://example.com")]
+        [ParagraphDef(text="Read more", link="https://example.com", size=16)]
     )
     assert html == (
         '<p data-line-height="default" style="line-height: 1.25;">'
         '<a rel="noopener noreferrer nofollow" href="https://example.com">'
-        '<span style="font-size: 14px;">Read more</span></a></p>'
+        '<span style="font-size: 16px;">Read more</span></a></p>'
+    )
+    # No size or colour: a bare <a>, as the editor writes it.
+    plain = ec._paragraphs_to_html(
+        [ParagraphDef(text="Read more", link="https://example.com")]
+    )
+    assert plain == (
+        '<p data-line-height="default" style="line-height: 1.25;">'
+        '<a rel="noopener noreferrer nofollow" href="https://example.com">'
+        "Read more</a></p>"
     )
 
 
@@ -2094,3 +2127,313 @@ def test_email_merge_field_resolvers_return_none_on_unknown_object(
 
     assert resolve_label("nonexistent", "field") is None
     assert resolve_objectname("nonexistent") is None
+
+
+# ---------------------------------------------------------------------------
+# Email builder creation defaults. Every expected value below is typed from
+# the Kizen web app source (react-app, read 2026-11-11), not read back from
+# `form_ui`'s tables, so a wrong table fails here.
+# ---------------------------------------------------------------------------
+
+# packages/page-builder/nodes/containers/ElementContainer.tsx:14-37
+# (DEFAULT_ELEMENT_CONTAINER_PROPS) with the email overrides at :39-46.
+_UI_EMAIL_CONTAINER = {
+    "containerBackgroundColor": "inherit",
+    "containerBackgroundImageName": "",
+    "containerBackgroundPositionX": "center",
+    "containerBackgroundPositionY": "top",
+    "containerBackgroundSize": "auto",
+    "containerBackgroundRepeat": "repeat",
+    "containerBorderColor": "#4A5660",
+    "containerBorderStyle": "solid",
+    "containerBorderWidth": "0",
+    "containerBorderRadius": True,
+    "containerBorderTopLeftRadius": "0",
+    "containerBorderTopRightRadius": "0",
+    "containerBorderBottomLeftRadius": "0",
+    "containerBorderBottomRightRadius": "0",
+    "containerMarginTop": "0",
+    "containerMarginRight": "0",
+    "containerMarginBottom": "0",
+    "containerMarginLeft": "0",
+    "containerPaddingTop": "0",
+    "containerPaddingRight": "0",
+    "containerPaddingBottom": "0",
+    "containerPaddingLeft": "0",
+}
+_UI_PADDING_10 = {
+    "containerPaddingTop": "10",
+    "containerPaddingRight": "10",
+    "containerPaddingBottom": "10",
+    "containerPaddingLeft": "10",
+}
+# settings/SectionSettings.jsx:31-40, settings/RowSettings.jsx:30-39.
+_UI_SIZING = {"width": "100", "maxWidth": "900", "alignment": "center"}
+
+_UI_EXPECTED = {
+    # gen/defaults.ts:25-50 + :61-72 (DefaultEmailProps.Root, :157) with
+    # utils/build.ts:57 backgroundColor aliceblue-25.
+    "Root": {
+        "containerBackgroundColor": "rgba(0,0,0,0)",
+        "containerBackgroundImageName": "",
+        "containerBackgroundPositionX": "0%",
+        "containerBackgroundPositionY": "0%",
+        "containerBackgroundSize": "auto",
+        "containerBackgroundRepeat": "repeat",
+        "containerBorderColor": "rgba(74,86,96,1)",
+        "containerBorderStyle": "solid",
+        "containerBorderWidth": "0",
+        "containerBorderRadius": True,
+        "containerBorderTopLeftRadius": "4",
+        "containerBorderTopRightRadius": "4",
+        "containerBorderBottomLeftRadius": "4",
+        "containerBorderBottomRightRadius": "4",
+        "containerMarginTop": "0",
+        "containerMarginRight": "0",
+        "containerMarginBottom": "0",
+        "containerMarginLeft": "0",
+        "containerPaddingTop": "0",
+        "containerPaddingRight": "0",
+        "containerPaddingBottom": "0",
+        "containerPaddingLeft": "0",
+        "backgroundColor": "#F8FAFF",
+        "width": "100",
+        "maxWidth": "900",
+        "alignment": "center",
+        "mobileBreak": "414",
+        "color": "rgba(74,86,96,1)",
+        "fontFamily": "Arial",
+        "fontSize": "14",
+        "linkColor": "rgba(82,142,249,1)",
+        "lineHeight": "1.25",
+    },
+    # nodes/Section/props.js:6-9 over SectionContainer.tsx:27-34.
+    "Section": {**_UI_EMAIL_CONTAINER, **_UI_PADDING_10, **_UI_SIZING},
+    # nodes/Row/props.js:6-9 over RowContainer.tsx:27-33; Row.craft
+    # defaultProps puts `columns` first (nodes/Row/Row.jsx:318-325).
+    "Row": {"columns": [1], **_UI_EMAIL_CONTAINER, **_UI_PADDING_10, **_UI_SIZING},
+    "Cell": {"__width": 1},
+    # nodes/Text/props.js:6-9 over TextContainer.tsx:19-25.
+    "Text": {**_UI_EMAIL_CONTAINER, **_UI_PADDING_10},
+    # nodes/Button/props.ts:10-31,44-49 over ButtonContainer.tsx:22-28; kds
+    # theme.ts teal-300 #4BC7B4, gray-50 #FFFFFF, gray-900 #2E373E.
+    "Button": {
+        "color": "#4BC7B4",
+        "label": "Go",
+        "textColor": "#FFFFFF",
+        "action": "url",
+        "url": "https://example.com",
+        "borderSize": "0",
+        "borderRadius": "8",
+        "borderColor": "#2E373E",
+        "paddingTop": "10",
+        "paddingRight": "20",
+        "paddingBottom": "10",
+        "paddingLeft": "20",
+        "fontSize": "12",
+        "textStyles": [],
+        "alignment": "center",
+        "fontFamily": "Arial",
+        **_UI_EMAIL_CONTAINER,
+        "containerPaddingTop": "10",
+        "containerPaddingRight": "0",
+        "containerPaddingBottom": "10",
+        "containerPaddingLeft": "0",
+    },
+    # nodes/Divider/props.js:7-19 over DividerContainer.tsx:15-22; gray-600.
+    "Divider": {
+        **_UI_EMAIL_CONTAINER,
+        "containerBorderRadius": False,
+        **_UI_PADDING_10,
+        "alignment": "center",
+        "borderStyle": "solid",
+        "color": "#A8B3BC",
+        "size": "1",
+        "width": "100",
+    },
+    # nodes/Image/props.js:6-9 then utils/image.ts:33-47 (getDefaultImageProps).
+    "Image": {
+        **_UI_EMAIL_CONTAINER,
+        "src": f"https://{ec.OFFLINE_HOST_PLACEHOLDER}/api/files/"
+        f"{ec.OFFLINE_FILE_PLACEHOLDER}/download",
+        "name": "logo.png",
+        "fileId": ec.OFFLINE_FILE_PLACEHOLDER,
+        "naturalHeight": 32,
+        "naturalWidth": 64,
+        "size": "auto",
+        "unit": "pixel",
+        "height": None,
+        "width": None,
+        "display": "flex",
+        "position": "center",
+        "alt": "",
+        "link": "",
+    },
+}
+
+
+def _unstyled_spec(png_path: Path) -> EmailTemplateDef:
+    return EmailTemplateDef.model_validate(
+        {
+            "name": "Unstyled",
+            "sections": [
+                {
+                    "rows": [
+                        {
+                            "cells": [
+                                {
+                                    "blocks": [
+                                        {
+                                            "kind": "text",
+                                            "paragraphs": [{"text": "Hi"}],
+                                        },
+                                        {
+                                            "kind": "button",
+                                            "label": "Go",
+                                            "url": "https://example.com",
+                                        },
+                                        {"kind": "divider"},
+                                        {"kind": "image", "file": str(png_path)},
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+        }
+    )
+
+
+def _build_from_spec(spec: EmailTemplateDef) -> tuple[dict, str]:
+    return ec.build_email_content(
+        ec.assemble_sections(ec.offline_resolve_spec_images(spec))
+    )
+
+
+def test_unstyled_spec_craft_json_matches_the_email_builders_creation_props(
+    tmp_path: Path,
+):
+    png_path = tmp_path / "logo.png"
+    png_path.write_bytes(_make_png(64, 32))
+    craft_json, _content = _build_from_spec(_unstyled_spec(png_path))
+
+    seen = set()
+    for node in craft_json.values():
+        name = _resolved_name(node)
+        seen.add(name)
+        expected = _UI_EXPECTED[name]
+        # JSON text, so a bool/int/str or None/"" mix-up fails too; and the
+        # key order the builder writes.
+        assert json.dumps(node["props"]) == json.dumps(expected), name
+    assert seen == set(_UI_EXPECTED)
+
+
+def test_unstyled_button_compiles_to_the_anchor_kizens_own_compile_writes():
+    """Typed from the output of Kizen's own email compile (packages/mjml +
+    mrml 1.4.12, run 2026-11-11) on a tree with one unstyled button."""
+    sections = [
+        ec.section(
+            [ec.row([ec.cell([ec.button_block("Go", "https://x.test")])])],
+        )
+    ]
+    _craft_json, content = ec.build_email_content(sections)
+    assert (
+        '<a href="https://x.test" target="_blank" style="display:inline-block;'
+        "background:#4BC7B4;color:#FFFFFF;font-family:Arial;font-size:12px;"
+        "font-weight:normal;line-height:120%;margin:0;text-decoration:none;"
+        "text-transform:none;padding:10px 20px 10px 20px;mso-padding-alt:0px;"
+        'border-radius:8px;">Go</a>'
+    ) in content
+
+
+def test_unstyled_section_compiles_with_no_background_of_its_own():
+    """`inherit` maps to no background in Kizen's compile
+    (packages/mjml/src/styles.ts:33-42), so the template's own #F8FAFF shows
+    through."""
+    sections = [ec.section([ec.row([ec.cell([ec.text_block("<p>x</p>")])])])]
+    craft_json, content = ec.build_email_content(sections)
+    section_id = next(
+        nid for nid, n in craft_json.items() if _resolved_name(n) == "Section"
+    )
+    assert craft_json[section_id]["props"]["containerBackgroundColor"] == "inherit"
+    assert f".section-{section_id} {{ background-color" not in content
+    assert "background-color:inherit" not in content
+
+
+def test_explicit_falsy_spec_values_win_over_the_email_builders_defaults():
+    spec = EmailTemplateDef.model_validate(
+        {
+            "name": "Falsy",
+            "sections": [
+                {
+                    "background_color": "",
+                    "padding": {"top": "0"},
+                    "rows": [
+                        {
+                            "width": "0",
+                            "padding": {"left": "0"},
+                            "cells": [
+                                {
+                                    "blocks": [
+                                        {
+                                            "kind": "button",
+                                            "label": "",
+                                            "url": "",
+                                            "color": "",
+                                            "border_radius": "0",
+                                            "padding_left": "0",
+                                            "padding_right": "",
+                                            "alignment": "left",
+                                        },
+                                        {"kind": "divider", "size": "0", "color": ""},
+                                    ]
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    craft_json, _content = _build_from_spec(spec)
+
+    section = _props_of(craft_json, "Section")
+    assert section["containerBackgroundColor"] == ""
+    # Only the side the spec set changes; the rest keep the builder's 10.
+    assert (
+        section["containerPaddingTop"],
+        section["containerPaddingRight"],
+        section["containerPaddingBottom"],
+        section["containerPaddingLeft"],
+    ) == ("0", "10", "10", "10")
+
+    row = _props_of(craft_json, "Row")
+    assert row["width"] == "0"
+    assert (row["containerPaddingTop"], row["containerPaddingLeft"]) == ("10", "0")
+
+    button = _props_of(craft_json, "Button")
+    assert (
+        button["label"],
+        button["url"],
+        button["color"],
+        button["borderRadius"],
+        button["paddingLeft"],
+        button["paddingRight"],
+        button["alignment"],
+    ) == ("", "", "", "0", "0", "", "left")
+
+    divider = _props_of(craft_json, "Divider")
+    assert (divider["size"], divider["color"]) == ("0", "")
+
+
+def test_email_defaults_offer_no_field_or_html_block():
+    """The email tray (creator-elements.js:27-35) has neither, so building
+    one with the email defaults fails instead of inventing its props."""
+    with pytest.raises(ValueError, match="email builder has no HTML block"):
+        form_ui.build_content_tree(
+            [form_ui.section([form_ui.row([form_ui.cell([form_ui.html_block("x")])])])],
+            defaults=form_ui.EMAIL_DEFAULTS,
+        )
+    with pytest.raises(ValueError, match="email builder has no field block"):
+        dict(form_ui.EMAIL_DEFAULTS.field)

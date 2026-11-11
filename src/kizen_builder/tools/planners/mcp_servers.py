@@ -34,9 +34,11 @@ READ_ONLY_KEYS = (
     "sharing_stats",
 )
 
+# What the UI's New MCP Server modal sends when its sharing controls are left
+# alone: no access for all team members and no grants. It sends no `private`;
+# the server stores False. Unlike dashboards, it adds no Admin role.
 DEFAULT_SHARING: dict[str, Any] = {
-    "private": False,
-    "all_team_members": 1,
+    "all_team_members": 0,
     "roles": {"view": [], "edit": [], "admin": []},
     "team_members": {"view": [], "edit": [], "admin": []},
 }

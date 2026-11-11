@@ -57,7 +57,7 @@ options:
 
 ```
 GET   /api/pipelines/{object_pk}/stages                  # list, ?ordering=order
-POST  /api/pipelines/{object_pk}/stages                  # create: {name, status, order} required
+POST  /api/pipelines/{object_pk}/stages                  # create: {name} required; status defaults to open, order to last
 PATCH /api/pipelines/{object_pk}/stages/{id}             # partial update
 POST  /api/pipelines/{object_pk}/stages/remove-stage     # delete + migrate: {id, new_stage_id}
 PATCH /api/records/{object_uuid}/{entity_id}/move        # move one record: {stage_id}

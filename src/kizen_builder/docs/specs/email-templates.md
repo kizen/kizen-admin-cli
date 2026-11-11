@@ -55,6 +55,9 @@ produce, offline, with `messages templates craft-config --spec-file <f>
 }
 ```
 
+- `subject` is optional. Omitted, it is not sent: a create stores Kizen's
+  blank default, and `update --spec-file` leaves the live subject as it is
+  (`"subject": ""` clears it).
 - `sections[].rows[].layout` is one of **4 v1 presets**, a closed enum — a
   typo'd name is a spec-validation error, not a bad fractions array to catch
   later. `cells` must have exactly the count the preset needs.
@@ -80,13 +83,14 @@ produce, offline, with `messages templates craft-config --spec-file <f>
     paragraph is rendered into the canonical markup Kizen's own rich-text
     editor normalises **to** on save for the single-run, single-style,
     single-link case (`<p data-line-height="default" style="line-height:
-    1.25;">` + `<span style="font-size: Npx;">` + `<strong>` + `<a
-    rel="noopener noreferrer nofollow">`), not raw HTML — there is no
+    1.25;">` + a `<span style="font-size: Npx; color: ...;">` when `size`
+    or `color` is set + `<strong>` + `<a rel="noopener noreferrer
+    nofollow">`), not raw HTML — there is no
     raw-HTML escape hatch on this surface (`TextBlockDef.html` was removed;
     a lingering `html` key fails validation loudly, naming `paragraphs` as
-    the expected field). `size` omitted defaults to the builder's own
-    default span size (`14`px), not "no span" — every live canonical span
-    carries an explicit size. `text` may contain `{{ namespace.field }}`
+    the expected field). `size` omitted writes no font size, as the editor
+    does until a size is picked, so the text takes the template's 14px.
+    `text` may contain `{{ namespace.field }}`
     merge-field tokens, rendered inline — see
     "Merge fields in message content" below. `automation_variable.*` tokens
     are rejected at spec-validation time: library templates aren't scoped
@@ -94,11 +98,12 @@ produce, offline, with `messages templates craft-config --spec-file <f>
 
     This is a closed vocabulary, and it does not cover every paragraph
     shape the live editor produces: the same reference template used to
-    derive this format also contains paragraphs with a bare `<a>` and no
-    `<span>` at all, and spans with a `<strong>`-wrapped run alongside plain
-    text in the same span (bold on part of a run, not the whole paragraph).
-    Neither is representable via `paragraphs`, and — because `html` is
-    gone — neither can be authored from this CLI at all. Not supported.
+    derive this format also contains spans with a `<strong>`-wrapped run
+    alongside plain text in the same span (bold on part of a run, not the
+    whole paragraph). That is not representable via `paragraphs`, and —
+    because `html` is gone — cannot be authored from this CLI at all. Not
+    supported. (Its bare-`<a>` paragraphs are: a `link` with no `size` or
+    `color`.)
   - `image`: `{"kind": "image", "file": "<local path>", "alt": "", "link": "", "width": 150,
     "container_width": null, "max_width": null, "max_height": null}`.
     `file` is a **local path**, not a `file_id` — there is no CLI surface to
@@ -114,14 +119,15 @@ produce, offline, with `messages templates craft-config --spec-file <f>
     `fileId`/`src`, real dimensions still read from the file's own header
     bytes) so a dry run never writes. `container_width`/`max_width`/
     `max_height` default to `null`, meaning the corresponding `Image.props`
-    key is omitted entirely, matching this emitter's output before these
-    fields existed.
+    key is not sent.
   - `button`: `{"kind": "button", "label": "...", "url": "...", "color": null,
-    "border_radius": "8", "padding_left": "20", "padding_right": "20",
-    "alignment": "center"}`. `alignment` is a closed enum
+    "border_radius": null, "padding_left": null, "padding_right": null,
+    "alignment": null}`. `alignment` is a closed enum
     (`left`/`center`/`right`).
-  - `divider`: `{"kind": "divider", "color": null, "size": "3"}` — `size` is
+  - `divider`: `{"kind": "divider", "color": null, "size": null}` — `size` is
     the rule's thickness in px.
+  - Every styling key left `null` (or out) keeps the email builder's own
+    default; see "Styling defaults" below.
 - `sections[].max_width`/`container_width`/`padding` and
   `sections[].rows[].width`/`container_width`/`padding` set `Section`/`Row`
   width and padding directly. `padding` is `{"top", "right", "bottom",
@@ -142,12 +148,12 @@ produce, offline, with `messages templates craft-config --spec-file <f>
   same "redundant-but-must-agree" trust model this surface already uses for
   `Row.props.columns` vs. every `Cell.props.__width`.
 
-  Defaults reproduce this emitter's pre-existing hardcoded output exactly
-  (`Section.max_width: "900"`, `Row.width: "100"`, all padding uniform
-  `"10"`, no `containerWidth` key on either node) — **not** the reference
-  template's own common values (`Section.max_width: "600"`,
-  `Row.containerWidth: "580"`), which a spec sets explicitly when targeting
-  that layout.
+  Left out, each keeps the email builder's own value (`maxWidth: "900"`,
+  `width: "100"`, padding `"10"` on each side; a `padding` object that
+  names only some sides changes only those). There is no `containerWidth`
+  key unless the spec sets one. The reference template's own common values
+  (`Section.max_width: "600"`, `Row.containerWidth: "580"`) are set
+  explicitly by a spec targeting that layout.
 
   **These values also drive the compiled `content`'s row width — not just
   `craft_json`.** Each row's mso table width and its `.section-<rowId> {
@@ -158,9 +164,7 @@ produce, offline, with `messages templates craft-config --spec-file <f>
   `"100"`) — confirmed live against the reference template, where a
   `width: '75'` row on a `containerWidth: '580'` row compiles to `435px`
   (`580 * 0.75`), not `580px`. With every field at its default this
-  reduces to exactly `900 - 10 - 10 = 880`, this emitter's original
-  hardcoded value — so an all-defaults spec's compiled HTML is unchanged. A
-  spec that sets `Section.max_width` (or a row's own `container_width`/
+  reduces to `900 - 10 - 10 = 880`. A spec that sets `Section.max_width` (or a row's own `container_width`/
   `width`) without this derivation would otherwise produce a `craft_json`
   that renders at the new width in Kizen's builder while `content` — the
   HTML actually sent — stayed at the old width: `craft_summary()`'s
@@ -168,7 +172,7 @@ produce, offline, with `messages templates craft-config --spec-file <f>
   divergence, since node ids and text both still match.
 
   **Padding follows the same rule.** Each `Section`/`Row`'s own
-  `containerPadding{Top,Right,Bottom,Left}` — default uniform `"10"` or an
+  `containerPadding{Top,Right,Bottom,Left}` — the builder's `"10"` or an
   explicit `padding` override — is rendered as an inline
   `padding:Tpx Rpx Bpx Lpx;` (top/right/bottom/left, the same order as
   this emitter's `Button` padding) on that node's own wrapper
@@ -183,9 +187,10 @@ produce, offline, with `messages templates craft-config --spec-file <f>
   — a *simplified* version of Kizen's own wrapper: this emitter has no
   background-image concept at all (only `background_color`), so it skips the
   VML `<v:rect>`/`<v:fill>` fallback Kizen's compiler always emits alongside
-  it, even for a solid colour. Section's own `background_color` is applied
-  via a CSS class rule. When `container_width` is unset, there is no
-  wrapper ("`None` means no override").
+  it, even for a solid colour. Section's own `background_color`, when the
+  spec sets one, is applied via a CSS class rule; with none, the section
+  has no background of its own. When `container_width` is unset, there is
+  no wrapper.
 - `sender_type` and `from_name_type` are not spec keys. They are hard-coded
   to `"business"`/`"default"`, the only values ever observed live — see
   "Other top-level fields" below. There is no `--sender-type` flag.
@@ -197,6 +202,41 @@ produce, offline, with `messages templates craft-config --spec-file <f>
 No flag and no spec key on `create` accepts a raw `craft_json` or `content`
 value, on purpose — that's the exact "hand-author both fields and hope they
 agree" foot-gun this whole surface exists to close.
+
+### Styling defaults
+
+Each node gets the props the Kizen email builder writes when a user adds it
+from the tray: the same keys, values and types, and nothing else. A template
+with no styling in the spec matches one built in the email builder without
+touching a style control. Read from the Kizen web app source, 2026-11-11; the
+cited source lines sit next to `EMAIL_DEFAULTS` in `tools/form_ui.py`.
+
+| node | default |
+|---|---|
+| template (`Root`) | background `#F8FAFF`, content width 900, Arial 14 `rgba(74,86,96,1)`, links `rgba(82,142,249,1)`, mobile break 414, as a new template in the library |
+| `Section`, `Row` | no background of its own (`inherit`), padding 10, `maxWidth` "900", `width` "100", `alignment` "center" |
+| `Text` | padding 10 |
+| `Button` | fill `#4BC7B4`, white (`#FFFFFF`) 12px Arial text, radius 8, padding 10/20, border `#2E373E` width 0, centred; block padding 10 above and below |
+| `Divider` | `#A8B3BC`, 1px, solid, full width, padding 10 |
+| `Image` | `size: "auto"`, `width: null` (the image's own size), no padding |
+| every block | background `inherit`, background position `center top`, square corners (radii `"0"`), border `#4A5660` width 0 |
+
+The settings panel writes a Section's or Row's `width`/`maxWidth`/`alignment`;
+the builder opens it on the node a user has just added. Not sent:
+`containerWidth` on sections, rows and images, which the builder measures and
+writes when the template is next opened, and `openLinkInNewTab`, which an
+email button never gets on creation.
+
+A spec value replaces the default, an empty string or `"0"` included. A
+`text` paragraph with no `size` or `color` gets no `<span>`.
+
+**Compiled `content`.** The email builder compiles `content` by turning the
+tree into MJML (`packages/mjml` in the web app) and rendering it with `mrml`.
+Run on this emitter's tree for an unstyled spec, 2026-11-11, it gives the
+same button `<a>` style, the same divider colour and size, image padding 0,
+and no background on sections or images. This emitter's markup around those
+values is simpler than Kizen's, as listed per block under "`craft_json` node
+shape" below.
 
 ## Automation messages: create them *from a template*
 
@@ -365,11 +405,13 @@ Confirmed differences from a form page:
 - **`Root.props` is a form page's key set minus `tabletBreak`** — still has
   `backgroundColor`/`color`/`fontFamily`/`fontSize`/`linkColor`/`lineHeight`/
   `width`/`maxWidth`/`alignment`/`mobileBreak` plus the full `container*` set.
-  The omission is confirmed present in two independent captures.
+  The omission is confirmed present in two independent captures, and matches
+  the web app's email Root defaults (2026-11-11).
 - **`Cell.props` is `{"__width": <fraction>}`** (e.g. `0.5` in a two-column
   row), not the empty `{}` that forms and layouts use — a literal
   double-underscore-prefixed key, redundant with the parent `Row`'s `columns`
-  array but apparently expected here. Both must be set and must agree.
+  array. Kizen's email compile writes it onto the tree it saves (web app
+  source, 2026-11-11). Both must be set and must agree.
 - **`displayName` is cosmetic.** Most nodes carry their own type name, but
   blocks inserted by the current builder get short random labels (`M1e`,
   `N1e`, `jBi`, `_F`). Nothing appears to read it.
@@ -394,10 +436,11 @@ Block props confirmed live 2026-08-25:
   `ParagraphDef`'s vocabulary is closed and not exhaustive of what the
   editor itself produces: re-measured 2026-08-26 against all 9 `Text` nodes
   in the reference template, 4 of 31 `<p>` blocks contain a bare `<a>` with
-  no `<span>` at all, and 2 spans carry a `<strong>`-wrapped run alongside
-  plain text in the same span (partial-run bold). `paragraphs` cannot
-  express either shape, and since `TextBlockDef.html` is gone, there is no
-  fallback for authoring one from this CLI — not supported.
+  no `<span>` at all (a `link` with no `size` or `color` writes this), and 2
+  spans carry a `<strong>`-wrapped run alongside plain text in the same span
+  (partial-run bold). `paragraphs` cannot express partial-run bold, and
+  since `TextBlockDef.html` is gone, there is no fallback for authoring it
+  from this CLI — not supported.
 - **`Image`** — `src` is host-absolute. Two URL schemes are both
   confirmed live on a plain `Image` node, not just on `Attachments`:
   `https://<host>/api/files/{fileId}/download` (used by the "All Rows"
@@ -425,7 +468,12 @@ Block props confirmed live 2026-08-25:
   | `width` | compiled `<img>` `width` attr | `.image-<nodeId>-auto` rule |
   |---|---|---|
   | set (fixed mode) | that value | not emitted |
-  | omitted (auto mode) | parent Section's `containerWidth`, falling back to `Root.maxWidth` if unset (the fallback is *inferred*, not observed live) | emitted: `.image-<nodeId>-auto > table td { width:100% !important; max-width:<naturalWidth>px; }` |
+  | omitted (auto mode) | parent Section's `containerWidth`, falling back to `Root.maxWidth` if unset | emitted: `.image-<nodeId>-auto > table td { width:100% !important; max-width:<naturalWidth>px; }` |
+
+  The `Root.maxWidth` fallback differs from Kizen's compile: run on an
+  unstyled 1-column template (2026-11-11), it writes the column's width less
+  the image's padding (`880`), where this emitter writes `900`. It also
+  leaves `alt` out when empty; this emitter writes `alt=""`.
 
   Both modes compile the `<img>` to the same attribute/style set
   (`height="auto"`, `width:100%` in the inline style alongside the explicit
@@ -440,10 +488,9 @@ Block props confirmed live 2026-08-25:
   remain spec-settable (`ImageBlockDef`) but stay **`craft_json`-only** —
   confirmed absent from the reference's compiled `content` in both sizing
   modes, not merely unused by this emitter's `Image` output.
-- **`Button`** — `{url, label, action: "url", color, textColor, fontSize,
-  fontFamily, alignment, borderSize, borderColor, borderRadius,
-  padding{Top,Left,Right,Bottom}, textStyles: [], openLinkInNewTab}` plus the
-  `container*` set. **Only the compiled `<a>` tag's own `style`** (`color`
+- **`Button`** — `{color, label, textColor, action: "url", url, borderSize,
+  borderRadius, borderColor, padding{Top,Right,Bottom,Left}, fontSize,
+  textStyles: [], alignment, fontFamily}` plus the `container*` set. **Only the compiled `<a>` tag's own `style`** (`color`
   hex-converted; `font-weight:normal`/`line-height:120%`/`margin:0`/
   `text-transform:none`/`mso-padding-alt:0px` present, in this order) is
   checked byte-exact against a real Button in a Kizen-authored template,
@@ -455,10 +502,11 @@ Block props confirmed live 2026-08-25:
   this emitter doesn't reproduce.
   `borderRadius`/`padding{Left,Right}`/`alignment` are spec-settable
   (`ButtonBlockDef.border_radius`/`padding_left`/`padding_right`/
-  `alignment`), defaulting to this emitter's pre-existing hardcoded values
-  (`"8"`/`"20"`/`"20"`/`"center"`); the reference template's own newsletter
-  button uses `"20"`/`"30"`/`"30"`/`"center"`, set explicitly, not inherited
-  as the default. `alignment` compiles to an `align="..."` attribute on
+  `alignment`); left out, they keep the email builder's `"8"`/`"20"`/`"20"`/
+  `"center"`. The reference template's own newsletter button uses
+  `"20"`/`"30"`/`"30"`/`"center"`, set explicitly. The button's own
+  `container*` padding (10 above and below) and its `borderSize`/
+  `borderColor` reach Kizen's `<td>` but not this emitter's. `alignment` compiles to an `align="..."` attribute on
   *this emitter's own* wrapping `<table>` (not Kizen's, per above); without
   it every button renders left-aligned in its cell regardless of the spec.
 - **`Divider`** — `{size, color, width, alignment, borderStyle}` plus the
@@ -466,10 +514,10 @@ Block props confirmed live 2026-08-25:
   a real capture. A real Kizen
   Divider wraps the rule in a two-level `<table><td>` plus an
   MSO-conditional fallback `<table>`, none of which this emitter produces.
-  `size` (thickness in px) is
-  spec-settable (`DividerBlockDef.size`), defaulting to this emitter's
-  pre-existing hardcoded `"3"`; the reference template's divider uses `"1"`,
-  set explicitly.
+  `size` (thickness in px) and `color` are
+  spec-settable (`DividerBlockDef.size`/`color`); left out, they keep the
+  email builder's `"1"` and `#A8B3BC`. Kizen writes the rule as
+  `border-top:solid 1px #A8B3BC`; this emitter writes `1px solid`.
 - **`Attachments`** — `props.attachments` is a list of **full file records**
   (id, key, url, name, size_bytes, content_type, thumbnail_url, `is_public`,
   and an `employee` object naming the uploader), plus an

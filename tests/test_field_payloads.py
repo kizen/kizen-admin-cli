@@ -186,8 +186,12 @@ def test_relationship_cardinality_resolves_to_wire_relation_type(
     assert plan.operations[0].payload["relation"]["relation_type"] == wire_relation_type
 
 
-def test_relationship_defaults_to_many_to_one(patch_live_lookups):
-    """No relation_type given -> defaults to many_to_one (wire: primary)."""
+def test_relationship_without_relation_type_omits_it_so_server_default_applies(
+    patch_live_lookups,
+):
+    """No relation_type in the spec -> the key is not sent. The server's
+    model default (`additional`, many-to-many) is also the UI wizard's
+    preselected value, so the CLI must not substitute its own."""
     plan = plan_create_field(
         PATIENTS,
         {
@@ -198,7 +202,7 @@ def test_relationship_defaults_to_many_to_one(patch_live_lookups):
         },
         category=PATIENT_INFO_CAT,
     )
-    assert plan.operations[0].payload["relation"]["relation_type"] == "primary"
+    assert "relation_type" not in plan.operations[0].payload["relation"]
 
 
 def test_create_rejects_existing_field(patch_live_lookups):

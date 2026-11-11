@@ -60,7 +60,10 @@ saved to the record's `customer_email`; Order number is form-only.
 Structurally close to `ActivityFieldDef` (see `activity.md`), **plus**
 `custom_object_field`, which ties the answer to the related record's field.
 Flat list ordered by `order`; `api_name` optional; same type-specific blocks as
-`field.md`. Unknown keys are rejected exactly as in `field.md`.
+`field.md`. Unknown keys are rejected exactly as in `field.md`. A field without
+`order` is sent without one: the server appends it after the form's highest
+order, so list order is kept and new fields follow the default fields Kizen adds
+to every new form (confirmed in source 2026-11-11).
 
 | Key | Notes |
 |-----|-------|
@@ -345,6 +348,39 @@ A form moves between pages only through `Button` blocks. Each button's
 
 `set-ui` has no target-page setting, so it writes only a Submit and Finish
 button. Set up multi-page navigation in the form builder.
+
+### Styling defaults
+
+Each node gets the props the Kizen form builder writes when a user adds it
+from the tray, including what its settings panel writes as it opens: the same
+keys, values and types, and nothing else. A page with
+no styling in the spec looks like one built in the UI without touching a style
+control. Read from the Kizen web app source, 2026-11-11; the cited source lines
+sit next to the defaults table in `tools/form_ui.py`. The ones you'll see:
+
+| node | default |
+|---|---|
+| page (`Root`) | background `#F8FAFF`, content width 900, Arial 14 — as a new page in the builder |
+| `Section`, `Row` | no background of its own (`inherit`), padding 10, then `width` "100", `maxWidth` "900" (the page's) and `alignment` "center", which the builder's Section and Row settings write as soon as one is added |
+| `Button` | fill `#4BC7B4`, white 12px text, radius 8, border `#2E373E` width 0 |
+| `Divider` | `#A8B3BC`, 1px, full width |
+| `Image` | `size: "auto"` (the image's own size) |
+| every block | `containerBorderRadius: true` (the Divider sends `false`), transparent (`inherit`) background, border `#4A5660` width 0 |
+
+The spec's `background_color` (section), `color` (button, divider), `width`
+(image: sends `size: "dynamic"`, `dimension: "width"`) and `columns` (row)
+replace the default, an empty string included.
+
+A `url` button on a form page gets `openLinkInNewTab: true`, which the builder
+writes when a user switches the action to URL. The thank-you page's buttons
+start as URL buttons, so there it isn't written and the link opens in the same
+tab.
+
+Not sent: `containerWidth` on sections, rows and images, which the builder
+measures and writes itself when the page is opened.
+
+A `simple` page's `heading` is bold (`<p><strong>…</strong></p>`): the builder
+has no heading block to match.
 
 ### A field input is one of TWO node types
 

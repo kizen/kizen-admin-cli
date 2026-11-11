@@ -75,7 +75,10 @@ Usage pattern:
 
 from __future__ import annotations
 
+import copy
+import re
 import uuid
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, TypeGuard
 
@@ -83,59 +86,7 @@ from kizen_builder import filtering
 from kizen_builder.api import dashboards as dash_api
 from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
-
-# ---------------------------------------------------------------------------
-# Default style — matches the Billing Dashboard palette
-# ---------------------------------------------------------------------------
-
-_CHART_THEME = [
-    {"dark": "#32c055", "light": "#ADE6BB", "xlight": "#e6f7eb"},
-    {"sky": "#4090F7", "dark": "#085bee", "light": "#9CBDF8", "xlight": "#e1ebfd"},
-    {"dark": "#f3a800", "light": "#FADC99", "xlight": "#FEF5E2"},
-    {"dark": "#4a21d1", "light": "#B7A6ED", "xlight": "#e9e4fa"},
-    {"dark": "#38b3b8", "light": "#9BD9DB"},
-    {"dark": "#f55f04", "light": "#FAAF81"},
-    {"dark": "#dc1422", "light": "#ED8990", "xlight": "#FEE2E5"},
-    {"dark": "#c132b1", "light": "#E098D8"},
-    {"dark": "#ae764a", "light": "#D6BAA4"},
-    {"light": "#d8dde1"},
-]
-
-DEFAULT_STYLE_SETTINGS: dict[str, Any] = {
-    "boldTitle": False,
-    "chartTheme": _CHART_THEME,
-    "dropShadow": True,
-    "fontFamily": "Proxima Nova",
-    "borderColor": "rgba(0,0,0,0)",
-    "italicTitle": False,
-    "borderWeight": 0,
-    "titleAllCaps": True,
-    "titleFontSize": "12",
-    "titleLineHeight": 2.5,
-    "topLeftBorderRadius": 8,
-    "titleBackgroundColor": "rgba(244,248,252,1)",
-    "topRightBorderRadius": 8,
-    "bottomLeftBorderRadius": 8,
-    "bottomRightBorderRadius": 8,
-}
-
-_DASHLET_STYLE_CONFIG: dict[str, Any] = {
-    "bold_title": False,
-    "chart_theme": _CHART_THEME,
-    "drop_shadow": True,
-    "font_family": "Proxima Nova",
-    "border_color": "rgba(0,0,0,0)",
-    "italic_title": False,
-    "border_weight": 0,
-    "title_all_caps": True,
-    "title_font_size": "12",
-    "title_line_height": 2.5,
-    "title_background_color": "rgba(244,248,252,1)",
-    "top_left_border_radius": 8,
-    "top_right_border_radius": 8,
-    "bottom_left_border_radius": 8,
-    "bottom_right_border_radius": 8,
-}
+from kizen_builder.tools import form_ui
 
 NO_FILTER: dict[str, Any] = {"custom_filters": {"and": True, "query": []}}
 """The wire shape for "no filter" on a dashlet. An empty ``{}`` 400s."""
@@ -194,13 +145,13 @@ def _default_date_filter(
 # ---------------------------------------------------------------------------
 
 
-def layout(x: int, y: int, w: int = 12, h: int = 3) -> dict:
+def layout(x: int, y: int, w: int, h: int) -> dict:
     """Grid layout for a dashlet on the 12-column dashboard grid.
 
     ``w`` is a column span (1–12); ``w=12`` is full width, ``w=6`` half. ``h``
     is a row span — real dashboards run small: numeric tiles ~2, donut/bar/
     line/table ~3, calendars ~4–5, HTML banners ~2–3 (see the sizing table in
-    `kizen docs show dashboard`). Defaults are a sensible full-width row.
+    `kizen docs show dashboard`).
     """
     cell_id = str(uuid.uuid4())
     return {"h": h, "i": cell_id, "w": w, "x": x, "y": y}
@@ -253,10 +204,7 @@ def table_of_records_config(
         filters: Output of filtering.as_custom_filters(), or None for no filter.
         column_widths: Optional {field_uuid: "200px"} map.
     """
-    fe: dict[str, Any] = {
-        "columns": columns,
-        "dashlet_style_config": _DASHLET_STYLE_CONFIG,
-    }
+    fe: dict[str, Any] = {"columns": columns}
     if column_widths:
         fe["column_widths"] = column_widths
 
@@ -301,7 +249,6 @@ def field_breakdown_config(
                 "consider_null_values": False,
             },
         },
-        "fe_extra_info": {"dashlet_style_config": _DASHLET_STYLE_CONFIG},
     }
 
 
@@ -325,7 +272,6 @@ def field_sum_config(
         "metric_type": "fields_value_sum",
         "report_type": "field_metrics",
         "filters": filters or NO_FILTER,
-        "fe_extra_info": {"dashlet_style_config": _DASHLET_STYLE_CONFIG},
     }
 
 
@@ -359,7 +305,6 @@ def pivot_table_config(
         "filters": filters or NO_FILTER,
         "fe_extra_info": {
             "pivot_table_config": {"cols": [col_width] * (len(row_fields) + 1)},
-            "dashlet_style_config": _DASHLET_STYLE_CONFIG,
         },
     }
 
@@ -414,7 +359,6 @@ def field_range_breakdown_config(
                 "buckets": wire_buckets,
             },
         },
-        "fe_extra_info": {"dashlet_style_config": _DASHLET_STYLE_CONFIG},
     }
 
 
@@ -477,10 +421,7 @@ def pipeline_metric_config(
             pipeline_values_over_time; omit for the server default.
         stages: Restrict to specific pipeline stage UUIDs; omit for all stages.
     """
-    fe_extra: dict[str, Any] = {
-        "date_filter": _default_date_filter(),
-        "dashlet_style_config": _DASHLET_STYLE_CONFIG,
-    }
+    fe_extra: dict[str, Any] = {"date_filter": _default_date_filter()}
     config: dict[str, Any] = {
         "stages": stages or [],
         "object_id": object_id,
@@ -546,10 +487,7 @@ def activity_metric_config(
         "metric_type": metric_type,
         "report_type": report_type,
         "activity_ids": [],
-        "fe_extra_info": {
-            "date_filter": _default_date_filter(),
-            "dashlet_style_config": _DASHLET_STYLE_CONFIG,
-        },
+        "fe_extra_info": {"date_filter": _default_date_filter()},
         "include_roles": include_roles or [],
         "include_employees": include_employees or [],
         "include_employees_with_roles": include_employees_with_roles or [],
@@ -592,7 +530,6 @@ def scheduled_activities_config(
         "activity_ids": [],
         "fe_extra_info": {
             "date_filter": _default_date_filter(),
-            "dashlet_style_config": _DASHLET_STYLE_CONFIG,
             "scheduled_activities_config": {
                 "time_period": time_period,
                 "calendar_view": calendar_view,
@@ -747,31 +684,17 @@ def marketing_metric_config(
 # Static-content / HTML dashlets (entity_type=static_content)
 # ---------------------------------------------------------------------------
 
+# Every node starts from what the Kizen homepage/dashboard block builder
+# writes when a user adds it: form_ui.HOMEPAGE_DEFAULTS, which carries the
+# front-end citations. That table is camelCase; a dashlet's `content` is the
+# same tree with snake_case keys (confirmed live 2026-07-20).
 
-_CONTAINER_DEFAULTS: dict[str, Any] = {
-    "container_margin_top": "0",
-    "container_margin_left": "0",
-    "container_padding_top": "10",
-    "container_border_color": "rgba(74,86,96,1)",
-    "container_border_style": "solid",
-    "container_border_width": "0",
-    "container_margin_right": "0",
-    "container_padding_left": "10",
-    "container_border_radius": False,
-    "container_margin_bottom": "0",
-    "container_padding_right": "10",
-    "container_padding_bottom": "10",
-    "container_background_size": "auto",
-    "container_background_color": "rgba(0,0,0,0)",
-    "container_background_repeat": "repeat",
-    "container_background_image_name": "",
-    "container_background_position_x": "0%",
-    "container_background_position_y": "0%",
-    "container_border_top_left_radius": "4",
-    "container_border_top_right_radius": "4",
-    "container_border_bottom_left_radius": "4",
-    "container_border_bottom_right_radius": "4",
-}
+
+def _snake_props(props: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        re.sub(r"(?<!^)(?=[A-Z])", "_", key).lower(): copy.deepcopy(value)
+        for key, value in props.items()
+    }
 
 
 def _html_text_node(parent: str, html: str) -> tuple[str, dict]:
@@ -779,13 +702,7 @@ def _html_text_node(parent: str, html: str) -> tuple[str, dict]:
     return node_id, {
         "type": {"resolved_name": "Text"},
         "nodes": [],
-        "props": {
-            **_CONTAINER_DEFAULTS,
-            "container_margin_top": "10",
-            "container_margin_left": "10",
-            "container_margin_right": "10",
-            "container_margin_bottom": "10",
-        },
+        "props": _snake_props(form_ui.HOMEPAGE_DEFAULTS.text),
         "custom": {"text": html},
         "hidden": False,
         "parent": parent,
@@ -802,56 +719,21 @@ def _html_button_node(
     action: str,
     url: str = "",
     activity_id: str | None = None,
-    color: str = "rgba(74,33,209,1)",
+    color: str | None = None,
 ) -> tuple[str, dict]:
     """A "Button" node — either a link (``action="url"``) or a
     log-an-activity button (``action="log-activity"``, ``activity_id``
-    required — from ``kizen activities list``). Prop shape confirmed live
-    2026-07-20 from the Kitchen Sink Homepage's static-content dashlet.
+    required — from ``kizen activities list``). Node shape confirmed live
+    2026-07-20 from a homepage's static-content dashlet; ``color`` ``None``
+    keeps the builder's own button colour.
     """
     node_id = uuid.uuid4().hex[:24]
-    props: dict[str, Any] = {
-        "url": url,
-        "color": color,
-        "label": label,
-        "action": action,
-        "alignment": "center",
-        "font_size": "16",
-        "text_color": "#FFFFFF",
-        "border_size": "2",
-        "font_family": "Helvetica Neue",
-        "padding_top": "10",
-        "text_styles": [],
-        "border_color": "#000000",
-        "padding_left": "18",
-        "border_radius": "20",
-        "padding_right": "20",
-        "padding_bottom": "10",
-        "enable_recaptcha": False,
-        "container_margin_top": "0",
-        "open_link_in_new_tab": True,
-        "container_margin_left": "0",
-        "container_padding_top": "10",
-        "container_border_color": "#4A5660",
-        "container_border_style": "solid",
-        "container_border_width": "0",
-        "container_margin_right": "0",
-        "container_padding_left": "0",
-        "container_border_radius": True,
-        "container_margin_bottom": "0",
-        "container_padding_right": "0",
-        "container_padding_bottom": "10",
-        "container_background_size": "auto",
-        "container_background_color": "inherit",
-        "container_background_repeat": "repeat",
-        "container_background_image_name": "",
-        "container_background_position_x": "0%",
-        "container_background_position_y": "0%",
-        "container_border_top_left_radius": "4",
-        "container_border_top_right_radius": "4",
-        "container_border_bottom_left_radius": "4",
-        "container_border_bottom_right_radius": "4",
-    }
+    props = _snake_props(
+        form_ui._button_props(
+            {"label": label, "action": action, "url": url, "color": color},
+            form_ui.HOMEPAGE_DEFAULTS.button,
+        )
+    )
     if activity_id is not None:
         props["activity_id"] = activity_id
     return node_id, {
@@ -862,6 +744,8 @@ def _html_button_node(
         "hidden": False,
         "parent": parent,
         "is_canvas": False,
+        # As read from the live dashlet: the production builder's minified
+        # component name, which the source can't give.
         "display_name": "v0e",
         "linked_nodes": {},
     }
@@ -880,7 +764,10 @@ def _html_raw_node(parent: str, html: str) -> tuple[str, dict]:
     return node_id, {
         "type": {"resolved_name": "HTMLBlock"},
         "nodes": [],
-        "props": {**_CONTAINER_DEFAULTS, "html_content": html},
+        "props": {
+            **_snake_props(form_ui.HOMEPAGE_DEFAULTS.html_block),
+            "html_content": html,
+        },
         "custom": {},
         "hidden": False,
         "parent": parent,
@@ -908,15 +795,24 @@ def html_text_block(html: str) -> dict:
     return {"type": "text", "html": html}
 
 
-def html_button_url(label: str, url: str) -> dict:
-    """A button block linking to an external URL, for ``html_dashlet_config``'s ``rows``."""
-    return {"type": "button_url", "label": label, "url": url}
+def html_button_url(label: str, url: str, *, color: str | None = None) -> dict:
+    """A button block linking to an external URL, for ``html_dashlet_config``'s
+    ``rows``. ``color`` is the button fill; ``None`` keeps the builder's own."""
+    return {"type": "button_url", "label": label, "url": url, "color": color}
 
 
-def html_button_log_activity(label: str, activity_id: str) -> dict:
+def html_button_log_activity(
+    label: str, activity_id: str, *, color: str | None = None
+) -> dict:
     """A button block that logs an activity, for ``html_dashlet_config``'s
-    ``rows``. ``activity_id`` is an activity type UUID (``kizen activities list``)."""
-    return {"type": "button_log_activity", "label": label, "activity_id": activity_id}
+    ``rows``. ``activity_id`` is an activity type UUID (``kizen activities list``).
+    ``color`` is the button fill; ``None`` keeps the builder's own."""
+    return {
+        "type": "button_log_activity",
+        "label": label,
+        "activity_id": activity_id,
+        "color": color,
+    }
 
 
 def html_raw_block(html: str) -> dict:
@@ -929,7 +825,7 @@ def html_raw_block(html: str) -> dict:
 
 def html_dashlet_config(
     rows: str | list[list[dict]],
-    background_color: str = "transparent",
+    background_color: str | None = None,
 ) -> dict:
     """Config for a static-content/HTML dashlet built from Section > Row(s) > Cell(s).
 
@@ -943,6 +839,9 @@ def html_dashlet_config(
     layouts, images, and dividers are still NOT modeled — copy a live example
     via ``dashboards get <id> --raw`` and edit it directly for those.
 
+    Every node carries the props the Kizen block builder writes for a new
+    block (``form_ui.HOMEPAGE_DEFAULTS``); arguments replace them.
+
     Args:
         rows: Either a single HTML string (shorthand for one Section, one
             Row, one column, one Text block — the pre-2026-07-20 signature),
@@ -950,10 +849,21 @@ def html_dashlet_config(
             equal width) built with ``html_text_block``/``html_button_url``/
             ``html_button_log_activity``.
         background_color: The content block's overall background —
-            ``"transparent"`` (the default) or an ``rgba(...)``/``#hex`` string.
+            ``"transparent"``, an ``rgba(...)``/``#hex`` string, or ``None``
+            for the builder's own white.
     """
     if isinstance(rows, str):
         rows = [[html_text_block(rows)]]
+
+    root_props = _snake_props(form_ui.HOMEPAGE_DEFAULTS.root)
+    # The block builder writes its column count when it opens: 6 for a new
+    # block (StaticBlockBuilder/HomepageBuilder.tsx:101 defaultColumnSize,
+    # written by PageBuilder/builder/PageBuilderCanvas.jsx:73-85).
+    root_props["columns"] = 6
+    if background_color is not None:
+        root_props["background_color"] = (
+            "rgba(0,0,0,0)" if background_color == "transparent" else background_color
+        )
 
     root_id = "ROOT"
     section_id = uuid.uuid4().hex[:24]
@@ -961,24 +871,7 @@ def html_dashlet_config(
         "ROOT": {
             "type": {"resolved_name": "Root"},
             "nodes": [section_id],
-            "props": {
-                "color": "rgba(74,86,96,1)",
-                "height": 450,
-                "columns": 5,
-                "font_size": "14",
-                "max_width": 1372,
-                "has_shadow": True,
-                "link_color": "rgba(82,142,249,1)",
-                "font_family": "Arial",
-                "line_height": "1.25",
-                "mobile_break": "414",
-                "tablet_break": "768",
-                "background_color": (
-                    "rgba(0,0,0,0)"
-                    if background_color == "transparent"
-                    else background_color
-                ),
-            },
+            "props": root_props,
             "custom": {},
             "hidden": False,
             "parent": None,
@@ -989,13 +882,7 @@ def html_dashlet_config(
         section_id: {
             "type": {"resolved_name": "Section"},
             "nodes": [],
-            "props": {
-                "width": "100",
-                "alignment": "center",
-                "max_width": "1372",
-                **_CONTAINER_DEFAULTS,
-                "container_background_color": "rgba(0,0,0,0)",
-            },
+            "props": _snake_props(form_ui.HOMEPAGE_DEFAULTS.section),
             "custom": {},
             "hidden": False,
             "parent": root_id,
@@ -1023,7 +910,11 @@ def html_dashlet_config(
                 block_id, block_node = _html_text_node(cell_id, block["html"])
             elif btype == "button_url":
                 block_id, block_node = _html_button_node(
-                    cell_id, block["label"], action="url", url=block["url"]
+                    cell_id,
+                    block["label"],
+                    action="url",
+                    url=block["url"],
+                    color=block.get("color"),
                 )
             elif btype == "button_log_activity":
                 block_id, block_node = _html_button_node(
@@ -1031,6 +922,7 @@ def html_dashlet_config(
                     block["label"],
                     action="log-activity",
                     activity_id=block["activity_id"],
+                    color=block.get("color"),
                 )
             elif btype == "html":
                 block_id, block_node = _html_raw_node(cell_id, block["html"])
@@ -1054,12 +946,8 @@ def html_dashlet_config(
             "type": {"resolved_name": "Row"},
             "nodes": [],
             "props": {
-                "width": "100",
                 "columns": [share] * n,
-                "alignment": "center",
-                "max_width": "1372",
-                **_CONTAINER_DEFAULTS,
-                "container_background_color": "rgba(0,0,0,0)",
+                **_snake_props(form_ui.HOMEPAGE_DEFAULTS.row),
             },
             "custom": {},
             "hidden": False,
@@ -1107,15 +995,16 @@ def admin_role_id() -> str | None:
 
 
 def default_sharing_settings() -> dict[str, Any]:
-    """Sharing block visible to all team members, with Admin role as admin.
+    """The sharing block the Kizen UI starts a new dashboard or saved view
+    from: private, no access for all team members, and the Admin role as admin.
 
     Resolves the Admin role UUID live so the create/update payload satisfies
     Kizen's "Admin must have admin access" rule.
     """
     admin_id = admin_role_id()
     return {
-        "private": False,
-        "all_team_members": 1,
+        "private": True,
+        "all_team_members": 0,
         "roles": {"view": [], "edit": [], "admin": [admin_id] if admin_id else []},
         "team_members": {"view": [], "edit": [], "admin": []},
     }

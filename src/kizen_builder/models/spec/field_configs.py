@@ -82,14 +82,16 @@ class RelationConfig(BaseModel):
     target_object: ApiName = Field(
         description="api_name of the target custom object. Must exist in this spec."
     )
-    relation_type: RelationType | RelationCardinality = Field(
-        default="many_to_one",
+    relation_type: RelationType | RelationCardinality | None = Field(
+        default=None,
         description=(
             "Cardinality/directionality of the relation. Prefer the clear "
             "cardinality names (one_to_one, many_to_one, one_to_many, "
             "many_to_many) — matches what Kizen's UI shows. The raw wire "
             "values (primary, additional, primary_for, additional_for) are "
-            "also accepted for specs authored from live API output."
+            "also accepted for specs authored from live API output. If "
+            "omitted, it is not sent and Kizen creates a many_to_many "
+            "relation, the same default the UI's field wizard picks."
         ),
     )
     related_name: str | None = Field(

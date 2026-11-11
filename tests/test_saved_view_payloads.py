@@ -17,8 +17,10 @@ Quirks pinned here, from ``docs/specs/saved-views.md``'s wire-format section:
   * A quick filter's ``filters`` is a chip list (``quick_filter_settings``),
     not a query — the shape the UI POSTs.
   * ``sharing_settings`` defaults via ``default_sharing_settings()`` when
-    unset, and a template's ``{id, display_name}`` shape is normalized to
-    bare UUIDs on write — the same helper dashboards uses.
+    unset — private, no all-team access, Admin role as admin, the UI's save
+    dialog default — for all three, and a template's ``{id, display_name}``
+    shape is normalized to bare UUIDs on write — the same helpers dashboards
+    use.
   * Update ops diff against live state field-by-field and emit ``skip`` (not
     a no-op PATCH) when nothing changed.
   * ``owner``'s *read* shape expands to ``{id, display_name}``; writes take
@@ -36,6 +38,7 @@ import pytest
 import respx
 
 from kizen_builder import filtering
+from kizen_builder.tools import dashboards as dash_tools
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.planners import saved_views as sv_planners
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
@@ -54,6 +57,7 @@ CT_ID = "00000000-0000-4000-8000-000000000ct1"
 
 
 def _default_sharing() -> dict:
+    """A team-visible sharing block, as a live read of a shared view returns."""
     return {
         "private": False,
         "all_team_members": 1,
@@ -62,14 +66,25 @@ def _default_sharing() -> dict:
     }
 
 
+# What a new saved view gets when its spec has no sharing: the UI save
+# dialog's default. Written out literally so a change to the shared helper
+# shows up here.
+UI_DEFAULT_SHARING = {
+    "private": True,
+    "all_team_members": 0,
+    "roles": {"view": [], "edit": [], "admin": [ADMIN_ID]},
+    "team_members": {"view": [], "edit": [], "admin": []},
+}
+
+
 @pytest.fixture
 def no_existing_views(monkeypatch):
     """Baseline for create-path tests: 'patients' resolves to OBJ_ID, no
-    saved view with the target name exists yet, and sharing defaults without
-    a live admin-role lookup."""
+    saved view with the target name exists yet, and the real default sharing
+    is built without a live admin-role lookup."""
     monkeypatch.setattr(sv_planners, "resolve_object_id", lambda api_name: OBJ_ID)
     monkeypatch.setattr(sv_planners, "list_saved_views", lambda *a, **k: [])
-    monkeypatch.setattr(sv_planners, "default_sharing_settings", _default_sharing)
+    monkeypatch.setattr(dash_tools, "admin_role_id", lambda: ADMIN_ID)
 
 
 @pytest.fixture
@@ -135,9 +150,19 @@ def test_create_filter_group_minimal_payload(no_existing_views):
         "name": "Big deals",
         "config": {},
         "hidden": False,
-        "sharing_settings": _default_sharing(),
+        "sharing_settings": UI_DEFAULT_SHARING,
     }
     assert "owner" not in op.payload
+
+
+def test_new_filter_group_without_sharing_starts_private_like_the_ui(
+    no_existing_views,
+):
+    plan = sv_planners.plan_create_filter_group("patients", {"name": "Big deals"})
+    sharing = plan.operations[0].payload["sharing_settings"]
+    assert sharing["private"] is True
+    assert sharing["all_team_members"] == 0
+    assert sharing["roles"]["admin"] == [ADMIN_ID]
 
 
 def test_create_filter_group_includes_owner_when_set(no_existing_views):
@@ -439,7 +464,7 @@ def test_create_quick_filter_minimal_payload(no_existing_views, live_objects):
         "filters": {"quick_filter_settings": [], "quick_filtering_facets": False},
         "filter_count": 0,
         # The UI's save-modal default: private, no all-team access, Admin admin.
-        "sharing_settings": dict(_default_sharing(), private=True, all_team_members=0),
+        "sharing_settings": UI_DEFAULT_SHARING,
     }
     assert "owner" not in op.payload
 
@@ -822,7 +847,7 @@ def test_create_column_template_minimal_payload(no_existing_views, column_object
                 "name": _column("name", PATIENT_NAME_ID, "Patient Name", disabled=True)
             },
         },
-        "sharing_settings": dict(_default_sharing(), private=True, all_team_members=0),
+        "sharing_settings": UI_DEFAULT_SHARING,
     }
     assert "owner" not in op.payload
 

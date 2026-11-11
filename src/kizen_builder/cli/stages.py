@@ -89,8 +89,10 @@ def stages_list(
 def stages_create(
     pipeline: str = typer.Argument(..., help="Pipeline object api_name (or UUID)."),
     name: str = typer.Option(..., "--name", help="Stage display name."),
-    status: str = typer.Option(
-        "open", "--status", help="open | won | lost | disqualified."
+    status: str | None = typer.Option(
+        None,
+        "--status",
+        help="open | won | lost | disqualified. Kizen's default when omitted: open.",
     ),
     pct: int | None = typer.Option(
         None, "--pct", help="Percentage chance to close (0-100)."

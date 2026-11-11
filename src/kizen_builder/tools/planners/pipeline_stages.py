@@ -47,14 +47,18 @@ def plan_create_stage(
     pipeline: str,
     name: str,
     *,
-    status: str = "open",
+    status: str | None = None,
     percentage_chance_to_close: int | None = None,
     order: int | None = None,
 ) -> Plan:
-    """Plan creation of one stage on an existing pipeline object."""
+    """Plan creation of one stage on an existing pipeline object.
+
+    `status` and `order` are sent only when given: the server defaults
+    `status` to `open` and appends the stage after the highest `order`.
+    """
     env = load_env_config().name
     obj = _require_pipeline(pipeline)
-    if status not in _STAGE_STATUSES:
+    if status is not None and status not in _STAGE_STATUSES:
         raise PlanError(
             f"status must be one of {sorted(_STAGE_STATUSES)}, got {status!r}"
         )
@@ -66,25 +70,27 @@ def plan_create_stage(
             "Use plan_update_stage instead."
         )
 
-    payload: dict[str, Any] = {
-        "name": name,
-        "status": status,
-        "order": order if order is not None else len(stages),
-    }
+    payload: dict[str, Any] = {"name": name}
+    if status is not None:
+        payload["status"] = status
+    if order is not None:
+        payload["order"] = order
     if percentage_chance_to_close is not None:
         payload["percentage_chance_to_close"] = percentage_chance_to_close
 
+    preview: dict[str, Any] = {
+        "env": env,
+        "pipeline": obj.get("api_name"),
+        "name": name,
+    }
+    for key in ("status", "order"):
+        if key in payload:
+            preview[key] = payload[key]
     op = PlanOperation(
         action="create",
         kind="stage",
         key=f"{obj.get('api_name')}.stage:{name}",
-        preview={
-            "env": env,
-            "pipeline": obj.get("api_name"),
-            "name": name,
-            "status": status,
-            "order": payload["order"],
-        },
+        preview=preview,
         payload=payload,
         parent_object_uuid=obj["id"],
     )

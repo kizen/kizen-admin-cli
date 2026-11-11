@@ -1605,8 +1605,9 @@
 │                               {"field","op","value"}) resolved against --object, or a raw        │
 │                               {"custom_filters": {...}} block. Custom-object types only.         │
 │ --filter-file          <str>  Path to a JSON filter (same format as --filter).                   │
-│ --full                        Wrap the config in a full DashboardDef ready for `dashboards       │
-│                               create`.                                                           │
+│ --full                        Wrap the config in a full DashboardDef for `dashboards create`.    │
+│                               The dashlet has no layout; add one first (sizes: `kizen docs show  │
+│                               dashboard`).                                                       │
 │ --help                        Show this message and exit.                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1799,7 +1800,7 @@
 │                                         many records here can point to the same one),            │
 │                                         one_to_many (this object relates to many target          │
 │                                         records), many_to_many (multi-select on both sides).     │
-│                                         [default: many_to_one]                                   │
+│                                         Kizen's default when omitted: many_to_many.              │
 │ --relation-related-name          <str>  Display label for the inverse relation field shown on    │
 │                                         the target object. Defaults to this object's name.       │
 │ --dry-run                               Show the plan without applying.                          │
@@ -1917,8 +1918,8 @@
                                                                                                     
  Create one filter group (saved segment) on an object.                                              
                                                                                                     
- Sharing defaults to visible to all team members (Admin role as admin) —                            
- the same default `dashboards create` uses. Note: the exact rendering of                            
+ Sharing starts private (Admin role as admin), like the UI's save dialog                            
+ and `dashboards create`. Note: the exact rendering of                                              
  a filter group's config in the Kizen list-view UI hasn't been visually                             
  confirmed yet; it's built from the same filter DSL as `records list                                
  --filter` and automation condition steps.                                                          
@@ -2440,8 +2441,9 @@
  Create an MCP server from a JSON MCPServerDef.                                                     
                                                                                                     
  `name` and `api_name` are required. Tool names are checked against                                 
- `kizen mcp-servers tools`. With no `sharing_settings`, every team member                           
- can view it.                                                                                       
+ `kizen mcp-servers tools`. With no `sharing_settings`, it starts as the                            
+ UI's New MCP Server dialog does: no access for all team members and no                             
+ role or team member grants.                                                                        
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --spec-file          <str>  Path to a JSON MCPServerDef. Default: read from stdin.               │
@@ -2883,7 +2885,8 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ *  --name             <str>  Stage display name. [required]                                      │
-│    --status           <str>  open | won | lost | disqualified. [default: open]                   │
+│    --status           <str>  open | won | lost | disqualified. Kizen's default when omitted:     │
+│                              open.                                                               │
 │    --pct              <int>  Percentage chance to close (0-100).                                 │
 │    --order            <int>  Position among stages (defaults to last).                           │
 │    --dry-run                 Show the plan without applying.                                     │
