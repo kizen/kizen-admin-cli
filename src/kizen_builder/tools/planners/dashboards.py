@@ -19,7 +19,6 @@ from typing import Any
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import DashboardDef, DashletDef
 from kizen_builder.tools.dashboards import (
-    DEFAULT_STYLE_SETTINGS,
     compile_filters,
     default_sharing_settings,
     get_dashboard_detail,
@@ -53,18 +52,45 @@ def _check_custom_object_dashlets_need_homepage(
     if dash_type == "homepage":
         return
     for dl in dashlets:
-        if dl.config.get("entity_type") == "custom_object":
+        if (dl.config or {}).get("entity_type") == "custom_object":
             raise PlanError(
                 _CUSTOM_OBJECT_ONLY_ON_HOMEPAGE_MSG.format(
-                    name=dl.name or "[default]", dash_type=dash_type
+                    name=dl.name or _DEFAULT_DASHLET_NAME, dash_type=dash_type
                 )
             )
 
 
+# The API requires a ``type`` on create (DashboardSerializer.validate); this
+# is the one the UI's "Add dashboard" sends.
+_DEFAULT_DASHBOARD_TYPE = "generic_dashboard"
+
+# The API requires a dashlet name and has no default (Dashlet.name is a plain
+# TextField), so a new dashlet whose spec has none gets this one.
+_DEFAULT_DASHLET_NAME = "[default]"
+
+
+def _check_new_dashlets_have_config(new_dashlets: list[tuple[int, DashletDef]]) -> None:
+    """Refuse at plan time what the API would 400 mid-apply: a dashlet create
+    without ``config``, which ``DashletSerializer`` requires."""
+    for i, dl in new_dashlets:
+        if dl.config is None:
+            raise PlanError(
+                f"dashlet '{_dashlet_label(dl, i)}': config is required to "
+                "create a dashlet"
+            )
+
+
 def _dashboard_payload(d: DashboardDef) -> dict[str, Any]:
-    # An explicit sharing block might be copied from `dashboards get --raw`
-    # (read-shape {id, display_name} objects) — normalize to bare UUIDs. When
-    # omitted, build the default (all team members + Admin role as admin).
+    """The create body: only what the spec sets, plus the two values the API
+    needs that a spec may leave out — ``type`` and ``sharing_settings``.
+
+    An omitted ``type`` is ``generic_dashboard``, the UI's "Add dashboard".
+    Omitted sharing is ``default_sharing_settings()``, the UI's private
+    default. An explicit sharing block might be copied from `dashboards get
+    --raw` (read-shape {id, display_name} objects), so it's normalized to bare
+    UUIDs. Everything else omitted is left to the server: ``style_settings``
+    becomes ``{}``, ``hidden`` and ``published`` false.
+    """
     sharing = (
         normalize_sharing_settings(d.sharing_settings)
         if d.sharing_settings
@@ -73,13 +99,17 @@ def _dashboard_payload(d: DashboardDef) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "name": d.name,
         "api_name": d.api_name,
-        "type": d.type,
-        "custom_object": d.custom_object,
-        "hidden": d.hidden,
-        "published": d.published,
-        "style_settings": d.style_settings or DEFAULT_STYLE_SETTINGS,
+        "type": d.type or _DEFAULT_DASHBOARD_TYPE,
         "sharing_settings": sharing,
     }
+    for key, value in (
+        ("custom_object", d.custom_object),
+        ("hidden", d.hidden),
+        ("published", d.published),
+        ("style_settings", d.style_settings),
+    ):
+        if value is not None:
+            payload[key] = value
     return payload
 
 
@@ -89,42 +119,57 @@ def _dashlet_config(dl: DashletDef) -> dict[str, Any]:
     Wire filters (a ``custom_filters`` block, as a live read returns) pass
     through untouched.
     """
-    filters = dl.config.get("filters")
+    config = dl.config or {}
+    filters = config.get("filters")
     if not is_filter_spec(filters):
-        return dl.config
-    entity_type = dl.config.get("entity_type")
+        return config
+    name = dl.name or _DEFAULT_DASHLET_NAME
+    entity_type = config.get("entity_type")
     if entity_type != "custom_object":
         raise PlanError(
-            f"dashlet '{dl.name}': entity_type '{entity_type}' has no record "
+            f"dashlet '{name}': entity_type '{entity_type}' has no record "
             f"filter. A filter spec works on {FILTERABLE_TYPES_TEXT}."
         )
-    object_id = dl.custom_object or dl.config.get("object_id")
+    object_id = dl.custom_object or config.get("object_id")
     if not object_id:
         raise PlanError(
-            f"dashlet '{dl.name}': a filter spec needs the dashlet's "
+            f"dashlet '{name}': a filter spec needs the dashlet's "
             "custom_object to resolve field names against"
         )
     try:
-        return {**dl.config, "filters": compile_filters(filters, object_id)}
+        return {**config, "filters": compile_filters(filters, object_id)}
     except ValueError as e:
-        raise PlanError(f"dashlet '{dl.name}': {e}") from e
+        raise PlanError(f"dashlet '{name}': {e}") from e
 
 
-def _dashlet_payload(dl: DashletDef) -> dict[str, Any]:
-    return {
-        "name": dl.name,
-        "custom_object": dl.custom_object,
-        "layout": dl.layout,
-        "config": _dashlet_config(dl),
-    }
+def _dashlet_payload(dl: DashletDef, *, create: bool) -> dict[str, Any]:
+    """The dashlet body: only the fields the spec sets.
+
+    An update is a PATCH, so a field left out keeps its live value. On create
+    a missing ``name`` gets ``[default]`` and a missing ``layout`` or
+    ``custom_object`` is left to the server. A create without ``config``
+    never gets here: the plan refuses it (``_check_new_dashlets_have_config``).
+    """
+    payload: dict[str, Any] = {}
+    if dl.name is not None:
+        payload["name"] = dl.name
+    elif create:
+        payload["name"] = _DEFAULT_DASHLET_NAME
+    if dl.custom_object is not None:
+        payload["custom_object"] = dl.custom_object
+    if dl.layout is not None:
+        payload["layout"] = dl.layout
+    if dl.config is not None:
+        payload["config"] = _dashlet_config(dl)
+    return payload
 
 
 def _dashlet_label(dl: DashletDef, index: int) -> str:
     """Human token for a dashlet op key: its name, else its report_type, else i."""
-    if dl.name and dl.name != "[default]":
+    if dl.name and dl.name != _DEFAULT_DASHLET_NAME:
         base = dl.name
     else:
-        base = str(dl.config.get("report_type") or f"dashlet{index}")
+        base = str((dl.config or {}).get("report_type") or f"dashlet{index}")
     return f"{index}:{base}"
 
 
@@ -133,9 +178,11 @@ def plan_create_dashboard(spec: dict[str, Any] | DashboardDef) -> Plan:
     d = spec if isinstance(spec, DashboardDef) else DashboardDef.model_validate(spec)
     env = load_env_config().name
 
-    if d.type == "chart_group" and not d.custom_object:
+    dash_type = d.type or _DEFAULT_DASHBOARD_TYPE
+    if dash_type == "chart_group" and not d.custom_object:
         raise PlanError("chart_group dashboards require a 'custom_object' UUID.")
-    _check_custom_object_dashlets_need_homepage(d.type, d.dashlets)
+    _check_custom_object_dashlets_need_homepage(dash_type, d.dashlets)
+    _check_new_dashlets_have_config(list(enumerate(d.dashlets)))
 
     existing = next(
         (x for x in list_dashboards() if x.get("api_name") == d.api_name), None
@@ -155,7 +202,7 @@ def plan_create_dashboard(spec: dict[str, Any] | DashboardDef) -> Plan:
                 "env": env,
                 "api_name": d.api_name,
                 "name": d.name,
-                "type": d.type,
+                "type": dash_type,
                 "dashlets": len(d.dashlets),
             },
             payload=_dashboard_payload(d),
@@ -169,17 +216,17 @@ def plan_create_dashboard(spec: dict[str, Any] | DashboardDef) -> Plan:
                 key=f"{d.api_name}.{_dashlet_label(dl, i)}",
                 preview={
                     "env": env,
-                    "name": dl.name,
-                    "report_type": dl.config.get("report_type"),
-                    "chart_type": dl.config.get("chart_type"),
+                    "name": dl.name or _DEFAULT_DASHLET_NAME,
+                    "report_type": (dl.config or {}).get("report_type"),
+                    "chart_type": (dl.config or {}).get("chart_type"),
                 },
-                payload=_dashlet_payload(dl),
+                payload=_dashlet_payload(dl, create=True),
                 deferred_parent_object_key=d.api_name,
             )
         )
     return Plan.build(
         env=env,
-        summary=f"Create {d.type} '{d.api_name}' with {len(d.dashlets)} dashlet(s)",
+        summary=f"Create {dash_type} '{d.api_name}' with {len(d.dashlets)} dashlet(s)",
         operations=ops,
     )
 
@@ -204,6 +251,14 @@ def plan_update_dashboard(dashboard: str, spec: dict[str, Any] | DashboardDef) -
     dash_id = live["id"]
     raw = live["raw"]
     _check_custom_object_dashlets_need_homepage(d.type or raw.get("type"), d.dashlets)
+    live_dashlet_ids = {dl.get("id") for dl in (raw.get("dashlets") or [])}
+    _check_new_dashlets_have_config(
+        [
+            (i, dl)
+            for i, dl in enumerate(d.dashlets)
+            if not (dl.id and dl.id in live_dashlet_ids)
+        ]
+    )
 
     # --- dashboard metadata diff ---------------------------------------
     payload: dict[str, Any] = {}
@@ -244,21 +299,20 @@ def plan_update_dashboard(dashboard: str, spec: dict[str, Any] | DashboardDef) -
     ]
 
     # --- dashlet diff (create new / update by id) ----------------------
-    live_dashlet_ids = {dl.get("id") for dl in (raw.get("dashlets") or [])}
     for i, dl in enumerate(d.dashlets):
         if dl.id and dl.id in live_dashlet_ids:
+            preview: dict[str, Any] = {"env": env}
+            if dl.name is not None:
+                preview["dashlet"] = dl.name
+            preview["id"] = dl.id[:8]
+            preview["report_type"] = (dl.config or {}).get("report_type")
             ops.append(
                 PlanOperation(
                     action="update",
                     kind="dashlet",
                     key=f"{d.api_name or dash_id}.{_dashlet_label(dl, i)}",
-                    preview={
-                        "env": env,
-                        "dashlet": dl.name,
-                        "id": dl.id[:8],
-                        "report_type": dl.config.get("report_type"),
-                    },
-                    payload=_dashlet_payload(dl),
+                    preview=preview,
+                    payload=_dashlet_payload(dl, create=False),
                     existing_uuid=dl.id,
                     parent_object_uuid=dash_id,
                 )
@@ -271,10 +325,10 @@ def plan_update_dashboard(dashboard: str, spec: dict[str, Any] | DashboardDef) -
                     key=f"{d.api_name or dash_id}.{_dashlet_label(dl, i)}",
                     preview={
                         "env": env,
-                        "dashlet": dl.name,
-                        "report_type": dl.config.get("report_type"),
+                        "dashlet": dl.name or _DEFAULT_DASHLET_NAME,
+                        "report_type": (dl.config or {}).get("report_type"),
                     },
-                    payload=_dashlet_payload(dl),
+                    payload=_dashlet_payload(dl, create=True),
                     parent_object_uuid=dash_id,
                 )
             )

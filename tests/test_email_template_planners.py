@@ -149,6 +149,63 @@ def test_plan_update_from_spec_rebuilds_both_fields_together():
     assert summary["coupled"] is True
 
 
+def test_plan_create_without_subject_sends_none():
+    spec = EmailTemplateDef.model_validate({"name": "Newsletter", "sections": []})
+    plan = message_planners.plan_create_template_from_spec(spec, _resolved_sections())
+    assert "subject" not in plan.operations[0].payload
+
+
+def test_plan_create_preview_leaves_out_an_unset_subject():
+    spec = EmailTemplateDef.model_validate({"name": "Newsletter", "sections": []})
+    plan = message_planners.plan_create_template_from_spec(spec, _resolved_sections())
+    assert "subject" not in plan.operations[0].preview
+
+
+def test_plan_create_explicit_blank_subject_is_still_sent():
+    plan = message_planners.plan_create_template_from_spec(
+        _spec(subject=""), _resolved_sections()
+    )
+    op = plan.operations[0]
+    assert op.payload["subject"] == ""
+    assert op.preview["subject"] == ""
+
+
+@respx.mock
+def test_plan_update_from_spec_without_subject_leaves_live_subject_alone():
+    """`update --spec-file` with no subject must not blank the live one."""
+    respx.get(f"{FAKE_BASE_URL}/api/messages/templates/{TEMPLATE_ID}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": TEMPLATE_ID,
+                "name": "Newsletter",
+                "subject": "Live subject",
+                "craft_json": {"ROOT": {"type": {"resolvedName": "Root"}}},
+                "content": "<p>old</p>",
+            },
+        )
+    )
+    spec = EmailTemplateDef.model_validate({"name": "Newsletter", "sections": []})
+    plan = message_planners.plan_update_template(
+        TEMPLATE_ID, spec=spec, resolved_sections=_resolved_sections()
+    )
+    assert "subject" not in plan.operations[0].payload
+
+
+@respx.mock
+def test_plan_update_from_spec_explicit_blank_subject_is_still_sent():
+    respx.get(f"{FAKE_BASE_URL}/api/messages/templates/{TEMPLATE_ID}").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": TEMPLATE_ID, "name": "Newsletter", "subject": "Live"},
+        )
+    )
+    plan = message_planners.plan_update_template(
+        TEMPLATE_ID, spec=_spec(subject=""), resolved_sections=_resolved_sections()
+    )
+    assert plan.operations[0].payload["subject"] == ""
+
+
 def test_plan_update_raw_patch_path_is_unchanged():
     """The existing --craft-json-file/--content-file path (patch dict, no
     spec) must keep working exactly as before this item."""

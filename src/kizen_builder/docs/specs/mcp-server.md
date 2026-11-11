@@ -60,8 +60,10 @@ before validation, and the plan preview lists them under
 ## What the plan does
 
 - **create** refuses an `api_name` that exists. With no `sharing_settings`,
-  it sends "every team member can view": `{"private": false,
-  "all_team_members": 1, "roles": {…empty…}, "team_members": {…empty…}}`.
+  it sends what the UI's New MCP Server modal sends when its sharing controls
+  are left alone: `{"all_team_members": 0, "roles": {…empty…},
+  "team_members": {…empty…}}`, with no `private` key (the server stores
+  `false`) and no Admin role (confirmed in source 2026-11-11).
 - **update** compares only the keys the spec sets. `tool_names` compares as a
   set, so reordering is a skip. `sharing_settings` compares after both sides
   are normalised to bare UUIDs, so re-sending `get --raw` output unchanged is

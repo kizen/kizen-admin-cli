@@ -155,6 +155,13 @@ carries no `container*`-prefixed props at all** — just `backgroundColor`,
 dashboard static-content dashlet's Root shape (camelCased instead of
 snake_case), not a form page's Root, which does carry `container*` keys.
 
+**Styling defaults** match what the Kizen layout builder writes when a user
+adds each node (read from the Kizen web app source, 2026-11-11). They are the
+dashboard static-content block's defaults (`kizen docs show dashboard`, "HTML
+dashlet styling"), except the `Root` is 400 tall and has no `columns`. Text,
+divider, image and HTML blocks get the same props as on a form (`kizen docs
+show form`, "Styling defaults").
+
 ## See also
 
 - `kizen docs show files` — referencing an already-uploaded image from an

@@ -166,9 +166,10 @@ def test_plan_create_form_inline_fields_become_deferred_follow_on_ops():
         assert op.kind == "form_field"
         assert op.key == f"form:contact_us.field:{label}"
         assert op.deferred_parent_object_key == "form:contact_us"
-    # order is assigned by position in the batch
-    assert first.payload["order"] == 0
-    assert second.payload["order"] == 1
+    # Spec order is carried by op order, not an `order` value: ops apply
+    # sequentially and the server appends each unordered field last.
+    assert "order" not in first.payload
+    assert "order" not in second.payload
 
 
 @respx.mock
@@ -490,9 +491,11 @@ def test_plan_duplicate_form_not_found_raises_plan_error():
 
 @pytest.mark.parametrize(("base_path", "kind"), BOTH_KINDS)
 @respx.mock
-def test_plan_create_form_fields_orders_after_existing_fields(base_path, kind):
-    """New fields append, so their order starts at the current field count
-    rather than at 0 — otherwise they'd collide with existing fields."""
+def test_plan_create_form_fields_keep_spec_order_without_sending_order(base_path, kind):
+    """New fields carry no `order`; ops stay in spec order so the server's
+    append-after-max puts them after the existing fields in spec order. A
+    CLI-computed len(fields) collided with the existing max order, because
+    server-side field orders start at 1."""
     _mock_detail(base_path)
     _mock_fields(base_path)
     plan = plan_create_form_fields(
@@ -507,8 +510,12 @@ def test_plan_create_form_fields_orders_after_existing_fields(base_path, kind):
     first, second = plan.operations
     assert first.kind == f"{kind}_field"
     assert first.parent_object_uuid == FORM_ID
-    assert first.payload["order"] == 1  # one field already exists
-    assert second.payload["order"] == 2
+    assert [op.key.rsplit(":", 1)[-1] for op in plan.operations] == [
+        "notes",
+        "extra",
+    ]
+    assert "order" not in first.payload
+    assert "order" not in second.payload
 
 
 @pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])

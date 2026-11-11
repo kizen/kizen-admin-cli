@@ -82,6 +82,38 @@ def test_create_payload_carries_only_write_keys_and_default_sharing():
 
 
 @respx.mock
+def test_create_without_sharing_sends_the_ui_new_server_default():
+    """No sharing_settings in the spec -> the block the UI's New MCP Server
+    modal sends untouched: no all-team-members access, no grants, no Admin
+    role and no `private` key."""
+    _serve()
+    op = _op(plan_create_mcp_server({"name": "Intake", "api_name": "intake"}))
+    assert op.payload["sharing_settings"] == {
+        "all_team_members": 0,
+        "roles": {"view": [], "edit": [], "admin": []},
+        "team_members": {"view": [], "edit": [], "admin": []},
+    }
+
+
+@respx.mock
+def test_create_explicit_old_default_sharing_is_still_sent():
+    _serve()
+    old = {
+        "private": False,
+        "all_team_members": 1,
+        "roles": {"view": [], "edit": [], "admin": []},
+        "team_members": {"view": [], "edit": [], "admin": []},
+    }
+    op = _op(
+        plan_create_mcp_server(
+            {"name": "Intake", "api_name": "intake", "sharing_settings": old}
+        )
+    )
+    assert op.payload["sharing_settings"]["all_team_members"] == 1
+    assert op.payload["sharing_settings"]["private"] is False
+
+
+@respx.mock
 def test_create_normalises_read_shape_sharing():
     _serve()
     op = _op(

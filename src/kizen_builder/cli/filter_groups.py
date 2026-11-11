@@ -114,8 +114,8 @@ def filter_groups_create(
 ) -> None:
     """Create one filter group (saved segment) on an object.
 
-    Sharing defaults to visible to all team members (Admin role as admin) —
-    the same default `dashboards create` uses. Note: the exact rendering of
+    Sharing starts private (Admin role as admin), like the UI's save dialog
+    and `dashboards create`. Note: the exact rendering of
     a filter group's config in the Kizen list-view UI hasn't been visually
     confirmed yet; it's built from the same filter DSL as `records list
     --filter` and automation condition steps.

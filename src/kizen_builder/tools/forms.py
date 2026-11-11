@@ -187,9 +187,7 @@ def _resolve_section(
     section_spec: dict[str, Any], fields_by_name: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
     rows = [_resolve_row(r, fields_by_name) for r in section_spec["rows"]]
-    return form_ui.section(
-        rows, background_color=section_spec.get("background_color", "#FFFFFF")
-    )
+    return form_ui.section(rows, background_color=section_spec.get("background_color"))
 
 
 def _resolve_page(

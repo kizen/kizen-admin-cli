@@ -460,6 +460,10 @@ def wrap_as_dashboard(
     link; when not given it falls back to the config's ``object_id`` (which
     ``table_of_records`` doesn't carry — pass it explicitly there, or use
     :func:`generate`).
+
+    The dashlet has no ``layout``: nothing here says where it goes or how big
+    it is. Add one before `create` — see "Layout & sizing" in `kizen docs show
+    dashboard`, which also records what a dashlet without one looks like.
     """
     dt = TYPES[dashlet_type]
     if custom_object is None:
@@ -468,12 +472,10 @@ def wrap_as_dashboard(
         "api_name": "my_dashboard",
         "name": name,
         "type": "homepage" if dt.homepage_only else "generic_dashboard",
-        "published": True,
         "dashlets": [
             {
                 "name": dt.summary,
                 "custom_object": custom_object,
-                "layout": dash.layout(0, 0),
                 "config": config,
             }
         ],

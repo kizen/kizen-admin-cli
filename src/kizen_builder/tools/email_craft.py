@@ -27,9 +27,9 @@ header-byte dimension reading) — but the one-pass invariant this docstring
 describes is unchanged: neither of those modules imports `form_ui` or calls
 `_new_id()`.
 
-This module keeps this surface's own `Text`/`Image`/`Button`/`Divider` prop
-shapes (email's `Button`/`Divider` props differ from the forms surface's —
-see `docs/specs/email-templates.md`), craft_json assembly, and spec
+This module builds this surface's `Text`/`Image`/`Button`/`Divider` nodes
+from the email builder's own creation defaults (`form_ui.EMAIL_DEFAULTS`)
+plus the spec's own keys, and owns craft_json assembly and spec
 resolution. `upload_email_image`/`read_image_dimensions` are imported back
 from `email_images.py` by name, so `email_craft.upload_email_image` etc.
 keep resolving with no re-export shim. The v1 column-preset table
@@ -71,77 +71,9 @@ from kizen_builder.tools import form_ui, merge_fields, objects
 from kizen_builder.tools.email_html import COLUMN_LAYOUTS, _compile_html
 from kizen_builder.tools.email_images import read_image_dimensions, upload_email_image
 
-# ---------------------------------------------------------------------------
-# Root/container prop shapes
-# ---------------------------------------------------------------------------
-
-# Confirmed live 2026-08-25: a form page's Root props minus `tabletBreak`,
-# in two independent captures. Kept as its own literal (not derived from
-# form_ui's private _ROOT_PROPS) so this module documents its own contract
-# against docs/specs/email-templates.md rather than silently tracking
-# whatever forms does next.
-EMAIL_ROOT_PROPS: dict[str, Any] = {
-    "containerBackgroundColor": "rgba(0,0,0,0)",
-    "containerBackgroundImageName": "",
-    "containerBackgroundPositionX": "0%",
-    "containerBackgroundPositionY": "0%",
-    "containerBackgroundSize": "auto",
-    "containerBackgroundRepeat": "repeat",
-    "containerBorderColor": "rgba(74,86,96,1)",
-    "containerBorderStyle": "solid",
-    "containerBorderWidth": "0",
-    "containerBorderRadius": True,
-    "containerBorderTopLeftRadius": "4",
-    "containerBorderTopRightRadius": "4",
-    "containerBorderBottomLeftRadius": "4",
-    "containerBorderBottomRightRadius": "4",
-    "containerMarginTop": "0",
-    "containerMarginRight": "0",
-    "containerMarginBottom": "0",
-    "containerMarginLeft": "0",
-    "containerPaddingTop": "0",
-    "containerPaddingRight": "0",
-    "containerPaddingBottom": "0",
-    "containerPaddingLeft": "0",
-    "backgroundColor": "#F8FAFF",
-    "width": "100",
-    "maxWidth": "900",
-    "alignment": "center",
-    "mobileBreak": "414",
-    "color": "rgba(74,86,96,1)",
-    "fontFamily": "Arial",
-    "fontSize": "14",
-    "linkColor": "rgba(82,142,249,1)",
-    "lineHeight": "1.25",
-}
-
-# Same `container*` vocabulary every leaf block on this surface carries,
-# same values form_ui._CONTAINER_DEFAULTS uses for forms — no live evidence
-# these differ per block on the email surface.
-_CONTAINER_DEFAULTS: dict[str, Any] = {
-    "containerBackgroundColor": "rgba(0,0,0,0)",
-    "containerBackgroundImageName": "",
-    "containerBackgroundPositionX": "0%",
-    "containerBackgroundPositionY": "0%",
-    "containerBackgroundSize": "auto",
-    "containerBackgroundRepeat": "repeat",
-    "containerBorderColor": "rgba(74,86,96,1)",
-    "containerBorderStyle": "solid",
-    "containerBorderWidth": "0",
-    "containerBorderRadius": False,
-    "containerBorderTopLeftRadius": "4",
-    "containerBorderTopRightRadius": "4",
-    "containerBorderBottomLeftRadius": "4",
-    "containerBorderBottomRightRadius": "4",
-    "containerMarginTop": "0",
-    "containerMarginRight": "0",
-    "containerMarginBottom": "0",
-    "containerMarginLeft": "0",
-    "containerPaddingTop": "10",
-    "containerPaddingRight": "10",
-    "containerPaddingBottom": "10",
-    "containerPaddingLeft": "10",
-}
+# Every node starts from the props the Kizen email builder writes when a user
+# adds it — `form_ui.EMAIL_DEFAULTS`, where the front-end source is cited —
+# and only the spec's own keys replace them.
 
 # ---------------------------------------------------------------------------
 # v1 column presets — the byte-exact layout table (`ColumnLayout`,
@@ -250,7 +182,7 @@ def row(
     *,
     width: str | None = None,
     container_width: str | None = None,
-    padding: dict[str, str] | None = None,
+    padding: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """One row using a v1 column preset by name.
 
@@ -259,9 +191,8 @@ def row(
     the expected count. The planner (``tools.planners.messages``) catches
     this and re-raises as a ``PlanError``.
 
-    ``width``/``container_width``/``padding`` default to ``None`` — no
-    override, reproducing today's exact hardcoded output — see
-    ``_row_props``.
+    ``width``/``container_width``/``padding`` left as ``None`` keep the
+    email builder's own Row default — see ``_row_props``.
     """
     if layout in _OUT_OF_SCOPE_LAYOUTS:
         raise ValueError(
@@ -291,14 +222,13 @@ def row(
 def section(
     rows: list[dict[str, Any]],
     *,
-    background_color: str = "#FFFFFF",
+    background_color: str | None = None,
     max_width: str | None = None,
     container_width: str | None = None,
-    padding: dict[str, str] | None = None,
+    padding: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
-    """``max_width``/``container_width``/``padding`` default to ``None`` — no
-    override, reproducing today's exact hardcoded output — see
-    ``_section_props``."""
+    """Each keyword left as ``None`` keeps the email builder's own Section
+    default — see ``_section_props``."""
     return {
         "rows": rows,
         "background_color": background_color,
@@ -315,29 +245,32 @@ def section(
 
 
 def _cell_props(width: float | None) -> dict[str, Any]:
-    # Confirmed live: Cell.props is {"__width": <fraction>}, redundant with
-    # (and must agree with) the parent Row's own columns entry.
+    # Kizen's email compile writes each Cell's column fraction onto the tree
+    # it saves (packages/mjml/src/parser.ts:249-257, run on the saved object
+    # by components/MessageBuilder/utils.js:156-171), redundant with (and
+    # agreeing with) the parent Row's own columns entry.
     return {"__width": width}
 
 
-def _padding_overrides(padding: dict[str, str] | None) -> dict[str, Any]:
+def _padding_overrides(padding: dict[str, str | None] | None) -> dict[str, Any]:
+    """The sides a spec's ``padding`` sets; a side left out keeps the
+    node's default."""
     if padding is None:
         return {}
-    return {
-        "containerPaddingTop": padding["top"],
-        "containerPaddingRight": padding["right"],
-        "containerPaddingBottom": padding["bottom"],
-        "containerPaddingLeft": padding["left"],
+    sides = {
+        "containerPaddingTop": padding.get("top"),
+        "containerPaddingRight": padding.get("right"),
+        "containerPaddingBottom": padding.get("bottom"),
+        "containerPaddingLeft": padding.get("left"),
     }
+    return {key: value for key, value in sides.items() if value is not None}
 
 
 def _section_props(section_spec: dict[str, Any]) -> dict[str, Any]:
-    """The ``section_props`` hook for ``form_ui.build_content_tree``: an
-    overrides dict merged over form_ui's own Section defaults. ``None``
-    values from ``SectionDef.container_width``/``padding`` mean "no
-    override" — the containerWidth key stays absent and padding stays
-    form_ui's hardcoded uniform ``"10"``, exactly matching this emitter's
-    output before this hook existed."""
+    """The ``section_props`` hook for ``form_ui.build_content_tree``: the
+    spec's own Section keys, merged over ``form_ui.EMAIL_DEFAULTS.section``.
+    A key the spec leaves as ``None`` is not overridden; ``containerWidth``,
+    which has no creation default, is only sent when the spec sets it."""
     overrides: dict[str, Any] = {}
     if section_spec.get("max_width") is not None:
         overrides["maxWidth"] = section_spec["max_width"]
@@ -363,119 +296,68 @@ def _row_props(row_spec: dict[str, Any]) -> dict[str, Any]:
     return overrides
 
 
+def _set_given(
+    props: dict[str, Any], block: dict[str, Any], keys: dict[str, str]
+) -> None:
+    """Copy each spec key the block sets (anything but ``None``, an empty
+    string or ``"0"`` included) onto its prop."""
+    for spec_key, prop in keys.items():
+        if block.get(spec_key) is not None:
+            props[prop] = block[spec_key]
+
+
 def _assemble_text_block(block: dict[str, Any], parent_id: str) -> dict[str, Any]:
-    return {
-        "type": {"resolvedName": "Text"},
-        "isCanvas": False,
-        "props": dict(_CONTAINER_DEFAULTS),
-        "displayName": "Text",
-        "custom": {"text": block["html"]},
-        "parent": parent_id,
-        "hidden": False,
-        "nodes": [],
-        "linkedNodes": {},
-    }
+    return form_ui._leaf_node(
+        "Text",
+        form_ui._props(form_ui.EMAIL_DEFAULTS.text),
+        parent_id,
+        {"text": block["html"]},
+    )
 
 
 def _assemble_image_block(block: dict[str, Any], parent_id: str) -> dict[str, Any]:
-    # An omitted `width` used to collapse to a fixed `150` right here,
-    # before the node ever reached `craft_json` — so "omit width" never
-    # actually meant "auto mode", just a silent 150px default. Kizen's
-    # own auto mode (confirmed live against the reference: the one Image
-    # node with no `width` set at all) drops the `width` key entirely
-    # and sets `size: "auto"` instead of `"dynamic"` — both reproduced
-    # here. See `email_html._render_image` for how `content` resolves the
-    # omitted width from the parent Section's `containerWidth`.
-    width = block.get("width")
-    image_props: dict[str, Any] = {
-        **_CONTAINER_DEFAULTS,
-        "size": "dynamic" if width is not None else "auto",
-        "unit": "pixel",
-        "height": None,
-        "display": "flex",
-        "position": "center",
-        "alt": block.get("alt", ""),
-        "link": block.get("link", ""),
-        "src": block["src"],
-        "name": block["name"],
-        "fileId": block["file_id"],
-        "naturalHeight": block.get("natural_height"),
-        "naturalWidth": block.get("natural_width"),
-        "dimension": "width",
-    }
-    if width is not None:
-        image_props["width"] = width
-    if block.get("container_width") is not None:
-        image_props["containerWidth"] = block["container_width"]
-    if block.get("max_width") is not None:
-        image_props["maxWidth"] = block["max_width"]
-    if block.get("max_height") is not None:
-        image_props["maxHeight"] = block["max_height"]
-    return {
-        "type": {"resolvedName": "Image"},
-        "isCanvas": False,
-        "props": image_props,
-        "displayName": "Image",
-        "custom": {},
-        "parent": parent_id,
-        "hidden": False,
-        "nodes": [],
-        "linkedNodes": {},
-    }
+    # The email builder's image creation props, with the file's own
+    # src/name/fileId/natural size; a spec `width` switches to a fixed size
+    # the way the Size setting does. No `width` keeps `size: "auto"` and
+    # `width: None`; see `email_html._render_image` for how `content` sizes
+    # it.
+    props = form_ui._image_props(block, form_ui.EMAIL_DEFAULTS.image)
+    _set_given(
+        props,
+        block,
+        {
+            "alt": "alt",
+            "link": "link",
+            "container_width": "containerWidth",
+            "max_width": "maxWidth",
+            "max_height": "maxHeight",
+        },
+    )
+    return form_ui._leaf_node("Image", props, parent_id)
 
 
 def _assemble_button_block(block: dict[str, Any], parent_id: str) -> dict[str, Any]:
-    return {
-        "type": {"resolvedName": "Button"},
-        "isCanvas": False,
-        "props": {
-            **_CONTAINER_DEFAULTS,
-            "url": block.get("url", ""),
-            "label": block["label"],
-            "action": "url",
-            "color": block.get("color") or "rgba(0,51,160,1)",
-            "textColor": "rgba(255,255,255,1)",
-            "fontSize": "16",
-            "fontFamily": "Arial",
-            "alignment": block.get("alignment") or "center",
-            "borderSize": "0",
-            "borderColor": "rgba(0,0,0,1)",
-            "borderRadius": block.get("border_radius") or "8",
-            "paddingTop": "10",
-            "paddingLeft": block.get("padding_left") or "20",
-            "paddingRight": block.get("padding_right") or "20",
-            "paddingBottom": "10",
-            "textStyles": [],
-            "openLinkInNewTab": True,
+    props = form_ui._props(form_ui.EMAIL_DEFAULTS.button)
+    props["label"] = block["label"]
+    props["url"] = block.get("url", "")
+    _set_given(
+        props,
+        block,
+        {
+            "color": "color",
+            "border_radius": "borderRadius",
+            "padding_left": "paddingLeft",
+            "padding_right": "paddingRight",
+            "alignment": "alignment",
         },
-        "displayName": "Button",
-        "custom": {},
-        "parent": parent_id,
-        "hidden": False,
-        "nodes": [],
-        "linkedNodes": {},
-    }
+    )
+    return form_ui._leaf_node("Button", props, parent_id)
 
 
 def _assemble_divider_block(block: dict[str, Any], parent_id: str) -> dict[str, Any]:
-    return {
-        "type": {"resolvedName": "Divider"},
-        "isCanvas": False,
-        "props": {
-            **_CONTAINER_DEFAULTS,
-            "size": block.get("size") or "3",
-            "color": block.get("color") or "rgba(78,193,145,1)",
-            "width": "100",
-            "alignment": "center",
-            "borderStyle": "solid",
-        },
-        "displayName": "Divider",
-        "custom": {},
-        "parent": parent_id,
-        "hidden": False,
-        "nodes": [],
-        "linkedNodes": {},
-    }
+    props = form_ui._props(form_ui.EMAIL_DEFAULTS.divider)
+    _set_given(props, block, {"size": "size", "color": "color"})
+    return form_ui._leaf_node("Divider", props, parent_id)
 
 
 def _assemble_email_block(
@@ -517,7 +399,7 @@ def build_email_content(sections: list[dict[str, Any]]) -> tuple[dict[str, Any],
     """
     craft_json = form_ui.build_content_tree(
         sections,
-        root_props=EMAIL_ROOT_PROPS,
+        defaults=form_ui.EMAIL_DEFAULTS,
         cell_props=_cell_props,
         block_assembler=_assemble_email_block,
         section_props=_section_props,
@@ -598,7 +480,7 @@ def assemble_sections(resolved_sections: list[dict[str, Any]]) -> list[dict[str,
         sections.append(
             section(
                 rows,
-                background_color=s.get("background_color", "#FFFFFF"),
+                background_color=s.get("background_color"),
                 max_width=s.get("max_width"),
                 container_width=s.get("container_width"),
                 padding=s.get("padding"),
@@ -620,7 +502,7 @@ OFFLINE_FILE_PLACEHOLDER = "<FILE_UUID>"
 OFFLINE_HOST_PLACEHOLDER = "<HOST>"
 
 
-def _padding_dict(padding: PaddingDef | None) -> dict[str, str] | None:
+def _padding_dict(padding: PaddingDef | None) -> dict[str, str | None] | None:
     return padding.model_dump() if padding is not None else None
 
 
@@ -637,13 +519,17 @@ def _paragraphs_to_html(
     data-line-height="default" style="line-height: 1.25;">` per paragraph,
     `text-align: <align>;` appended to that same `style` only when `align`
     is set, an empty `<p>...</p>` with no `<span>` child for `{"text": ""}`,
-    and non-empty text wrapped in exactly one `<span style="font-size:
-    Npx;">` (`<strong>` nested *inside* the span when `bold`, not the
-    reverse) with the whole span wrapped in `<a rel="noopener noreferrer
-    nofollow" href="...">` when `link` is set. `size` defaults to
-    `EMAIL_ROOT_PROPS["fontSize"]` when omitted — every live canonical span
-    carries an explicit size, so "omitted" means "the builder's own
-    default," never "no span."
+    and non-empty text wrapped in one `<span style="...">` carrying
+    `font-size: Npx;` and/or `color: ...;` when `size`/`color` is set
+    (`<strong>` nested *inside* the span when `bold`, not the reverse), the
+    whole run wrapped in `<a rel="noopener noreferrer nofollow" href="...">`
+    when `link` is set. `line-height: 1.25` is what the editor writes on a
+    paragraph with no line height picked (apps/react-app/src/components/
+    WYSIWYG/extensions/line-height.ts:37-38,69-72). It writes a font size
+    only once one is picked (extensions/font-size.ts:32-40), so an omitted
+    `size` writes none and the text takes the template's own size; a span
+    with no style is not written at all, as in the reference's bare-`<a>`
+    paragraphs.
 
     Named to match its module (`tools.email_craft`), not `_render_paragraphs`
     — every `_render_*` function is a compile-side function in
@@ -662,7 +548,6 @@ def _paragraphs_to_html(
     answer it — see `_email_merge_field_resolvers` below.
     """
     parts: list[str] = []
-    default_size = int(EMAIL_ROOT_PROPS["fontSize"])
     for para in paragraphs:
         p_style = "line-height: 1.25;"
         if para.align is not None:
@@ -679,18 +564,21 @@ def _paragraphs_to_html(
         if para.bold:
             rendered = f"<strong>{rendered}</strong>"
 
-        size = para.size if para.size is not None else default_size
-        span_style = f"font-size: {size}px;"
+        span_styles: list[str] = []
+        if para.size is not None:
+            span_styles.append(f"font-size: {para.size}px;")
         if para.color:
-            span_style += f" color: {para.color};"
-        span = f'<span style="{span_style}">{rendered}</span>'
+            span_styles.append(f"color: {para.color};")
+        run = rendered
+        if span_styles:
+            run = f'<span style="{" ".join(span_styles)}">{rendered}</span>'
 
         if para.link:
-            span = (
+            run = (
                 f'<a rel="noopener noreferrer nofollow" '
-                f'href="{escape(para.link, quote=True)}">{span}</a>'
+                f'href="{escape(para.link, quote=True)}">{run}</a>'
             )
-        parts.append(f'<p data-line-height="default" style="{p_style}">{span}</p>')
+        parts.append(f'<p data-line-height="default" style="{p_style}">{run}</p>')
     return "".join(parts)
 
 

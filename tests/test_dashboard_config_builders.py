@@ -253,6 +253,171 @@ def test_html_dashlet_config_multi_row_buttons_and_transparent_background():
     assert "url" not in log_button["props"] or log_button["props"]["url"] == ""
 
 
+# Expected values transcribed from the Kizen web app source (react-app),
+# 2026-11-11, snake_cased as a dashlet's content carries them. A new block
+# uses the homepage creators (PageBuilder/presets/creator-elements.js:49-57).
+
+# packages/page-builder/nodes/containers/ElementContainer.tsx:14-37
+HTML_ELEMENT_CONTAINER = {
+    "container_background_color": "inherit",
+    "container_background_image_name": "",
+    "container_background_position_x": "0%",
+    "container_background_position_y": "0%",
+    "container_background_size": "auto",
+    "container_background_repeat": "repeat",
+    "container_border_color": "#4A5660",
+    "container_border_style": "solid",
+    "container_border_width": "0",
+    "container_border_radius": True,
+    "container_border_top_left_radius": "4",
+    "container_border_top_right_radius": "4",
+    "container_border_bottom_left_radius": "4",
+    "container_border_bottom_right_radius": "4",
+    "container_margin_top": "0",
+    "container_margin_right": "0",
+    "container_margin_bottom": "0",
+    "container_margin_left": "0",
+    "container_padding_top": "0",
+    "container_padding_right": "0",
+    "container_padding_bottom": "0",
+    "container_padding_left": "0",
+}
+HTML_PADDING_10 = {
+    "container_padding_top": "10",
+    "container_padding_right": "10",
+    "container_padding_bottom": "10",
+    "container_padding_left": "10",
+}
+# gen/defaults.ts:25-50, 74-94, 178-187 (DefaultHomepageProps.Section/Row)
+HTML_SECTION = {
+    **HTML_ELEMENT_CONTAINER,
+    "container_background_color": "rgba(0,0,0,0)",
+    "container_border_color": "rgba(74,86,96,1)",
+    "container_border_radius": False,
+    **HTML_PADDING_10,
+    "max_width": "1372",
+    "width": "100",
+    "alignment": "center",
+}
+
+
+def _html_only(content: dict, resolved_name: str) -> list[dict]:
+    return [n for n in content.values() if n["type"]["resolved_name"] == resolved_name]
+
+
+def test_html_dashlet_root_matches_a_new_block():
+    # gen/defaults.ts:165-177 (DefaultHomepageProps.Root) plus the column
+    # count the builder writes on open (HomepageBuilder.tsx:101,
+    # PageBuilderCanvas.jsx:73-85).
+    root = html_dashlet_config("<p>x</p>")["content"]["ROOT"]["props"]
+    assert root == {
+        "background_color": "rgba(255,255,255,1)",
+        "color": "rgba(74,86,96,1)",
+        "font_family": "Arial",
+        "font_size": "14",
+        "link_color": "rgba(82,142,249,1)",
+        "line_height": "1.25",
+        "height": 335,
+        "max_width": 1372,
+        "has_shadow": True,
+        "tablet_break": "768",
+        "mobile_break": "414",
+        "columns": 6,
+    }
+
+
+@pytest.mark.parametrize(
+    ("given", "sent"),
+    [
+        ("transparent", "rgba(0,0,0,0)"),
+        ("#123456", "#123456"),
+        ("", ""),
+    ],
+)
+def test_html_dashlet_background_color_given_is_sent(given, sent):
+    root = html_dashlet_config("<p>x</p>", background_color=given)["content"]["ROOT"]
+    assert root["props"]["background_color"] == sent
+
+
+def test_html_dashlet_nodes_match_the_block_builder_creation_defaults():
+    content = html_dashlet_config(
+        [
+            [html_text_block("<p>t</p>"), html_raw_block("<div>r</div>")],
+            [
+                html_button_url("Go", "https://x"),
+                html_button_log_activity("Log", ACTIVITY_ID),
+            ],
+        ]
+    )["content"]
+
+    (section,) = _html_only(content, "Section")
+    assert section["props"] == HTML_SECTION
+    for row_node in _html_only(content, "Row"):
+        assert row_node["props"] == {"columns": [0.5, 0.5], **HTML_SECTION}
+    # TextContainer.tsx:19-25 — no margins
+    (text,) = _html_only(content, "Text")
+    assert text["props"] == {**HTML_ELEMENT_CONTAINER, **HTML_PADDING_10}
+    # HTMLBlockContainer.tsx:15-22
+    (raw,) = _html_only(content, "HTMLBlock")
+    assert raw["props"] == {
+        **HTML_ELEMENT_CONTAINER,
+        **HTML_PADDING_10,
+        "html_content": "<div>r</div>",
+    }
+    # Button/props.ts:10-42 (DEFAULT_STATIC_PAGE_BUTTON_PROPS) + ButtonContainer.tsx:22-28
+    button_base = {
+        "color": "#4BC7B4",
+        "text_color": "#FFFFFF",
+        "border_size": "0",
+        "border_radius": "8",
+        "border_color": "#2E373E",
+        "padding_top": "10",
+        "padding_right": "20",
+        "padding_bottom": "10",
+        "padding_left": "20",
+        "font_size": "12",
+        "text_styles": [],
+        "alignment": "center",
+        "font_family": "Arial",
+        **HTML_ELEMENT_CONTAINER,
+        "container_padding_top": "10",
+        "container_padding_right": "0",
+        "container_padding_bottom": "10",
+        "container_padding_left": "0",
+        "enable_recaptcha": False,
+    }
+    buttons = {b["props"]["action"]: b["props"] for b in _html_only(content, "Button")}
+    assert buttons["url"] == {
+        **button_base,
+        "label": "Go",
+        "action": "url",
+        "url": "https://x",
+    }
+    assert buttons["log-activity"] == {
+        **button_base,
+        "label": "Log",
+        "action": "log-activity",
+        "url": "",
+        "activity_id": ACTIVITY_ID,
+    }
+
+
+@pytest.mark.parametrize("color", ["#ABCDEF", ""])
+def test_html_dashlet_button_color_given_is_sent(color):
+    content = html_dashlet_config(
+        [
+            [
+                html_button_url("Go", "https://x", color=color),
+                html_button_log_activity("Log", ACTIVITY_ID, color=color),
+            ]
+        ]
+    )["content"]
+    assert [b["props"]["color"] for b in _html_only(content, "Button")] == [
+        color,
+        color,
+    ]
+
+
 def test_html_dashlet_config_raw_html_block_is_distinct_from_text():
     rows = [[html_text_block("<p>rich</p>"), html_raw_block("<div>raw</div>")]]
     cfg = html_dashlet_config(rows)
@@ -330,6 +495,111 @@ def test_admin_role_id_finds_admin_on_page_two():
     )
 
     assert dash_tools.admin_role_id() == admin_id
+
+
+def test_default_sharing_settings_is_the_ui_private_default(monkeypatch):
+    """One helper, one default: private, no access for all team members, the
+    Admin role as admin — what the UI's create and save dialogs start from."""
+    admin_id = "937c92bb-d5dd-4990-bcfc-437757e28070"
+    monkeypatch.setattr(dash_tools, "admin_role_id", lambda: admin_id)
+    assert dash_tools.default_sharing_settings() == {
+        "private": True,
+        "all_team_members": 0,
+        "roles": {"view": [], "edit": [], "admin": [admin_id]},
+        "team_members": {"view": [], "edit": [], "admin": []},
+    }
+
+
+# ---------------------------------------------------------------------------
+# No CLI styling: builders carry only the keys the dashlet needs
+# ---------------------------------------------------------------------------
+
+
+def _every_builder_output() -> dict[str, dict]:
+    return {
+        "table_of_records": table_of_records_config(
+            OBJECT_ID, [dash_tools.col(FIELD_ID, "Status")]
+        ),
+        "field_breakdown": dash_tools.field_breakdown_config(OBJECT_ID, FIELD_ID),
+        "field_sum": field_sum_config(OBJECT_ID, FIELD_ID),
+        "pivot_table": dash_tools.pivot_table_config(
+            OBJECT_ID,
+            [{"id": FIELD_ID, "label": "Row"}],
+            {"id": FIELD_ID, "label": "C"},
+        ),
+        "field_range_breakdown": field_range_breakdown_config(
+            OBJECT_ID, FIELD_ID, [{"min": 0, "max": 10}]
+        ),
+        "pipeline_metric": pipeline_metric_config(
+            PIPELINE_ID, "records_won", "numeric"
+        ),
+        "activity_metric": activity_metric_config(ACTIVITY_ID, frequency="week"),
+        "scheduled_activities": scheduled_activities_config(ACTIVITY_ID),
+        "scheduled_activities_calendar": scheduled_activities_calendar_config(
+            ACTIVITY_ID
+        ),
+        "email_metric": email_metric_config("email_sent", "numeric"),
+        "marketing_metric": marketing_metric_config(
+            [OBJECT_ID], "leads_added", "numeric"
+        ),
+        "html": html_dashlet_config("<p>Hi</p>"),
+    }
+
+
+@pytest.mark.parametrize("name", list(_every_builder_output()))
+def test_no_builder_stamps_dashlet_style_config(name):
+    cfg = _every_builder_output()[name]
+    assert "dashlet_style_config" not in (cfg.get("fe_extra_info") or {})
+    assert "dashlet_style_config" not in str(cfg)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: dash_tools.field_breakdown_config(OBJECT_ID, FIELD_ID),
+        lambda: field_sum_config(OBJECT_ID, FIELD_ID),
+        lambda: field_range_breakdown_config(
+            OBJECT_ID, FIELD_ID, [{"min": 0, "max": 1}]
+        ),
+    ],
+    ids=["field_breakdown", "field_sum", "field_range_breakdown"],
+)
+def test_builders_with_nothing_for_fe_extra_info_omit_it(build):
+    # Only table_of_records needs the key (webapp CustomObjectTableOfRecords
+    # ConfigValidator); these carried it solely for the dropped style block.
+    assert "fe_extra_info" not in build()
+
+
+def test_fe_extra_info_keeps_its_real_data():
+    assert table_of_records_config(OBJECT_ID, [dash_tools.col(FIELD_ID, "S")])[
+        "fe_extra_info"
+    ] == {"columns": [dash_tools.col(FIELD_ID, "S")]}
+    assert set(
+        dash_tools.pivot_table_config(
+            OBJECT_ID, [{"id": FIELD_ID, "label": "R"}], {"id": FIELD_ID, "label": "C"}
+        )["fe_extra_info"]
+    ) == {"pivot_table_config"}
+    assert set(
+        pipeline_metric_config(PIPELINE_ID, "records_won", "numeric")["fe_extra_info"]
+    ) == {"date_filter"}
+    assert set(activity_metric_config(ACTIVITY_ID)["fe_extra_info"]) == {"date_filter"}
+    assert set(scheduled_activities_config(ACTIVITY_ID)["fe_extra_info"]) == {
+        "date_filter",
+        "scheduled_activities_config",
+    }
+
+
+def test_layout_takes_no_default_geometry():
+    with pytest.raises(TypeError):
+        dash_tools.layout(0, 0)  # type: ignore[call-arg]
+    cell = dash_tools.layout(0, 3, 6, 2)
+    assert {k: cell[k] for k in ("x", "y", "w", "h")} == {
+        "x": 0,
+        "y": 3,
+        "w": 6,
+        "h": 2,
+    }
+    assert cell["i"]
 
 
 # ---------------------------------------------------------------------------

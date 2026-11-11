@@ -5,6 +5,8 @@ These pin the wire-format rules recorded in `kizen docs show reference`:
     dashlets carrying deferred_parent_object_key so apply injects the new id;
   * sharing_settings are normalized to bare-UUID permission lists (a template
     copied from `dashboards get --raw` carries {id, display_name} objects);
+  * only what the spec sets is sent: no injected style_settings, hidden or
+    published on create, and an update never patches a field the spec omits;
   * layout update injects an id at every config level and preserves tabs.
 """
 
@@ -14,6 +16,7 @@ import httpx
 import pytest
 import respx
 
+from kizen_builder.tools import dashboards as dash_tools
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.planners import dashboards as dash_planners
 from kizen_builder.tools.planners import layouts as layout_planners
@@ -27,7 +30,8 @@ OBJ_ID = "ceed733b-1111-4111-8111-111111111111"
 LAYOUT_ID = "42bf31d7-1111-4111-8111-111111111111"
 
 
-def _default_sharing() -> dict:
+def _team_sharing() -> dict:
+    """A team-visible sharing block, normalized to bare UUIDs."""
     return {
         "private": False,
         "all_team_members": 1,
@@ -39,7 +43,8 @@ def _default_sharing() -> dict:
 @pytest.fixture
 def no_dashboards(monkeypatch):
     monkeypatch.setattr(dash_planners, "list_dashboards", lambda: [])
-    monkeypatch.setattr(dash_planners, "default_sharing_settings", _default_sharing)
+    # The real default sharing, minus the live Admin-role lookup.
+    monkeypatch.setattr(dash_tools, "admin_role_id", lambda: ADMIN_ID)
 
 
 # ---------------------------------------------------------------------------
@@ -68,13 +73,85 @@ def test_create_dashboard_emits_dashboard_then_deferred_dashlets(no_dashboards):
     assert board.key == "cli_test_dashboard"
     assert board.payload["type"] == "generic_dashboard"
     assert board.payload["sharing_settings"]["roles"]["admin"] == [ADMIN_ID]
-    # style defaults are filled in
-    assert "chartTheme" in board.payload["style_settings"]
 
     assert dashlet.kind == "dashlet" and dashlet.action == "create"
     assert dashlet.deferred_parent_object_key == "cli_test_dashboard"
     assert dashlet.key.startswith("cli_test_dashboard.")
     assert dashlet.payload["config"]["report_type"] == "email_sent"
+
+
+def test_create_dashboard_sends_no_style_settings_when_spec_has_none(no_dashboards):
+    # KZN-19683: the dashboard's style_settings paint every dashlet header, so
+    # the CLI must not supply one of its own.
+    plan = dash_planners.plan_create_dashboard({"api_name": "d1", "name": "D1"})
+    (board,) = plan.operations
+    assert "style_settings" not in board.payload
+
+
+def test_create_dashboard_sends_explicit_empty_style_settings(no_dashboards):
+    plan = dash_planners.plan_create_dashboard(
+        {"api_name": "d1", "name": "D1", "style_settings": {}}
+    )
+    (board,) = plan.operations
+    assert board.payload["style_settings"] == {}
+
+
+def test_create_dashboard_sends_only_what_the_spec_sets(no_dashboards):
+    """hidden, published and custom_object are left to the server; type falls
+    back to generic_dashboard because the API requires one."""
+    plan = dash_planners.plan_create_dashboard({"api_name": "d1", "name": "D1"})
+    (board,) = plan.operations
+    assert board.payload == {
+        "name": "D1",
+        "api_name": "d1",
+        "type": "generic_dashboard",
+        "sharing_settings": board.payload["sharing_settings"],
+    }
+    assert board.preview["type"] == "generic_dashboard"
+
+
+def test_create_dashboard_sends_hidden_and_published_when_set(no_dashboards):
+    plan = dash_planners.plan_create_dashboard(
+        {
+            "api_name": "d1",
+            "name": "D1",
+            "type": "homepage",
+            "hidden": False,
+            "published": True,
+        }
+    )
+    (board,) = plan.operations
+    assert board.payload["type"] == "homepage"
+    assert board.payload["hidden"] is False
+    assert board.payload["published"] is True
+
+
+def test_create_dashboard_default_sharing_is_private_with_admin(no_dashboards):
+    plan = dash_planners.plan_create_dashboard({"api_name": "d1", "name": "D1"})
+    (board,) = plan.operations
+    assert board.payload["sharing_settings"] == {
+        "private": True,
+        "all_team_members": 0,
+        "roles": {"view": [], "edit": [], "admin": [ADMIN_ID]},
+        "team_members": {"view": [], "edit": [], "admin": []},
+    }
+
+
+def test_create_dashlet_without_name_or_layout(no_dashboards):
+    """The API requires a dashlet name, so an unnamed new dashlet is sent as
+    [default]; layout and custom_object are left out, not sent empty."""
+    plan = dash_planners.plan_create_dashboard(
+        {
+            "api_name": "d1",
+            "name": "D1",
+            "dashlets": [{"config": {"report_type": "email_sent"}}],
+        }
+    )
+    _, dashlet = plan.operations
+    assert dashlet.payload == {
+        "name": "[default]",
+        "config": {"report_type": "email_sent"},
+    }
 
 
 def test_create_dashboard_normalizes_template_sharing(no_dashboards):
@@ -173,6 +250,135 @@ def test_update_dashboard_no_metadata_change_is_skip(monkeypatch):
     assert board.action == "skip"
 
 
+def _live_homepage() -> dict:
+    """A published, hidden homepage with one named, placed dashlet."""
+    return {
+        "id": DASH_ID,
+        "raw": {
+            "id": DASH_ID,
+            "name": "Team Home",
+            "type": "homepage",
+            "custom_object": None,
+            "hidden": True,
+            "published": True,
+            "style_settings": {"titleBackgroundColor": "rgba(1,2,3,1)"},
+            "dashlets": [
+                {
+                    "id": DL_ID,
+                    "name": "Open deals",
+                    "custom_object": OBJ_ID,
+                    "layout": {"x": 0, "y": 0, "w": 6, "h": 3},
+                    "config": {"report_type": "table_of_records"},
+                }
+            ],
+        },
+    }
+
+
+def test_update_omitting_hidden_published_type_patches_nothing(monkeypatch):
+    monkeypatch.setattr(
+        dash_planners, "get_dashboard_detail", lambda d: _live_homepage()
+    )
+    plan = dash_planners.plan_update_dashboard(
+        DASH_ID, {"api_name": "team_home", "name": "Team Home"}
+    )
+    (board,) = plan.operations
+    assert board.action == "skip"
+    assert board.payload == {}
+
+
+def test_update_explicit_false_hidden_and_published_patches_both(monkeypatch):
+    """False is a value, not "unset": it must patch a live true."""
+    monkeypatch.setattr(
+        dash_planners, "get_dashboard_detail", lambda d: _live_homepage()
+    )
+    plan = dash_planners.plan_update_dashboard(
+        DASH_ID,
+        {
+            "api_name": "team_home",
+            "name": "Team Home",
+            "hidden": False,
+            "published": False,
+        },
+    )
+    (board,) = plan.operations
+    assert board.action == "update"
+    assert board.payload == {"hidden": False, "published": False}
+
+
+def test_create_refuses_a_new_dashlet_without_config(no_dashboards):
+    with pytest.raises(PlanError, match=r"dashlet '1:Totals': config is required"):
+        dash_planners.plan_create_dashboard(
+            {
+                "api_name": "d1",
+                "name": "D1",
+                "dashlets": [
+                    {"name": "Sent", "config": {"report_type": "email_sent"}},
+                    {"name": "Totals"},
+                ],
+            }
+        )
+
+
+def test_update_refuses_a_new_dashlet_without_config(monkeypatch):
+    monkeypatch.setattr(
+        dash_planners, "get_dashboard_detail", lambda d: _live_homepage()
+    )
+    with pytest.raises(PlanError, match=r"dashlet '0:Totals': config is required"):
+        dash_planners.plan_update_dashboard(
+            DASH_ID,
+            {
+                "api_name": "team_home",
+                "name": "Team Home",
+                "dashlets": [{"name": "Totals"}],
+            },
+        )
+
+
+def test_update_preview_leaves_out_an_unset_dashlet_name(monkeypatch):
+    monkeypatch.setattr(
+        dash_planners, "get_dashboard_detail", lambda d: _live_homepage()
+    )
+    spec = {
+        "api_name": "team_home",
+        "name": "Team Home",
+        "dashlets": [{"id": DL_ID, "layout": {"x": 0, "y": 0, "w": 6, "h": 3}}],
+    }
+    _, upd = dash_planners.plan_update_dashboard(DASH_ID, spec).operations
+    assert "dashlet" not in upd.preview
+    assert upd.preview["id"] == DL_ID[:8]
+
+
+def test_update_dashlet_without_name_does_not_send_name(monkeypatch):
+    monkeypatch.setattr(
+        dash_planners, "get_dashboard_detail", lambda d: _live_homepage()
+    )
+    spec = {
+        "api_name": "team_home",
+        "name": "Team Home",
+        "dashlets": [{"id": DL_ID, "config": {"report_type": "table_of_records"}}],
+    }
+    _, upd = dash_planners.plan_update_dashboard(DASH_ID, spec).operations
+    assert upd.action == "update"
+    assert "name" not in upd.payload
+
+
+def test_update_dashlet_sends_only_the_fields_the_spec_sets(monkeypatch):
+    """A PATCH without layout/config/custom_object keeps the live values; an
+    empty layout or a null custom_object would wipe them."""
+    monkeypatch.setattr(
+        dash_planners, "get_dashboard_detail", lambda d: _live_homepage()
+    )
+    new_layout = {"x": 6, "y": 0, "w": 6, "h": 3}
+    spec = {
+        "api_name": "team_home",
+        "name": "Team Home",
+        "dashlets": [{"id": DL_ID, "layout": new_layout}],
+    }
+    _, upd = dash_planners.plan_update_dashboard(DASH_ID, spec).operations
+    assert upd.payload == {"layout": new_layout}
+
+
 # ---------------------------------------------------------------------------
 # dashboard duplicate
 # ---------------------------------------------------------------------------
@@ -203,7 +409,7 @@ def test_duplicate_dashboard_carries_the_source_sharing(monkeypatch):
 
     assert op.action == "duplicate" and op.kind == "dashboard"
     assert op.existing_uuid == DASH_ID
-    assert op.payload == {"sharing_settings": _default_sharing()}
+    assert op.payload == {"sharing_settings": _team_sharing()}
     assert op.preview["new_name"] == "server default: 'Ops Board (copy #N)'"
     assert op.preview["new_api_name"] == "server default: 'ops_board_copy_N'"
     assert op.preview["published"].startswith("false")
@@ -217,7 +423,7 @@ def test_duplicate_dashboard_name_and_api_name_go_in_the_payload(monkeypatch):
     )
     (op,) = plan.operations
     assert op.payload == {
-        "sharing_settings": _default_sharing(),
+        "sharing_settings": _team_sharing(),
         "name": "Ops Board 2",
         "api_name": "ops_board_2",
     }

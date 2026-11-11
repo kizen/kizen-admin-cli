@@ -95,6 +95,14 @@ _KIZEN_TEXT_STYLES_TEMPLATE = (
 )
 
 
+def _container_background(props: dict[str, Any]) -> str | None:
+    """A node's `containerBackgroundColor`, or `None` when Kizen's compile
+    gives it no background: `inherit` (the email builder's creation default)
+    or no value at all (packages/mjml/src/styles.ts:33-42)."""
+    value = props.get("containerBackgroundColor")
+    return None if value in (None, "inherit") else str(value)
+
+
 def _section_class(node_id: str) -> str:
     """`section-<nodeId>` — the existing Section/Row coupling class every
     `_render_section`/`_render_row` call site uses. A tiny shared helper so
@@ -249,12 +257,15 @@ def _render_image(node_id: str, craft_json: dict[str, Any]) -> tuple[str, list[s
     targets — the rule is meaningless without this wrapper, so the two are
     implemented together, not the rule alone.
 
-    Auto mode (`Image.props.width` absent — see `_assemble_email_block`):
+    Auto mode (`Image.props.width` is `None`, the builder's own default —
+    see `email_craft._assemble_image_block`):
     the `<img>`'s `width` attribute becomes the parent Section's own
     `containerWidth`, falling back to `Root.props.maxWidth` when the
-    Section doesn't set one (inferred, not observed live — see the work
-    item's Open questions), and a `.image-<nodeId>-auto > table td` rule
-    caps it at the image's own `naturalWidth`.
+    Section doesn't set one, and a `.image-<nodeId>-auto > table td` rule
+    caps it at the image's own `naturalWidth`. That fallback differs from
+    Kizen's compile, which uses the column's width less the image's padding
+    (880 against this 900 for an unstyled 1-column template, run
+    2026-11-11); see docs/specs/email-templates.md.
     """
     node = craft_json[node_id]
     p = node["props"]
@@ -277,6 +288,11 @@ def _render_image(node_id: str, craft_json: dict[str, Any]) -> tuple[str, list[s
                 f"max-width: {natural_width}px; }}"
             )
 
+    # Kizen's compile passes the image's padding and background colour to
+    # MJML, padding defaulting to 0 and `inherit` meaning no background
+    # (packages/mjml/src/parser.ts:539-540, styles.ts:12-42).
+    background = _container_background(p)
+    background_css = f"background:{background};" if background is not None else ""
     img = (
         f'<img alt="{escape(p.get("alt") or "")}" height="auto" '
         f'src="{escape(p["src"], quote=True)}" width="{img_width}" '
@@ -286,12 +302,12 @@ def _render_image(node_id: str, craft_json: dict[str, Any]) -> tuple[str, list[s
     wrapped = (
         '<table border="0" cellpadding="0" cellspacing="0" role="presentation" '
         'width="100%" style="vertical-align:top;"><tr>'
-        f'<td align="center" class="{td_class}" style="background:rgba(0,0,0,0);'
+        f'<td align="center" class="{td_class}" style="{background_css}'
         "font-size:0px;padding:10px 25px;"
-        f"padding-top:{p.get('containerPaddingTop', '10')}px;"
-        f"padding-right:{p.get('containerPaddingRight', '10')}px;"
-        f"padding-bottom:{p.get('containerPaddingBottom', '10')}px;"
-        f"padding-left:{p.get('containerPaddingLeft', '10')}px;"
+        f"padding-top:{p.get('containerPaddingTop', '0')}px;"
+        f"padding-right:{p.get('containerPaddingRight', '0')}px;"
+        f"padding-bottom:{p.get('containerPaddingBottom', '0')}px;"
+        f"padding-left:{p.get('containerPaddingLeft', '0')}px;"
         'word-break:break-word;">'
         '<table border="0" cellpadding="0" cellspacing="0" role="presentation" '
         'style="border-collapse:collapse;border-spacing:0px;"><tr>'
@@ -479,9 +495,13 @@ def _render_section(
 ) -> tuple[str, list[str]]:
     node = craft_json[section_id]
     props = node["props"]
-    bg = props.get("containerBackgroundColor", "#FFFFFF")
+    bg = _container_background(props)
     rows_html: list[str] = []
-    style_rules = [f".{_section_class(section_id)} {{ background-color:{bg}; }}"]
+    style_rules = (
+        [f".{_section_class(section_id)} {{ background-color:{bg}; }}"]
+        if bg is not None
+        else []
+    )
     for row_id in node["nodes"]:
         row_html, row_rules = _render_row(row_id, craft_json)
         rows_html.append(row_html)

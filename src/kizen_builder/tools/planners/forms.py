@@ -111,7 +111,7 @@ def plan_create_form(
     ]
 
     seen: set[str] = set()
-    for idx, field in enumerate(fields):
+    for field in fields:
         label = field.api_name or field.name
         if label in seen:
             raise PlanError(f"duplicate {kind} field '{label}' in the batch.")
@@ -127,7 +127,7 @@ def plan_create_form(
                     "field_type": field.field_type,
                     "required": field.required,
                 },
-                payload=_build_form_field_payload(field, default_order=idx),
+                payload=_build_form_field_payload(field),
                 deferred_parent_object_key=object_key,
             )
         )
@@ -384,10 +384,9 @@ def plan_create_form_fields(
         defs = _link_fields(defs, get_object(form["related_object"]["id"]), kind)
 
     have = {f.get("api_name") for f in form["fields"] if f.get("api_name")}
-    base_order = len(form["fields"])
     ops: list[PlanOperation] = []
     seen: set[str] = set()
-    for idx, fd in enumerate(defs):
+    for fd in defs:
         label = fd.api_name or fd.name
         if fd.api_name and fd.api_name in have:
             raise PlanError(
@@ -409,7 +408,7 @@ def plan_create_form_fields(
                     "field_type": fd.field_type,
                     "required": fd.required,
                 },
-                payload=_build_form_field_payload(fd, default_order=base_order + idx),
+                payload=_build_form_field_payload(fd),
                 parent_object_uuid=form_id,
             )
         )
@@ -711,9 +710,7 @@ def _build_form_payload(form: FormDef) -> dict[str, Any]:
     return payload
 
 
-def _build_form_field_payload(
-    field: FormFieldDef, *, default_order: int | None = None
-) -> dict[str, Any]:
+def _build_form_field_payload(field: FormFieldDef) -> dict[str, Any]:
     # Unlike custom-object/activity fields, `wysiwyg` IS a valid field_type on
     # forms/surveys per the live FormFieldFieldTypeEnum — no longtext remap here.
     payload: dict[str, Any] = {
@@ -729,9 +726,11 @@ def _build_form_field_payload(
         payload["name"] = field.api_name
     if field.description:
         payload["description"] = field.description
-    order = field.order if field.order is not None else default_order
-    if order is not None:
-        payload["order"] = order
+    # Unset `order` is not sent: the server appends after the form's highest
+    # order, and ops apply in spec order, so fields land in spec order after
+    # the default fields Kizen adds to every new form.
+    if field.order is not None:
+        payload["order"] = field.order
 
     if field.options is not None:
         payload["options"] = [{"name": o, "code": o} for o in field.options]

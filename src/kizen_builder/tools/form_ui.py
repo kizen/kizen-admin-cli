@@ -8,7 +8,9 @@ craft.js-style JSON.
 
 Confirmed live 2026-07-21 against a real "Activity Submission" form — a
 *real, UI-built* form with live submissions, not a guess reverse-engineered
-from a single GET. Key structural facts, all confirmed from that live
+from a single GET. That form had been styled by hand, so node style props
+are not copied from it: they are the builder's creation defaults (see
+:class:`BuilderDefaults`). Key structural facts, all confirmed from that live
 example:
 
 - ``form_ui`` is ``{"pages": [...], "business_merge_fields": [...]}``. Each
@@ -74,9 +76,12 @@ Usage pattern::
 
 from __future__ import annotations
 
+import copy
+import functools
 import json
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass, replace
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -198,11 +203,66 @@ def form_field_prop(form_field: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Container style defaults (camelCase — distinct from dashboards.py's
-# snake_case _CONTAINER_DEFAULTS, same idea)
+# Node defaults: the props the Kizen page builder writes when a user adds each
+# node, per builder. Read from the Kizen web app source (react-app), 2026-11-11.
+# Paths below are relative to that repo. KDS colour tokens are resolved through
+# packages/kds/src/theme.ts: teal-300 #4BC7B4 (:10), gray-50 #FFFFFF (:61),
+# gray-600 #A8B3BC (:67), gray-800 #4A5660 (:69), gray-900 #2E373E (:70),
+# aliceblue-25 #F8FAFF (:128).
+#
+# A tray drop runs apps/react-app/src/components/PageBuilder/nodes/
+# useAddNewNode.jsx:18-33, which saves exactly the props the node's Create*
+# component passes; craft.js adds only a component's `craft.props`/
+# `craft.defaultProps`, and Row (`columns`) is the only node with any
+# (nodes/Row/Row.jsx:318-325). Which Create* each builder uses is set in
+# PageBuilder/presets/creator-elements.js:37-67.
+#
+# Keys the builder writes later from a measured size (`containerWidth` on
+# Section, Row and Image: nodes/Section/Section.jsx:41-48, nodes/Row/Row.jsx:
+# 233-240, nodes/Image/Image.jsx:77-84) are not sent; the builder adds them
+# when the page is next opened.
 # ---------------------------------------------------------------------------
 
-_CONTAINER_DEFAULTS: dict[str, Any] = {
+
+def _padding(top: str, right: str, bottom: str, left: str) -> dict[str, str]:
+    return {
+        "containerPaddingTop": top,
+        "containerPaddingRight": right,
+        "containerPaddingBottom": bottom,
+        "containerPaddingLeft": left,
+    }
+
+
+_PADDING_10 = _padding("10", "10", "10", "10")
+
+# packages/page-builder/nodes/containers/ElementContainer.tsx:14-37
+# (DEFAULT_ELEMENT_CONTAINER_PROPS): the base of every node the tray adds.
+_ELEMENT_CONTAINER: dict[str, Any] = {
+    "containerBackgroundColor": "inherit",
+    "containerBackgroundImageName": "",
+    "containerBackgroundPositionX": "0%",
+    "containerBackgroundPositionY": "0%",
+    "containerBackgroundSize": "auto",
+    "containerBackgroundRepeat": "repeat",
+    "containerBorderColor": "#4A5660",
+    "containerBorderStyle": "solid",
+    "containerBorderWidth": "0",
+    "containerBorderRadius": True,
+    "containerBorderTopLeftRadius": "4",
+    "containerBorderTopRightRadius": "4",
+    "containerBorderBottomLeftRadius": "4",
+    "containerBorderBottomRightRadius": "4",
+    "containerMarginTop": "0",
+    "containerMarginRight": "0",
+    "containerMarginBottom": "0",
+    "containerMarginLeft": "0",
+    **_padding("0", "0", "0", "0"),
+}
+
+# packages/page-builder/gen/defaults.ts:25-50 (DefaultContainerProps): the
+# base of the compile-time defaults behind a page's Root and the homepage /
+# static-block Section and Row. Its two `undefined` keys never reach the JSON.
+_GEN_CONTAINER: dict[str, Any] = {
     "containerBackgroundColor": "rgba(0,0,0,0)",
     "containerBackgroundImageName": "",
     "containerBackgroundPositionX": "0%",
@@ -212,7 +272,7 @@ _CONTAINER_DEFAULTS: dict[str, Any] = {
     "containerBorderColor": "rgba(74,86,96,1)",
     "containerBorderStyle": "solid",
     "containerBorderWidth": "0",
-    "containerBorderRadius": False,
+    "containerBorderRadius": True,
     "containerBorderTopLeftRadius": "4",
     "containerBorderTopRightRadius": "4",
     "containerBorderBottomLeftRadius": "4",
@@ -221,31 +281,316 @@ _CONTAINER_DEFAULTS: dict[str, Any] = {
     "containerMarginRight": "0",
     "containerMarginBottom": "0",
     "containerMarginLeft": "0",
-    "containerPaddingTop": "10",
-    "containerPaddingRight": "10",
-    "containerPaddingBottom": "10",
-    "containerPaddingLeft": "10",
+    **_padding("0", "0", "0", "0"),
 }
 
-_ROOT_PROPS: dict[str, Any] = {
-    **_CONTAINER_DEFAULTS,
-    "containerBorderRadius": True,
-    "containerPaddingTop": "0",
-    "containerPaddingRight": "0",
-    "containerPaddingBottom": "0",
-    "containerPaddingLeft": "0",
-    "backgroundColor": "#F8FAFF",
-    "width": "100",
-    "maxWidth": "900",
-    "alignment": "center",
-    "mobileBreak": "414",
+# Root text settings shared by every Root: gen/defaults.ts:61-72
+# (CommonRootProps) and :165-177 (DefaultHomepageProps.Root). Root.jsx's own
+# DEFAULT_FORM_ROOT_PROPS (linkColor blue-500) applies only to a page saved
+# with no data at all (PageBuilderCanvas.jsx:190), never on creation.
+_ROOT_TEXT: dict[str, Any] = {
     "color": "rgba(74,86,96,1)",
     "fontFamily": "Arial",
     "fontSize": "14",
     "linkColor": "rgba(82,142,249,1)",
     "lineHeight": "1.25",
+}
+
+# A form/survey page's Root: gen/defaults.ts:144-148 (DefaultFormProps.Root)
+# compiled with the backgroundColor/maxWidth the form builder passes for a
+# new page (PageBuilder/utils/pages.js:11-33, createNewPage) and a new form
+# (packages/page-builder/utils/build.ts:49,57,153-185).
+_FORM_ROOT: dict[str, Any] = {
+    **_GEN_CONTAINER,
+    "backgroundColor": "#F8FAFF",
+    "width": "100",
+    "maxWidth": "900",
+    "alignment": "center",
+    "mobileBreak": "414",
+    **_ROOT_TEXT,
     "tabletBreak": "768",
 }
+
+# A homepage/dashboard static-content block's Root: gen/defaults.ts:165-177
+# (DefaultHomepageProps.Root), compiled by build.ts:253-267
+# (getDefaultHomepageTemplate) when the block is created.
+_HOMEPAGE_ROOT: dict[str, Any] = {
+    "backgroundColor": "rgba(255,255,255,1)",
+    **_ROOT_TEXT,
+    "height": 335,
+    "maxWidth": 1372,
+    "hasShadow": True,
+    "tabletBreak": "768",
+    "mobileBreak": "414",
+}
+
+# A record layout's custom content block Root: gen/defaults.ts:190-195
+# (DefaultStaticBlockProps.Root), compiled by build.ts:269-313
+# (getDefaultStaticBlockContent, StaticBlockBuilder.tsx:120).
+_STATIC_BLOCK_ROOT: dict[str, Any] = {**_HOMEPAGE_ROOT, "height": 400}
+
+
+def _settings_sizing(root: Mapping[str, Any]) -> dict[str, Any]:
+    """The keys a Section or Row settings panel writes when they're absent.
+
+    Adding a node makes it the active node (nodes/useAddNewNode.jsx:35),
+    which opens its settings (builder/PageBuilderTray.jsx:115-118). The
+    Section and Row panels then write width, maxWidth and alignment, in that
+    order, after the creation props (settings/SectionSettings.jsx:31-40,
+    settings/RowSettings.jsx:30-39, through settings/useCraftProps.js), with
+    maxWidth taken from the Root (nodes/Section/SectionSettings.jsx:18,38,
+    nodes/Row/RowSettings.jsx:14,33).
+    """
+    return {"width": "100", "maxWidth": root["maxWidth"], "alignment": "center"}
+
+
+# Form and survey builder Section, on every page: SectionContainer.tsx:27-34
+# via Section/props.js:11 (CreateSection.js:27-29), then the settings panel
+# (presets/node-settings.js:37-45, FormSectionSettings on form and non-form
+# pages alike).
+_FORM_SECTION: dict[str, Any] = {
+    **_ELEMENT_CONTAINER,
+    "containerBackgroundColor": "inherit",
+    **_PADDING_10,
+    **_settings_sizing(_FORM_ROOT),
+}
+
+# Form and survey builder Row: RowContainer.tsx:27-33 via Row/props.js:11
+# (CreateRow.jsx:39-41), then FormRowSettings the same way.
+_FORM_ROW: dict[str, Any] = {
+    **_ELEMENT_CONTAINER,
+    **_PADDING_10,
+    **_settings_sizing(_FORM_ROOT),
+}
+
+# Homepage and static-block Section/Row: gen/defaults.ts:74-94 (CommonRowProps,
+# CommonSectionProps) overridden at :178-187 (DefaultHomepageProps), passed by
+# CreateSection.js:31-33 and CreateRow.jsx:43-45.
+_HOMEPAGE_SECTION: dict[str, Any] = {
+    **_GEN_CONTAINER,
+    "containerBorderRadius": False,
+    **_PADDING_10,
+    "maxWidth": "1372",
+    "width": "100",
+    "alignment": "center",
+}
+_HOMEPAGE_ROW: dict[str, Any] = dict(_HOMEPAGE_SECTION)
+
+# Text: TextContainer.tsx:19-25 via Text/props.js:11 (CreateText.jsx:44-46).
+_TEXT: dict[str, Any] = {**_ELEMENT_CONTAINER, **_PADDING_10}
+
+# CustomField and FormField: CustomField/props.js:3-9 and FormField/props.js:3-9.
+_FIELD: dict[str, Any] = {**_ELEMENT_CONTAINER, **_PADDING_10}
+
+# HTML block: HTMLBlockContainer.tsx:15-22 (CreateHTMLBlock.jsx:24-29).
+_HTML_BLOCK: dict[str, Any] = {
+    **_ELEMENT_CONTAINER,
+    "containerBackgroundColor": "inherit",
+    **_PADDING_10,
+}
+
+# Divider: DividerContainer.tsx:15-22 + Divider/props.js:7-14
+# (CreateDivider.js:26-28).
+_DIVIDER: dict[str, Any] = {
+    **_ELEMENT_CONTAINER,
+    "containerBorderRadius": False,
+    **_PADDING_10,
+    "alignment": "center",
+    "borderStyle": "solid",
+    "color": "#A8B3BC",
+    "size": "1",
+    "width": "100",
+}
+
+# Image: ImageContainer.tsx:14 via Image/props.js:11, followed by the sizing
+# half of packages/page-builder/utils/image.ts:33-47 (getDefaultImageProps),
+# which CreateImage.jsx:23-31 passes after the file's src/name/fileId and its
+# measured naturalHeight/naturalWidth.
+_IMAGE: dict[str, Any] = dict(_ELEMENT_CONTAINER)
+_IMAGE_SIZING: dict[str, Any] = {
+    "size": "auto",
+    "unit": "pixel",
+    "height": None,
+    "width": None,
+    "display": "flex",
+    "position": "center",
+    "alt": "",
+    "link": "",
+}
+
+# Button on a form page: packages/page-builder/nodes/Button/props.ts:10-36
+# (commonProps, DEFAULT_FORM_BUTTON_PROPS) with ButtonContainer.tsx:22-28.
+# borderColor is gray-900 here; gen/defaults.ts's rgba(0,0,0,1) is only used
+# for template buttons, never a tray drop.
+_FORM_BUTTON: dict[str, Any] = {
+    "color": "#4BC7B4",
+    "label": "Submit",
+    "textColor": "#FFFFFF",
+    "action": "submit",
+    "url": "",
+    "borderSize": "0",
+    "borderRadius": "8",
+    "borderColor": "#2E373E",
+    "paddingTop": "10",
+    "paddingRight": "20",
+    "paddingBottom": "10",
+    "paddingLeft": "20",
+    "fontSize": "12",
+    "textStyles": [],
+    "alignment": "center",
+    "fontFamily": "Arial",
+    **_ELEMENT_CONTAINER,
+    **_padding("10", "0", "10", "0"),
+    "enableRecaptcha": False,
+}
+
+# Button on a non-form page (the thank-you page), a homepage block or a
+# static block: Button/props.ts:38-42 (DEFAULT_STATIC_PAGE_BUTTON_PROPS),
+# via CreateButton.js:31-40.
+_STATIC_PAGE_BUTTON: dict[str, Any] = {
+    **_FORM_BUTTON,
+    "label": "Click Here",
+    "action": "url",
+}
+
+# --- The email builder (MessageBuilder.jsx:824 mounts creator-elements.js:27-35).
+# Every email creator lays these over the form builder's props:
+# packages/page-builder/nodes/containers/ElementContainer.tsx:39-46
+# (EMAIL_ELEMENT_CONTAINER_PROPS_OVERRIDES).
+_EMAIL_OVERRIDES: dict[str, Any] = {
+    "containerBackgroundPositionX": "center",
+    "containerBackgroundPositionY": "top",
+    "containerBorderTopLeftRadius": "0",
+    "containerBorderTopRightRadius": "0",
+    "containerBorderBottomLeftRadius": "0",
+    "containerBorderBottomRightRadius": "0",
+}
+
+# A new email template's Root: gen/defaults.ts:157 (DefaultEmailProps.Root,
+# no tabletBreak) compiled with packages/page-builder/utils/build.ts:49,57
+# (backgroundColor aliceblue-25) by getDefaultEmailTemplate (:189-203), which
+# the template library calls for a new template (MessageBuilder/
+# useDefaultTemplate.js:27-52, pages/Library/pages/Templates/index.jsx:55).
+_EMAIL_ROOT: dict[str, Any] = {
+    **_GEN_CONTAINER,
+    "backgroundColor": "#F8FAFF",
+    "width": "100",
+    "maxWidth": "900",
+    "alignment": "center",
+    "mobileBreak": "414",
+    **_ROOT_TEXT,
+}
+
+# Email Section and Row settings write the same three keys (EmailSectionSettings,
+# EmailRowSettings; see _settings_sizing), maxWidth being this Root's.
+_EMAIL_SIZING: dict[str, Any] = _settings_sizing(_EMAIL_ROOT)
+
+# Section: nodes/Section/props.js:6-9 (DEFAULT_EMAIL_SECTION_PROPS).
+_EMAIL_SECTION: dict[str, Any] = {**_FORM_SECTION, **_EMAIL_OVERRIDES, **_EMAIL_SIZING}
+
+# Row: nodes/Row/props.js:6-9 (DEFAULT_EMAIL_ROW_PROPS).
+_EMAIL_ROW: dict[str, Any] = {**_FORM_ROW, **_EMAIL_OVERRIDES, **_EMAIL_SIZING}
+
+# Text: nodes/Text/props.js:6-9 (DEFAULT_EMAIL_TEXT_PROPS).
+_EMAIL_TEXT: dict[str, Any] = {**_TEXT, **_EMAIL_OVERRIDES}
+
+# Divider: nodes/Divider/props.js:16-19 (DEFAULT_EMAIL_DIVIDER_PROPS).
+_EMAIL_DIVIDER: dict[str, Any] = {**_DIVIDER, **_EMAIL_OVERRIDES}
+
+# Image: nodes/Image/props.js:6-9 (DEFAULT_EMAIL_IMAGE_PROPS), then the same
+# getDefaultImageProps sizing as a form image (CreateImage.jsx:23-31).
+_EMAIL_IMAGE: dict[str, Any] = {**_IMAGE, **_EMAIL_OVERRIDES}
+
+# Button: packages/page-builder/nodes/Button/props.ts:44-49
+# (DEFAULT_EMAIL_BUTTON_PROPS): commonProps (:10-31, the form button without
+# enableRecaptcha) with the email overrides, label "Click Here", action url.
+_EMAIL_BUTTON: dict[str, Any] = {
+    **{k: v for k, v in _FORM_BUTTON.items() if k != "enableRecaptcha"},
+    **_EMAIL_OVERRIDES,
+    "label": "Click Here",
+    "action": "url",
+}
+
+
+class _NotInBuilder(Mapping[str, Any]):
+    """The default for a block a builder's tray doesn't offer: any read
+    raises instead of building a node the UI never could."""
+
+    def __init__(self, builder: str, block: str) -> None:
+        self._message = f"the {builder} builder has no {block} block"
+
+    def __getitem__(self, key: str) -> Any:
+        raise ValueError(self._message)
+
+    def __iter__(self) -> Iterator[str]:
+        raise ValueError(self._message)
+
+    def __len__(self) -> int:
+        raise ValueError(self._message)
+
+
+@dataclass(frozen=True)
+class BuilderDefaults:
+    """The props one Kizen page builder writes for each node it creates.
+
+    Builders that share a default in the UI share the table here. Read-only:
+    every node takes a deep copy (see :func:`_props`).
+    """
+
+    root: Mapping[str, Any]
+    section: Mapping[str, Any]
+    row: Mapping[str, Any]
+    text: Mapping[str, Any]
+    field: Mapping[str, Any]
+    html_block: Mapping[str, Any]
+    button: Mapping[str, Any]
+    divider: Mapping[str, Any]
+    image: Mapping[str, Any]
+
+
+# The form/survey builder on a form page (creator-elements.js:37-47).
+FORM_PAGE_DEFAULTS = BuilderDefaults(
+    root=_FORM_ROOT,
+    section=_FORM_SECTION,
+    row=_FORM_ROW,
+    text=_TEXT,
+    field=_FIELD,
+    html_block=_HTML_BLOCK,
+    button=_FORM_BUTTON,
+    divider=_DIVIDER,
+    image=_IMAGE,
+)
+# The same builder on a non-form page: only the button differs
+# (buildFormButtonCreator(isFormPage), CreateButton.js:31-36).
+FORM_STATIC_PAGE_DEFAULTS = replace(FORM_PAGE_DEFAULTS, button=_STATIC_PAGE_BUTTON)
+# Homepage / dashboard static-content blocks (creator-elements.js:49-57).
+HOMEPAGE_DEFAULTS = replace(
+    FORM_STATIC_PAGE_DEFAULTS,
+    root=_HOMEPAGE_ROOT,
+    section=_HOMEPAGE_SECTION,
+    row=_HOMEPAGE_ROW,
+)
+# Record-layout custom content blocks (creator-elements.js:59-67): the
+# homepage set with a taller Root.
+STATIC_BLOCK_DEFAULTS = replace(HOMEPAGE_DEFAULTS, root=_STATIC_BLOCK_ROOT)
+# The email template builder (creator-elements.js:27-35). Its tray has no
+# field or HTML block, so reading either default raises.
+EMAIL_DEFAULTS = BuilderDefaults(
+    root=_EMAIL_ROOT,
+    section=_EMAIL_SECTION,
+    row=_EMAIL_ROW,
+    text=_EMAIL_TEXT,
+    field=_NotInBuilder("email", "field"),
+    html_block=_NotInBuilder("email", "HTML"),
+    button=_EMAIL_BUTTON,
+    divider=_EMAIL_DIVIDER,
+    image=_EMAIL_IMAGE,
+)
+
+
+def _props(base: Mapping[str, Any]) -> dict[str, Any]:
+    """A node's own copy of a default table (``textStyles`` is a list)."""
+    return copy.deepcopy(dict(base))
 
 
 def _new_id() -> str:
@@ -294,7 +639,8 @@ def button_block(
 ) -> dict[str, Any]:
     """A button block. ``action`` is ``"submit"`` (the form's submit button,
     confirmed live) or ``"url"`` (an external link, by analogy with the
-    dashboard static-content Button block)."""
+    dashboard static-content Button block). ``color`` ``None`` keeps the
+    builder's own button colour."""
     return {
         "kind": "button",
         "label": label,
@@ -345,9 +691,10 @@ def row(
 
 
 def section(
-    rows: list[dict[str, Any]], *, background_color: str = "#FFFFFF"
+    rows: list[dict[str, Any]], *, background_color: str | None = None
 ) -> dict[str, Any]:
-    """One section (a bordered container of rows)."""
+    """One section (a container of rows). ``background_color`` ``None``
+    keeps the builder's own Section background (see :class:`BuilderDefaults`)."""
     return {"rows": rows, "background_color": background_color}
 
 
@@ -356,24 +703,74 @@ def section(
 # ---------------------------------------------------------------------------
 
 
+def _leaf_node(
+    resolved_name: str,
+    props: dict[str, Any],
+    parent_id: str,
+    custom: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "type": {"resolvedName": resolved_name},
+        "isCanvas": False,
+        "props": props,
+        "displayName": resolved_name,
+        "custom": custom if custom is not None else {},
+        "parent": parent_id,
+        "hidden": False,
+        "nodes": [],
+        "linkedNodes": {},
+    }
+
+
+def _button_props(block: dict[str, Any], base: Mapping[str, Any]) -> dict[str, Any]:
+    props = _props(base)
+    if block.get("color") is not None:
+        props["color"] = block["color"]
+    props["label"] = block["label"]
+    props["action"] = block["action"]
+    props["url"] = block.get("url", "")
+    if block["action"] == "url" and base["action"] != "url":
+        # Switching a button's Action to URL writes this
+        # (PageBuilder/settings/ButtonSettings.jsx:261-263).
+        props["openLinkInNewTab"] = True
+    return props
+
+
+def _image_props(block: dict[str, Any], base: Mapping[str, Any]) -> dict[str, Any]:
+    props = _props(base)
+    props.update(
+        {"src": block["src"], "name": block["name"], "fileId": block["file_id"]}
+    )
+    # The UI measures these when the file loads and leaves them out when it
+    # can't (utils/image.ts:25-31); the CLI sends only what the spec gives.
+    if block.get("natural_height") is not None:
+        props["naturalHeight"] = block["natural_height"]
+    if block.get("natural_width") is not None:
+        props["naturalWidth"] = block["natural_width"]
+    props.update(_props(_IMAGE_SIZING))
+    if block.get("width") is not None:
+        # A fixed width is what the Size setting writes when a user picks one
+        # (PageBuilder/settings/ImageSettings/ImageSettings.jsx:501-518).
+        props["size"] = "dynamic"
+        props["width"] = block["width"]
+        props["dimension"] = "width"
+    return props
+
+
 def _assemble_block(
-    block: dict[str, Any], parent_id: str, content: dict[str, Any]
+    block: dict[str, Any],
+    parent_id: str,
+    content: dict[str, Any],
+    *,
+    defaults: BuilderDefaults = FORM_PAGE_DEFAULTS,
 ) -> str:
     kind = block["kind"]
     node_id = _new_id()
 
     if kind == "text":
-        node = {
-            "type": {"resolvedName": "Text"},
-            "isCanvas": False,
-            "props": dict(_CONTAINER_DEFAULTS),
-            "displayName": "Text",
-            "custom": {"text": block["html"]},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _leaf_node(
+            "Text", _props(defaults.text), parent_id, {"text": block["html"]}
+        )
     elif kind == "custom_field":
         # Linked (mirrors a field on the form's related_object) vs. unlinked
         # (form-only) fields are two DIFFERENT node types — see
@@ -386,109 +783,30 @@ def _assemble_block(
             if is_linked
             else form_field_prop(block["field"])
         )
-        node = {
-            "type": {"resolvedName": resolved_name},
-            "isCanvas": False,
-            "props": {**_CONTAINER_DEFAULTS, "field": field_prop},
-            "displayName": resolved_name,
-            "custom": {},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _leaf_node(
+            resolved_name, {**_props(defaults.field), "field": field_prop}, parent_id
+        )
     elif kind == "button":
         is_submit = block["action"] == "submit"
-        node = {
-            "type": {"resolvedName": "Button"},
-            "isCanvas": False,
-            "props": {
-                **_CONTAINER_DEFAULTS,
-                "color": block.get("color") or "rgba(0,51,160,1)",
-                "label": block["label"],
-                "textColor": "rgba(255,255,255,1)",
-                "action": block["action"],
-                "url": block.get("url", ""),
-                "borderSize": "0",
-                "borderRadius": "8",
-                "borderColor": "rgba(0,0,0,1)",
-                "paddingTop": "10",
-                "paddingRight": "20",
-                "paddingBottom": "10",
-                "paddingLeft": "20",
-                "fontSize": "16",
-                "textStyles": [],
-                "alignment": "center",
-                "fontFamily": "Arial",
-                "openLinkInNewTab": True,
-                "enableRecaptcha": False,
-            },
-            "displayName": "Button",
-            "custom": {"isSubmitButton": is_submit} if is_submit else {},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _leaf_node(
+            "Button",
+            _button_props(block, defaults.button),
+            parent_id,
+            {"isSubmitButton": True} if is_submit else {},
+        )
     elif kind == "html":
-        node = {
-            "type": {"resolvedName": "HTMLBlock"},
-            "isCanvas": False,
-            "props": {**_CONTAINER_DEFAULTS, "htmlContent": block["html"]},
-            "displayName": "HTMLBlock",
-            "custom": {},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _leaf_node(
+            "HTMLBlock",
+            {**_props(defaults.html_block), "htmlContent": block["html"]},
+            parent_id,
+        )
     elif kind == "divider":
-        node = {
-            "type": {"resolvedName": "Divider"},
-            "isCanvas": False,
-            "props": {
-                **_CONTAINER_DEFAULTS,
-                "alignment": "center",
-                "borderStyle": "solid",
-                "color": block.get("color") or "rgba(78,193,145,1)",
-                "size": "3",
-                "width": "100",
-            },
-            "displayName": "Divider",
-            "custom": {},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        props = _props(defaults.divider)
+        if block.get("color") is not None:
+            props["color"] = block["color"]
+        node = _leaf_node("Divider", props, parent_id)
     elif kind == "image":
-        node = {
-            "type": {"resolvedName": "Image"},
-            "isCanvas": False,
-            "props": {
-                **_CONTAINER_DEFAULTS,
-                "size": "dynamic",
-                "unit": "pixel",
-                "height": None,
-                "width": block.get("width") or 150,
-                "display": "flex",
-                "position": "center",
-                "alt": "",
-                "link": "",
-                "src": block["src"],
-                "name": block["name"],
-                "fileId": block["file_id"],
-                "naturalHeight": block.get("natural_height"),
-                "naturalWidth": block.get("natural_width"),
-                "dimension": "width",
-            },
-            "displayName": "Image",
-            "custom": {},
-            "parent": parent_id,
-            "hidden": False,
-            "nodes": [],
-            "linkedNodes": {},
-        }
+        node = _leaf_node("Image", _image_props(block, defaults.image), parent_id)
     else:
         raise ValueError(f"unknown form-page block kind: {kind!r}")
 
@@ -501,19 +819,16 @@ def _assemble_cell(
     parent_id: str,
     content: dict[str, Any],
     *,
+    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str],
     width: float | None = None,
     cell_props: Callable[[float | None], dict[str, Any]] | None = None,
-    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
 ) -> str:
-    """``cell_props``/``block_assembler`` are additive hooks: both default to
-    today's behaviour (``props: {}``, this module's own block dispatch), so
-    forms/layouts callers that don't pass them are unaffected. A surface with
-    a different ``Cell.props`` shape (email's ``{"__width": <fraction>}`` —
-    see ``tools.email_craft``) or different leaf-block prop shapes passes its
-    own callables instead of forking this function."""
-    assemble = block_assembler or _assemble_block
+    """``cell_props`` is an additive hook: it defaults to ``props: {}``. A
+    surface with a different ``Cell.props`` shape (email's
+    ``{"__width": <fraction>}`` — see ``tools.email_craft``) passes its own
+    callable instead of forking this function."""
     cell_id = _new_id()
-    block_ids = [assemble(b, cell_id, content) for b in cell_spec["blocks"]]
+    block_ids = [block_assembler(b, cell_id, content) for b in cell_spec["blocks"]]
     content[cell_id] = {
         "type": {"resolvedName": "Cell"},
         "isCanvas": True,
@@ -533,8 +848,9 @@ def _assemble_row(
     parent_id: str,
     content: dict[str, Any],
     *,
+    defaults: BuilderDefaults,
+    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str],
     cell_props: Callable[[float | None], dict[str, Any]] | None = None,
-    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
     row_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> str:
     row_id = _new_id()
@@ -552,13 +868,9 @@ def _assemble_row(
         )
         for i, c in enumerate(cells)
     ]
-    props = {
-        "columns": columns,
-        **_CONTAINER_DEFAULTS,
-        "maxWidth": "900",
-        "width": "100",
-        "alignment": "center",
-    }
+    # `columns` leads because craft.js lays Row.craft.defaultProps down first
+    # (nodes/Row/Row.jsx:318-325).
+    props = {"columns": columns, **_props(defaults.row)}
     if row_props:
         props.update(row_props(row_spec))
     content[row_id] = {
@@ -580,8 +892,9 @@ def _assemble_section(
     parent_id: str,
     content: dict[str, Any],
     *,
+    defaults: BuilderDefaults,
+    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str],
     cell_props: Callable[[float | None], dict[str, Any]] | None = None,
-    block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
     section_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     row_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> str:
@@ -591,19 +904,16 @@ def _assemble_section(
             r,
             section_id,
             content,
+            defaults=defaults,
             cell_props=cell_props,
             block_assembler=block_assembler,
             row_props=row_props,
         )
         for r in section_spec["rows"]
     ]
-    props = {
-        **_CONTAINER_DEFAULTS,
-        "containerBackgroundColor": section_spec.get("background_color", "#FFFFFF"),
-        "maxWidth": "900",
-        "width": "100",
-        "alignment": "center",
-    }
+    props = _props(defaults.section)
+    if section_spec.get("background_color") is not None:
+        props["containerBackgroundColor"] = section_spec["background_color"]
     if section_props:
         props.update(section_props(section_spec))
     content[section_id] = {
@@ -623,7 +933,7 @@ def _assemble_section(
 def build_content_tree(
     sections: list[dict[str, Any]],
     *,
-    root_props: dict[str, Any] | None = None,
+    defaults: BuilderDefaults = FORM_PAGE_DEFAULTS,
     cell_props: Callable[[float | None], dict[str, Any]] | None = None,
     block_assembler: Callable[[dict[str, Any], str, dict[str, Any]], str] | None = None,
     section_props: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
@@ -638,33 +948,31 @@ def build_content_tree(
     :func:`page`), while a record layout's ``custom_content`` block embeds
     it as a **nested object** directly (``metadata.blockJson`` — confirmed
     live 2026-07-21; see ``tools/layouts.py::custom_content_block``).
-    ``root_props`` defaults to the forms/surveys Root shape (which carries
-    ``container*``-prefixed keys); pass the record-layout Root shape
-    instead for a ``custom_content`` block — its Root has NO
-    ``container*``-prefixed props at all, just ``backgroundColor``/
-    ``color``/``fontFamily``/``fontSize``/``linkColor``/``lineHeight``/
-    ``height``/``maxWidth``/``hasShadow``/``tabletBreak``/``mobileBreak``
-    (matching the dashboard static-content dashlet's Root shape, just
-    camelCased instead of snake_case).
+
+    ``defaults`` is the builder whose creation defaults every node starts
+    from — :data:`FORM_PAGE_DEFAULTS`, :data:`FORM_STATIC_PAGE_DEFAULTS`,
+    :data:`STATIC_BLOCK_DEFAULTS` or :data:`EMAIL_DEFAULTS`. Spec values (a section's
+    ``background_color``, a button's or divider's ``color``, an image's
+    ``width``, a row's ``columns``) replace the matching default.
 
     ``cell_props``/``block_assembler`` are additive hooks for a surface whose
-    ``Cell.props`` or leaf-block prop shapes differ from this module's forms
-    defaults — see ``tools.email_craft``, which needs ``Cell.props`` to carry
+    ``Cell.props`` or leaf-block prop shapes differ — see
+    ``tools.email_craft``, which needs ``Cell.props`` to carry
     ``{"__width": <fraction>}`` and its own Button/Divider prop construction.
     ``section_props``/``row_props`` are the same shape of hook for
     ``Section``/``Row`` props — each takes the section/row spec dict and
-    returns a props-override dict merged over this module's defaults. All
-    four default to ``None``, which reproduces today's exact output — the
-    call sites in this file and in ``tools/layouts.py`` are unaffected.
+    returns a props-override dict merged over ``defaults``.
     """
+    assemble = block_assembler or functools.partial(_assemble_block, defaults=defaults)
     content: dict[str, Any] = {}
     section_ids = [
         _assemble_section(
             s,
             "ROOT",
             content,
+            defaults=defaults,
             cell_props=cell_props,
-            block_assembler=block_assembler,
+            block_assembler=assemble,
             section_props=section_props,
             row_props=row_props,
         )
@@ -673,7 +981,7 @@ def build_content_tree(
     content["ROOT"] = {
         "type": {"resolvedName": "Root"},
         "isCanvas": True,
-        "props": dict(root_props if root_props is not None else _ROOT_PROPS),
+        "props": _props(defaults.root),
         "displayName": "Root",
         "custom": {},
         "parent": None,
@@ -684,8 +992,8 @@ def build_content_tree(
     return content
 
 
-def _build_page_data(sections: list[dict[str, Any]]) -> str:
-    return json.dumps(build_content_tree(sections))
+def _build_page_data(sections: list[dict[str, Any]], defaults: BuilderDefaults) -> str:
+    return json.dumps(build_content_tree(sections, defaults=defaults))
 
 
 # ---------------------------------------------------------------------------
@@ -707,14 +1015,17 @@ def page(
 
     Defaults for ``hideable``/``deletable`` match the live example: the form
     page itself is hideable but not deletable; a non-form (e.g. thank-you)
-    page defaults to neither.
+    page defaults to neither. Nodes start from the form builder's defaults
+    for that kind of page (:data:`FORM_PAGE_DEFAULTS` or
+    :data:`FORM_STATIC_PAGE_DEFAULTS`).
     """
     if hideable is None:
         hideable = bool(is_form_page)
+    defaults = FORM_PAGE_DEFAULTS if is_form_page else FORM_STATIC_PAGE_DEFAULTS
     return {
         "id": page_id or _new_id(),
         "hidden": hidden,
-        "page_data": _build_page_data(sections),
+        "page_data": _build_page_data(sections, defaults),
         "page_name": name,
         "is_hideable": hideable,
         "is_deletable": deletable,

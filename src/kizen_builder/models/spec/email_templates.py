@@ -48,14 +48,15 @@ class PaddingDef(BaseModel):
     (`containerPaddingTop`/`Right`/`Bottom`/`Left`) rather than a CSS-style
     shorthand — the reference template shows asymmetric padding (e.g. `40`
     left/right with `10` top/bottom on one row), so a shorthand would be a
-    lossy abstraction over four independently-set keys."""
+    lossy abstraction over four independently-set keys. A side left out
+    keeps the email builder's own default for that node."""
 
     model_config = ConfigDict(extra="forbid")
 
-    top: str = "10"
-    right: str = "10"
-    bottom: str = "10"
-    left: str = "10"
+    top: str | None = None
+    right: str | None = None
+    bottom: str | None = None
+    left: str | None = None
 
 
 class ParagraphDef(BaseModel):
@@ -64,21 +65,20 @@ class ParagraphDef(BaseModel):
     applied to the whole paragraph. Rendered by
     `tools.email_craft._paragraphs_to_html` into the markup Kizen's own
     rich-text editor normalises **to** on save for that case (`<p
-    data-line-height="default" style="line-height: 1.25;">` +
-    `<span style="font-size: Npx;">` + `<strong>` + `<a rel="noopener
-    noreferrer nofollow">`), confirmed live 2026-08-26 — see the work item
-    that added this model for the full trace.
+    data-line-height="default" style="line-height: 1.25;">` + a `<span
+    style="...">` only when `size` or `color` is set + `<strong>` + `<a
+    rel="noopener noreferrer nofollow">`), confirmed live 2026-08-26 — see
+    the work item that added this model for the full trace.
 
     Deliberately closed vocabulary, and it does not cover every shape the
     live editor can produce: re-measured 2026-08-26 against the same
     reference template, 4 of 31 `<p>` blocks (across 9 `Text` nodes) contain
     a bare `<a>` with no `<span>` anywhere in the paragraph, and 2 spans
     carry a `<strong>`-wrapped run alongside plain text in the same span
-    (bold on part of a run, not the whole paragraph). Neither shape is
-    expressible here — `link` always wraps a `<span>`, and `bold` is
-    all-or-nothing per paragraph — and there is no `html` escape hatch to
-    fall back on, so paragraphs shaped like either cannot be authored from
-    this CLI. See
+    (bold on part of a run, not the whole paragraph). The first is a `link`
+    with no `size` or `color`. The second is not expressible here — `bold`
+    is all-or-nothing per paragraph — and there is no `html` escape hatch to
+    fall back on, so such paragraphs cannot be authored from this CLI. See
     `00-inbox/paragraph-model-cannot-express-partial-run-formatting.md`.
 
     `text` may contain `{{ namespace.field }}` merge-field tokens (rendered
@@ -95,8 +95,8 @@ class ParagraphDef(BaseModel):
     text: str
     size: int | None = Field(
         default=None,
-        description="px. None renders the builder's own default span size, "
-        "not 'no span' — every live canonical span carries an explicit size.",
+        description="px. None writes no font-size, as the editor does until "
+        "a size is picked; the text then takes the template's own size.",
     )
     bold: bool = False
     color: str | None = Field(
@@ -174,24 +174,29 @@ class ImageBlockDef(BaseModel):
 
 
 class ButtonBlockDef(BaseModel):
+    """Styling keys left out (`None`) keep the email builder's own button
+    default; see `tools.form_ui.EMAIL_DEFAULTS`."""
+
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["button"] = "button"
     label: str
     url: str
     color: str | None = None
-    border_radius: str = "8"
-    padding_left: str = "20"
-    padding_right: str = "20"
-    alignment: Literal["left", "center", "right"] = "center"
+    border_radius: str | None = None
+    padding_left: str | None = None
+    padding_right: str | None = None
+    alignment: Literal["left", "center", "right"] | None = None
 
 
 class DividerBlockDef(BaseModel):
+    """`color`/`size` left out keep the email builder's own divider default."""
+
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["divider"] = "divider"
     color: str | None = None
-    size: str = "3"
+    size: str | None = None
 
 
 BlockDef = Annotated[
@@ -218,34 +223,31 @@ class RowDef(BaseModel):
     formula from `Section.max_width`/padding (some rows fit
     `max_width - 2*padding`, others don't). Same "redundant-but-must-agree"
     trust model this surface already uses for `Row.props.columns` vs.
-    `Cell.props.__width`.
+    `Cell.props.__width`. Each left out (`None`) keeps the email builder's
+    own Row default; `container_width` has none, so it is not sent.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     layout: ColumnPreset = "1 Column"
     cells: list[CellDef]
-    width: str = "100"
+    width: str | None = None
     container_width: str | None = None
     padding: PaddingDef | None = None
 
 
 class SectionDef(BaseModel):
-    """`max_width`/`container_width`/`padding` default to the emitter's
-    pre-existing hardcoded values (`900`/absent/`10` uniform) so a spec that
-    sets none of them is byte-identical to the pre-this-item emitter — see
-    `tools/email_craft.py::_section_props`. The reference template's own
-    common value for `max_width` is `600` (a real newsletter's content
-    width); a spec targeting that layout sets it explicitly rather than
-    inheriting it as the default, which would break the regression
-    guarantee this item's acceptance criteria require.
+    """`background_color`/`max_width`/`padding` left out (`None`) keep the
+    email builder's own Section default (no background of its own, the
+    template's 900px width, padding 10); `container_width` has none, so it is
+    not sent. See `tools.form_ui.EMAIL_DEFAULTS`.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     rows: list[RowDef] = Field(default_factory=list)
-    background_color: str = "#FFFFFF"
-    max_width: str = "900"
+    background_color: str | None = None
+    max_width: str | None = None
     container_width: str | None = None
     padding: PaddingDef | None = None
 
@@ -256,7 +258,8 @@ class EmailTemplateDef(BaseModel):
     Deliberately has no `craft_json`/`content` key of any kind — those two
     fields are always derived from `sections` by `tools/email_craft.py`, so
     a hand-authored pair can never be passed in and go out of sync. `subject`
-    is optional (kept blank if omitted, matching what the builder allows).
+    is optional: omitted, it is not sent, so a create stores Kizen's blank
+    default and an update leaves the live subject alone.
     `sender_type` is not a field here — it is hard-coded to `"business"` by
     the planner; see `docs/specs/email-templates.md`.
     """
@@ -264,5 +267,5 @@ class EmailTemplateDef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1)
-    subject: str = ""
+    subject: str | None = None
     sections: list[SectionDef] = Field(default_factory=list)

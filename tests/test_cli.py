@@ -2248,6 +2248,51 @@ def _capture_fields_planner(monkeypatch):
     return seen
 
 
+def _capture_single_field_planner(monkeypatch):
+    seen = {}
+
+    def fake(object_api_name, field, category=None):
+        seen["field"] = field
+        return _fake_plan()
+
+    monkeypatch.setattr(field_planners, "plan_create_field", fake)
+    return seen
+
+
+def test_fields_create_relation_flag_unset_sends_no_relation_type(monkeypatch):
+    """Without --relation-cardinality the flag adds no relation_type, so the
+    server's default applies instead of a CLI-chosen one."""
+    seen = _capture_single_field_planner(monkeypatch)
+    result = runner.invoke(
+        cli.app,
+        [
+            "fields", "create", "invoice", "--name", "Account",
+            "--api-name", "account", "--type", "relationship",
+            "--category", "Main", "--relation-target", "accounts", "--dry-run",
+        ],
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert seen["field"]["relation"] == {"target_object": "accounts"}
+
+
+def test_fields_create_relation_flag_explicit_old_default_is_still_sent(monkeypatch):
+    seen = _capture_single_field_planner(monkeypatch)
+    result = runner.invoke(
+        cli.app,
+        [
+            "fields", "create", "invoice", "--name", "Account",
+            "--api-name", "account", "--type", "relationship",
+            "--category", "Main", "--relation-target", "accounts",
+            "--relation-cardinality", "many_to_one", "--dry-run",
+        ],
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    assert seen["field"]["relation"] == {
+        "target_object": "accounts",
+        "relation_type": "many_to_one",
+    }
+
+
 def test_fields_create_bulk_from_stdin(monkeypatch):
     seen = _capture_fields_planner(monkeypatch)
     spec = [

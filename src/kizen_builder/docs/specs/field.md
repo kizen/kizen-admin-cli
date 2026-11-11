@@ -117,7 +117,9 @@ legacy `choices` and `selector` (Kizen converted them to `dropdown` and
 - `relation_type`: use the UI-language cardinalities — `one_to_one`,
   `many_to_one` (this object holds one ref; many can share it — the usual
   case), `one_to_many`, `many_to_many`. Raw wire values
-  (`primary`/`additional`/…) are also accepted. Default `many_to_one`.
+  (`primary`/`additional`/…) are also accepted. If omitted, nothing is sent
+  and Kizen creates `many_to_many` (`additional`), which is also what the UI
+  field wizard preselects (confirmed in source 2026-11-11).
 - `related_name`: label for the inverse field on the target (defaults to this
   object's name).
 - `target_category`: where the inverse field lands on the target (optional).

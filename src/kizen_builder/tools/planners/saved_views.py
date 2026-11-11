@@ -5,7 +5,8 @@ templates — the three per-object "saved view" resources under
 All three share one CRUD shape and the dashboard-style ``EntityPermission``
 sharing block (see ``tools.dashboards.normalize_sharing_settings`` /
 ``default_sharing_settings``, reused here as-is — confirmed byte-identical
-schema in the full API spec). They differ in the wire key for their
+schema in the full API spec). A new one with no sharing in its spec starts
+private, like the UI's save dialog. They differ in the wire key for their
 config blob: ``config`` (filter groups), ``filters`` (quick filters),
 ``configuration_json`` (column templates, built from a field list by
 ``_build_columns``).
@@ -298,12 +299,6 @@ _BUCKETS = ("roles", "team_members")
 _LEVEL_KEYS = ("view", "edit", "admin")
 
 
-def _ui_default_sharing() -> dict[str, Any]:
-    """What the UI's save modal starts from: private, no access for all team
-    members, and the Admin role as admin."""
-    return {**default_sharing_settings(), "private": True, "all_team_members": 0}
-
-
 def _reshare(
     current: dict[str, Any],
     *,
@@ -389,9 +384,7 @@ def plan_create_quick_filter(
             "quick_filtering_facets": qf.facets,
         },
         "filter_count": len(settings),
-        "sharing_settings": normalize_sharing_settings(qf.sharing_settings)
-        if qf.sharing_settings
-        else _ui_default_sharing(),
+        "sharing_settings": _sharing_payload(qf.sharing_settings),
     }
     if qf.owner is not None:
         payload["owner"] = qf.owner
@@ -759,9 +752,7 @@ def plan_create_column_template(
     payload: dict[str, Any] = {
         "name": ct.name,
         "configuration_json": config,
-        "sharing_settings": normalize_sharing_settings(ct.sharing_settings)
-        if ct.sharing_settings
-        else _ui_default_sharing(),
+        "sharing_settings": _sharing_payload(ct.sharing_settings),
     }
     if ct.owner is not None:
         payload["owner"] = ct.owner

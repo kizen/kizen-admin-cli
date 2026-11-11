@@ -135,20 +135,6 @@ def auto_block(
 # Custom content (static-content / HTML) blocks
 # ---------------------------------------------------------------------------
 
-_CUSTOM_CONTENT_ROOT_PROPS: dict[str, Any] = {
-    "backgroundColor": "rgba(255,255,255,1)",
-    "color": "rgba(74,86,96,1)",
-    "fontFamily": "Arial",
-    "fontSize": "14",
-    "linkColor": "rgba(82,142,249,1)",
-    "lineHeight": "1.25",
-    "height": 400,
-    "maxWidth": 1372,
-    "hasShadow": True,
-    "tabletBreak": "768",
-    "mobileBreak": "414",
-}
-
 
 def custom_content_block(
     sections: list[dict[str, Any]], *, label: str = "Custom Content"
@@ -171,8 +157,11 @@ def custom_content_block(
     ``lineHeight``/``height``/``maxWidth``/``hasShadow``/``tabletBreak``/
     ``mobileBreak``, matching the dashboard static-content dashlet's Root
     shape (just camelCased) rather than a form page's Root shape.
+
+    Every node starts from the layout builder's own creation defaults
+    (``form_ui.STATIC_BLOCK_DEFAULTS``), not a form's.
     """
-    tree = form_ui.build_content_tree(sections, root_props=_CUSTOM_CONTENT_ROOT_PROPS)
+    tree = form_ui.build_content_tree(sections, defaults=form_ui.STATIC_BLOCK_DEFAULTS)
     return {
         "id": str(uuid.uuid4()),
         "label": label,

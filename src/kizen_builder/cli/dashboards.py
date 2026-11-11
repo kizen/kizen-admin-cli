@@ -298,7 +298,9 @@ def dashboards_dashlet_config(
     full: bool = typer.Option(
         False,
         "--full",
-        help="Wrap the config in a full DashboardDef ready for `dashboards create`.",
+        help="Wrap the config in a full DashboardDef for `dashboards create`. "
+        "The dashlet has no layout; add one first (sizes: `kizen docs show "
+        "dashboard`).",
     ),
 ) -> None:
     """Print a valid dashlet `config` for a named type, ready to edit.

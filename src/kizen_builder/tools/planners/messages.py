@@ -175,25 +175,28 @@ def plan_create_template_from_spec(
 
     payload: dict[str, Any] = {
         "name": spec.name,
-        "subject": spec.subject,
         "type": "email",
         "sender_type": _DEFAULT_SENDER_TYPE,
         "from_name_type": _DEFAULT_FROM_NAME_TYPE,
         "craft_json": craft_json,
         "content": content,
     }
+    preview: dict[str, Any] = {"env": config.name, "name": spec.name}
+    if spec.subject is not None:
+        payload["subject"] = spec.subject
+        preview["subject"] = spec.subject
+    preview.update(
+        {
+            "sections": len(spec.sections),
+            "craft_json": f"{len(craft_json)} nodes",
+            "content": f"{len(content)} chars",
+        }
+    )
     op = PlanOperation(
         action="create",
         kind="email_template",
         key=spec.name,
-        preview={
-            "env": config.name,
-            "name": spec.name,
-            "subject": spec.subject,
-            "sections": len(spec.sections),
-            "craft_json": f"{len(craft_json)} nodes",
-            "content": f"{len(content)} chars",
-        },
+        preview=preview,
         payload=payload,
     )
     return Plan.build(
@@ -230,10 +233,12 @@ def plan_update_template(
             raise PlanError(str(e)) from e
         patch = {
             "name": spec.name,
-            "subject": spec.subject,
             "craft_json": craft_json,
             "content": content,
         }
+        # An omitted subject is not patched, so the live one survives.
+        if spec.subject is not None:
+            patch["subject"] = spec.subject
 
     config, tmpl = _resolve(template)
     if not patch:

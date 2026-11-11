@@ -11,7 +11,13 @@ from kizen_builder.models.spec._base import ApiName
 
 class DashletDef(BaseModel):
     """One dashlet on a dashboard. ``config``/``layout`` are passthrough, except
-    a filter spec in ``config.filters``."""
+    a filter spec in ``config.filters``.
+
+    Every field defaults to ``None``, meaning "not in the spec": the planner
+    sends only the fields that are set, so an update leaves the rest of the
+    live dashlet alone. The one create-time fill is ``name``, which the API
+    requires: an unnamed new dashlet is sent as ``"[default]"``.
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -19,18 +25,22 @@ class DashletDef(BaseModel):
         default=None,
         description="Existing dashlet UUID (present → update; absent → create).",
     )
-    name: str = Field(default="[default]", description="Dashlet display name.")
+    name: str | None = Field(
+        default=None,
+        description="Dashlet display name. A new dashlet without one is named "
+        "'[default]'.",
+    )
     custom_object: str | None = Field(
         default=None,
-        description="UUID of the custom object the dashlet queries (None for "
+        description="UUID of the custom object the dashlet queries (omit for "
         "non-object dashlets like email metrics).",
     )
-    layout: dict[str, Any] = Field(
-        default_factory=dict,
+    layout: dict[str, Any] | None = Field(
+        default=None,
         description="Grid geometry: {x, y, w, h, ...}. Passed through verbatim.",
     )
-    config: dict[str, Any] = Field(
-        default_factory=dict,
+    config: dict[str, Any] | None = Field(
+        default=None,
         description="Dashlet config (report_type, chart_type, filters, ...). "
         "Passed through, except a filter spec in 'filters' "
         '({"all"|"any": [...]}), compiled at plan time.',
@@ -41,21 +51,25 @@ class DashboardDef(BaseModel):
     """A dashboard or homepage plus its dashlets.
 
     ``api_name`` is the stable identifier. ``type`` is one of Kizen's
-    ``TypeBdfEnum`` values: ``generic_dashboard`` (a standalone dashboard,
-    the default), ``homepage`` (the team landing page), or ``chart_group`` (a
-    custom object's chart group — then ``custom_object`` is required).
-    ``style_settings``/``sharing_settings`` default to the standard palette
-    when omitted (see ``tools.dashboards``).
+    ``TypeBdfEnum`` values: ``generic_dashboard`` (a standalone dashboard),
+    ``homepage`` (the team landing page), or ``chart_group`` (a custom
+    object's chart group — then ``custom_object`` is required).
+
+    ``None`` means "not in the spec": the planner sends only what is set, and
+    an update never touches a field the spec omits. On create, ``type``
+    falls back to ``generic_dashboard`` (the API requires one) and an omitted
+    ``sharing_settings`` gets ``tools.dashboards.default_sharing_settings``
+    (private, Admin role as admin — the UI's default).
     """
 
     model_config = ConfigDict(extra="allow")
 
     api_name: ApiName
     name: str
-    type: Literal["generic_dashboard", "homepage", "chart_group"] = "generic_dashboard"
+    type: Literal["generic_dashboard", "homepage", "chart_group"] | None = None
     custom_object: str | None = None
-    hidden: bool = False
-    published: bool = True
+    hidden: bool | None = None
+    published: bool | None = None
     style_settings: dict[str, Any] | None = None
     sharing_settings: dict[str, Any] | None = None
     dashlets: list[DashletDef] = Field(default_factory=list)

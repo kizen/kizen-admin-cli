@@ -58,9 +58,11 @@ def test_minimal_valid_spec():
     assert spec.sections[0].rows[0].layout == "1 Column"
 
 
-def test_subject_defaults_to_empty_string():
+def test_omitted_subject_is_unset_not_blank():
+    """Unset must stay distinguishable from an explicit "" so the planners
+    can leave it out of the payload."""
     spec = EmailTemplateDef.model_validate({"name": "t", "sections": []})
-    assert spec.subject == ""
+    assert spec.subject is None
 
 
 @pytest.mark.parametrize(
@@ -134,14 +136,23 @@ def test_grep_confirms_neither_craft_json_nor_content_is_a_model_field():
 
 
 # ---------------------------------------------------------------------------
-# Layout props (BCLI-024) — defaults reproduce today's hardcoded emitter
-# output; explicit values round-trip through the model unchanged.
+# Layout and styling props — left out, they are `None` so the emitter keeps
+# the email builder's own defaults; explicit values round-trip unchanged.
 # ---------------------------------------------------------------------------
 
 
-def test_padding_def_defaults_to_uniform_10_on_all_four_sides():
+def test_padding_def_sides_left_out_are_unset_not_a_cli_value():
+    """A side the spec leaves out is `None`, so the node keeps the email
+    builder's own padding for that side instead of a CLI-chosen one."""
     p = PaddingDef()
-    assert (p.top, p.right, p.bottom, p.left) == ("10", "10", "10", "10")
+    assert (p.top, p.right, p.bottom, p.left) == (None, None, None, None)
+    partial = PaddingDef.model_validate({"top": "0"})
+    assert (partial.top, partial.right, partial.bottom, partial.left) == (
+        "0",
+        None,
+        None,
+        None,
+    )
 
 
 def test_padding_def_sides_are_independently_settable():
@@ -151,15 +162,12 @@ def test_padding_def_sides_are_independently_settable():
     assert (p.top, p.right, p.bottom, p.left) == ("10", "40", "10", "40")
 
 
-def test_section_def_layout_defaults_reproduce_todays_hardcoded_emitter_output():
-    """`max_width` defaults to `900` (today's `form_ui._assemble_section`
-    hardcode), not the reference template's `600` — see this item's
-    Implementation notes for why the acceptance criteria's literal default
-    was corrected. `container_width`/`padding` default to `None`, meaning
-    "no override", matching that `containerWidth` is absent and padding is
-    the uniform `10` today."""
+def test_section_def_styling_left_out_is_unset_not_a_cli_value():
+    """Every Section styling key the spec leaves out is `None`, so the
+    emitter keeps the email builder's own Section props."""
     s = SectionDef.model_validate({"rows": []})
-    assert s.max_width == "900"
+    assert s.background_color is None
+    assert s.max_width is None
     assert s.container_width is None
     assert s.padding is None
 
@@ -178,9 +186,9 @@ def test_section_def_layout_props_are_independently_settable():
     assert s.padding == PaddingDef(top="0", right="0", bottom="0", left="0")
 
 
-def test_row_def_layout_defaults_reproduce_todays_hardcoded_emitter_output():
+def test_row_def_styling_left_out_is_unset_not_a_cli_value():
     r = RowDef.model_validate({"cells": []})
-    assert r.width == "100"
+    assert r.width is None
     assert r.container_width is None
     assert r.padding is None
 
@@ -202,19 +210,29 @@ def test_row_def_layout_props_are_independently_settable():
     assert r.padding == PaddingDef(top="10", right="40", bottom="10", left="40")
 
 
-def test_divider_block_def_size_defaults_to_todays_hardcoded_3():
+def test_divider_block_def_styling_left_out_is_unset_not_a_cli_value():
     d = DividerBlockDef()
-    assert d.size == "3"
+    assert (d.color, d.size) == (None, None)
 
 
-def test_button_block_def_layout_props_default_to_todays_hardcoded_values():
+def test_button_block_def_styling_left_out_is_unset_not_a_cli_value():
     b = ButtonBlockDef(label="Go", url="https://x")
-    assert (b.border_radius, b.padding_left, b.padding_right, b.alignment) == (
-        "8",
-        "20",
-        "20",
-        "center",
-    )
+    assert (
+        b.color,
+        b.border_radius,
+        b.padding_left,
+        b.padding_right,
+        b.alignment,
+    ) == (None, None, None, None, None)
+
+
+def test_explicit_falsy_styling_values_are_kept_as_given():
+    b = ButtonBlockDef(label="Go", url="", border_radius="0", padding_left="")
+    assert (b.url, b.border_radius, b.padding_left) == ("", "0", "")
+    assert DividerBlockDef(size="0", color="").size == "0"
+    s = SectionDef.model_validate({"background_color": "", "max_width": "0"})
+    assert (s.background_color, s.max_width) == ("", "0")
+    assert RowDef.model_validate({"cells": [], "width": "0"}).width == "0"
 
 
 @pytest.mark.parametrize("alignment", ["left", "center", "right"])

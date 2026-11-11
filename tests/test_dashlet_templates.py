@@ -206,6 +206,22 @@ def test_wrap_email_type_has_null_custom_object():
     assert dash["dashlets"][0]["custom_object"] is None
 
 
+def test_wrap_invents_no_layout_and_no_published_flag():
+    """`--full` has no geometry to offer and no reason to publish, so the
+    wrapper leaves both for the author (or the server) to decide."""
+    cfg = tpl.build_dashlet_config("pipeline_metric")
+    dash = tpl.wrap_as_dashboard("pipeline_metric", cfg)
+    assert "published" not in dash
+    assert "layout" not in dash["dashlets"][0]
+
+
+@pytest.mark.parametrize("dashlet_type", list(tpl.TYPES))
+def test_no_template_carries_dashlet_style_config(dashlet_type):
+    cfg = tpl.build_dashlet_config(dashlet_type)
+    assert "dashlet_style_config" not in (cfg.get("fe_extra_info") or {})
+    assert "dashlet_style_config" not in str(cfg)
+
+
 def test_generate_carries_custom_object_for_table_without_config_object_id(monkeypatch):
     # table_of_records config has no object_id — the object lives only on the
     # dashlet envelope, so generate() must surface it as custom_object.

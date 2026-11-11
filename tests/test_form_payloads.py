@@ -71,18 +71,20 @@ def test_form_payload_resolves_related_object_api_name(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_field_text_payload_with_order():
+def test_field_without_order_omits_it_so_server_appends():
+    """No `order` in the spec -> not sent. The server appends after the
+    form's highest order (FormFieldViewSet.perform_create), which is also
+    what the UI's createField does (it never sends order)."""
     fd = FormFieldDef.model_validate(
         {"name": "Summary", "api_name": "summary", "field_type": "longtext"}
     )
-    assert _build_form_field_payload(fd, default_order=3) == {
+    assert _build_form_field_payload(fd) == {
         "display_name": "Summary",
         "name": "summary",
         "field_type": "longtext",
         "is_required": False,
         "is_read_only": False,
         "is_hidden": False,
-        "order": 3,
     }
 
 
@@ -131,9 +133,9 @@ def test_field_rating_defaults_applied():
     }
 
 
-def test_field_explicit_order_wins_over_default():
+def test_field_explicit_order_is_sent():
     fd = FormFieldDef.model_validate({"name": "X", "field_type": "text", "order": 9})
-    assert _build_form_field_payload(fd, default_order=0)["order"] == 9
+    assert _build_form_field_payload(fd)["order"] == 9
 
 
 def test_dropdown_without_options_rejected():

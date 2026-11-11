@@ -40,14 +40,36 @@ def _deals_id() -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_create_stage_defaults_status_open_and_appends_order(patch_live_lookups):
+def test_create_stage_without_status_or_order_omits_both_for_server_defaults(
+    patch_live_lookups,
+):
+    """Unset status/order are not sent: the server defaults status to open
+    and appends after the highest existing order (max+1), which a CLI-side
+    len(stages) would get wrong when orders have gaps."""
     plan = plan_create_stage(DEALS, "Closed Lost")
     (op,) = plan.operations
     assert op.action == "create"
     assert op.kind == "stage"
     assert op.key == "deals.stage:Closed Lost"
-    assert op.payload == {"name": "Closed Lost", "status": "open", "order": 3}
+    assert op.payload == {"name": "Closed Lost"}
     assert op.parent_object_uuid == _deals_id()
+
+
+def test_create_stage_explicit_open_status_and_zero_order_are_still_sent(
+    patch_live_lookups,
+):
+    plan = plan_create_stage(DEALS, "Closed Lost", status="open", order=0)
+    (op,) = plan.operations
+    assert op.payload == {"name": "Closed Lost", "status": "open", "order": 0}
+
+
+def test_create_stage_preview_leaves_out_unset_status_and_order(patch_live_lookups):
+    (op,) = plan_create_stage(DEALS, "Closed Lost").operations
+    assert "status" not in op.preview
+    assert "order" not in op.preview
+    (op,) = plan_create_stage(DEALS, "Closed Lost", status="won", order=0).operations
+    assert op.preview["status"] == "won"
+    assert op.preview["order"] == 0
 
 
 def test_create_stage_with_explicit_status_pct_and_order(patch_live_lookups):
@@ -191,3 +213,22 @@ def test_field_options_add_still_works_on_non_stage_field(patch_live_lookups):
     # asserts against the "wrong field type" error rather than the guardrail.
     with pytest.raises(PlanError, match="which has no options to add"):
         plan_add_field_options(DEALS, "deal_value", ["X"])
+
+
+def test_stages_create_cli_without_status_flag_sends_no_status(patch_live_lookups):
+    """The --status flag has no CLI-side default; an omitted flag must reach
+    the planner as None so the payload carries no status."""
+    import json
+
+    from typer.testing import CliRunner
+
+    import kizen_builder.cli as cli
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["objects", "stages", "create", DEALS, "--name", "Closed Lost",
+         "--dry-run", "--json"],
+    )  # fmt: skip
+    assert result.exit_code == 0, result.output
+    plan = json.loads(result.output)
+    assert plan["operations"][0]["payload"] == {"name": "Closed Lost"}

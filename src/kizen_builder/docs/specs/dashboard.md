@@ -40,7 +40,9 @@ kizen dashboards dashlet-config --type field_breakdown --object clinics --field 
   for example to the viewer's own. See
   [Showing each viewer their own records](#showing-each-viewer-their-own-records).
 - **`--full`** wraps the config in a full `DashboardDef` (picking `homepage`
-  vs `generic_dashboard` for you — see the homepage rule below).
+  vs `generic_dashboard` for you — see the homepage rule below). The dashlet
+  has no `layout`; add one before `create` — see
+  [Layout & sizing](#layout--sizing--dont-guess-wh).
 - Guidance (placeholders present, homepage-only) prints to **stderr**, so
   stdout stays pure JSON you can pipe.
 
@@ -79,7 +81,6 @@ kizen dashboards dashlet-config --type field_breakdown --object clinics --field 
   "api_name": "ops_overview",
   "name": "Ops Overview",
   "type": "generic_dashboard",
-  "published": true,
   "dashlets": [
     {
       "name": "Accounts by Region",
@@ -95,27 +96,34 @@ kizen dashboards dashlet-config --type field_breakdown --object clinics --field 
 
 ## `DashboardDef` fields
 
+The CLI sends only the keys the spec sets. On `update`, a key you leave out
+keeps its live value. On `create`, the server fills in what's left out, apart
+from the two the API needs, noted below.
+
 | Key | Type | Notes |
 |-----|------|-------|
 | `api_name` | string | **Required.** Stable identifier (`^[A-Za-z0-9_]+$`). |
 | `name` | string | **Required.** Display name. |
-| `type` | enum | `generic_dashboard` (default), `homepage` (team landing page), or `chart_group` (then `custom_object` is required). |
+| `type` | enum | `generic_dashboard`, `homepage` (team landing page), or `chart_group` (then `custom_object` is required). Omitted on create: `generic_dashboard`, since the API requires a type. |
 | `custom_object` | UUID | Required only for `chart_group`. |
-| `hidden` | bool | Default `false`. |
-| `published` | bool | Default `true`. |
-| `style_settings` | object | Defaults to the standard palette when omitted. |
-| `sharing_settings` | object | Defaults applied when omitted. |
+| `hidden` | bool | Server default `false`. |
+| `published` | bool | Server default `false`. Kizen uses it only for homepages. |
+| `style_settings` | object | Omitted: the dashboard gets `{}`, Kizen's default look. See [Styling](#styling). |
+| `sharing_settings` | object | Omitted on create: the UI's default — see [`sharing_settings`](#sharing_settings-is-required-on-create). |
 | `dashlets` | `DashletDef[]` | The tiles. |
 
 ## `DashletDef` fields
 
+Same rule: only the keys you set are sent, and `update` PATCHes, so a key you
+leave out keeps its live value.
+
 | Key | Type | Notes |
 |-----|------|-------|
 | `id` | UUID | **Present → update that dashlet; absent → create a new one.** This is how `dashboards update` diffs. |
-| `name` | string | Display name (default `"[default]"`). |
-| `custom_object` | UUID | Object the dashlet queries; `null` for non-object dashlets (e.g. email metrics). |
-| `layout` | object | Grid geometry `{x, y, w, h, …}`. Passed through verbatim. |
-| `config` | object | `report_type`, `chart_type`, filters, … Generate with `dashboards dashlet-config` (above). `filters` is the wire block, or a filter spec, compiled at plan time. |
+| `name` | string | Display name. Omitted on create: `"[default]"`, since the API requires a name. |
+| `custom_object` | UUID | Object the dashlet queries; omit for non-object dashlets (e.g. email metrics). |
+| `layout` | object | Grid geometry `{x, y, w, h, …}`. Passed through verbatim. Omitted on create: the server stores `{}`. |
+| `config` | object | **Required to create.** `report_type`, `chart_type`, filters, … Generate with `dashboards dashlet-config` (above). `filters` is the wire block, or a filter spec, compiled at plan time. |
 
 ## Layout & sizing — don't guess `w`/`h`
 
@@ -148,7 +156,12 @@ Recommended sizes, from real hand-built dashboards:
 | `html` banner | 12 | 2–3 |
 
 The minimal `{x, y, w, h}` shown above applies fine (the server fills the rest);
-`dashboards.layout(x, y, w=12, h=3)` builds the same dict with an `i` cell id.
+`dashboards.layout(x, y, w, h)` builds the same dict with an `i` cell id.
+
+**A dashlet saved without a layout** is stored as `layout: {}`, and the UI
+draws each missing key as `x: 0`, `y: 0`, `w: 2`, `h: 2` — a small tile in the
+top-left corner (`getDashletGridLayout`, read from the Kizen web app source,
+2026-11-11).
 
 ### HTML sizing is inside the content, not the layout
 
@@ -156,6 +169,27 @@ An `html` dashlet's text size comes from the HTML itself, not `h`. A bare
 `<h2>` renders small in the block editor — for a real banner headline use an
 inline style, e.g.
 `<p style="font-size:32px;font-weight:700;margin:0">Title</p>`.
+
+### HTML dashlet styling
+
+`html_dashlet_config` gives every node the props the Kizen block builder
+writes for a new block, and nothing else (read from the Kizen web app source,
+2026-11-11; cited next to `HOMEPAGE_DEFAULTS` in `tools/form_ui.py`):
+
+| node | default |
+|---|---|
+| `Root` | white background, `height` 335, `max_width` 1372, `has_shadow`, `columns` 6 (full width) |
+| `Section`, `Row` | transparent, square corners, padding 10, `max_width` "1372" |
+
+Text (padding 10, no margins), Button and HTML blocks get the same props as on
+a form (`kizen docs show form`, "Styling defaults"). `background_color` (`"transparent"`, a colour, or omit
+for white) and a button's `color` replace the default.
+
+A URL button opens in the same tab: the builder's buttons start as URL
+buttons, so it never writes `open_link_in_new_tab`.
+
+`display_name` on a Button stays `"v0e"`, as read from a live dashlet. It's
+the production builder's minified component name, which the source can't give.
 
 ### Two `scheduled_activities` render modes
 
@@ -246,10 +280,31 @@ On the wire, `roles.*` / `team_members.*` are arrays of **bare UUID strings** �
 read responses expand them to `{id, display_name}`, so a sharing block copied
 out of `--raw` must be normalized back to bare ids before writing. The Admin
 role's UUID is **env-specific**: look it up via `GET /api/role`. The CLI resolves
-it live and builds an all-team-members + Admin-admin block by default.
+it live.
+
+A spec with no sharing block gets the UI's default: `private: true`,
+`all_team_members: 0` and the Admin role as admin, so only the owner and
+admins see it until it's shared. Dashboards, filter groups, quick filters and
+column templates all start this way. To share with everyone, set
+`"all_team_members": 1` (view) and `"private": false` in the spec's
+`sharing_settings`.
 
 The same `EntityPermission` block backs filter groups, quick filters and column
 templates — `kizen docs show saved-views`.
+
+## Styling
+
+- **Dashboard `style_settings`** paints every dashlet's card and title bar
+  (colour, border, radius, shadow, title font). `{}` is Kizen's default look;
+  the UI sends `{}` unless "Customize style" is on. The server stores `{}`
+  when the key is left out. The CLI sends it only when the spec sets it.
+- **A dashlet's `config.fe_extra_info.dashlet_style_config`** overrides the
+  card only when `fe_extra_info.custom_styles_enabled` is true. Its
+  `chart_theme` recolours bar, donut, line, trend and leaderboard charts
+  either way.
+  `dashlet-config` doesn't emit it.
+
+Both read from the Kizen web app source, 2026-11-11.
 
 ## Dashlet anatomy
 
@@ -440,9 +495,8 @@ health" and "My At Risk deals". `<deals_object_uuid>` is the `id` from
 }
 ```
 
-Each dashlet carries only the keys it needs. `dashlet-config` also adds the
-house style (`fe_extra_info.dashlet_style_config`); Kizen saved and served
-these three without it (confirmed live 2026-10-30).
+Each dashlet carries only the keys it needs. Kizen saved and served these
+three as written (confirmed live 2026-10-30).
 
 ## See also
 

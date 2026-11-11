@@ -368,11 +368,11 @@ def test_resolve_row_columns_default_to_none_when_unspecified():
     assert row["columns"] is None
 
 
-def test_resolve_section_default_background_color():
+def test_resolve_section_without_background_color_leaves_the_builder_default():
     section = form_tools._resolve_section(
         {"rows": [{"cells": [{"blocks": [{"kind": "text", "html": "x"}]}]}]}, {}
     )
-    assert section["background_color"] == "#FFFFFF"
+    assert section["background_color"] is None
     assert len(section["rows"]) == 1
 
 

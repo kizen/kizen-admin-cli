@@ -27,7 +27,7 @@ def list_stages(client: KizenClient, object_pk: str) -> list[dict[str, Any]]:
 def create_stage(
     client: KizenClient, object_pk: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    """POST /api/pipelines/{object_pk}/stages. Requires name, status, order."""
+    """POST /api/pipelines/{object_pk}/stages. Requires name."""
     return client.post(f"/api/pipelines/{object_pk}/stages", json=payload)
 
 

@@ -94,13 +94,14 @@ def fields_create(
         help="api_name of the target object (for relationship fields).",
     ),
     relation_cardinality: str = typer.Option(
-        "many_to_one",
+        "",
         "--relation-cardinality",
         help="Cardinality from this object toward the target, in the same "
         "terms Kizen's UI uses: one_to_one, many_to_one (this object holds a "
         "single reference to the target; many records here can point to the "
         "same one), one_to_many (this object relates to many target "
-        "records), many_to_many (multi-select on both sides).",
+        "records), many_to_many (multi-select on both sides). Kizen's "
+        "default when omitted: many_to_many.",
     ),
     relation_related_name: str = typer.Option(
         "",
@@ -186,10 +187,9 @@ def fields_create(
             )
             raise typer.Exit(code=1) from e
     if relation_target:
-        field_dict["relation"] = {
-            "target_object": relation_target,
-            "relation_type": relation_cardinality,
-        }
+        field_dict["relation"] = {"target_object": relation_target}
+        if relation_cardinality:
+            field_dict["relation"]["relation_type"] = relation_cardinality
         if relation_related_name:
             field_dict["relation"]["related_name"] = relation_related_name
 
