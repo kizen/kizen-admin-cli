@@ -115,13 +115,14 @@ from the two the API needs, noted below.
 ## `DashletDef` fields
 
 Same rule: only the keys you set are sent, and `update` PATCHes, so a key you
-leave out keeps its live value.
+leave out keeps its live value. `custom_object` is the exception that takes
+`null`: an explicit `null` is sent, and on `update` it clears the link.
 
 | Key | Type | Notes |
 |-----|------|-------|
 | `id` | UUID | **Present → update that dashlet; absent → create a new one.** This is how `dashboards update` diffs. |
 | `name` | string | Display name. Omitted on create: `"[default]"`, since the API requires a name. |
-| `custom_object` | UUID | Object the dashlet queries; omit for non-object dashlets (e.g. email metrics). |
+| `custom_object` | UUID | Object the dashlet queries. Omit it, or set `null`, for non-object dashlets (e.g. email metrics). On `update`, omitted keeps the live link and `null` clears it, e.g. when turning an object dashlet into an email one. |
 | `layout` | object | Grid geometry `{x, y, w, h, …}`. Passed through verbatim. Omitted on create: the server stores `{}`. |
 | `config` | object | **Required to create.** `report_type`, `chart_type`, filters, … Generate with `dashboards dashlet-config` (above). `filters` is the wire block, or a filter spec, compiled at plan time. |
 

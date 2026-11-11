@@ -16,6 +16,7 @@ import httpx
 import pytest
 import respx
 
+from kizen_builder.models.spec import DashboardDef, DashletDef
 from kizen_builder.tools import dashboards as dash_tools
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.planners import dashboards as dash_planners
@@ -377,6 +378,83 @@ def test_update_dashlet_sends_only_the_fields_the_spec_sets(monkeypatch):
     }
     _, upd = dash_planners.plan_update_dashboard(DASH_ID, spec).operations
     assert upd.payload == {"layout": new_layout}
+
+
+def _update_one_dashlet(monkeypatch, dashlet: dict):
+    monkeypatch.setattr(
+        dash_planners, "get_dashboard_detail", lambda d: _live_homepage()
+    )
+    spec = {"api_name": "team_home", "name": "Team Home", "dashlets": [dashlet]}
+    _, upd = dash_planners.plan_update_dashboard(DASH_ID, spec).operations
+    return upd
+
+
+def test_update_dashlet_omitting_custom_object_keeps_the_live_link(monkeypatch):
+    upd = _update_one_dashlet(monkeypatch, {"id": DL_ID, "name": "Renamed"})
+    assert "custom_object" not in upd.payload
+
+
+def test_update_dashlet_explicit_null_custom_object_clears_the_link(monkeypatch):
+    """Turning an object dashlet into an email one must be able to unlink it:
+    the server rejects a non-custom-object config that still has an object."""
+    upd = _update_one_dashlet(
+        monkeypatch,
+        {
+            "id": DL_ID,
+            "custom_object": None,
+            "config": {"entity_type": "email", "report_type": "email_sent"},
+        },
+    )
+    assert "custom_object" in upd.payload
+    assert upd.payload["custom_object"] is None
+
+
+def test_update_dashlet_explicit_custom_object_id_is_sent(monkeypatch):
+    upd = _update_one_dashlet(monkeypatch, {"id": DL_ID, "custom_object": OBJ_ID})
+    assert upd.payload == {"custom_object": OBJ_ID}
+
+
+def test_create_dashlet_sends_custom_object_only_when_the_spec_has_the_key(
+    no_dashboards,
+):
+    """On create the server treats null and a missing key alike, so both are
+    fine; the key goes on the wire exactly when the spec has it."""
+    plan = dash_planners.plan_create_dashboard(
+        {
+            "api_name": "d1",
+            "name": "D1",
+            "dashlets": [
+                {"name": "Omitted", "config": {"report_type": "email_sent"}},
+                {
+                    "name": "Null",
+                    "custom_object": None,
+                    "config": {"report_type": "email_sent"},
+                },
+            ],
+        }
+    )
+    _, omitted, null = plan.operations
+    assert "custom_object" not in omitted.payload
+    assert "custom_object" in null.payload
+    assert null.payload["custom_object"] is None
+
+
+def test_nested_dashlets_keep_which_keys_the_spec_set():
+    """The planner validates spec dict → DashboardDef → DashletDef; each nested
+    dashlet must remember an explicit null apart from an absent key."""
+    d = DashboardDef.model_validate(
+        {
+            "api_name": "d1",
+            "name": "D1",
+            "dashlets": [{"custom_object": None}, {"name": "x"}],
+        }
+    )
+    assert "custom_object" in d.dashlets[0].model_fields_set
+    assert "custom_object" not in d.dashlets[1].model_fields_set
+    assert (
+        "custom_object"
+        in DashletDef.model_validate({"custom_object": None}).model_fields_set
+    )
 
 
 # ---------------------------------------------------------------------------

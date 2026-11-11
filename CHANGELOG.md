@@ -14,6 +14,8 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-11-11
+
 ### Added
 
 - **Scheduled activities can be created, changed and deleted.**
@@ -71,7 +73,8 @@ called out explicitly under **Changed** or **Removed**.
   `published`, `hidden` or `type` no longer resets them on the live
   dashboard, and a dashlet with an `id` but no `name`, `layout`, `config` or
   `custom_object` keeps its live values instead of being renamed to
-  `[default]`, emptied or unlinked.
+  `[default]`, emptied or unlinked. An explicit `"custom_object": null`
+  still unlinks the dashlet.
 - **`published` is no longer sent as true by default.** A new dashboard is
   unpublished unless the spec says `"published": true` (Kizen uses the flag
   for homepages). `dashlet-config --full` leaves `published` out too.
@@ -1681,7 +1684,8 @@ who isn't its author.
 The tool's history before versioning is recorded in [ROADMAP.md](ROADMAP.md)
 under "Shipped before 0.2.0".
 
-[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kizen/kizen-admin-cli/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kizen/kizen-admin-cli/compare/v0.2.0...v0.3.0

@@ -149,13 +149,19 @@ def _dashlet_payload(dl: DashletDef, *, create: bool) -> dict[str, Any]:
     a missing ``name`` gets ``[default]`` and a missing ``layout`` or
     ``custom_object`` is left to the server. A create without ``config``
     never gets here: the plan refuses it (``_check_new_dashlets_have_config``).
+
+    ``custom_object`` is the one field where an explicit ``null`` is a value:
+    it's sent whenever the spec has the key, so an update can unlink a
+    dashlet from its object. The server treats a null and a missing key alike
+    on create (``DashletSerializer._validate_custom_object`` reads
+    ``attrs.get("custom_object")``), so create follows the same rule.
     """
     payload: dict[str, Any] = {}
     if dl.name is not None:
         payload["name"] = dl.name
     elif create:
         payload["name"] = _DEFAULT_DASHLET_NAME
-    if dl.custom_object is not None:
+    if "custom_object" in dl.model_fields_set:
         payload["custom_object"] = dl.custom_object
     if dl.layout is not None:
         payload["layout"] = dl.layout
