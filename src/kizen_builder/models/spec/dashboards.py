@@ -13,10 +13,12 @@ class DashletDef(BaseModel):
     """One dashlet on a dashboard. ``config``/``layout`` are passthrough, except
     a filter spec in ``config.filters``.
 
-    Every field defaults to ``None``, meaning "not in the spec": the planner
-    sends only the fields that are set, so an update leaves the rest of the
-    live dashlet alone. The one create-time fill is ``name``, which the API
-    requires: an unnamed new dashlet is sent as ``"[default]"``.
+    Every field defaults to ``None``. For ``name``, ``layout`` and ``config``
+    that means "not in the spec": the planner leaves them out, so an update
+    keeps the live values. ``custom_object`` is sent whenever the spec has the
+    key, so an explicit ``null`` clears the link and only an absent key leaves
+    it alone. The one create-time fill is ``name``, which the API requires:
+    an unnamed new dashlet is sent as ``"[default]"``.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -32,8 +34,8 @@ class DashletDef(BaseModel):
     )
     custom_object: str | None = Field(
         default=None,
-        description="UUID of the custom object the dashlet queries (omit for "
-        "non-object dashlets like email metrics).",
+        description="UUID of the custom object the dashlet queries. Omit to "
+        "leave it as it is; null clears it on update (e.g. for email metrics).",
     )
     layout: dict[str, Any] | None = Field(
         default=None,

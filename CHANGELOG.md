@@ -71,7 +71,8 @@ called out explicitly under **Changed** or **Removed**.
   `published`, `hidden` or `type` no longer resets them on the live
   dashboard, and a dashlet with an `id` but no `name`, `layout`, `config` or
   `custom_object` keeps its live values instead of being renamed to
-  `[default]`, emptied or unlinked.
+  `[default]`, emptied or unlinked. An explicit `"custom_object": null`
+  still unlinks the dashlet.
 - **`published` is no longer sent as true by default.** A new dashboard is
   unpublished unless the spec says `"published": true` (Kizen uses the flag
   for homepages). `dashlet-config --full` leaves `published` out too.
