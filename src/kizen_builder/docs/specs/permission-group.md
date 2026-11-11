@@ -167,12 +167,30 @@ and only resets leaf values, which is why `group-create` needs a `--base`.
 
 ## Command surface
 
-`kizen roles list|get|create|update|delete` and `kizen permissions
-groups|group|meta|group-create|group-update|group-delete`. **Names are
-accepted anywhere a role or group is referenced** — resolved to a UUID, with
-an available-list on a miss. `kizen permissions group <name>
+`kizen roles list|get|create|update|where-used|delete` and `kizen
+permissions
+groups|group|meta|group-create|group-update|group-where-used|group-delete`.
+**Names are accepted anywhere a role or group is referenced** — resolved to a
+UUID, with an available-list on a miss. `kizen permissions group <name>
 [--field-permissions]` renders the sectioned slider view that mirrors the
 permission editor.
+
+**Where-used.** `kizen roles where-used` reads
+`GET /api/references/roles/{role_pk}`: the automations (down to the step),
+dashboards, homepages (down to the dashlet, whose name can be the literal
+`[default]`), chart groups, broadcasts, filter groups, messages and sharing
+settings that name the role, plus `team`, which is `{count, can_view}` — how
+many team members hold it. `sharing_settings` items carry `asset_type` and
+`asset_id` and no `id`. `kizen permissions group-where-used` reads
+`GET /api/references/permission-groups/{group_pk}`: `filter_groups`,
+`service_accounts`, `roles` (whose items use `name`, not `display_name`) and
+the `team` count. Both take UUIDs only (an unknown one gets a JSON 404); the
+CLI resolves names first. `roles delete` and `permissions group-delete` show
+the same as `used_by` in their preview and still delete. Kizen deletes a group
+that roles still hold without an error: each role is left without it
+(`permission_groups: []` when it was the only one), so its members lose that
+group's access. The `used_by` line is the only warning. Confirmed live
+2026-11-11.
 
 `group-update` applies shaping ops directly — `object`/`field` ops call
 `object-update`, `section` ops call the section PATCH — it never assembles a

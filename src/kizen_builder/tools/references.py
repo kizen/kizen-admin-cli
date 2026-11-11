@@ -14,6 +14,7 @@ from typing import Any
 from kizen_builder.api import references as ref_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
+from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools.objects import get_object
 
 ReferencesCall = Callable[[KizenClient], dict[str, Any]]
@@ -183,3 +184,22 @@ def field_where_used(object_api_name: str, field_api_name: str) -> dict[str, Any
         },
         **result,
     }
+
+
+def role_where_used(ref: str) -> dict[str, Any]:
+    """Everything Kizen reports naming one role (by name or UUID)."""
+    role = perm_tools.resolve_role(ref)
+    result = where_used(
+        lambda c: ref_api.role_references(c, role["id"]), f"role '{role['name']}'"
+    )
+    return {"target": {"role": role["name"], "id": role["id"]}, **result}
+
+
+def group_where_used(ref: str) -> dict[str, Any]:
+    """Everything Kizen reports using one permission group (by name or UUID)."""
+    group = perm_tools.resolve_group(ref)
+    result = where_used(
+        lambda c: ref_api.permission_group_references(c, group["id"]),
+        f"permission group '{group['name']}'",
+    )
+    return {"target": {"group": group["name"], "id": group["id"]}, **result}

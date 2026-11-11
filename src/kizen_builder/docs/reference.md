@@ -74,11 +74,13 @@ and reference the stored name from then on.
 ### Where-used
 
 A resource with a `where-used` verb lists what in Kizen uses it:
-`kizen fields where-used <object> <field>`. The table is
+`kizen fields where-used <object> <field>`, `kizen roles where-used <role>`,
+`kizen permissions group-where-used <group>`. The table is
 `section | name | where | id`, after any counts (such as records holding a
-value); `-o json` and `-o csv` work as on other reads. The resource's `delete`
-shows the same result as one `used_by` line in its dry-run preview. It is a
-warning, not a refusal: the delete still goes ahead. Resources with it: fields.
+value or team members holding a role); `-o json` and `-o csv` work as on other
+reads. The resource's `delete` shows the same result as one `used_by` line in
+its dry-run preview. It is a warning, not a refusal: the delete still goes
+ahead. Resources with it: fields, roles, permission groups.
 
 ### Contacts are `client_client`
 

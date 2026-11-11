@@ -1,5 +1,5 @@
 """Where-used: the shared normalizer, the delete-preview line, and
-`kizen fields where-used`.
+`kizen fields|roles where-used` and `kizen permissions group-where-used`.
 
 The normalizer is fed every response shape captured live on 2026-11-11 —
 field, role, permission group, automation and activity — so a new where-used
@@ -461,3 +461,174 @@ def test_where_used_unknown_field(objects_from_fixtures):
     stderr = _plain(result.stderr)
     assert stderr.startswith("error: field 'nope' not found on 'patients'.")
     assert "Traceback" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# kizen roles where-used / kizen permissions group-where-used
+# ---------------------------------------------------------------------------
+
+ROLE_LIST = load_fixture("permissions/role_list.json")
+GROUP_LIST = load_fixture("permissions/permission_group_list.json")
+ROLE_ID = ROLE_LIST["results"][0]["id"]
+GROUP_ID = GROUP_LIST["results"][0]["id"]
+ROLE_REFS = f"{FAKE_BASE_URL}/api/references/roles/{ROLE_ID}"
+GROUP_REFS = f"{FAKE_BASE_URL}/api/references/permission-groups/{GROUP_ID}"
+
+
+@pytest.fixture
+def roles_and_groups():
+    respx.get(f"{FAKE_BASE_URL}/api/role").respond(json=ROLE_LIST)
+    respx.get(f"{FAKE_BASE_URL}/api/permission-group").respond(json=GROUP_LIST)
+    respx.get(f"{FAKE_BASE_URL}/api/role/{ROLE_ID}").respond(
+        json=load_fixture("permissions/role_detail.json")
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/permission-group/{GROUP_ID}").respond(
+        json=load_fixture("permissions/permission_group_detail.json")
+    )
+
+
+@respx.mock
+def test_roles_where_used_table(roles_and_groups):
+    respx.get(ROLE_REFS).respond(json=load_fixture("references/role_used.json"))
+    result = runner.invoke(cli.app, ["roles", "where-used", "Sales Rep"])
+    assert result.exit_code == 0, result.output
+    text = _plain(result.stdout)
+    assert text.startswith("1 team members")
+    assert "all triggers steps: assign_team_member - 30; use types: direct" in text
+    assert "Team Homepage dashlets: [default]" in text
+    assert "My Records asset type: filter_group; use types: admin" in text
+
+
+@respx.mock
+def test_roles_where_used_by_uuid_json(roles_and_groups):
+    respx.get(ROLE_REFS).respond(json=load_fixture("references/role_used.json"))
+    result = runner.invoke(cli.app, ["roles", "where-used", ROLE_ID, "-o", "json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert data["target"] == {"role": "Sales Rep", "id": ROLE_ID}
+    assert data["counts"] == [{"label": "team members", "count": 1}]
+    assert [r["section"] for r in data["used_by"]] == [
+        "automations",
+        "homepages",
+        "sharing settings",
+    ]
+
+
+@respx.mock
+def test_roles_where_used_unused(roles_and_groups):
+    respx.get(ROLE_REFS).respond(json=load_fixture("references/role_unused.json"))
+    result = runner.invoke(cli.app, ["roles", "where-used", "Sales Rep"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "Kizen reports nothing using role 'Sales Rep'."
+
+
+@respx.mock
+def test_roles_where_used_csv(roles_and_groups):
+    respx.get(ROLE_REFS).respond(json=load_fixture("references/role_used.json"))
+    result = runner.invoke(cli.app, ["roles", "where-used", "Sales Rep", "-o", "csv"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "section,name,where,id",
+        "automations,all triggers,steps: assign_team_member - 30; use types: direct,"
+        "c81687b1-bd87-4c15-bdd8-e79fe5507491",
+        "homepages,Team Homepage,dashlets: [default],"
+        "0212d6b2-ca89-49a6-a93e-64eca59e8ff8",
+        "sharing settings,My Records,asset type: filter_group; use types: admin,"
+        "a9397dd6-7a2b-446e-a6c3-014975c1dde3",
+    ]
+
+
+@respx.mock
+def test_roles_where_used_unknown_name_lists_roles(roles_and_groups):
+    result = runner.invoke(cli.app, ["roles", "where-used", "Nope"])
+    assert result.exit_code == 1
+    assert _plain(result.stderr) == (
+        "error: role 'Nope' not found. Available: ['Sales Rep']"
+    )
+
+
+@respx.mock
+def test_roles_where_used_403(roles_and_groups):
+    respx.get(ROLE_REFS).respond(403, json=load_fixture("references/field_403.json"))
+    result = runner.invoke(cli.app, ["roles", "where-used", "Sales Rep"])
+    assert result.exit_code == 1
+    assert _plain(result.stderr) == (
+        "error: Kizen refused the where-used lookup for role 'Sales Rep' "
+        "(HTTP 403: You do not have permission to perform this action.)."
+    )
+
+
+@respx.mock
+def test_group_where_used_table(roles_and_groups):
+    respx.get(GROUP_REFS).respond(json=load_fixture("references/group_used.json"))
+    result = runner.invoke(cli.app, ["permissions", "group-where-used", "Sample Group"])
+    assert result.exit_code == 0, result.output
+    text = _plain(result.stdout)
+    assert text.startswith("1 team members")
+    assert "service accounts Workflow Service" in text
+    assert "roles Admin" in text
+
+
+@respx.mock
+def test_group_where_used_csv(roles_and_groups):
+    respx.get(GROUP_REFS).respond(json=load_fixture("references/group_used.json"))
+    result = runner.invoke(
+        cli.app, ["permissions", "group-where-used", "Sample Group", "-o", "csv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "section,name,where,id",
+        "service accounts,Workflow Service,,306b6bd1-4780-45fa-a8e7-2f9675b7e6dd",
+        "service accounts,Code Step Service,,afa714ac-33c3-49a9-87b0-be75430a7ec6",
+        "roles,Admin,,937c92bb-d5dd-4990-bcfc-437757e28070",
+    ]
+
+
+@respx.mock
+def test_group_where_used_unknown_name_lists_groups(roles_and_groups):
+    result = runner.invoke(cli.app, ["permissions", "group-where-used", "Nope"])
+    assert result.exit_code == 1
+    assert _plain(result.stderr) == (
+        "error: permission group 'Nope' not found. "
+        "Available: ['Sample Group', 'Other Group']"
+    )
+
+
+@respx.mock
+def test_roles_delete_dry_run_shows_used_by(roles_and_groups):
+    respx.get(ROLE_REFS).respond(json=load_fixture("references/role_unused.json"))
+    result = runner.invoke(
+        cli.app, ["roles", "delete", "Sales Rep", "--dry-run", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    (op,) = json.loads(result.stdout)["operations"]
+    assert op["preview"]["used_by"] == "nothing found"
+
+
+@respx.mock
+def test_roles_delete_still_plans_when_lookup_fails(roles_and_groups):
+    respx.get(ROLE_REFS).respond(500, json={"detail": "boom"})
+    result = runner.invoke(
+        cli.app, ["roles", "delete", "Sales Rep", "--dry-run", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    (op,) = json.loads(result.stdout)["operations"]
+    assert op["preview"]["used_by"] == "unknown (HTTP 500: boom)"
+    assert (op["action"], op["kind"], op["existing_uuid"]) == (
+        "delete",
+        "role",
+        ROLE_ID,
+    )
+
+
+@respx.mock
+def test_group_delete_still_plans_when_lookup_is_refused(roles_and_groups):
+    respx.get(GROUP_REFS).respond(403, json=load_fixture("references/field_403.json"))
+    result = runner.invoke(
+        cli.app, ["permissions", "group-delete", "Sample Group", "--dry-run"]
+    )
+    assert result.exit_code == 0, result.output
+    text = _plain(result.stdout)
+    assert (
+        "unknown (HTTP 403: You do not have permission to perform this action.)" in text
+    )

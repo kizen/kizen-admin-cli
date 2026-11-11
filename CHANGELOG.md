@@ -20,8 +20,12 @@ called out explicitly under **Changed** or **Removed**.
   automations (down to the step, trigger or condition), forms, surveys,
   messages, dashboards, homepages, chart groups, filter groups, smart
   connectors, broadcasts, activities, and how many records hold a value.
-  `fields delete` shows the same as a `used_by` line in its preview and still
-  deletes.
+  **`kizen roles where-used`** and **`kizen permissions group-where-used`**
+  list what names a role or permission group: automations, dashboards,
+  homepages, chart groups, broadcasts, filter groups, messages, sharing
+  settings, roles, service accounts, and how many team members hold it.
+  `fields delete`, `roles delete` and `permissions group-delete` show the same
+  as a `used_by` line in their preview and still delete.
 
 ### Fixed
 

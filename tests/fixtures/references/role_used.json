@@ -1,0 +1,56 @@
+{
+  "automations": [
+    {
+      "id": "c81687b1-bd87-4c15-bdd8-e79fe5507491",
+      "display_name": "all triggers",
+      "can_view": true,
+      "use_types": [
+        "direct"
+      ],
+      "steps": [
+        {
+          "id": "951925aa-fe9f-475c-86e7-0fde5c6cf43a",
+          "display_name": "assign_team_member - 30",
+          "type": "assign_team_member"
+        }
+      ],
+      "conditions": [],
+      "triggers": [],
+      "variables": []
+    }
+  ],
+  "dashboards": [],
+  "homepages": [
+    {
+      "id": "0212d6b2-ca89-49a6-a93e-64eca59e8ff8",
+      "display_name": "Team Homepage",
+      "can_view": true,
+      "dashlets": [
+        {
+          "id": "b1c28f91-a8e4-4f8d-bdaa-fe7806349f9b",
+          "display_name": "[default]"
+        }
+      ],
+      "charts": []
+    }
+  ],
+  "chart_groups": [],
+  "broadcasts": [],
+  "filter_groups": [],
+  "messages": [],
+  "team": {
+    "count": 1,
+    "can_view": true
+  },
+  "sharing_settings": [
+    {
+      "asset_type": "filter_group",
+      "asset_id": "a9397dd6-7a2b-446e-a6c3-014975c1dde3",
+      "display_name": "My Records",
+      "use_types": [
+        "admin"
+      ],
+      "can_view": true
+    }
+  ]
+}
