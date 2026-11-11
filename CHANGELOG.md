@@ -20,6 +20,12 @@ called out explicitly under **Changed** or **Removed**.
   variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
+- **Automations can end a loop early with an `exit_loop` step again.** Kizen's
+  builder now ships it. `action_exit_loop.loop_to_exit` names the loop to end,
+  and omitting it ends the innermost loop around the step. `create`, `update`
+  and `steps` refuse an exit loop outside a loop body, or one aimed at a loop
+  it isn't inside. `show` draws the target and warns about steps hung under
+  it, which never run.
 
 ### Fixed
 
@@ -27,6 +33,10 @@ called out explicitly under **Changed** or **Removed**.
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+- **Editing an automation that has an exit loop step built in Kizen's builder
+  no longer fails** with "Exit Loop step references a loop that does not
+  exist." `steps`, `roundtrip --execute` and `update` now send the loop's key
+  instead of echoing the id read back.
 
 ## [0.7.0] — 2026-11-16
 

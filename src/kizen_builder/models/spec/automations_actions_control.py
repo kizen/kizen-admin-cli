@@ -102,6 +102,29 @@ class ActionGoToAutomationStepConfig(BaseModel):
     )
 
 
+class ActionExitLoopConfig(BaseModel):
+    """Config for `step_type: exit_loop`. Kizen requires the block; `{}` ends
+    the innermost loop around the step."""
+
+    model_config = ConfigDict(extra="allow")
+
+    loop_to_exit: str | None = Field(
+        default=None,
+        description=(
+            "Key of the loop this step ends. It must be a loop the step sits "
+            "inside. Omitted, it ends the innermost loop around the step, as "
+            "Kizen's builder does."
+        ),
+    )
+    step: str | None = Field(
+        default=None,
+        description=(
+            "The wire spelling of `loop_to_exit`: a loop step key, or the "
+            "loop's id as read."
+        ),
+    )
+
+
 class ActionStopExecutionConfig(BaseModel):
     """Config for `step_type: stop_execution`.
 

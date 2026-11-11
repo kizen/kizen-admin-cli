@@ -529,7 +529,13 @@ def _update_payload(
         and current.get("skip_non_working_days") is not None
     ):
         payload["skip_non_working_days"] = current["skip_non_working_days"]
-    return _carry_omitted_step_keys(payload, auto, current)
+    payload, kept = _carry_omitted_step_keys(payload, auto, current)
+    from kizen_builder.translate import exit_loop_problems, resolve_exit_loop_targets
+
+    resolve_exit_loop_targets(payload["steps"])
+    if problems := exit_loop_problems(payload["steps"], current.get("steps")):
+        raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
+    return payload, kept
 
 
 # Keys a PUT resets to Kizen's default when they're left out or sent as the
@@ -606,6 +612,8 @@ _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
         _KeptBlockKeys(("notify",), default=False),
     ),
     "plugin_code_step": (_KeptBlockKeys(("preview_user_id",)),),
+    # Read as the loop's id; `resolve_exit_loop_targets` turns it into the key.
+    "exit_loop": (_KeptBlockKeys(("step",), set_by=("loop_to_exit", "step")),),
 }
 
 
@@ -983,7 +991,13 @@ def _automation_preview(
             else "ACTIVATES an inactive automation"
         )
         active_display = f"{live_active} → {auto.active} ({direction})"
-    warnings = [*_fan_out_warnings(auto), *_unlaid_rule_warnings(auto, payload, ctx)]
+    from kizen_builder.translate import exit_loop_dead_end_warnings
+
+    warnings = [
+        *_fan_out_warnings(auto),
+        *_unlaid_rule_warnings(auto, payload, ctx),
+        *exit_loop_dead_end_warnings(payload["steps"]),
+    ]
     return {
         "env": env,
         "api_name": auto.api_name,
@@ -1156,8 +1170,9 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     _validate_trigger_orders(payload["triggers"])
     payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
 
-    from kizen_builder.translate import validate_payload
+    from kizen_builder.translate import resolve_exit_loop_targets, validate_payload
 
+    resolve_exit_loop_targets(payload["steps"])
     problems = validate_payload(payload)
     if problems:
         raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
@@ -2555,6 +2570,17 @@ def _step_go_to_automation_step(
     if block.get("trigger_key"):
         out["trigger_key"] = block["trigger_key"]
     return out
+
+
+# Kizen requires the block, `{}` at least, and resolves a loop key in `step`
+# on write; a read gives the loop's id, which `translate.resolve_exit_loop_targets`
+# turns back into its key (confirmed live 2026-11-11).
+@honours("loop_to_exit", "step")
+def _step_exit_loop(
+    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+) -> dict[str, Any]:
+    target = block.get("loop_to_exit") or block.get("step")
+    return {"step": target} if target else {}
 
 
 @honours(
@@ -4123,6 +4149,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "plugin_code_step": _step_plugin_code_step,
     "archive_record": _step_archive_record,
     "go_to_automation_step": _step_go_to_automation_step,
+    "exit_loop": _step_exit_loop,
     "start_automation": _step_start_automation,
     "change_field_value": _step_change_field_value,
     "modify_related_entities": _step_modify_related_entities,

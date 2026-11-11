@@ -5573,9 +5573,10 @@ def _string_loop_steps() -> list[dict]:
 def _nested_loops(
     depth: int, root_parent: str | None = None, arrays: list[str] | None = None
 ) -> list[dict]:
-    """`depth` loops, each the body of the one before, and a delay in the
-    innermost body. Each loop iterates its entry in `arrays` (by default
-    a different array per level) through its own item variable."""
+    """`depth` loops, each the body of the one before, and a delay then an
+    `exit_loop` in the innermost body. Each loop iterates its entry in
+    `arrays` (by default a different array per level) through its own item
+    variable."""
     arrays = arrays or [f"arr{n}" for n in range(depth)]
     steps: list[dict] = []
     parent = root_parent
@@ -5591,6 +5592,7 @@ def _nested_loops(
         closers.append(_s(f"n{n}", f"l{n}", "next_or_finish", 0))
         parent = f"l{n}"
     steps.append(_s("inner", parent, "delay", 0))
+    steps.append(_s("leave", "inner", "exit_loop", 0))
     return steps + closers[::-1]
 
 
@@ -5680,13 +5682,229 @@ def test_loop_on_a_condition_yes_branch(patch_live_lookups):
     assert _fan_out_lines(_preview(spec)) == []
 
 
-def test_nested_loops(patch_live_lookups):
+def test_nested_loops_with_an_exit_loop(patch_live_lookups):
     spec = _authored_loop_spec(_nested_loops(2), record_based=False)
     by_key = _built_steps(spec)
     assert by_key["l1"]["parent_key"] == "l0"
     assert by_key["inner"]["parent_key"] == "l1"
     assert (by_key["n0"]["parent_key"], by_key["n1"]["parent_key"]) == ("l0", "l1")
+    assert by_key["leave"]["prefix"] == "step"
     assert "warnings" not in _preview(spec)
+
+
+def _exit(spec: dict) -> dict:
+    return next(s for s in spec["steps"] if s["step_type"] == "exit_loop")
+
+
+@pytest.mark.parametrize(
+    "block, sent",
+    [
+        (None, {"step": "l1"}),
+        ({}, {"step": "l1"}),
+        ({"loop_to_exit": "l0"}, {"step": "l0"}),
+        ({"step": "l0"}, {"step": "l0"}),
+    ],
+    ids=["no-block", "empty", "loop_to_exit", "wire-step"],
+)
+def test_exit_loop_sends_its_loop_key(patch_live_lookups, block, sent):
+    """Omitted, the target is the innermost loop around the step, as Kizen's
+    builder writes it (confirmed live 2026-11-11)."""
+    spec = _authored_loop_spec(_nested_loops(2), record_based=False)
+    if block is not None:
+        _exit(spec)["action_exit_loop"] = block
+    assert _built_steps(spec)["leave"]["action_exit_loop"] == sent
+
+
+_LOOPS_AROUND = "(loops around it: l1, l0)"
+
+
+@pytest.mark.parametrize(
+    "target", ["inner", "nope", "n1"], ids=["delay", "unknown", "next_or_finish"]
+)
+def test_exit_loop_aimed_at_no_loop_around_it_fails_plan(patch_live_lookups, target):
+    spec = _authored_loop_spec(_nested_loops(2), record_based=False)
+    _exit(spec)["action_exit_loop"] = {"loop_to_exit": target}
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value).split("\n  - ")[1:] == [
+        f"exit_loop step 'leave' exits '{target}', which is not a loop around it "
+        + _LOOPS_AROUND
+    ]
+
+
+def test_exit_loop_aimed_at_a_loop_it_is_not_inside_fails_plan(patch_live_lookups):
+    """`again` is a loop after `each`, not around `leave`."""
+    steps = [
+        _var("arr2", None, "arr2", 0, is_array=True, sources=_STRINGS),
+        _var("item2", "arr2", "arr2_item", 0),
+        *_string_loop_steps(),
+        _s("leave", "body", "exit_loop", 0),
+        _loop("again", "after", "arr2", "arr2_item", 0),
+        _s("again_next", "again", "next_or_finish", 0),
+    ]
+    steps[2]["parent_key"] = "item2"
+    spec = _authored_loop_spec(steps, record_based=False)
+    _exit(spec)["action_exit_loop"] = {"loop_to_exit": "again"}
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value).split("\n  - ")[1:] == [
+        "exit_loop step 'leave' exits 'again', which is not a loop around it "
+        "(loops around it: each)"
+    ]
+
+
+def test_exit_loop_outside_a_loop_fails_plan(patch_live_lookups):
+    steps = [*_string_loop_steps(), _s("leave", "after", "exit_loop", 0)]
+    with pytest.raises(PlanError) as e:
+        _build(_authored_loop_spec(steps, record_based=False))
+    assert str(e.value).split("\n  - ")[1:] == [
+        "exit_loop step 'leave' is not inside a loop body (server 400s otherwise)"
+    ]
+
+
+def test_steps_after_an_exit_loop_warn(patch_live_lookups):
+    """Kizen saves them, and a run never reaches them (confirmed live
+    2026-11-11)."""
+    steps = [*_nested_loops(2), _s("dead", "leave", "delay", 0)]
+    spec = _authored_loop_spec(steps, record_based=False)
+    assert _preview(spec)["warnings"] == [
+        "steps after exit_loop step 'leave' never run: dead"
+    ]
+
+
+@pytest.fixture
+def nested_live(patch_live_lookups, monkeypatch):
+    """The UI-built `nested_loops` capture, served as the live automation."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/nested_loops.raw.json")
+    listing = [*ma.list_automations(), {"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _capture_spec(raw: dict) -> dict:
+    """A spec reproducing a captured automation step for step, ids and kept
+    keys included, from its translation."""
+    from kizen_builder.translate import live_to_payload
+
+    payload = live_to_payload(raw)
+    raw_steps = {s["id"]: s for s in raw["steps"]}
+    raw_triggers = {t["id"]: t for t in raw["triggers"]}
+    declared = {
+        s["action_initialize_variable"]["variable"]["name"]: s[
+            "action_initialize_variable"
+        ]["variable"]
+        for s in payload["steps"]
+        if s["type"] == "initialize_variable"
+    }
+    steps = []
+    for w in payload["steps"]:
+        step = {
+            "id": w["id"],
+            "key": w["key"],
+            "parent_key": w["parent_key"],
+            "parent_branch": w["parent_yes_no"] or None,
+            "step_type": w["type"],
+            "order": w["order"],
+            "description": w["description"],
+            "is_branch_group_initiator": w["is_branch_group_initiator"],
+            **_live_step_keys(raw_steps[w["id"]]),
+        }
+        field = _block_field_for(w["type"])
+        if field in w:
+            step[field] = dict(w[field])
+        if w["type"] == "update_variable":
+            step[field]["variable"] = declared[w[field]["variable"]]
+        steps.append(step)
+    return {
+        "name": raw["name"],
+        "api_name": raw["api_name"],
+        "type": raw["type"],
+        "triggers": [
+            {
+                "id": t["id"],
+                "trigger_type": t["type"],
+                "order": t["order"],
+                **_live_step_keys(raw_triggers[t["id"]]),
+            }
+            for t in payload["triggers"]
+        ],
+        "steps": steps,
+    }
+
+
+def test_diff_of_the_unchanged_exit_loop_capture_is_empty(nested_live):
+    """The target reads back as the outer loop's id and is sent as its key."""
+    spec = _capture_spec(nested_live)
+    assert _exit(spec)["action_exit_loop"] == {"step": "s04_loop"}
+    assert diff_automation(spec)["diff"] == []
+
+
+def test_diff_shows_an_exit_loop_retarget(nested_live):
+    spec = _capture_spec(nested_live)
+    _exit(spec)["action_exit_loop"] = {"loop_to_exit": "s05_loop"}
+    assert [
+        (d["path"].rsplit(".", 1)[-1], d["before"], d["after"])
+        for d in diff_automation(spec)["diff"]
+    ] == [("step", "48f7ef88", "74853a4b")]
+
+
+@pytest.mark.parametrize(
+    "block, sent, kept",
+    [
+        (None, {"step": "s04_loop"}, True),
+        ({}, {"step": "s04_loop"}, True),
+        ({"loop_to_exit": "s05_loop"}, {"step": "s05_loop"}, False),
+    ],
+    ids=["no-block", "empty", "retarget"],
+)
+def test_update_keeps_the_live_exit_target(nested_live, block, sent, kept):
+    """A PUT that echoes the id read back 400s (confirmed live 2026-11-11), so
+    the kept target goes as the loop's key."""
+    spec = _capture_spec(nested_live)
+    leave = _exit(spec)
+    if block is None:
+        del leave["action_exit_loop"]
+    else:
+        leave["action_exit_loop"] = block
+    (op,) = plan_update_automation(spec).operations
+    (wire,) = [s for s in op.payload["steps"] if s["type"] == "exit_loop"]
+    assert wire["action_exit_loop"] == sent
+    assert (leave["key"] in op.preview.get("keeps_live", [])) is kept
+
+
+def test_update_refuses_a_kept_exit_target_the_spec_has_no_loop_for(nested_live):
+    """The outer loop goes without its `id`, so the target kept from live is
+    an id no spec step carries; sent, it's the 400 a PUT echoing an id gets."""
+    spec = _capture_spec(nested_live)
+    del next(s for s in spec["steps"] if s["key"] == "s04_loop")["id"]
+    del _exit(spec)["action_exit_loop"]
+    with pytest.raises(PlanError) as e:
+        plan_update_automation(spec)
+    assert str(e.value) == (
+        "invalid automation graph:\n  - exit_loop step 's09_exit_loop' keeps its "
+        "live target, loop 'For each item in 'loop_1'' "
+        "(48f7ef88-d047-412b-bbe8-c2a90c781463), which the spec has no step for "
+        "by id; set action_exit_loop.loop_to_exit (loops around it: s05_loop, "
+        "s04_loop)"
+    )
+
+
+def test_update_keeps_a_live_null_exit_target_null(nested_live):
+    raw = copy.deepcopy(nested_live)
+    next(s for s in raw["steps"] if s["step_type"] == "exit_loop")[
+        "action_exit_loop"
+    ] = {"step": None}
+    nested_live.clear()
+    nested_live.update(raw)
+    spec = _capture_spec(nested_live)
+    assert _exit(spec)["action_exit_loop"] == {}
+    (op,) = plan_update_automation(spec).operations
+    (wire,) = [s for s in op.payload["steps"] if s["type"] == "exit_loop"]
+    assert wire["action_exit_loop"] == {}
+    assert "keeps_live" not in op.preview
 
 
 def test_loop_with_two_body_lanes_still_warns(patch_live_lookups):
