@@ -1,0 +1,66 @@
+{
+  "count": 2,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": "00000000-0000-4000-8000-0000000007d1",
+      "name": "Deep Wiki",
+      "api_name": "deep_wiki",
+      "description": null,
+      "url": "https://mcp.deepwiki.com/mcp",
+      "is_enabled": true,
+      "auth": {
+        "type": "none"
+      },
+      "tool_prefix": "deep_wiki__",
+      "connection": {
+        "status": "connected",
+        "authorized_by": null,
+        "authorized_at": null,
+        "needs_refresh": false
+      },
+      "callback_url": "https://kizen.test/api/external-integrations/oauth/callback",
+      "tool_count": 3,
+      "last_discovered_at": "2026-11-11T09:16:23.792362-06:00",
+      "created": "2026-11-11T09:16:22.942139-06:00",
+      "updated": "2026-11-11T09:16:22.942180-06:00",
+      "owner": {
+        "id": "00000000-0000-4000-8000-0000000005e7",
+        "display_name": "Sample User (user@example.com)"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000007d3",
+      "name": "Slack",
+      "api_name": "slack",
+      "description": null,
+      "url": "https://mcp.slack.com/mcp",
+      "is_enabled": true,
+      "auth": {
+        "type": "oauth",
+        "auth_level": "business",
+        "client_id": null,
+        "client_secret": null,
+        "scopes": null
+      },
+      "tool_prefix": "slack__",
+      "connection": {
+        "status": "needs_authorization",
+        "authorized_by": null,
+        "authorized_at": null,
+        "needs_refresh": false
+      },
+      "callback_url": "https://kizen.test/api/external-integrations/oauth/callback",
+      "tool_count": null,
+      "last_discovered_at": null,
+      "created": "2026-11-11T09:05:03.533157-06:00",
+      "updated": "2026-11-11T09:05:03.533196-06:00",
+      "owner": {
+        "id": "00000000-0000-4000-8000-0000000005e7",
+        "display_name": "Sample User (user@example.com)"
+      }
+    }
+  ],
+  "errors": null
+}

@@ -188,7 +188,7 @@ kizen fields create <object_api_name> [--spec-file path | < stdin]              
 kizen automations create [--spec-file path | < stdin]
 kizen dashboards create [--spec-file path | < stdin]            # dashboard/homepage + dashlets
 kizen dashboards dashlet-config --type <t> [--object o] [--field f] [--filter '<json>'|--filter-file f] [--full]   # print one dashlet config (no write)
-kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools + sharing (kizen docs show mcp-server)
+kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools, upstream tools + sharing (kizen docs show mcp-server)
 kizen layouts update <object_api_name> [--spec-file | < stdin]  # PUT-replace a record layout
 kizen records create <object> --field api_name=value [...]      # one record (values resolved vs schema)
 kizen records create <object> [--spec-file f.csv|f.json | < stdin]   # bulk create from CSV/JSON
@@ -200,7 +200,7 @@ kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [
 kizen automations update [--spec-file path | < stdin]
 kizen dashboards update <uuid|api_name> [--spec-file | < stdin]   # metadata + dashlets (diff by id)
 kizen dashboards duplicate <uuid|api_name> [--name X] [--api-name Y]   # unpublished copy, source's sharing
-kizen mcp-servers update <uuid|api_name> [--spec-file | < stdin]   # tools compare as a set; `get --raw` output re-applies as a skip
+kizen mcp-servers update <uuid|api_name> [--spec-file | < stdin]   # tools compare as a set; `get --raw` output re-applies as a skip; omitting upstreams keeps them
 kizen records update <object> <uuid> --field api_name=value [...]    # one record
 kizen records update <object> [--spec-file f.csv|f.json | < stdin]   # bulk update (each row needs an 'id')
 kizen records upsert <object> <lookup_value> --field api_name=value [...]  # create-or-update by lookup_value

@@ -30,12 +30,16 @@ from kizen_builder.tools.plans import PlanError, PlanOperation
 from tests.conftest import FAKE_BASE_URL, load_fixture
 
 BASE = f"{FAKE_BASE_URL}/api/mcp-servers"
+UPSTREAMS = f"{FAKE_BASE_URL}/api/mcp-upstream-servers"
 LIST = load_fixture("mcp_servers/list.json")
 DETAIL = load_fixture("mcp_servers/detail.json")
 READONLY = load_fixture("mcp_servers/detail_readonly.json")
 TOOLS = load_fixture("mcp_servers/tools.json")
+UPSTREAM_SERVERS = load_fixture("mcp_servers/upstream_servers.json")
+UPSTREAM_TOOLS = load_fixture("mcp_servers/upstream_tools.json")
 SID = DETAIL["id"]
 SA_ID = DETAIL["sharing_settings"]["team_members"]["view"][0]["id"]
+DEEP_WIKI = UPSTREAM_SERVERS["results"][0]["id"]
 
 
 def _serve(
@@ -43,12 +47,15 @@ def _serve(
     servers: list | None = None,
     readonly: dict | None = None,
 ) -> None:
-    """Serve the list, the catalogue, and each server's detail by id."""
+    """Serve the list, the catalogue, each server's detail by id, and the
+    upstream servers with deep_wiki's tools."""
     rows = servers if servers is not None else LIST["results"]
     respx.get(BASE).respond(json={**LIST, "results": rows})
     respx.get(f"{BASE}/tools").respond(json=TOOLS)
     respx.get(f"{BASE}/{SID}").respond(json=detail or DETAIL)
     respx.get(f"{BASE}/{READONLY['id']}").respond(json=readonly or READONLY)
+    respx.get(UPSTREAMS).respond(json=UPSTREAM_SERVERS)
+    respx.get(f"{UPSTREAMS}/{DEEP_WIKI}/tools").respond(json=UPSTREAM_TOOLS)
 
 
 def _op(plan) -> PlanOperation:
@@ -380,6 +387,261 @@ def test_unknown_server_lists_api_names():
         plan_update_mcp_server("Support Tools", {"is_enabled": False})
 
 
+@respx.mock
+def test_list_row_resent_drops_the_list_only_keys():
+    _serve()
+    row = copy.deepcopy(LIST["results"][1])
+    op = _op(plan_update_mcp_server("support_tools", row))
+    assert op.action == "skip"
+    assert {
+        "kizen_tool_count",
+        "upstream_tool_count",
+        "upstream_servers",
+        "tool_count",
+    } <= set(op.preview["ignored_read_only_keys"])
+
+
+# --- upstreams ------------------------------------------------------------
+
+ASK, CONTENTS, STRUCTURE = (t["id"] for t in UPSTREAM_TOOLS["tools"])
+SLACK = UPSTREAM_SERVERS["results"][1]["id"]
+
+
+@respx.mock
+def test_create_maps_upstream_tool_names_to_ids():
+    _serve()
+    op = _op(
+        plan_create_mcp_server(
+            {
+                "name": "X",
+                "api_name": "intake",
+                "upstreams": [
+                    {
+                        "server": "deep_wiki",
+                        "tool_names": [
+                            "deep_wiki__read_wiki_contents",
+                            "deep_wiki__ask_wiki_question",
+                            "deep_wiki__read_wiki_contents",
+                        ],
+                    },
+                    {"server": SLACK, "include_all": True},
+                ],
+            }
+        )
+    )
+    assert op.payload["upstreams"] == [
+        {"server": DEEP_WIKI, "include_all": False, "tool_ids": [CONTENTS, ASK]},
+        {"server": SLACK, "include_all": True},
+    ]
+    assert op.preview["upstream_tools"] == {"deep_wiki": 2, "slack": "all"}
+
+
+@respx.mock
+def test_create_without_upstreams_sends_none():
+    _serve()
+    op = _op(plan_create_mcp_server({"name": "X", "api_name": "intake"}))
+    assert "upstreams" not in op.payload
+    assert "upstream_tools" not in op.preview
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("upstreams", "message"),
+    [
+        (
+            [{"server": "nope"}],
+            "unknown upstream MCP server 'nope'. Available: deep_wiki, slack.",
+        ),
+        (
+            [{"server": "deep_wiki"}, {"server": DEEP_WIKI, "include_all": True}],
+            "upstream 'deep_wiki' is listed twice in upstreams; list each server once.",
+        ),
+        (
+            [{"server": "deep_wiki", "tool_names": ["ask_wiki_question", "nah"]}],
+            "upstream 'deep_wiki' has no tool(s) ask_wiki_question, nah. Its tools: "
+            "deep_wiki__ask_wiki_question, deep_wiki__read_wiki_contents, "
+            "deep_wiki__read_wiki_structure.",
+        ),
+        (
+            [{"server": "deep_wiki", "tool_ids": [ASK, SID]}],
+            f"upstream 'deep_wiki' has no tool with id(s) {SID}. Its tools: "
+            "deep_wiki__ask_wiki_question, deep_wiki__read_wiki_contents, "
+            "deep_wiki__read_wiki_structure.",
+        ),
+        (
+            [{"server": "slack", "tool_names": ["slack__send_message"]}],
+            "upstream 'slack' has no tool(s) slack__send_message. Its tools: none.",
+        ),
+    ],
+    ids=["unknown-server", "listed-twice", "unknown-tool", "unknown-id", "no-tools"],
+)
+def test_upstream_refusals(upstreams, message):
+    _serve()
+    with pytest.raises(PlanError) as e:
+        plan_create_mcp_server(
+            {"name": "X", "api_name": "intake", "upstreams": upstreams}
+        )
+    assert str(e.value) == message
+
+
+@respx.mock
+@pytest.mark.parametrize("command", ["create", "update"])
+def test_unknown_upstream_tool_sends_no_request(tmp_path, command):
+    _serve()
+    post = respx.post(BASE).respond(201, json={})
+    patch = respx.patch(f"{BASE}/{SID}").respond(json={})
+    spec = tmp_path / "spec.json"
+    upstreams = [{"server": "deep_wiki", "tool_names": ["nope"]}]
+    if command == "create":
+        spec.write_text(
+            json.dumps({"name": "X", "api_name": "intake", "upstreams": upstreams})
+        )
+        args = ["create"]
+    else:
+        spec.write_text(json.dumps({"upstreams": upstreams}))
+        args = ["update", "support_tools"]
+    result = CliRunner().invoke(
+        cli.app, ["mcp-servers", *args, "--spec-file", str(spec), "-y"]
+    )
+    assert result.exit_code == 1
+    assert "upstream 'deep_wiki' has no tool(s) nope" in result.stderr
+    assert post.call_count == 0
+    assert patch.call_count == 0
+
+
+@respx.mock
+def test_update_without_upstreams_keeps_them():
+    _serve()
+    op = _op(plan_update_mcp_server(SID, {"description": "New"}))
+    assert op.payload == {"description": "New"}
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "upstreams",
+    [
+        [{"server": "deep_wiki", "tool_names": ["deep_wiki__ask_wiki_question"]}],
+        [{"server": DEEP_WIKI, "server_name": "Deep Wiki", "tool_ids": [ASK, ASK]}],
+    ],
+    ids=["by-name", "read-shape"],
+)
+def test_unchanged_upstreams_plan_skip(upstreams):
+    _serve()
+    op = _op(plan_update_mcp_server(SID, {"upstreams": upstreams}))
+    assert op.action == "skip"
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("upstreams", "payload", "diff"),
+    [
+        (
+            [{"server": "deep_wiki", "include_all": True}],
+            [{"server": DEEP_WIKI, "include_all": True}],
+            "deep_wiki: 1 tool → all tools",
+        ),
+        (
+            [
+                {
+                    "server": "deep_wiki",
+                    "tool_names": [
+                        "deep_wiki__read_wiki_contents",
+                        "deep_wiki__read_wiki_structure",
+                    ],
+                },
+                {"server": "slack", "include_all": True},
+            ],
+            [
+                {
+                    "server": DEEP_WIKI,
+                    "include_all": False,
+                    "tool_ids": [CONTENTS, STRUCTURE],
+                },
+                {"server": SLACK, "include_all": True},
+            ],
+            "+deep_wiki: deep_wiki__read_wiki_contents, "
+            "+deep_wiki: deep_wiki__read_wiki_structure, "
+            "-deep_wiki: deep_wiki__ask_wiki_question, +slack: all tools",
+        ),
+        ([], [], "-deep_wiki"),
+    ],
+    ids=["include-all", "swap-tools-add-server", "clear"],
+)
+def test_changed_upstreams_are_sent_whole(upstreams, payload, diff):
+    _serve()
+    op = _op(plan_update_mcp_server(SID, {"upstreams": upstreams}))
+    assert op.action == "update"
+    assert op.payload == {"upstreams": payload}
+    assert op.preview["diff"]["upstreams"] == diff + " (the whole list is sent)"
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("tools", "servers"),
+    [
+        ({"tool_count": 0, "tools": []}, UPSTREAM_SERVERS),
+        ({"tool_count": 2, "tools": UPSTREAM_TOOLS["tools"][1:]}, UPSTREAM_SERVERS),
+        (UPSTREAM_TOOLS, {**UPSTREAM_SERVERS, "results": []}),
+    ],
+    ids=["deauthorized", "tool-dropped", "server-deleted"],
+)
+def test_get_raw_skips_when_upstream_no_longer_lists_a_held_tool(tools, servers):
+    _serve()
+    respx.get(UPSTREAMS).respond(json=servers)
+    respx.get(f"{UPSTREAMS}/{DEEP_WIKI}/tools").respond(json=tools)
+    op = _op(plan_update_mcp_server(SID, copy.deepcopy(DETAIL)))
+    assert op.action == "skip"
+
+
+@respx.mock
+def test_new_tool_id_is_still_checked_beside_held_ones():
+    _serve()
+    with pytest.raises(PlanError, match=f"has no tool with id\\(s\\) {SID}\\."):
+        plan_update_mcp_server(
+            SID, {"upstreams": [{"server": DEEP_WIKI, "tool_ids": [ASK, SID]}]}
+        )
+
+
+@respx.mock
+def test_new_upstream_server_names_each_tool():
+    detail = {**DETAIL, "upstreams": []}
+    _serve(detail)
+    op = _op(
+        plan_update_mcp_server(
+            SID,
+            {"upstreams": [{"server": "deep_wiki", "tool_ids": [STRUCTURE]}]},
+        )
+    )
+    assert op.preview["diff"]["upstreams"] == (
+        "+deep_wiki, +deep_wiki: deep_wiki__read_wiki_structure "
+        "(the whole list is sent)"
+    )
+
+
+@respx.mock
+def test_all_tools_to_some_names_the_count():
+    detail = {
+        **DETAIL,
+        "upstreams": [
+            {
+                "server": DEEP_WIKI,
+                "server_name": "Deep Wiki",
+                "include_all": True,
+                "tool_ids": [],
+            }
+        ],
+    }
+    _serve(detail)
+    op = _op(
+        plan_update_mcp_server(
+            SID, {"upstreams": [{"server": "deep_wiki", "tool_ids": [ASK, CONTENTS]}]}
+        )
+    )
+    assert op.preview["diff"]["upstreams"] == (
+        "deep_wiki: all tools → 2 tools (the whole list is sent)"
+    )
+
+
 # --- delete ---------------------------------------------------------------
 
 
@@ -393,7 +655,7 @@ def test_delete_preview():
         "name": "Support Tools",
         "api_name": "support_tools",
         "id": SID,
-        "tool_count": 3,
+        "tool_count": 4,
     }
     assert "is_business_default" not in op.preview
 
@@ -444,6 +706,9 @@ def test_unknown_sharing_key_names_the_team_members_route():
         ),
         ({"name": None}, "spec"),
         ({"is_enabled": None}, "spec"),
+        ({"upstreams": None}, "spec"),
+        ({"upstreams": [{"server": ""}]}, "upstreams.0.server"),
+        ({"upstreams": [{"server": "deep_wiki", "tools": []}]}, "upstreams.0.tools"),
     ],
     ids=[
         "caps",
@@ -453,6 +718,9 @@ def test_unknown_sharing_key_names_the_team_members_route():
         "grant-without-id",
         "null-name",
         "null-is-enabled",
+        "null-upstreams",
+        "empty-upstream-server",
+        "unknown-upstream-key",
     ],
 )
 def test_bad_specs_fail_validation(spec, loc):
@@ -461,6 +729,32 @@ def test_bad_specs_fail_validation(spec, loc):
     errors = e.value.errors()
     locs = {".".join(str(p) for p in err["loc"]) or "spec" for err in errors}
     assert loc in locs
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        (
+            {"server": "deep_wiki", "include_all": True, "tool_names": ["x"]},
+            "include_all serves every tool of the server; leave out tool_names.",
+        ),
+        (
+            {"server": "deep_wiki", "include_all": True, "tool_ids": ["x"]},
+            "include_all serves every tool of the server; leave out tool_ids.",
+        ),
+        (
+            {"server": "deep_wiki", "tool_names": ["x"], "tool_ids": ["y"]},
+            "give tool_names or tool_ids, not both.",
+        ),
+    ],
+    ids=["all-and-names", "all-and-ids", "names-and-ids"],
+)
+def test_upstream_entry_picks_tools_one_way(entry, message):
+    with pytest.raises(ValidationError) as e:
+        plan_create_mcp_server(
+            {"name": "X", "api_name": "intake", "upstreams": [entry]}
+        )
+    assert e.value.errors()[0]["msg"] == message
 
 
 # --- execute --------------------------------------------------------------

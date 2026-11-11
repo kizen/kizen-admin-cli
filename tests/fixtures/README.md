@@ -60,9 +60,15 @@ automation steps).
   person and service-account names, emails, host and business id replaced).
   `list.json` is a `GET /api/mcp-servers` page: the system `readonly` server
   plus `support_tools`, whose `detail.json` is shared with one service account
-  as a team member. `detail_readonly.json`, `tools.json`, `step_options.json`
-  and `events_history.json` (newest first; three updates and the create) are
-  the matching raw responses.
+  as a team member. Both were re-captured 2026-11-11 (after Kizen's
+  2026-11-10 release), when `support_tools` also took one `deep_wiki` upstream
+  tool. `detail_readonly.json`, `tools.json`, `step_options.json` and
+  `events_history.json` (newest first; three updates and the create) are the
+  2026-10-27 raw responses. `upstream_servers.json` (a
+  `GET /api/mcp-upstream-servers` page: `deep_wiki`, connected with no auth,
+  and `slack`, needing OAuth with no tools) and `upstream_tools.json`
+  (`deep_wiki`'s `/tools`) are 2026-11-11 captures with upstream server, tool
+  and owner ids replaced.
 - `automations/llm_metadata.json` — the `llm` key of
   `GET /api/automation2/automations/metadata`, captured 2026-10-30 and
   trimmed to the `kizen` row and four `open_ai` models, with `secrets`

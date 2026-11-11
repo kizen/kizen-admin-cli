@@ -9,10 +9,19 @@
       "api_name": "readonly",
       "description": null,
       "tool_names": [
+        "listActivities",
+        "getActivity",
+        "listActivityFields",
+        "listActivityFieldOptions",
+        "getCurrentUser",
         "listCustomObjects",
         "listObjectFields",
         "listObjectFieldOptions",
         "getCustomObject",
+        "listForms",
+        "getForm",
+        "listFormFields",
+        "listFormFieldOptions",
         "listCatalogs",
         "searchCatalog",
         "getDocument"
@@ -22,7 +31,7 @@
       "is_enabled": true,
       "is_default_for_business": true,
       "created": "2026-09-14T18:52:55.847024-05:00",
-      "updated": "2026-09-14T18:52:55.847026-05:00",
+      "updated": "2026-10-27T09:12:13.695269-05:00",
       "owner": {},
       "employee_access": "View",
       "sharing_settings": {
@@ -45,7 +54,10 @@
         "Edit": 0,
         "Admin": 0
       },
-      "tool_count": 7
+      "tool_count": 16,
+      "kizen_tool_count": 16,
+      "upstream_tool_count": 0,
+      "upstream_servers": []
     },
     {
       "id": "e38f1367-267b-4344-823f-5126284b004d",
@@ -61,8 +73,8 @@
       "endpoint_url": "https://kizen.test/api/mcp/support_tools",
       "is_enabled": true,
       "is_default_for_business": false,
-      "created": "2026-10-27T08:18:35.333889-05:00",
-      "updated": "2026-10-27T08:18:36.775948-05:00",
+      "created": "2026-11-11T09:45:03.206389-06:00",
+      "updated": "2026-11-11T09:45:03.206398-06:00",
       "owner": {
         "id": "00000000-0000-4000-8000-0000000005e7",
         "display_name": "Sample User (user@example.com)"
@@ -93,7 +105,15 @@
         "Edit": 0,
         "Admin": 0
       },
-      "tool_count": 3
+      "tool_count": 4,
+      "kizen_tool_count": 3,
+      "upstream_tool_count": 1,
+      "upstream_servers": [
+        {
+          "id": "00000000-0000-4000-8000-0000000007d1",
+          "name": "Deep Wiki"
+        }
+      ]
     }
   ],
   "errors": null

@@ -1,4 +1,5 @@
-"""MCP server spec: the tools a server serves and who can use it.
+"""MCP server spec: the tools a server serves, from Kizen and from upstream
+servers, and who can use it.
 
 Every key is optional so an update spec can carry only what changes. A create
 needs ``name`` and ``api_name``; the planner checks that. ``kizen mcp-servers
@@ -79,8 +80,39 @@ class MCPServerSharing(BaseModel):
         return data
 
 
+class UpstreamSelection(BaseModel):
+    """The tools a server takes from one upstream server.
+
+    ``server`` is the upstream's api_name or UUID. ``server_name`` and
+    ``tool_ids`` are the read shape, so ``get --raw`` output validates.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    server: str = Field(min_length=1)
+    server_name: str | None = None
+    include_all: bool = False
+    tool_names: list[str] | None = None
+    tool_ids: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _one_way_to_pick_tools(self) -> UpstreamSelection:
+        if self.include_all and (self.tool_names or self.tool_ids):
+            raise PydanticCustomError(
+                "upstream_include_all",
+                "include_all serves every tool of the server; leave out {key}.",
+                {"key": "tool_names" if self.tool_names else "tool_ids"},
+            )
+        if self.tool_names and self.tool_ids:
+            raise PydanticCustomError(
+                "upstream_tool_lists", "give tool_names or tool_ids, not both."
+            )
+        return self
+
+
 class MCPServerDef(BaseModel):
-    """One MCP server. ``tool_names`` come from ``kizen mcp-servers tools``."""
+    """One MCP server. ``tool_names`` come from ``kizen mcp-servers tools``;
+    ``upstreams`` pick tools from upstream servers."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -91,6 +123,7 @@ class MCPServerDef(BaseModel):
     is_enabled: bool | None = None
     is_default_for_business: bool | None = None
     sharing_settings: MCPServerSharing | None = None
+    upstreams: list[UpstreamSelection] | None = None
 
     @model_validator(mode="before")
     @classmethod

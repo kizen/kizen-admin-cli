@@ -89,3 +89,32 @@ def test_step_options_rows_carry_server_keys():
     server_keys = set(load_fixture("mcp_servers/list.json")["results"][0])
     for row in load_fixture("mcp_servers/step_options.json"):
         assert set(row) - {"deleted"} <= server_keys
+
+
+@respx.mock
+def test_upstream_servers_follow_pages(client):
+    page = load_fixture("mcp_servers/upstream_servers.json")
+    route = respx.get(f"{FAKE_BASE_URL}/api/mcp-upstream-servers").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    **page,
+                    "next": f"{FAKE_BASE_URL}/api/mcp-upstream-servers?page=2",
+                },
+            ),
+            httpx.Response(200, json={"results": [], "next": None}),
+        ]
+    )
+    rows = mcp_api.list_upstream_servers(client)
+    assert route.call_count == 2
+    assert [r["api_name"] for r in rows] == ["deep_wiki", "slack"]
+
+
+@respx.mock
+def test_upstream_tools_returns_the_dict(client):
+    tools = load_fixture("mcp_servers/upstream_tools.json")
+    respx.get(f"{FAKE_BASE_URL}/api/mcp-upstream-servers/{SID}/tools").respond(
+        json=tools
+    )
+    assert mcp_api.get_upstream_tools(client, SID) == tools
