@@ -1,8 +1,8 @@
 {
   "_meta": {
     "base_url": "https://app.go.kizen.com",
-    "captured": "2026-10-14",
-    "contracts_tracked": 72,
+    "captured": "2026-11-11",
+    "contracts_tracked": 77,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
       "title": "Kizen API",
@@ -219,7 +219,8 @@
           "is_enabled": "boolean",
           "name": "string",
           "sharing_settings": "EntityPermissionRequest",
-          "tool_names": "array[string]"
+          "tool_names": "array[string]",
+          "upstreams": "array[UpstreamSelectionRequest] (writeOnly)"
         },
         "required": [],
         "type": "object"
@@ -277,7 +278,7 @@
       "request_body": {
         "present": true,
         "properties": {
-          "archived_conflict": "oneOf(ArchivedConflictEnum{overwrite},NullEnum)",
+          "archived_conflict": "ArchivedConflictEnum{overwrite}?",
           "fields": "array[FieldRequest]"
         },
         "required": [],
@@ -534,7 +535,7 @@
           "name": "string",
           "order": "integer",
           "percentage_chance_to_close": "integer?",
-          "status": "oneOf(PipelineStageStatusEnum{open,won,lost,disqualified},NullEnum)"
+          "status": "PipelineStageStatusEnum{open,won,lost,disqualified}?"
         },
         "required": [
           "name"
@@ -704,7 +705,8 @@
           "is_enabled": "boolean",
           "name": "string",
           "sharing_settings": "EntityPermissionRequest",
-          "tool_names": "array[string]"
+          "tool_names": "array[string]",
+          "upstreams": "array[UpstreamSelectionRequest] (writeOnly)"
         },
         "required": [
           "name",
@@ -782,7 +784,7 @@
         "present": true,
         "properties": {
           "fields": "array[FieldRequest]",
-          "unarchive": "oneOf(UnarchiveEnum{prompt,unarchive,overwrite},NullEnum)"
+          "unarchive": "RecordUnarchiveEnum{prompt,unarchive,overwrite,unarchive_and_update}?"
         },
         "required": [
           "fields"
@@ -808,8 +810,8 @@
         "present": true,
         "properties": {
           "lookup_value": "string",
-          "oncreate_unarchive": "oneOf(OncreateUnarchiveEnum{prompt,unarchive,overwrite},NullEnum)",
-          "onupdate_archived_conflict": "oneOf(OnupdateArchivedConflictEnum{overwrite},NullEnum)"
+          "oncreate_unarchive": "RecordUnarchiveEnum{prompt,unarchive,overwrite,unarchive_and_update}?",
+          "onupdate_archived_conflict": "OnupdateArchivedConflictEnum{overwrite}?"
         },
         "required": [
           "lookup_value"
@@ -976,7 +978,9 @@
         "action_code_step": "ActionCodeStepRequest?",
         "action_create_related_entity": "WriteActionCreateRelatedEntityRequest?",
         "action_delete_scheduled_activity": "ActionDeleteScheduledActivityRequest?",
+        "action_exit_loop": "ActionExitLoopRequest?",
         "action_file_content_extraction": "WriteActionFileContentExtractionRequest?",
+        "action_find_single_record": "FindSingleRecordRequest?",
         "action_go_to_automation_step": "WriteActionGoToAutomationStepRequest?",
         "action_http_request": "WriteActionHttpRequestRequest?",
         "action_initialize_variable": "ActionInitializeVariableRequest?",
@@ -998,7 +1002,7 @@
         "action_start_automation": "WriteActionStartAutomationRequest?",
         "action_update_pipeline_status": "WriteActionUpdatePipelineStatusRequest?",
         "action_update_variable": "ActionUpdateVariableRequest?",
-        "continue_with_branch": "oneOf(ContinueWithBranchEnum{yes,no},NullEnum)",
+        "continue_with_branch": "ContinueWithBranchEnum{yes,no}?",
         "description": "string",
         "error_notification_severity_level": "WriteStepErrorNotificationSeverityLevelEnum{error,warning,info,inherit}",
         "is_branch_group_initiator": "boolean",
@@ -1008,7 +1012,7 @@
         "step_delay": "WriteStepDelayRequest?",
         "step_goal": "WriteStepGoalRequest?",
         "step_loop": "StepLoopRequest?",
-        "step_type": "AutomationStepTypeEnum{archive_record,assign_team_member,audio_transcription,call_llm,change_field_value,change_tags,code_step,condition,create_related_entity,delay,delete_scheduled_activity,file_content_extraction,goal,go_to_automation_step,http_request,initialize_variable,math_operator,modify_automation,modify_related_entities,modify_related_entities_automation,notify_member_via_email,notify_member_via_text,plugin_code_step,request_info_via_text,schedule_activity,search_records,send_email,send_related_contact_email,send_related_contact_text,send_text,start_automation,stop_execution,update_pipeline_status,update_variable,noop,branch,merge_branches,loop,next_or_finish}",
+        "step_type": "AutomationStepTypeEnum{archive_record,assign_team_member,audio_transcription,call_llm,change_field_value,change_tags,code_step,condition,create_related_entity,delay,delete_scheduled_activity,file_content_extraction,find_single_record,goal,go_to_automation_step,http_request,initialize_variable,math_operator,modify_automation,modify_related_entities,modify_related_entities_automation,notify_member_via_email,notify_member_via_text,plugin_code_step,request_info_via_text,schedule_activity,search_records,send_email,send_related_contact_email,send_related_contact_text,send_text,start_automation,stop_execution,update_pipeline_status,update_variable,noop,branch,merge_branches,loop,next_or_finish,exit_loop}",
         "user_description": "string"
       },
       "required": [
@@ -1077,9 +1081,13 @@
         "destinations": "array[ActionDestinationRequest]",
         "html_prompt": "string?",
         "is_advanced": "boolean",
+        "max_sequential_turns": "integer",
+        "mcp_server_id": "string<uuid>?",
         "merge_field_validation": "MergeFieldValidationEnum{error_if_required,default_to_unknown,blank}",
         "model_name": "string",
-        "prompt": "string"
+        "prompt": "string",
+        "run_tools_as_id": "string<uuid>?",
+        "tool_failure_policy": "ToolFailurePolicyEnum{never_fail}"
       },
       "required": [
         "destinations",
@@ -1124,19 +1132,19 @@
         "archived_record_found_action": "ArchivedRecordFoundActionEnum{unarchive,overwrite,create_append_suffix,error_do_not_create}",
         "automations_to_start": "array[string<uuid>]",
         "context_entity_field": "string<uuid>?",
-        "context_entity_field_resolution": "oneOf(ContextEntityFieldResolutionEnum{overwrite,update_if_blank,add_only},NullEnum)",
+        "context_entity_field_resolution": "ContextEntityFieldResolutionEnum{overwrite,update_if_blank,add_only}?",
         "existing_record_found_action": "ExistingRecordFoundActionEnum{create_append_suffix,error_do_not_create}",
         "new_entity_name": "string",
         "new_entity_name_html": "string",
         "new_entity_owner_employees": "array[string<uuid>]",
         "new_entity_owner_role": "string<uuid>?",
-        "new_entity_owner_sub_type": "oneOf(NewEntityOwnerSubTypeEnum{round_robin_any_role,round_robin_specific_role,round_robin_choose_team_members,specific_team_member,assign_from_variable},NullEnum)",
+        "new_entity_owner_sub_type": "NewEntityOwnerSubTypeEnum{round_robin_any_role,round_robin_specific_role,round_robin_choose_team_members,specific_team_member,assign_from_variable}?",
         "new_entity_owner_type": "NewEntityOwnerTypeEnum{assign_from_context_record,newly_assigned_owner}",
         "new_entity_owner_variable": "string?",
         "new_entity_stage": "string<uuid>?",
         "target_custom_object": "string<uuid>",
         "target_variable": "string?",
-        "variable_field_resolution": "oneOf(VariableFieldResolutionEnum{overwrite,update_if_blank,add_only},NullEnum)"
+        "variable_field_resolution": "VariableFieldResolutionFb0Enum{overwrite,update_if_blank,add_only}?"
       },
       "required": [
         "new_entity_name",
@@ -1185,7 +1193,7 @@
       "label": "step config: initialize_variable",
       "present": true,
       "properties": {
-        "array_aggregation_mode": "oneOf(ArrayAggregationModeEnum{add_first_non_blank,add_all},NullEnum)",
+        "array_aggregation_mode": "ArrayAggregationModeEnum{add_first_non_blank,add_all}?",
         "deduplicate_array": "boolean",
         "is_required": "boolean",
         "sources": "array[VariableSourceRequest]",
@@ -1273,6 +1281,7 @@
         "notify_plugin_developer_on_failure": "boolean",
         "outputs": "array[PluginCodeStepOutputRequest]",
         "plugin_app_api_name": "string",
+        "preview_user_id": "string<uuid>?",
         "secrets": "array[PluginCodeStepSecretRequest]"
       },
       "required": [
@@ -1292,7 +1301,9 @@
         "html_note": "string?",
         "note": "string?",
         "notifications": "array[ActionScheduleActivityNotificationRequest] (writeOnly)",
-        "schedule": "ActionScheduleActivityScheduleDetailRequest"
+        "schedule": "ActionScheduleActivityScheduleDetailRequest",
+        "target_variable": "string? (writeOnly)",
+        "variable_field_resolution": "ActionScheduleActivityVariableFieldResolutionEnum{overwrite,update_if_blank}?"
       },
       "required": [
         "activity_type_id",
@@ -1311,7 +1322,7 @@
         "destination_variable_resolution": "DestinationVariableResolutionEnum{overwrite,add_only,remove_only,update_if_blank,overwrite_except_null}",
         "filter_config": "any?",
         "filter_groups": "array[_FilterGroupRequest]?",
-        "filter_type": "SearchRecordsFilterTypeEnum{in_group,not_in_group,custom_filter,all_records}"
+        "filter_type": "FilterTypeD9dEnum{in_group,not_in_group,custom_filter,all_records}"
       },
       "required": [
         "custom_object",
@@ -1374,11 +1385,11 @@
       "label": "step config: update_variable",
       "present": true,
       "properties": {
-        "array_aggregation_mode": "oneOf(ArrayAggregationModeEnum{add_first_non_blank,add_all},NullEnum)",
+        "array_aggregation_mode": "ArrayAggregationModeEnum{add_first_non_blank,add_all}?",
         "deduplicate_array": "boolean",
         "is_required": "boolean",
         "sources": "array[VariableSourceRequest]",
-        "value_resolution": "oneOf(ValueResolutionEnum{add_only,overwrite,overwrite_except_null},NullEnum)",
+        "value_resolution": "ValueResolutionEnum{add_only,overwrite,overwrite_except_null}?",
         "variable": "string"
       },
       "required": [
@@ -1411,7 +1422,7 @@
       "properties": {
         "days": "integer",
         "days_specific_time": "DaysSpecificTimeRequest",
-        "duration_unit": "oneOf(DurationUnitEnum{hours,minutes,days},NullEnum)",
+        "duration_unit": "DurationUnitEnum{hours,minutes,days}?",
         "hours": "integer",
         "minutes": "integer",
         "months": "integer",
@@ -1431,16 +1442,31 @@
       "present": true,
       "properties": {
         "delay_amount": "integer?",
-        "delay_type": "oneOf(DurationUnitEnum{hours,minutes,days},BlankEnum)",
+        "delay_type": "DurationUnitEnum{hours,minutes,days}",
         "specific_datetime": "string<date-time>?",
         "triggers": "array[any] (writeOnly)",
-        "value_origin": "oneOf(ValueOriginEnum{static,automation_variable},NullEnum)",
+        "value_origin": "ValueOriginEnum{static,automation_variable}?",
         "variable": "string?",
         "wait_type": "WaitTypeEnum{never,delay,specific_datetime}"
       },
       "required": [
         "triggers",
         "wait_type"
+      ],
+      "surface": "automations",
+      "type": "object"
+    },
+    "schema:WriteStepRequest.step_loop": {
+      "label": "step config: loop",
+      "present": true,
+      "properties": {
+        "array_variable": "string",
+        "item_variable": "string",
+        "loop_type": "LoopTypeEnum{for_each_item}"
+      },
+      "required": [
+        "array_variable",
+        "item_variable"
       ],
       "surface": "automations",
       "type": "object"
@@ -1559,8 +1585,8 @@
         "date_offset_days": "integer",
         "every_year": "boolean",
         "field_id": "string<uuid>",
-        "past_date_action": "oneOf(PastDateActionEnum{proceed_down_met_path,proceed_down_not_met_path,wait_for_not_met_path_delay},NullEnum)",
-        "period": "oneOf(PeriodEnum{am,pm},BlankEnum,NullEnum)",
+        "past_date_action": "PastDateActionEnum{proceed_down_met_path,proceed_down_not_met_path,wait_for_not_met_path_delay}?",
+        "period": "PeriodEnum{am,pm}?",
         "skip_non_working_days": "boolean?",
         "time": "string<time>?"
       },
@@ -1629,17 +1655,16 @@
       "label": "trigger config: webhook",
       "present": true,
       "properties": {
-        "auth_header_name": "string",
-        "auth_header_value": "string",
         "auth_type": "AuthTypeEnum{kizen_api,http_header,basic_auth,none}",
-        "content_type": "oneOf(ContentTypeEnum{application/javascript,application/xml,application/xhtml+xml,application/json,application/x-www-form-urlencoded,text/plain,text/html,text/xml,text/csv},NullEnum)",
+        "content_type": "ContentTypeEnum{application/javascript,application/xml,application/xhtml+xml,application/json,application/x-www-form-urlencoded,text/plain,text/html,text/xml,text/csv}?",
         "extract_raw_body_content": "boolean",
         "extract_url_query_string": "boolean",
         "extractors": "array[JSONValueExtractorRequest] (writeOnly)",
-        "html_auth_header_value": "string?",
+        "headers": "array[WebhookAuthHeaderRequest] (writeOnly)",
         "http_method": "HttpMethodEnum{GET,POST}",
         "name": "string",
-        "sample_post_body": "string?"
+        "sample_post_body": "string?",
+        "secret": "WebhookAuthSecretRequest?"
       },
       "required": [
         "name"

@@ -605,6 +605,7 @@ _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
         _KeptBlockKeys(("action",)),
         _KeptBlockKeys(("notify",), default=False),
     ),
+    "plugin_code_step": (_KeptBlockKeys(("preview_user_id",)),),
 }
 
 
@@ -3934,6 +3935,10 @@ def _step_code_step(
     "inputs",
     "outputs",
     "secrets",
+    "preview_user_id",
+    # Read-only: the preview owner expanded, and the UI's warning when that
+    # preview is gone.
+    unsent_on_read=("preview_user", "preview_missing_message"),
 )
 def _step_plugin_code_step(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -3945,6 +3950,8 @@ def _step_plugin_code_step(
         "notify_plugin_developer_on_failure": (
             block.get("notify_plugin_developer_on_failure") or False
         ),
+        # Always sent, null included, so a spec's null unpins the step.
+        "preview_user_id": block.get("preview_user_id"),
         "secrets": _secret_names(block.get("secrets")),
         "inputs": [_code_input(i, auto, ctx, where) for i in block.get("inputs") or []],
         "outputs": [
