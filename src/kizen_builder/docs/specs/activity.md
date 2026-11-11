@@ -228,7 +228,15 @@ in the Kizen UI by users.
 GET/POST              /api/activities
 GET/PUT/PATCH/DELETE  /api/activities/{id_or_api_name}      # path accepts either
 POST                  /api/activities/{id}/duplicate
+GET                   /api/activities/{id_or_api_name}/references   # where-used
 ```
+
+`kizen activities where-used` reads `/references`: the `scheduled_activities`
+and `logged_activities` counts, then the automations (split by `steps`,
+`triggers`, `conditions`, `variables` and `goals`), smart connectors,
+dashboards, homepages (down to the dashlet), filter groups and toolbar
+templates that use the type; `activities delete` shows the same as `used_by`
+in its preview and still deletes. Confirmed live 2026-11-11.
 
 `/duplicate` ignores `name`; the CLI renames the copy with a PATCH. Confirmed
 live 2026-10-06.

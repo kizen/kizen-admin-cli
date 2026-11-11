@@ -24,8 +24,14 @@ called out explicitly under **Changed** or **Removed**.
   list what names a role or permission group: automations, dashboards,
   homepages, chart groups, broadcasts, filter groups, messages, sharing
   settings, roles, service accounts, and how many team members hold it.
-  `fields delete`, `roles delete` and `permissions group-delete` show the same
-  as a `used_by` line in their preview and still delete.
+  **`kizen automations where-used`** and **`kizen activities where-used`**
+  list what uses an automation (the automations whose steps start it, plus
+  objects, connectors, dashboards, filter groups, broadcasts and messages) or
+  an activity type (automation steps and triggers, connectors, dashboards,
+  homepages, filter groups, and its scheduled and logged counts).
+  `fields delete`, `roles delete`, `permissions group-delete`,
+  `automations delete` and `activities delete` show the same as a `used_by`
+  line in their preview and still delete.
 
 ### Fixed
 

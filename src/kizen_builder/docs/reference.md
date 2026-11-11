@@ -75,12 +75,14 @@ and reference the stored name from then on.
 
 A resource with a `where-used` verb lists what in Kizen uses it:
 `kizen fields where-used <object> <field>`, `kizen roles where-used <role>`,
-`kizen permissions group-where-used <group>`. The table is
+`kizen permissions group-where-used <group>`, `kizen automations where-used
+<api_name>`, `kizen activities where-used <activity>`. The table is
 `section | name | where | id`, after any counts (such as records holding a
 value or team members holding a role); `-o json` and `-o csv` work as on other
 reads. The resource's `delete` shows the same result as one `used_by` line in
 its dry-run preview. It is a warning, not a refusal: the delete still goes
-ahead. Resources with it: fields, roles, permission groups.
+ahead. Resources with it: fields, roles, permission groups, automations,
+activity types.
 
 ### Contacts are `client_client`
 

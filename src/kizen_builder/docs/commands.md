@@ -231,10 +231,13 @@ kizen filter-groups delete <object> <uuid|name>
 kizen quick-filters delete <object> <uuid|name>
 kizen columns delete <object> <uuid|name>
 kizen mcp-servers delete <uuid|api_name>                       # hard delete; Kizen-managed servers are refused
+kizen automations where-used <api_name>                           # what starts or uses an automation; automations delete previews the same as used_by
+kizen automations delete <api_name>                               # irreversible
 # activities (activity types / loggable definitions, and scheduled instances) — logging is done in the UI by users
 kizen activities create --name X [--api-name Y] [--association-mode ...] [--object <api_name> ...] [--editable] [--spec-file f]
 kizen activities update <activity> [--name] [--description] [--object <api_name> ...] \
     [--association-mode ...] [--visibility-rules-file f] [--spec-file f]
+kizen activities where-used <activity>                            # what uses an activity type, with its scheduled/logged counts; activities delete previews the same as used_by
 kizen activities delete <activity>
 kizen activities duplicate <activity> [--name X]
 kizen activities scheduled create <activity> --due <ISO+offset> (--assignee <email|uuid> | --role <name|uuid>) [--record <object>:<record_uuid> ...] [--note X] [--notification email:1:day ...]

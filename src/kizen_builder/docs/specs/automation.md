@@ -2079,6 +2079,19 @@ The reliable way to set an owner today is `kizen records update <object> <id>
   works on automations the CLI can't fully read back. With no `--folder` it
   targets `<business_root>`.
 
+### Where-used
+
+`kizen automations where-used <api_name>` reads `GET
+/api/references/automations/{id}`, whose path takes the UUID or the api_name
+(an unknown one gets a JSON 404, *"No Automation matches the given query."*).
+It lists the automations that start this one first, down to each
+`start_automation` step (`steps[]`, `use_types: ["direct"]`), then objects,
+smart connectors, dashboards, homepages, chart groups, filter groups,
+broadcasts and messages. A `messages[]` item with `use_types:
+["conditional_content"]` can come back as `{"id": null, "display_name": null}`;
+the CLI shows it as `(unnamed)` with no id. `automations delete` shows the same
+as `used_by` in its preview and still deletes. Confirmed live 2026-11-11.
+
 ## Debugging
 
 ### A 400 from plan-apply

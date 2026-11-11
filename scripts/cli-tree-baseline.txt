@@ -80,15 +80,16 @@
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ list       List activity types in the configured env.                                            │
-│ get        Show one activity type: metadata, fields, and visibility rules.                       │
-│ create     Create one activity type from flags, or a JSON ActivityDef (--spec-file/stdin).       │
-│ update     Update one activity type. Only the flags you set are changed.                         │
-│ delete     Delete one activity type.                                                             │
-│ duplicate  Duplicate one activity type.                                                          │
-│ fields     Manage the fields on an activity type.                                                │
-│ logged     Read logged activity instances (read-only).                                           │
-│ scheduled  Read and schedule activity instances.                                                 │
+│ list        List activity types in the configured env.                                           │
+│ get         Show one activity type: metadata, fields, and visibility rules.                      │
+│ create      Create one activity type from flags, or a JSON ActivityDef (--spec-file/stdin).      │
+│ update      Update one activity type. Only the flags you set are changed.                        │
+│ where-used  List what uses an activity type: automations, homepages and more.                    │
+│ delete      Delete one activity type.                                                            │
+│ duplicate   Duplicate one activity type.                                                         │
+│ fields      Manage the fields on an activity type.                                               │
+│ logged      Read logged activity instances (read-only).                                          │
+│ scheduled   Read and schedule activity instances.                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: activities create [OPTIONS]                                                                 
@@ -509,6 +510,25 @@
  Advanced spec shape (ActivityDef changes / visibility rules): see `kizen docs show activity`       
                                                                                                     
                                                                                                     
+ Usage: activities where-used [OPTIONS] {identifier}                                                
+                                                                                                    
+ List what uses an activity type: automations, homepages and more.                                  
+                                                                                                    
+ `activities delete` shows the same in its preview as `used_by`, and still                          
+ deletes.                                                                                           
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    identifier      <str>  Activity api_name, UUID or name. [required]                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Where-used endpoint and what it reports: see `kizen docs show activity`                            
+                                                                                                    
+                                                                                                    
  Usage: apply [OPTIONS]                                                                             
                                                                                                     
  Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).                         
@@ -558,6 +578,7 @@
 │ deactivate            Flip one automation's `active` flag to false, without re-authoring the     │
 │                       full spec.                                                                 │
 │ duplicate             Duplicate one automation. The copy is named/numbered by the server.        │
+│ where-used            List what uses an automation: the automations that start it, and more.     │
 │ delete                Delete one automation. Irreversible.                                       │
 │ move                  Move one automation into a folder, or to the root when --folder is left    │
 │                       out.                                                                       │
@@ -1254,6 +1275,25 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+                                                                                                    
+                                                                                                    
+ Usage: automations where-used [OPTIONS] {api_name}                                                 
+                                                                                                    
+ List what uses an automation: the automations that start it, and more.                             
+                                                                                                    
+ `automations delete` shows the same in its preview as `used_by`, and still                         
+ deletes.                                                                                           
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    api_name      <str>  Automation api_name. [required]                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Where-used endpoint and what it reports: see `kizen docs show automation`                          
                                                                                                     
                                                                                                     
  Usage: categories [OPTIONS] COMMAND [ARGS]...                                                      
@@ -4910,6 +4950,9 @@
 ===== activities update =====
 
 
+===== activities where-used =====
+
+
 ===== apply =====
 
 
@@ -5028,6 +5071,9 @@
 
 
 ===== automations update =====
+
+
+===== automations where-used =====
 
 
 ===== categories =====
