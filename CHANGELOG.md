@@ -14,6 +14,17 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Changed
+
+- **A new `update_variable` step on an array variable appends by default.**
+  When a spec or a `steps add` block leaves `value_resolution` out, the CLI now
+  sends `add_only`, which Kizen's builder picks for a new step since its
+  2026-11-10 release. Before, the step was saved with no value, which replaces
+  the array. An update spec without step ids creates new steps, so its array
+  updates now append too. A step with an `id` keeps its live value, and
+  `automations diff` no longer shows that kept value as removed. Set
+  `value_resolution: "overwrite"` to replace.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The
