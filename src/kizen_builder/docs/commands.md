@@ -315,10 +315,12 @@ kizen records move <pipeline> <uuid> --stage <name>                # move a reco
 # roles & permission groups (names accepted everywhere — never make someone type a UUID)
 kizen roles create --name X [--group <name|uuid> ...] [--permission <flag> ...] [--default]
 kizen roles update <name|uuid> [--name Y] [--group <name|uuid> ...] [--default/--no-default]  # --group REPLACES the set
+kizen roles where-used <name|uuid>                                 # what names a role; roles delete previews the same as used_by
 kizen roles delete <name|uuid>
 kizen team update <member> [--role R ...] [--add-role R ...] [--remove-role R ...]  # --role REPLACES the set
 kizen permissions group-create --name X [--base default|clone] [--source-group <name|uuid>] [--settings-file f]
 kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
+kizen permissions group-where-used <name|uuid>                     # what uses a group; group-delete previews the same as used_by
 kizen permissions group-delete <name|uuid>
 kizen service-accounts create --name X [--group <name|uuid> ...]  # integration account; Kizen derives api_name; no groups = disabled
 kizen service-accounts update <ref> [--name Y] [--api-name y] [--group <name|uuid> ... | --clear-groups]  # --group REPLACES the set; rename keeps api_name

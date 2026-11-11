@@ -69,7 +69,12 @@ automation steps).
   filter group (the automation and message names replaced);
   `field_unused.json` is a field nothing uses; `field_403.json` is the body
   Kizen returns for the built-in `created`, `updated` and `display_name`
-  fields.
+  fields. `role_used.json` is `GET /api/references/roles/{id}` for the Sales
+  role (one automation step, one homepage dashlet, one team member) with one
+  of Admin's `sharing_settings` entries added, since Sales has none;
+  `role_unused.json` is a role nothing names. `group_used.json` is
+  `GET /api/references/permission-groups/{id}` for the Admin group (two
+  service accounts, renamed, and the Admin role).
 - `automations/llm_metadata.json` — the `llm` key of
   `GET /api/automation2/automations/metadata`, captured 2026-10-30 and
   trimmed to the `kizen` row and four `open_ai` models, with `secrets`

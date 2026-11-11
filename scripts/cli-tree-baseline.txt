@@ -3019,12 +3019,13 @@
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ groups        List permission groups (raw).                                                      │
-│ group         Show one permission group as a sectioned permission map (mirrors the UI).          │
-│ meta          Show the permissions catalog / meta-data (raw).                                    │
-│ group-create  Create a permission group (full default structure, optionally shaped).             │
-│ group-update  Raise/lower specific controls on an existing permission group.                     │
-│ group-delete  Delete a permission group.                                                         │
+│ groups            List permission groups (raw).                                                  │
+│ group             Show one permission group as a sectioned permission map (mirrors the UI).      │
+│ meta              Show the permissions catalog / meta-data (raw).                                │
+│ group-create      Create a permission group (full default structure, optionally shaped).         │
+│ group-update      Raise/lower specific controls on an existing permission group.                 │
+│ group-where-used  List what uses a permission group: roles, service accounts, filter groups.     │
+│ group-delete      Delete a permission group.                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: permissions group [OPTIONS] {group}                                                         
@@ -3102,6 +3103,25 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Settings-file shape (a list of shaping ops): see `kizen docs show permission-group`                
+                                                                                                    
+                                                                                                    
+ Usage: permissions group-where-used [OPTIONS] {group}                                              
+                                                                                                    
+ List what uses a permission group: roles, service accounts, filter groups.                         
+                                                                                                    
+ `permissions group-delete` shows the same in its preview as `used_by`, and                         
+ still deletes.                                                                                     
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    group      <str>  Permission group name or UUID. [required]                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Where-used endpoint and what it reports: see `kizen docs show permission-group`                    
                                                                                                     
                                                                                                     
  Usage: permissions groups [OPTIONS]                                                                
@@ -3608,11 +3628,12 @@
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ list    List roles (id, name, user count, # permission groups).                                  │
-│ get     Show one role: its default flag, app permissions, and attached groups.                   │
-│ create  Create a role bundling permission groups + app-level permission flags.                   │
-│ update  Update a role. Only the flags you pass change (--group replaces the set).                │
-│ delete  Delete a role.                                                                           │
+│ list        List roles (id, name, user count, # permission groups).                              │
+│ get         Show one role: its default flag, app permissions, and attached groups.               │
+│ create      Create a role bundling permission groups + app-level permission flags.               │
+│ update      Update a role. Only the flags you pass change (--group replaces the set).            │
+│ where-used  List what names a role: automations, homepages, sharing settings and more.           │
+│ delete      Delete a role.                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: roles create [OPTIONS]                                                                      
@@ -3687,6 +3708,24 @@
 │ --json                                Emit JSON (plan with --dry-run, results otherwise).        │
 │ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: roles where-used [OPTIONS] {role}                                                           
+                                                                                                    
+ List what names a role: automations, homepages, sharing settings and more.                         
+                                                                                                    
+ `roles delete` shows the same in its preview as `used_by`, and still deletes.                      
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    role      <str>  Role name or UUID. [required]                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Where-used endpoint and what it reports: see `kizen docs show permission-group`                    
+                                                                                                    
                                                                                                     
  Usage: service-accounts [OPTIONS] COMMAND [ARGS]...                                                
                                                                                                     
@@ -5291,6 +5330,9 @@
 ===== permissions group-update =====
 
 
+===== permissions group-where-used =====
+
+
 ===== permissions groups =====
 
 
@@ -5382,6 +5424,9 @@
 
 
 ===== roles update =====
+
+
+===== roles where-used =====
 
 
 ===== service-accounts =====
