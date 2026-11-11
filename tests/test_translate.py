@@ -1151,6 +1151,7 @@ def test_plugin_steps_translate_to_the_write_dialect() -> None:
         "plugin_app_api_name": "example_plugin",
         "action_step_api_name": "summarize_records",
         "notify_plugin_developer_on_failure": False,
+        "preview_user_id": None,
         "secrets": [],
         "inputs": [
             {

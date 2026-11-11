@@ -73,6 +73,14 @@ class ActionPluginCodeStepConfig(BaseModel):
         description="The step's `action_step_api_name` in the plugin's manifest.",
     )
     notify_plugin_developer_on_failure: bool = False
+    preview_user_id: str | None = Field(
+        default=None,
+        description=(
+            "The user whose preview of a business app the step runs. Null runs "
+            "the installed version. On update, a step whose id matches keeps "
+            "its live value when the spec leaves this out."
+        ),
+    )
     inputs: list[PluginCodeStepInputConfig] = Field(default_factory=list)
     outputs: list[CodeStepOutputConfig] = Field(default_factory=list)
     # Secret names, as for code_step: bare strings or {"name": ...}.

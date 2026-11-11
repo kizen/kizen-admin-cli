@@ -2798,6 +2798,7 @@ def test_plugin_code_step_builds_the_wire_block(patch_live_lookups):
         "plugin_app_api_name": "example_plugin",
         "action_step_api_name": "summarize_records",
         "notify_plugin_developer_on_failure": False,
+        "preview_user_id": None,
         "secrets": [{"name": "business_id"}],
         "inputs": [
             {
@@ -2831,6 +2832,7 @@ def test_plugin_code_step_builds_the_wire_block(patch_live_lookups):
         "plugin_app_api_name": "example_plugin_preview_some_branch",
         "action_step_api_name": "convert_to_pdf",
         "notify_plugin_developer_on_failure": True,
+        "preview_user_id": None,
         "secrets": [],
         "inputs": [],
         "outputs": [],
@@ -2921,16 +2923,12 @@ def test_plugin_code_step_id_forwarded(patch_live_lookups):
     assert "id" not in second
 
 
-def test_diff_automation_reproduced_plugin_spec_has_no_plugin_step_lines(
-    patch_live_lookups,
-):
-    """The diff isn't empty: the stub object's id, error_notification_email
-    and initialize_variable read keys show up, as they do without plugin
-    steps (00-inbox/automation-diff-shows-read-only-trigger-keys.md)."""
-    raw = load_fixture("automations/plugin_code_steps.raw.json")
+def _reproduced_plugin_spec(raw: dict) -> dict:
+    """The captured plugin-step automation as a spec that names every step
+    by its live id."""
     steps = sorted(raw["steps"], key=lambda s: s["order"])
     keys = ["init", "with_fields", "with_variable"]
-    spec = {
+    return {
         "api_name": raw["api_name"],
         "name": raw["name"],
         "type": "record_based",
@@ -2959,6 +2957,17 @@ def test_diff_automation_reproduced_plugin_spec_has_no_plugin_step_lines(
             for i, (key, step) in enumerate(zip(keys, steps, strict=True))
         ],
     }
+
+
+def test_diff_automation_reproduced_plugin_spec_has_no_plugin_step_lines(
+    patch_live_lookups,
+):
+    """The diff isn't empty: the stub object's id, error_notification_email
+    and initialize_variable read keys show up, as they do without plugin
+    steps (00-inbox/automation-diff-shows-read-only-trigger-keys.md)."""
+    raw = load_fixture("automations/plugin_code_steps.raw.json")
+    spec = _reproduced_plugin_spec(raw)
+    steps = raw["steps"]
     plugin_ids = {s["id"][:8] for s in steps if s["step_type"] == "plugin_code_step"}
     assert len(plugin_ids) == 2
     step_paths = [
@@ -2967,6 +2976,104 @@ def test_diff_automation_reproduced_plugin_spec_has_no_plugin_step_lines(
         if d["path"].startswith("steps.")
     ]
     assert not [p for p in step_paths if p in plugin_ids or p.startswith("new:")]
+
+
+_PREVIEW_USER = "44444444-4444-4444-4444-444444444444"
+_OTHER_USER = "55555555-5555-5555-5555-555555555555"
+
+
+def test_plugin_code_step_sends_its_preview_user(patch_live_lookups):
+    first, second = _build(_plugin_spec(preview_user_id=_PREVIEW_USER))["steps"]
+    assert first["action_plugin_code_step"]["preview_user_id"] == _PREVIEW_USER
+    assert second["action_plugin_code_step"]["preview_user_id"] is None
+
+
+def _pinned_update_spec(raw: dict) -> dict:
+    """`_reproduced_plugin_spec` with the step-level keys update keeps set
+    as live, and the preview keys left out of every block."""
+    spec = json.loads(json.dumps(_reproduced_plugin_spec(raw)))
+    for step, live in zip(spec["steps"], raw["steps"], strict=True):
+        step.update(_live_step_keys(live))
+        for key in ("preview_user_id", "preview_user", "preview_missing_message"):
+            (step.get("action_plugin_code_step") or {}).pop(key, None)
+    return spec
+
+
+@pytest.fixture
+def pinned_plugin_live(monkeypatch, patch_live_lookups):
+    """The captured plugin-step automation, its first plugin step pinned to a
+    preview, read as Kizen returns it."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/plugin_code_steps.raw.json")
+    for step in raw["steps"]:
+        if step["step_type"] == "plugin_code_step":
+            step["action_plugin_code_step"].update(
+                preview_user_id=None, preview_user=None, preview_missing_message=None
+            )
+    first = _plugin_steps(raw)[0]
+    first["action_plugin_code_step"].update(
+        preview_user_id=_PREVIEW_USER,
+        preview_user={"id": _PREVIEW_USER, "display_name": "Example User"},
+    )
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _plugin_steps(raw_or_payload: dict) -> list[dict]:
+    return [
+        s
+        for s in sorted(raw_or_payload["steps"], key=lambda s: s["order"])
+        if s.get("step_type", s.get("type")) == "plugin_code_step"
+    ]
+
+
+def _preview_users(payload: dict) -> list:
+    return [
+        s["action_plugin_code_step"]["preview_user_id"] for s in _plugin_steps(payload)
+    ]
+
+
+@pytest.mark.parametrize(
+    "spec_block, sent, kept",
+    [
+        ({}, _PREVIEW_USER, True),
+        ({"preview_user_id": None}, None, False),
+        ({"preview_user_id": _OTHER_USER}, _OTHER_USER, False),
+    ],
+)
+def test_update_keeps_a_live_preview_user_the_spec_leaves_out(
+    pinned_plugin_live, spec_block, sent, kept
+):
+    """Before 2026-11-11 ``update`` refused an automation with a pinned step."""
+    spec = _pinned_update_spec(pinned_plugin_live)
+    pinned = spec["steps"][1]
+    pinned["action_plugin_code_step"].update(spec_block)
+    (op,) = plan_update_automation(spec).operations
+    assert _preview_users(op.payload) == [sent, None]
+    assert (pinned["key"] in op.preview.get("keeps_live", [])) is kept
+
+
+def test_update_new_plugin_step_keeps_no_preview_user(pinned_plugin_live):
+    spec = _pinned_update_spec(pinned_plugin_live)
+    del spec["steps"][1]["id"]
+    (op,) = plan_update_automation(spec).operations
+    assert _preview_users(op.payload) == [None, None]
+
+
+def test_translate_carries_a_pinned_plugin_step(pinned_plugin_live):
+    """`roundtrip`, `steps` edits and `activate` re-send the pin, and leave
+    out the read-only preview keys."""
+    from kizen_builder.translate import live_to_payload
+
+    blocks = [
+        s["action_plugin_code_step"]
+        for s in _plugin_steps(live_to_payload(pinned_plugin_live))
+    ]
+    assert [b["preview_user_id"] for b in blocks] == [_PREVIEW_USER, None]
+    assert not {"preview_user", "preview_missing_message"} & {
+        k for b in blocks for k in b
+    }
 
 
 @pytest.mark.parametrize("verb", ["activate", "edit_other_step"])
