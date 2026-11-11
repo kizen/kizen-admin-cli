@@ -1,5 +1,6 @@
 """Where-used: the shared normalizer, the delete-preview line, and
-`kizen fields|roles where-used` and `kizen permissions group-where-used`.
+`kizen fields|roles|automations|activities where-used` and
+`kizen permissions group-where-used`.
 
 The normalizer is fed every response shape captured live on 2026-11-11 —
 field, role, permission group, automation and activity — so a new where-used
@@ -18,9 +19,16 @@ from typer.testing import CliRunner
 import kizen_builder.cli as cli
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.tools import references as ref_tools
+from kizen_builder.tools.planners.automations import plan_delete_automation
 from kizen_builder.tools.planners.fields import plan_delete_field
+from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.references import normalize, preview_used_by, used_by_line
-from tests.conftest import FAKE_BASE_URL, fake_get_object, load_fixture
+from tests.conftest import (
+    AUTOMATIONS_URL,
+    FAKE_BASE_URL,
+    fake_get_object,
+    load_fixture,
+)
 
 runner = CliRunner()
 
@@ -632,3 +640,240 @@ def test_group_delete_still_plans_when_lookup_is_refused(roles_and_groups):
     assert (
         "unknown (HTTP 403: You do not have permission to perform this action.)" in text
     )
+
+
+# ---------------------------------------------------------------------------
+# kizen automations where-used / automations delete
+# ---------------------------------------------------------------------------
+
+AUTO_ID = "4de6ec47-f39d-468d-af47-f3f9e194708b"
+AUTO_REFS = f"{FAKE_BASE_URL}/api/references/automations/{AUTO_ID}"
+
+
+@pytest.fixture
+def automation_list():
+    respx.get(AUTOMATIONS_URL).respond(
+        json={
+            "results": [
+                {
+                    "id": AUTO_ID,
+                    "api_name": "assign_region",
+                    "name": "Assign the region",
+                }
+            ],
+            "next": None,
+        }
+    )
+
+
+@respx.mock
+def test_plan_delete_automation(automation_list):
+    respx.get(AUTO_REFS).respond(json=load_fixture("references/automation_used.json"))
+    (op,) = plan_delete_automation("assign_region").operations
+    assert (op.action, op.kind, op.key) == ("delete", "automation", "assign_region")
+    assert op.existing_uuid == AUTO_ID
+    assert op.payload == {}
+    assert op.preview["name"] == "Assign the region"
+    assert op.preview["used_by"] == (
+        "automations: 1 (Link the organization); messages: 1 ((unnamed))"
+        " — run `kizen automations where-used assign_region` for the list"
+    )
+
+
+@respx.mock
+def test_plan_delete_automation_still_plans_when_lookup_is_refused(automation_list):
+    respx.get(AUTO_REFS).respond(403, json=load_fixture("references/field_403.json"))
+    (op,) = plan_delete_automation("assign_region").operations
+    assert op.preview["used_by"] == (
+        "unknown (HTTP 403: You do not have permission to perform this action.)"
+    )
+    assert (op.action, op.existing_uuid) == ("delete", AUTO_ID)
+
+
+@respx.mock
+def test_plan_delete_automation_unknown_api_name(automation_list):
+    with pytest.raises(PlanError, match="no automation with api_name 'nope'"):
+        plan_delete_automation("nope")
+
+
+@respx.mock
+def test_automations_delete_dry_run_shows_used_by(automation_list):
+    respx.get(AUTO_REFS).respond(json=load_fixture("references/automation_unused.json"))
+    result = runner.invoke(
+        cli.app, ["automations", "delete", "assign_region", "--dry-run", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    (op,) = json.loads(result.stdout)["operations"]
+    assert op["preview"]["used_by"] == "nothing found"
+
+
+@respx.mock
+def test_automations_where_used_table(automation_list):
+    respx.get(AUTO_REFS).respond(json=load_fixture("references/automation_used.json"))
+    result = runner.invoke(cli.app, ["automations", "where-used", "assign_region"])
+    assert result.exit_code == 0, result.output
+    text = _plain(result.stdout)
+    assert text.startswith("Used by")
+    assert (
+        "automations Link the organization steps: start_automation - 7, "
+        "start_automation - 11; use types: direct" in text
+    )
+    assert "messages (unnamed) use types: conditional_content" in text
+
+
+@respx.mock
+def test_automations_where_used_json(automation_list):
+    respx.get(AUTO_REFS).respond(json=load_fixture("references/automation_used.json"))
+    result = runner.invoke(
+        cli.app, ["automations", "where-used", "assign_region", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert data["target"] == {
+        "automation": "assign_region",
+        "name": "Assign the region",
+        "id": AUTO_ID,
+    }
+    assert data["counts"] == []
+    assert [r["section"] for r in data["used_by"]] == ["automations", "messages"]
+
+
+@respx.mock
+def test_automations_where_used_unused(automation_list):
+    respx.get(AUTO_REFS).respond(json=load_fixture("references/automation_unused.json"))
+    result = runner.invoke(cli.app, ["automations", "where-used", "assign_region"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == (
+        "Kizen reports nothing using automation 'assign_region'."
+    )
+
+
+@respx.mock
+def test_automations_where_used_csv(automation_list):
+    respx.get(AUTO_REFS).respond(json=load_fixture("references/automation_used.json"))
+    result = runner.invoke(
+        cli.app, ["automations", "where-used", "assign_region", "-o", "csv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "section,name,where,id",
+        "automations,Link the organization,"
+        '"steps: start_automation - 7, start_automation - 11; use types: direct",'
+        "1800a96e-fb22-4ec3-a912-ca1795744b7a",
+        "messages,(unnamed),use types: conditional_content,",
+    ]
+
+
+@respx.mock
+def test_automations_where_used_unknown_api_name(automation_list):
+    result = runner.invoke(cli.app, ["automations", "where-used", "nope"])
+    assert result.exit_code == 1
+    assert _plain(result.stderr) == "error: no automation with api_name 'nope'"
+
+
+# ---------------------------------------------------------------------------
+# kizen activities where-used
+# ---------------------------------------------------------------------------
+
+ACTIVITY_ID = "2ad15a97-d834-40d8-ab1a-5112ac2b70ad"
+ACTIVITY_ROW = {
+    "id": ACTIVITY_ID,
+    "name": "Meeting Follow-up",
+    "api_name": "follow_up",
+}
+ACTIVITY_REFS = f"{FAKE_BASE_URL}/api/activities/{ACTIVITY_ID}/references"
+
+
+@pytest.fixture
+def activity_lookup():
+    respx.get(f"{FAKE_BASE_URL}/api/activities/follow_up").respond(json=ACTIVITY_ROW)
+    respx.get(f"{FAKE_BASE_URL}/api/activities/nope").respond(
+        404, json={"detail": "No ActivityObject matches the given query."}
+    )
+    respx.get(f"{FAKE_BASE_URL}/api/activities").respond(
+        json={"results": [ACTIVITY_ROW], "next": None}
+    )
+
+
+@respx.mock
+def test_activities_where_used_table(activity_lookup):
+    respx.get(ACTIVITY_REFS).respond(json=load_fixture("references/activity_used.json"))
+    result = runner.invoke(cli.app, ["activities", "where-used", "follow_up"])
+    assert result.exit_code == 0, result.output
+    text = _plain(result.stdout)
+    assert text.startswith("1 logged activities Used by")
+    assert "Summarize meetings steps: schedule_activity - 4" in text
+    assert "Mark meeting follow-ups done triggers: activity_logged - 1" in text
+    assert "Team Homepage dashlets: [default]" in text
+
+
+@respx.mock
+def test_activities_where_used_json(activity_lookup):
+    respx.get(ACTIVITY_REFS).respond(json=load_fixture("references/activity_used.json"))
+    result = runner.invoke(
+        cli.app, ["activities", "where-used", "follow_up", "-o", "json"]
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert data["target"] == {"activity": "Meeting Follow-up", "id": ACTIVITY_ID}
+    assert data["counts"] == [
+        {"label": "scheduled activities", "count": 0},
+        {"label": "logged activities", "count": 1},
+    ]
+    assert len(data["used_by"]) == 3
+
+
+@respx.mock
+def test_activities_where_used_unused(activity_lookup):
+    respx.get(ACTIVITY_REFS).respond(
+        json={
+            "scheduled_activities": 0,
+            "logged_activities": 0,
+            "automations": [],
+            "homepages": [],
+            "toolbar_templates": [],
+        }
+    )
+    result = runner.invoke(cli.app, ["activities", "where-used", "follow_up"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == (
+        "Kizen reports nothing using activity 'Meeting Follow-up'."
+    )
+
+
+@respx.mock
+def test_activities_where_used_csv(activity_lookup):
+    respx.get(ACTIVITY_REFS).respond(json=load_fixture("references/activity_used.json"))
+    result = runner.invoke(
+        cli.app, ["activities", "where-used", "follow_up", "-o", "csv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "section,name,where,id",
+        "automations,Summarize meetings,steps: schedule_activity - 4,"
+        "5cf679bf-eab3-49f6-87cb-9cb317548f5c",
+        "automations,Mark meeting follow-ups done,triggers: activity_logged - 1,"
+        "a08f8845-1b59-40d1-82a0-bb17df73392b",
+        "homepages,Team Homepage,dashlets: [default],"
+        "0212d6b2-ca89-49a6-a93e-64eca59e8ff8",
+    ]
+
+
+@respx.mock
+def test_activities_where_used_by_name(activity_lookup):
+    respx.get(f"{FAKE_BASE_URL}/api/activities/Meeting%20Follow-up").respond(
+        404, json={"detail": "No ActivityObject matches the given query."}
+    )
+    respx.get(ACTIVITY_REFS).respond(json=load_fixture("references/activity_used.json"))
+    result = runner.invoke(
+        cli.app, ["activities", "where-used", "Meeting Follow-up", "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["target"]["id"] == ACTIVITY_ID
+
+
+@respx.mock
+def test_activities_where_used_unknown(activity_lookup):
+    result = runner.invoke(cli.app, ["activities", "where-used", "nope"])
+    assert result.exit_code == 1
+    assert _plain(result.stderr) == "error: activity 'nope' not found"

@@ -74,7 +74,14 @@ automation steps).
   of Admin's `sharing_settings` entries added, since Sales has none;
   `role_unused.json` is a role nothing names. `group_used.json` is
   `GET /api/references/permission-groups/{id}` for the Admin group (two
-  service accounts, renamed, and the Admin role).
+  service accounts, renamed, and the Admin role). `automation_used.json` is
+  `GET /api/references/automations/{id}` for an automation another one starts
+  from two `start_automation` steps, with one null-name
+  `conditional_content` message taken from another automation's body;
+  `automation_unused.json` is one nothing uses. `activity_used.json` is
+  `GET /api/activities/{id}/references` for an activity type with one logged
+  activity, one `schedule_activity` step and one `activity_logged` trigger,
+  with one homepage dashlet taken from another type's body.
 - `automations/llm_metadata.json` — the `llm` key of
   `GET /api/automation2/automations/metadata`, captured 2026-10-30 and
   trimmed to the `kizen` row and four `open_ai` models, with `secrets`

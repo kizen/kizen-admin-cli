@@ -144,7 +144,7 @@ src/kizen_builder/
     permissions.py               #   roles, permission groups, permissions catalog
     pipelines.py                 #   pipeline-stage CRUD + record stage-move
     records.py                   #   record-level reads/writes (custom objects + built-ins)
-    references.py                #   where-used lookups (/api/references/…)
+    references.py                #   where-used lookups (/api/references/…, /api/activities/{id}/references)
     saved_views.py               #   filter groups / quick filters / column templates
     schema.py                    #   schema lookups backing the filtering DSL
     service_accounts.py          #   service-account CRUD + history (strips the key from create)

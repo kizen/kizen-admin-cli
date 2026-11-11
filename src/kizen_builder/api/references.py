@@ -1,4 +1,5 @@
-"""Where-used lookups against the Kizen API (``/api/references/…``).
+"""Where-used lookups against the Kizen API (``/api/references/…``, plus
+``/api/activities/{id}/references``).
 
 Each endpoint answers "what in Kizen uses this?" with the same loose shape:
 integer counts, plus lists of the automations, forms, dashboards and so on
@@ -31,3 +32,15 @@ def permission_group_references(client: KizenClient, group_id: str) -> dict[str,
     """GET /api/references/permission-groups/{group_id}. An unknown UUID gets a
     JSON 404."""
     return client.get(f"/api/references/permission-groups/{group_id}")
+
+
+def automation_references(client: KizenClient, automation_id: str) -> dict[str, Any]:
+    """GET /api/references/automations/{automation_id}. The path takes the
+    api_name too; an unknown one gets a JSON 404."""
+    return client.get(f"/api/references/automations/{automation_id}")
+
+
+def activity_references(client: KizenClient, activity_id: str) -> dict[str, Any]:
+    """GET /api/activities/{activity_id}/references. The path takes the
+    api_name too; an unknown one gets a JSON 404."""
+    return client.get(f"/api/activities/{activity_id}/references")

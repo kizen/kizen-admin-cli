@@ -10,14 +10,17 @@ from typing import Any
 
 import typer
 
+from kizen_builder import output as out
 from kizen_builder.cli._mutations import (
     _confirm_or_abort,
     _read_spec,
     _run_mutation,
 )
-from kizen_builder.cli._shared import cli_errors, console
+from kizen_builder.cli._shared import JSON_OPTION, OUTPUT_OPTION, cli_errors, console
+from kizen_builder.cli._where_used import render_where_used
 from kizen_builder.cli.automations import autos_app, print_warnings
 from kizen_builder.tools import automations as auto_tools
+from kizen_builder.tools import references as ref_tools
 from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.plans import PlanError
 
@@ -216,6 +219,26 @@ def autos_duplicate(
         yes=yes,
         json_out=json_out,
     )
+
+
+@autos_app.command(
+    "where-used",
+    epilog="Where-used endpoint and what it reports: see `kizen docs show automation`",
+)
+def autos_where_used(
+    api_name: str = typer.Argument(..., help="Automation api_name."),
+    output: str = OUTPUT_OPTION,
+    json_out: bool = JSON_OPTION,
+) -> None:
+    """List what uses an automation: the automations that start it, and more.
+
+    `automations delete` shows the same in its preview as `used_by`, and still
+    deletes.
+    """
+    fmt = out.resolve_format(output, json_out)
+    with cli_errors(LookupError, ref_tools.WhereUsedRefused):
+        result = ref_tools.automation_where_used(api_name)
+    render_where_used(result, fmt, f"automation '{api_name}'")
 
 
 @autos_app.command("delete")
