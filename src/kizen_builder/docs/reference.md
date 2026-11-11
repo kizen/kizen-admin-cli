@@ -71,6 +71,15 @@ refused (`kizen docs show objects`). An explicit activity-type api_name is kept
 as given (`kizen docs show activity`). Anywhere else, read back after writing
 and reference the stored name from then on.
 
+### Where-used
+
+A resource with a `where-used` verb lists what in Kizen uses it:
+`kizen fields where-used <object> <field>`. The table is
+`section | name | where | id`, after any counts (such as records holding a
+value); `-o json` and `-o csv` work as on other reads. The resource's `delete`
+shows the same result as one `used_by` line in its dry-run preview. It is a
+warning, not a refusal: the delete still goes ahead. Resources with it: fields.
+
 ### Contacts are `client_client`
 
 Contacts are a records-API object like any other, identified as `client_client`.

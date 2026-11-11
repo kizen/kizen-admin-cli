@@ -1,0 +1,70 @@
+{
+  "entities_with_values": 1,
+  "activities": [],
+  "forms": [],
+  "surveys": [],
+  "messages": [
+    {
+      "id": "c1fdef08-ae62-4c33-9698-921818df4fff",
+      "display_name": "Lead follow-up with merge {{ entity",
+      "can_view": true,
+      "use_types": [
+        "merge_field"
+      ]
+    }
+  ],
+  "dashboards": [],
+  "homepages": [],
+  "chart_groups": [],
+  "automations": [
+    {
+      "id": "732c7874-4fa0-4ba6-8266-3f42ef201d74",
+      "display_name": "Route leads by owner",
+      "can_view": true,
+      "use_types": [],
+      "triggers": [],
+      "variables": [],
+      "steps": [],
+      "conditions": [
+        {
+          "id": "c1f4c789-f7f7-4660-b373-358b7105da46",
+          "display_name": "condition - 3",
+          "type": "condition"
+        },
+        {
+          "id": "1e30ae6b-d5ff-4de1-9825-0e5d38c86630",
+          "display_name": "condition - 1",
+          "type": "condition"
+        }
+      ]
+    },
+    {
+      "id": "cf857d8c-ab72-4dc7-9b7e-3c5c886b6a24",
+      "display_name": "Escalate unowned leads",
+      "can_view": true,
+      "use_types": [],
+      "triggers": [],
+      "variables": [],
+      "steps": [],
+      "conditions": [
+        {
+          "id": "14edc3f7-da67-4307-bf8f-0c28fd4493d3",
+          "display_name": "condition - 1",
+          "type": "condition"
+        }
+      ]
+    }
+  ],
+  "filter_groups": [
+    {
+      "id": "0f873245-b6c3-4d71-bc64-97a3914d4215",
+      "display_name": "My Records",
+      "can_view": true,
+      "type": "records",
+      "object_id": "cea41a7b-9940-41a7-913a-4de9fa7f145c",
+      "object_name": "Inbound Leads"
+    }
+  ],
+  "smart_connectors": [],
+  "broadcasts": []
+}

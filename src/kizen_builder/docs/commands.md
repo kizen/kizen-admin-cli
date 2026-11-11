@@ -301,6 +301,7 @@ kizen smart-connectors send-webhook <connector> --body '<json>|@file' [--query k
 
 kizen records archive <object> {<uuid> | --spec-file F}        # the one way to remove records; batched, no emails
 kizen records unarchive <object> <uuid> [<uuid> ...]            # reverse of archive
+kizen fields where-used <object_api_name> <field_api_name>     # what uses a field; fields delete previews the same as used_by
 kizen fields delete <object_api_name> <field_api_name>         # delete a field (drops its data everywhere)
 kizen fields options add <object> <field> --option "Label" [...]          # add select-field options
 kizen fields options remove <object> <field> <option> [--remap-to <other>] # remove one option

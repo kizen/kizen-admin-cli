@@ -1787,10 +1787,11 @@
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ create   Create one field, or many at once from a JSON spec (--spec-file/stdin).                 │
-│ update   Update one field. Only the flags you set are changed.                                   │
-│ delete   Delete one custom field. This removes the field's data across all records.              │
-│ options  Add or remove options on select-type fields (dropdown, status, etc.).                   │
+│ create      Create one field, or many at once from a JSON spec (--spec-file/stdin).              │
+│ update      Update one field. Only the flags you set are changed.                                │
+│ where-used  List what uses a field: automations, forms, messages, dashboards and more.           │
+│ delete      Delete one custom field. This removes the field's data across all records.           │
+│ options     Add or remove options on select-type fields (dropdown, status, etc.).                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: fields create [OPTIONS] {object_api_name}                                                   
@@ -1925,6 +1926,25 @@
 │ --json                                 Emit JSON (plan with --dry-run, results otherwise).       │
 │ --help                                 Show this message and exit.                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: fields where-used [OPTIONS] {object_api_name} {field_api_name}                              
+                                                                                                    
+ List what uses a field: automations, forms, messages, dashboards and more.                         
+                                                                                                    
+ `fields delete` shows the same in its preview as `used_by`, and still deletes.                     
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    object_api_name      <str>  Parent object api_name. [required]                              │
+│ *    field_api_name       <str>  Field api_name. [required]                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Where-used endpoint and what it reports: see `kizen docs show field`                               
+                                                                                                    
                                                                                                     
  Usage: filter-groups [OPTIONS] COMMAND [ARGS]...                                                   
                                                                                                     
@@ -5077,6 +5097,9 @@
 
 
 ===== fields update =====
+
+
+===== fields where-used =====
 
 
 ===== filter-groups =====
