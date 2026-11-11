@@ -3409,6 +3409,129 @@ def test_diff_stop_without_a_block_shows_only_a_real_change(
     ] == lines
 
 
+_TAGS = {"name": "tags", "data_type": "string", "is_array": True}
+_INIT_ID = "0d7996b0-1f5b-4a4b-85a1-4072667b654a"
+_BUMP_ID = "9a27c28b-c32a-43f6-ad80-56def1ded114"
+
+
+def _variable_step(step_id, step_type, order, parent, block):
+    return {
+        "id": step_id,
+        "step_type": step_type,
+        "order": order,
+        "description": step_type,
+        "user_description": "",
+        "parent_step_id": parent,
+        "parent_condition": "",
+        f"action_{step_type}": block,
+        "action_on_failure": "silent_continue",
+        "should_skip_execution": False,
+        "error_notification_severity_level": "inherit",
+    }
+
+
+@pytest.fixture
+def array_update_live(webhook_live, monkeypatch):
+    """`webhook_live` with an array init and an update of it, served as
+    edited: a test sets the live update's `value_resolution`. Returns the
+    raw and a spec of it with no steps."""
+    import kizen_builder.tools.planners.automations as ma
+
+    spec = {**_webhook_spec(webhook_live, auth=True), "steps": []}
+    variable = {**_TAGS, "id": "262e305c-da52-47e1-99ad-4eb80d7682bf"}
+    webhook_live["steps"] = [
+        _variable_step(
+            _INIT_ID,
+            "initialize_variable",
+            0,
+            None,
+            {"sources": [], "variable": variable, "is_required": False},
+        ),
+        _variable_step(
+            _BUMP_ID,
+            "update_variable",
+            1,
+            _INIT_ID,
+            {**_array_update_block(), "variable": variable, "is_required": False},
+        ),
+    ]
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": webhook_live})
+    return webhook_live, spec
+
+
+def _array_update_spec(
+    live: tuple[dict, dict], live_value: str | None, **spec_extra
+) -> dict:
+    """The live automation as a spec, its live update's `value_resolution`
+    set to ``live_value``; the spec's update block gets ``spec_extra``."""
+    raw, spec = live
+    raw["steps"][1]["action_update_variable"]["value_resolution"] = live_value
+    spec = dict(spec)
+    init, bump = raw["steps"]
+    spec["steps"] = [
+        {
+            "key": "init",
+            "id": init["id"],
+            "step_type": "initialize_variable",
+            "order": 0,
+            "parent_key": None,
+            "description": init["description"],
+            "action_initialize_variable": {"sources": [], "variable": dict(_TAGS)},
+            **_live_step_keys(init),
+        },
+        {
+            "key": "bump",
+            "id": bump["id"],
+            "step_type": "update_variable",
+            "order": 1,
+            "parent_key": "init",
+            "description": bump["description"],
+            "action_update_variable": _array_update_block(**spec_extra),
+            **_live_step_keys(bump),
+        },
+    ]
+    return spec
+
+
+@pytest.mark.parametrize(
+    "live_value, spec_extra, sent, kept",
+    [
+        ("add_only", {}, "add_only", True),
+        (None, {}, None, False),
+        ("add_only", {"value_resolution": "overwrite"}, "overwrite", False),
+    ],
+    ids=["live-kept", "live-null", "spec-wins"],
+)
+def test_update_keeps_the_live_value_resolution_it_leaves_out(
+    array_update_live, live_value, spec_extra, sent, kept
+):
+    """Kizen keeps the stored value on a PUT that omits it (confirmed live
+    2026-11-11); sending it keeps `diff` honest."""
+    spec = _array_update_spec(array_update_live, live_value, **spec_extra)
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["steps"][1]["action_update_variable"].get("value_resolution") == (
+        sent
+    )
+    assert ("bump" in op.preview.get("keeps_live", [])) is kept
+
+
+def test_update_new_array_update_defaults_to_add_only(array_update_live):
+    spec = _array_update_spec(array_update_live, "overwrite")
+    del spec["steps"][1]["id"]
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["steps"][1]["action_update_variable"]["value_resolution"] == (
+        "add_only"
+    )
+
+
+def test_diff_array_update_without_value_resolution_shows_no_change(
+    array_update_live,
+):
+    spec = _array_update_spec(array_update_live, "add_only")
+    diff = diff_automation(spec)["diff"]
+    assert [d for d in diff if d["path"].endswith(".value_resolution")] == []
+
+
 def _webhook_blocks(payload: dict) -> dict[str, dict]:
     return {
         t["trigger_webhook"]["name"]: t["trigger_webhook"]
@@ -5866,9 +5989,12 @@ def _branching_test_spec() -> dict:
     }
 
 
-def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatch):
+def test_branching_test_transcription_diffs_only_by_noise(
+    patch_live_lookups, monkeypatch
+):
     """The spec reproduces the UI-built graph, the Kizen AI app included.
-    What's left is noise any spec shows: server-written descriptions."""
+    What's left is noise any spec shows: server-written descriptions, and the
+    append default its id-less array update gets as a new step."""
     import kizen_builder.tools.planners.automations as ma
 
     raw = load_fixture("automations/branching_test.raw.json")
@@ -5883,7 +6009,13 @@ def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatc
         for d in diff_automation(_branching_test_spec())["diff"]
         if d["path"].rsplit(".", 1)[-1] != "description"
     ]
-    assert structural == []
+    assert structural == [
+        {
+            "path": "steps.59a9f2a6.action_update_variable.value_resolution",
+            "before": "<absent>",
+            "after": "add_only",
+        }
+    ]
 
 
 def test_branching_test_payload_shape(patch_live_lookups):
@@ -6435,19 +6567,25 @@ def test_live_update_variable_with_null_value_resolution_replans_unchanged(
     assert planned == live["action_update_variable"]
 
 
-def _init_then_update_spec(*, is_array: bool | None, defined_as: str = "tags") -> dict:
+def _init_then_update_spec(
+    *,
+    is_array: bool | None,
+    defined_as: str = "tags",
+    value_resolution: str | None = "add_only",
+) -> dict:
     variable: dict = {"name": defined_as, "data_type": "string"}
     if is_array is not None:
         variable["is_array"] = is_array
     spec = _one_step_spec("initialize_variable", {"variable": variable, "sources": []})
     spec["steps"][0]["key"] = "init"
+    extra = {"value_resolution": value_resolution} if value_resolution else {}
     spec["steps"].append(
         {
             "key": "bump",
             "step_type": "update_variable",
             "order": 1,
             "parent_key": "init",
-            "action_update_variable": _array_update_block(value_resolution="add_only"),
+            "action_update_variable": _array_update_block(**extra),
         }
     )
     return spec
@@ -6472,6 +6610,64 @@ def test_update_variable_value_resolution_on_undefined_variable_passes(
     """No definition to check against: the server decides."""
     steps = _build(_init_then_update_spec(is_array=False, defined_as="other"))["steps"]
     assert steps[1]["action_update_variable"]["value_resolution"] == "add_only"
+
+
+def _bump_block(spec: dict) -> dict:
+    return _build(spec)["steps"][1]["action_update_variable"]
+
+
+def test_new_array_update_defaults_to_add_only(patch_live_lookups):
+    """The builder's default for a new step since 2026-11-10."""
+    spec = _init_then_update_spec(is_array=True, value_resolution=None)
+    assert _bump_block(spec)["value_resolution"] == "add_only"
+
+
+@pytest.mark.parametrize("value", ["overwrite", "overwrite_except_null"])
+def test_new_array_update_sends_the_value_given(patch_live_lookups, value):
+    spec = _init_then_update_spec(is_array=True, value_resolution=value)
+    assert _bump_block(spec)["value_resolution"] == value
+
+
+@pytest.mark.parametrize(
+    "is_array, defined_as",
+    [(False, "tags"), (None, "tags"), (True, "other")],
+    ids=["scalar", "is_array-unset", "undeclared"],
+)
+def test_new_update_of_a_non_array_gets_no_default(
+    patch_live_lookups, is_array, defined_as
+):
+    spec = _init_then_update_spec(
+        is_array=is_array, defined_as=defined_as, value_resolution=None
+    )
+    assert "value_resolution" not in _bump_block(spec)
+
+
+def test_new_update_of_a_search_destination_defaults_to_add_only(patch_live_lookups):
+    spec = _one_step_spec("update_variable", _array_update_block())
+    spec["steps"][0].update(key="bump", order=1, parent_key="find")
+    spec["steps"].insert(0, {**_search_into("tags"), "key": "find", "order": 0})
+    assert _bump_block(spec)["value_resolution"] == "add_only"
+
+
+def test_array_update_with_an_id_gets_no_default(patch_live_lookups):
+    """An id means the step's settings come from elsewhere."""
+    spec = _init_then_update_spec(is_array=True, value_resolution=None)
+    spec["steps"][1]["id"] = "9a27c28b-c32a-43f6-ad80-56def1ded114"
+    assert "value_resolution" not in _bump_block(spec)
+
+
+def test_steps_add_array_update_defaults_to_add_only(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step
+
+    step = {
+        "step_type": "update_variable",
+        "action_update_variable": {
+            **_array_update_block(),
+            "variable": {"name": "genders", "data_type": "string"},
+        },
+    }
+    block = build_wire_step(step, _GENDERS_DECLARED, "patients")
+    assert block["action_update_variable"]["value_resolution"] == "add_only"
 
 
 def test_value_resolution_check_reads_raw_wire_steps():
