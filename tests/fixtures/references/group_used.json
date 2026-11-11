@@ -1,0 +1,26 @@
+{
+  "filter_groups": [],
+  "team": {
+    "count": 1,
+    "can_view": true
+  },
+  "service_accounts": [
+    {
+      "id": "306b6bd1-4780-45fa-a8e7-2f9675b7e6dd",
+      "display_name": "Workflow Service",
+      "can_view": true
+    },
+    {
+      "id": "afa714ac-33c3-49a9-87b0-be75430a7ec6",
+      "display_name": "Code Step Service",
+      "can_view": true
+    }
+  ],
+  "roles": [
+    {
+      "id": "937c92bb-d5dd-4990-bcfc-437757e28070",
+      "name": "Admin",
+      "can_view": true
+    }
+  ]
+}

@@ -290,6 +290,9 @@ def test_plan_update_role_builds_diff_for_changed_fields_only():
 @respx.mock
 def test_plan_delete_role():
     _mock_role_detail()
+    respx.get(f"{FAKE_BASE_URL}/api/references/roles/{ROLE_ID}").respond(
+        json=load_fixture("references/role_used.json")
+    )
 
     plan = plan_delete_role(ROLE_ID)
 
@@ -298,6 +301,12 @@ def test_plan_delete_role():
     assert op.kind == "role"
     assert op.existing_uuid == ROLE_ID
     assert op.key == ROLE_DETAIL["name"]
+    assert op.payload == {}
+    assert op.preview["used_by"] == (
+        "automations: 1 (all triggers); homepages: 1 (Team Homepage); "
+        "sharing settings: 1 (My Records); team members: 1"
+        " — run `kizen roles where-used 'Sales Rep'` for the list"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +573,9 @@ def test_plan_create_permission_group_unknown_setting_type_raises():
 @respx.mock
 def test_plan_delete_permission_group():
     _mock_group_detail()
+    respx.get(f"{FAKE_BASE_URL}/api/references/permission-groups/{GROUP_ID}").respond(
+        json=load_fixture("references/group_used.json")
+    )
 
     plan = plan_delete_permission_group(GROUP_ID)
 
@@ -572,6 +584,12 @@ def test_plan_delete_permission_group():
     assert op.kind == "permission_group"
     assert op.existing_uuid == GROUP_ID
     assert op.key == GROUP_DETAIL["name"]
+    assert op.payload == {}
+    assert op.preview["used_by"] == (
+        "service accounts: 2 (Workflow Service, Code Step Service); "
+        "roles: 1 (Admin); team members: 1"
+        " — run `kizen permissions group-where-used 'Sample Group'` for the list"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -285,3 +285,46 @@ def test_field_references_fixture_fidelity(drift_client, drift_object):
     live = field_references(drift_client, drift_object["uuid"], field["id"])
 
     assert_keys_present(load_fixture("references/field_unused.json"), live)
+
+
+# ---------------------------------------------------------------------------
+# 6. references/role_used.json and group_used.json vs. live roles and groups
+# ---------------------------------------------------------------------------
+
+
+def _assert_references_fidelity(fixture: dict[str, Any], bodies: list[Any]) -> None:
+    """Diff ``fixture`` against every live body, list keys taken from the first
+    body where that list has entries, so nested item keys get checked.
+    Skips (after diffing) when no live body has an entry a fixture list has."""
+    live = dict(bodies[0])
+    for key, value in fixture.items():
+        if isinstance(value, list) and value:
+            live[key] = next((b[key] for b in bodies if b.get(key)), live.get(key))
+    assert_keys_present(fixture, live)
+    unseen = [
+        k for k, v in fixture.items() if isinstance(v, list) and v and not live[k]
+    ]
+    if unseen:
+        pytest.skip(f"no live entries to diff item keys against: {unseen}")
+
+
+def test_role_references_fixture_fidelity(drift_client):
+    from kizen_builder.api import permissions as perm_api
+    from kizen_builder.api.references import role_references
+
+    bodies = [
+        role_references(drift_client, r["id"])
+        for r in perm_api.list_roles(drift_client)
+    ]
+    _assert_references_fidelity(load_fixture("references/role_used.json"), bodies)
+
+
+def test_permission_group_references_fixture_fidelity(drift_client):
+    from kizen_builder.api import permissions as perm_api
+    from kizen_builder.api.references import permission_group_references
+
+    bodies = [
+        permission_group_references(drift_client, g["id"])
+        for g in perm_api.list_permission_groups(drift_client)
+    ]
+    _assert_references_fidelity(load_fixture("references/group_used.json"), bodies)

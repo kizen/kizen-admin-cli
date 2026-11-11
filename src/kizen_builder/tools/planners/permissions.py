@@ -10,12 +10,15 @@ created from a full default structure (see
 from __future__ import annotations
 
 import copy
+import shlex
 from typing import Any
 
 from kizen_builder.api import permissions as perm_api
+from kizen_builder.api import references as ref_api
 from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools import objects as obj_tools
+from kizen_builder.tools import references as ref_tools
 from kizen_builder.tools.permission_builder import (
     Leaf,
     build_default_group_payload,
@@ -128,7 +131,15 @@ def plan_delete_role(role_id: str) -> Plan:
         action="delete",
         kind="role",
         key=current.get("name") or role_id,
-        preview={"env": env, "role": current.get("name"), "id": role_id},
+        preview={
+            "env": env,
+            "role": current.get("name"),
+            "id": role_id,
+            "used_by": ref_tools.preview_used_by(
+                lambda c: ref_api.role_references(c, role_id),
+                f"kizen roles where-used {shlex.quote(current.get('name') or role_id)}",
+            ),
+        },
         existing_uuid=role_id,
     )
     return Plan.build(
@@ -446,7 +457,16 @@ def plan_delete_permission_group(group_id: str) -> Plan:
         action="delete",
         kind="permission_group",
         key=current.get("name") or group_id,
-        preview={"env": env, "group": current.get("name"), "id": group_id},
+        preview={
+            "env": env,
+            "group": current.get("name"),
+            "id": group_id,
+            "used_by": ref_tools.preview_used_by(
+                lambda c: ref_api.permission_group_references(c, group_id),
+                "kizen permissions group-where-used "
+                + shlex.quote(current.get("name") or group_id),
+            ),
+        },
         existing_uuid=group_id,
     )
     return Plan.build(
