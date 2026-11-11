@@ -14,6 +14,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Automations with a plugin step pinned to a preview can be edited.** The
+  CLI used to refuse them. `automations update` now keeps the step's
+  `preview_user_id` when the spec leaves it out, and a spec can set it or set
+  it to `null`.
+
 ## [0.6.0] — 2026-11-11
 
 ### Added
