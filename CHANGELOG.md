@@ -14,6 +14,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`smart-connectors executions get` finds live runs again.** It reported
+  `no execution <id>` for every run that wasn't a dry run, including ids taken
+  straight from `executions list`. It sent `include_dry_run=true`, which the API
+  treats as "dry runs only", not "include dry runs".
+
 ## [0.6.0] — 2026-11-11
 
 ### Added
