@@ -32,9 +32,10 @@ kizen automations modification-history <api_name>    # who changed this automati
 kizen automations failures <api_name>                # recent step-failure history
 kizen dashboards list                        # list dashboards + homepages (mine)
 kizen dashboards get <uuid|api_name>         # one dashboard + dashlet summary (--raw for full config)
-kizen mcp-servers list                       # MCP servers: api_name, tool count, enabled, default
+kizen mcp-servers list                       # MCP servers: api_name, tool count, upstreams, enabled, default
 kizen mcp-servers get <uuid|api_name>        # one server: endpoint_url + its tools (--raw is a valid update spec)
 kizen mcp-servers tools                      # the tool catalogue — valid tool_names
+kizen mcp-servers upstreams                  # upstream servers (status, auth) and their tools — valid upstreams tool_names
 kizen mcp-servers history <uuid|api_name>    # who changed a server, when, which keys
 kizen layouts list <object_api_name>         # record layouts on a custom object
 kizen layouts get <object_api_name> [--name] # one layout's block/column structure

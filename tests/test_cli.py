@@ -3327,6 +3327,7 @@ def test_team_update_dry_run_plans_without_writing(monkeypatch):
             lambda d: (
                 d["tools"][0]
                 == {"group": "custom_objects", "name": "listCustomObjects"}
+                and d["upstreams"][0]["server_name"] == "Deep Wiki"
                 and "raw" not in d
             ),
         ),
@@ -3339,8 +3340,15 @@ def test_team_update_dry_run_plans_without_writing(monkeypatch):
             ["history", "support_tools"],
             lambda d: d[-1]["type_name"] == "mcp_server_created",
         ),
+        (
+            ["upstreams"],
+            lambda d: (
+                [(s["api_name"], len(s["tools"])) for s in d]
+                == [("deep_wiki", 3), ("slack", 0)]
+            ),
+        ),
     ],
-    ids=["list", "get", "get-raw", "tools", "history"],
+    ids=["list", "get", "get-raw", "tools", "history", "upstreams"],
 )
 def test_mcp_servers_reads_emit_json(args, check):
     base = f"{FAKE_BASE_URL}/api/mcp-servers"
@@ -3351,10 +3359,70 @@ def test_mcp_servers_reads_emit_json(args, check):
     respx.get(f"{base}/{detail['id']}/events-history").respond(
         json=load_fixture("mcp_servers/events_history.json")
     )
+    _serve_upstreams()
     flags = [] if "--raw" in args else ["--json"]
     result = runner.invoke(cli.app, ["mcp-servers", *args, *flags])
     assert result.exit_code == 0, result.output
     assert check(json.loads(result.stdout))
+
+
+def _serve_upstreams() -> respx.Route:
+    """Serve the upstream list and deep_wiki's tools; slack's /tools is left
+    unrouted, so calling it fails the test. Returns the deep_wiki route."""
+    servers = load_fixture("mcp_servers/upstream_servers.json")
+    base = f"{FAKE_BASE_URL}/api/mcp-upstream-servers"
+    respx.get(base).respond(json=servers)
+    return respx.get(f"{base}/{servers['results'][0]['id']}/tools").respond(
+        json=load_fixture("mcp_servers/upstream_tools.json")
+    )
+
+
+@respx.mock
+def test_mcp_servers_upstreams_csv_lists_tools():
+    tools = _serve_upstreams()
+    result = runner.invoke(cli.app, ["mcp-servers", "upstreams", "-o", "csv"])
+    assert result.exit_code == 0, result.output
+    rows = result.stdout.strip().splitlines()
+    assert rows[0] == "upstream,name,enabled,description"
+    assert [r.split(",")[1] for r in rows[1:]] == [
+        "deep_wiki__ask_wiki_question",
+        "deep_wiki__read_wiki_contents",
+        "deep_wiki__read_wiki_structure",
+    ]
+    assert tools.call_count == 1
+
+
+@respx.mock
+def test_mcp_servers_upstreams_table():
+    _serve_upstreams()
+    result = runner.invoke(cli.app, ["mcp-servers", "upstreams"])
+    assert result.exit_code == 0, result.output
+    assert "needs_authorization" in result.stdout
+    assert "Upstream tools" in result.stdout
+
+
+@respx.mock
+def test_mcp_servers_list_csv_names_upstreams():
+    respx.get(f"{FAKE_BASE_URL}/api/mcp-servers").respond(
+        json=load_fixture("mcp_servers/list.json")
+    )
+    result = runner.invoke(cli.app, ["mcp-servers", "list", "-o", "csv"])
+    assert result.exit_code == 0, result.output
+    rows = result.stdout.strip().splitlines()
+    assert rows[0].split(",")[:4] == ["api_name", "name", "tools", "upstreams"]
+    assert [r.split(",")[3] for r in rows[1:]] == ["", "Deep Wiki"]
+
+
+@respx.mock
+def test_mcp_servers_get_table_shows_upstreams():
+    detail = load_fixture("mcp_servers/detail.json")
+    base = f"{FAKE_BASE_URL}/api/mcp-servers"
+    respx.get(base).respond(json=load_fixture("mcp_servers/list.json"))
+    respx.get(f"{base}/{detail['id']}").respond(json=detail)
+    result = runner.invoke(cli.app, ["mcp-servers", "get", "support_tools"])
+    assert result.exit_code == 0, result.output
+    assert "Upstreams" in result.stdout
+    assert "Deep Wiki" in result.stdout
 
 
 def test_mcp_servers_history_changed_column(monkeypatch):

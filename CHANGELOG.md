@@ -18,8 +18,9 @@ called out explicitly under **Changed** or **Removed**.
 
 - **MCP server specs can pick upstream server tools.** `upstreams` takes each
   upstream's `api_name` and `include_all: true` or `tool_names`; the CLI maps
-  them to ids and refuses unknown ones. Creating and authorizing upstreams
-  stays in Kizen.
+  them to ids and refuses unknown ones. `kizen mcp-servers upstreams` lists
+  upstream servers and their tools. Creating and authorizing upstreams stays
+  in Kizen.
 
 ### Fixed
 
