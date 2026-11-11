@@ -20,6 +20,12 @@ called out explicitly under **Changed** or **Removed**.
   variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
+- **`kizen fields where-used <object> <field>`** lists what uses a field:
+  automations (down to the step, trigger or condition), forms, surveys,
+  messages, dashboards, homepages, chart groups, filter groups, smart
+  connectors, broadcasts, activities, and how many records hold a value.
+  `fields delete` shows the same as a `used_by` line in its preview and still
+  deletes.
 
 ### Fixed
 

@@ -200,6 +200,16 @@ Options are edited through dedicated endpoints, **not** a field PATCH
 | Add option | `POST` | `.../fields/{field_pk}/options` — `{"name": …}` |
 | Delete option | `DELETE` | `.../fields/{field_pk}/options/{id}` |
 | Replace (remap) option | `POST` | `.../fields/{field_pk}/options/{id}/replace` — `{"id": <target_option_uuid>}` |
+| Where-used | `GET` | `/api/references/custom-objects/{object_pk}/fields/{field_pk}` |
+
+**Where-used** takes UUIDs only; an api_name in either place gets an HTML 404.
+It returns `entities_with_values` (how many records hold a value) plus lists of
+the activities, forms, surveys, messages, dashboards, homepages, chart groups,
+automations (down to the step, trigger, condition or variable), filter groups,
+smart connectors and broadcasts that use the field. The built-in `created`,
+`updated` and `display_name` fields return 403 `permission_denied` even to an
+admin. `kizen fields where-used` prints it, and `fields delete` shows it in its
+preview as `used_by` and still deletes. Confirmed live 2026-11-11.
 
 **Deleting a field, or an in-use option, drops the stored data.** To retire an
 in-use option without data loss, POST to `.../options/{id}/replace` with the

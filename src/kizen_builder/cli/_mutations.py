@@ -41,7 +41,9 @@ def _render_plan(plan: plan_tools.Plan, target: Console) -> None:
     table.add_column("key")
     table.add_column("preview")
     for i, op in enumerate(plan.operations, 1):
-        preview = ", ".join(f"{k}={v}" for k, v in op.preview.items() if k != "env")
+        preview = ", ".join(
+            f"{k}={escape(str(v))}" for k, v in op.preview.items() if k != "env"
+        )
         table.add_row(str(i), op.action, op.kind, op.key, preview)
     target.print(table)
 

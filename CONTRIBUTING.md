@@ -146,6 +146,7 @@ src/kizen_builder/
     pipelines.py                 #   pipeline-stage CRUD + record stage-move
     plugins.py                   #   installed plugins (bootstrap) and business apps
     records.py                   #   record-level reads/writes (custom objects + built-ins)
+    references.py                #   where-used lookups (/api/references/…)
     saved_views.py               #   filter groups / quick filters / column templates
     schema.py                    #   schema lookups backing the filtering DSL
     service_accounts.py          #   service-account CRUD + history (strips the key from create)
@@ -170,6 +171,7 @@ src/kizen_builder/
     permissions.py               #   list/get roles, permission groups, permissions catalog
     plans.py                     #   Plan / PlanOperation models, apply_plan()
     records.py                   #   get_record(), search_records()
+    references.py                #   where-used: one normalizer, the delete preview's used_by line
     saved_views.py               #   list/get filter groups, quick filters, column templates
     service_accounts.py          #   resolve a service account; list/get/history
     smart_connectors/            #   inspection + authoring + local pull/run/push dev loop
@@ -223,6 +225,7 @@ src/kizen_builder/
     _shared.py                   #   the root app + callback + error group, consoles, shared
                                  #   output options, cli_errors, the user-file readers
     _mutations.py                #   plan → preview → confirm → apply (`_run_mutation`); `_confirm_or_abort`
+    _where_used.py               #   render_where_used — the one renderer for every where-used command
     docs.py                      #   kizen docs
     envs.py                      #   kizen envs
     objects.py                   #   kizen objects — reads + create/update/delete

@@ -6,9 +6,20 @@ from typing import Any
 
 import typer
 
+from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
-from kizen_builder.cli._shared import app, err_console, warn_renamed_flag
+from kizen_builder.cli._shared import (
+    JSON_OPTION,
+    OUTPUT_OPTION,
+    app,
+    cli_errors,
+    err_console,
+    warn_renamed_flag,
+)
+from kizen_builder.cli._where_used import render_where_used
+from kizen_builder.tools import references as ref_tools
 from kizen_builder.tools.planners import fields as field_planners
+from kizen_builder.tools.plans import PlanError
 
 fields_app = typer.Typer(
     help="Create and update fields on custom objects.", no_args_is_help=True
@@ -253,6 +264,26 @@ def fields_update(
         yes=yes,
         json_out=json_out,
     )
+
+
+@fields_app.command(
+    "where-used",
+    epilog="Where-used endpoint and what it reports: see `kizen docs show field`",
+)
+def fields_where_used(
+    object_api_name: str = typer.Argument(..., help="Parent object api_name."),
+    field_api_name: str = typer.Argument(..., help="Field api_name."),
+    output: str = OUTPUT_OPTION,
+    json_out: bool = JSON_OPTION,
+) -> None:
+    """List what uses a field: automations, forms, messages, dashboards and more.
+
+    `fields delete` shows the same in its preview as `used_by`, and still deletes.
+    """
+    fmt = out.resolve_format(output, json_out)
+    with cli_errors(LookupError, PlanError, ref_tools.WhereUsedRefused):
+        result = ref_tools.field_where_used(object_api_name, field_api_name)
+    render_where_used(result, fmt, f"{object_api_name}.{field_api_name}")
 
 
 @fields_app.command("delete")
