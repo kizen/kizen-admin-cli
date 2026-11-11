@@ -3,12 +3,14 @@
 **Consumed by:** `kizen mcp-servers create|update <server> --spec-file <f>`
 (also stdin). `delete <server>` takes no spec.
 
-An MCP server is a named set of Kizen tools. AI steps and outside MCP clients
-call those tools through the server. A server is referenced by UUID or
-`api_name`; display names aren't unique, so the CLI never matches them.
+An MCP server is a named set of tools: Kizen tools, plus tools it takes from
+upstream servers (outside MCP servers connected to Kizen). AI steps and outside
+MCP clients call those tools through the server. A server is referenced by
+UUID or `api_name`; display names aren't unique, so the CLI never matches them.
 
 Read first: `kizen mcp-servers list`, `get <server>` (add `--raw` for the wire
-JSON), and `tools` for the valid `tool_names`.
+JSON), `tools` for the valid `tool_names`, and `upstreams` for the upstream
+servers and their tools.
 
 ---
 
@@ -47,6 +49,37 @@ for any key but `description`.
 | `is_enabled` | bool | |
 | `is_default_for_business` | bool | One default per business. See below. |
 | `sharing_settings` | object | The whole block: `private` (bool), `all_team_members` (0–3), `roles` and `team_members`, each `{view, edit, admin}` lists of UUIDs. Read-shape `{id, display_name}` entries are accepted too; an entry without `id` is a spec error. |
+| `upstreams` | list of objects | Tools from upstream servers, one entry per server: `server` (api_name or UUID) and either `include_all: true` or `tool_names`. See below. `[]` clears them all. |
+
+### Upstream tools
+
+Each `upstreams` entry picks tools from one upstream server listed by `kizen
+mcp-servers upstreams`:
+
+```json
+"upstreams": [
+  {"server": "deep_wiki", "tool_names": ["deep_wiki__ask_wiki_question"]}
+]
+```
+
+```json
+"upstreams": [{"server": "deep_wiki", "include_all": true}]
+```
+
+- `tool_names` are the upstream's tool `name`s: its `tool_prefix` plus the
+  tool's suffix. Renaming a tool in Kizen changes its `name`. The CLI maps
+  names to the ids Kizen stores and refuses an unknown server or tool before
+  sending anything. Duplicates are dropped (first one kept).
+- `include_all: true` serves every tool the upstream has. Don't give
+  `tool_names` with it. An entry with neither serves
+  nothing.
+- Each server appears once.
+- The read shape is accepted too: `server` as a UUID, `server_name` (ignored)
+  and `tool_ids` in place of `tool_names`. Give one of `tool_names` and
+  `tool_ids`, not both.
+- Upstream servers are created and authorized in Kizen (Data › MCP Servers ›
+  Upstream Servers), not from the CLI. One that still needs authorization has
+  no tools, so only `include_all: true` can pick it.
 
 **Service accounts are shared as team members.** Put the account's id in
 `team_members`. There is no `service_accounts` bucket; the spec rejects one.
@@ -55,7 +88,8 @@ for any key but `description`.
 before validation, and the plan preview lists them under
 `ignored_read_only_keys`: `id`, `tools`, `tool_count`, `is_system_managed`,
 `endpoint_url`, `created`, `updated`, `owner`, `employee_access`,
-`sharing_stats`.
+`sharing_stats`, and the list rows' `kizen_tool_count`, `upstream_tool_count`
+and `upstream_servers`.
 
 ## What the plan does
 
@@ -70,7 +104,14 @@ before validation, and the plan preview lists them under
   a skip. A changed sharing block is sent whole; the preview lists the
   changed scalars and each grant added (`+roles.view:<id>`) or removed
   (`-team_members.view:<name>`).
-- **delete** previews the name, api_name, id and tool count, plus
+- **`upstreams`**: omitting it keeps the server's upstreams. Given, it compares
+  each server's tools as a set, so `get --raw` output is a skip. A changed list
+  is sent whole and `[]` clears them all. The preview names each server and
+  tool added or removed (`+deep_wiki: deep_wiki__read_wiki_contents`,
+  `-slack`) and all-tools switches (`deep_wiki: 1 tool → all tools`). A create
+  previews `upstream_tools`, e.g. `{"deep_wiki": "all"}` or `{"deep_wiki": 2}`.
+- **delete** previews the name, api_name, id and tool count (Kizen and
+  upstream tools), plus
   `is_business_default: true` when the server is the default.
 - **`is_default_for_business: true`** previews `business_default`, naming the
   server that stops being the default and how to restore it.
@@ -104,12 +145,13 @@ endpoint MCP clients use at run time; `get` prints it so you can wire one up.
 
 # Wire format & API behavior
 
-Confirmed live 2026-10-27 on a disposable test business.
+Confirmed live 2026-10-27 on a disposable test business. Upstreams confirmed
+live 2026-11-11.
 
 ## Endpoints (no trailing slashes)
 
 ```
-GET    /api/mcp-servers                       # list (DRF page); rows carry tool_count, not tools
+GET    /api/mcp-servers                       # list (DRF page); rows carry tool_names, tool_count (total), kizen_tool_count, upstream_tool_count, upstream_servers [{id, name}], not tools
 POST   /api/mcp-servers                       # create → 201, the read shape
 GET    /api/mcp-servers/{id}                  # one server; tools[] adds group and group_label
 PATCH  /api/mcp-servers/{id}                  # partial update
@@ -118,6 +160,8 @@ GET    /api/mcp-servers/tools                 # {groups: [{key, label, tools: [{
 GET    /api/mcp-servers/{id}/events-history   # DRF page, newest first
 GET    /api/mcp-servers/step-options          # what a Call LLM step's mcp_server carries
 POST   /api/mcp/{api_name}                    # JSON-RPC, for MCP clients (endpoint_url)
+GET    /api/mcp-upstream-servers              # upstream servers (DRF page)
+GET    /api/mcp-upstream-servers/{id}/tools   # {tool_count, last_discovered_at, tools: [{id, name, suffix, upstream_name, annotations, is_enabled, is_new, description}]}
 ```
 
 ## Create, update, delete
@@ -142,6 +186,35 @@ POST   /api/mcp/{api_name}                    # JSON-RPC, for MCP clients (endpo
 - DELETE is permanent. GET, events-history and a second DELETE then 404
   `No MCPServerConfig matches the given query.` The api_name is free again.
 
+## Upstreams
+
+- The detail read carries `upstreams: [{server: <upstream id>, server_name,
+  include_all, tool_ids: [<tool id>]}]`, `[]` when there are none. Its
+  `tools[]` also lists the selected upstream tools, in group `upstream`
+  ("Upstream Servers") with `annotations: null`. `tool_names` holds Kizen
+  tools only.
+- `tool_ids` are the `id`s from `GET /api/mcp-upstream-servers/{id}/tools`. A
+  tool's `name` is the upstream's `tool_prefix` plus its `suffix`, e.g.
+  `deep_wiki__` + `ask_wiki_question`.
+- An upstream server row is `{id, name, api_name, description, url,
+  is_enabled, auth: {type: none|oauth, …}, tool_prefix, connection: {status,
+  …}, tool_count, last_discovered_at, …}`. One that needs OAuth starts at
+  `connection.status: needs_authorization` with `tool_count: null`, and its
+  `/tools` returns `tools: []`.
+- A PATCH without `upstreams` keeps them. A PATCH with `upstreams` replaces the
+  whole list: dropping one of two servers removes it, `[]` clears all. POST
+  accepts `upstreams`.
+- `include_all` defaults to false. `include_all: true` reads back `tool_ids:
+  []`, even when tool ids were sent with it, and `tools[]` then lists every
+  upstream tool. `{include_all: false, tool_ids: []}` is stored as-is and
+  serves nothing. An unauthorized upstream with no tools is accepted with
+  `include_all: true`. A read-shape `server_name` in the body is ignored.
+- 400s: a tool name in `tool_ids` or an api_name in `server`: `Must be a valid
+  UUID.` An unknown server UUID: `Unknown upstream servers: [...]`. A tool of
+  another server: `A tool does not belong to its upstream server.` A server
+  listed twice: `Each upstream server may appear once.` An upstream tool name
+  in `tool_names`: `Unknown MCP tools: <name>`.
+
 ## Reads
 
 - Writes take bare UUIDs in sharing; reads return `{id, display_name}`.
@@ -149,15 +222,12 @@ POST   /api/mcp/{api_name}                    # JSON-RPC, for MCP clients (endpo
   `employee_access` is `Owner` for the creator, `View` on the system server.
   `sharing_stats` counts levels.
 - `endpoint_url` is `https://<host>/api/mcp/<api_name>`.
-- The tool catalogue on a business with knowledge and custom objects is
-  `custom_knowledge` (`listCatalogs`, `searchCatalog`, `getDocument`) and
-  `custom_objects` (`listCustomObjects`, `listObjectFields`,
-  `listObjectFieldOptions`, `getCustomObject`). All seven are
-  `readOnlyHint: true`. The system `readonly` server serves all seven. For an
-  AI step that searches a catalog, see `kizen docs show automation`,
-  "Searching a knowledge catalog".
+- The catalogue varies by business and release; list it with `kizen
+  mcp-servers tools`. For an AI step that searches a catalog, see `kizen docs
+  show automation`, "Searching a knowledge catalog".
 - `step-options` is a bare list of `{id, name, api_name, is_enabled, deleted,
-  tool_count}`. It lists disabled servers and leaves out deleted ones.
+  tool_count, has_user_level_upstreams}`. It lists disabled servers and leaves
+  out deleted ones.
 
 ## Events history
 
@@ -168,8 +238,9 @@ POST   /api/mcp/{api_name}                    # JSON-RPC, for MCP clients (endpo
   `mcp_server_created`, `mcp_server_updated`.
 - `data` is `{api_name, mcp_server_name, old_value, new_value}`, each value
   carrying `name, is_enabled, tool_names, description,
-  is_default_for_business`. A create has no `old_value`. A sharing change logs
-  an update whose old and new values are equal. `history` shows `—` for both.
+  is_default_for_business, upstreams`. A create has no `old_value`. A
+  sharing change logs an update whose old and new values are equal.
+  `history` shows `—` for both.
 - `instance.custom_object_id` / `entity_record_name: "Contact"` are noise.
 - The system server's history is empty.
 

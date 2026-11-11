@@ -14,12 +14,23 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **MCP server specs can pick upstream server tools.** `upstreams` takes each
+  upstream's `api_name` and `include_all: true` or `tool_names`; the CLI maps
+  them to ids and refuses unknown ones. `kizen mcp-servers upstreams` lists
+  upstream servers and their tools. Creating and authorizing upstreams stays
+  in Kizen.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+- **`kizen mcp-servers get --raw` output works as an `update` spec again.**
+  Since Kizen's 2026-11-10 release it failed with `upstreams: Extra inputs are
+  not permitted`.
 
 ## [0.6.0] — 2026-11-11
 
