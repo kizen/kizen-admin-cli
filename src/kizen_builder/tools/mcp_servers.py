@@ -66,6 +66,7 @@ def get_mcp_server_detail(ref: str) -> dict[str, Any]:
             {"group": t.get("group"), "name": t.get("name")}
             for t in raw.get("tools") or []
         ],
+        "upstreams": raw.get("upstreams") or [],
         "raw": raw,
     }
 

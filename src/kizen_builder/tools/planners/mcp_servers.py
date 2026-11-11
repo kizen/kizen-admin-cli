@@ -80,6 +80,9 @@ def _check_tools(names: list[str]) -> list[str]:
     return deduped
 
 
+_UPSTREAMS_HINT = "List them with `kizen mcp-servers upstreams`."
+
+
 def _server_tools(server: dict[str, Any]) -> list[dict[str, Any]]:
     """An upstream's tools, fetched once and kept on its row."""
     if "tools" not in server:
@@ -106,7 +109,7 @@ def _picked_tool_ids(
             names = ", ".join(sorted(ids)) or "none"
             raise PlanError(
                 f"upstream '{api_name}' has no tool(s) {', '.join(unknown)}. "
-                f"Its tools: {names}."
+                f"Its tools: {names}. {_UPSTREAMS_HINT}"
             )
         return list(dict.fromkeys(ids[n] for n in wanted))
     wanted = list(dict.fromkeys(entry.tool_ids or []))
@@ -119,7 +122,7 @@ def _picked_tool_ids(
         names = ", ".join(sorted(t["name"] for t in tools)) or "none"
         raise PlanError(
             f"upstream '{api_name}' has no tool with id(s) {', '.join(unknown)}. "
-            f"Its tools: {names}."
+            f"Its tools: {names}. {_UPSTREAMS_HINT}"
         )
     return wanted
 
@@ -143,7 +146,7 @@ def _upstreams(
             names = ", ".join(sorted(s.get("api_name") or "" for s in servers))
             raise PlanError(
                 f"unknown upstream MCP server '{entry.server}'. "
-                f"Available: {names or 'none'}."
+                f"Available: {names or 'none'}. {_UPSTREAMS_HINT}"
             )
         if any(p["server"] == server["id"] for p in payload):
             raise PlanError(

@@ -9,7 +9,8 @@ MCP clients call those tools through the server. A server is referenced by
 UUID or `api_name`; display names aren't unique, so the CLI never matches them.
 
 Read first: `kizen mcp-servers list`, `get <server>` (add `--raw` for the wire
-JSON), and `tools` for the valid `tool_names`.
+JSON), `tools` for the valid `tool_names`, and `upstreams` for the upstream
+servers and their tools.
 
 ---
 
@@ -52,7 +53,8 @@ for any key but `description`.
 
 ### Upstream tools
 
-Each `upstreams` entry picks tools from one upstream server:
+Each `upstreams` entry picks tools from one upstream server listed by `kizen
+mcp-servers upstreams`:
 
 ```json
 "upstreams": [

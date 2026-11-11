@@ -450,7 +450,8 @@ def test_create_without_upstreams_sends_none():
     [
         (
             [{"server": "nope"}],
-            "unknown upstream MCP server 'nope'. Available: deep_wiki, slack.",
+            "unknown upstream MCP server 'nope'. Available: deep_wiki, slack. "
+            "List them with `kizen mcp-servers upstreams`.",
         ),
         (
             [{"server": "deep_wiki"}, {"server": DEEP_WIKI, "include_all": True}],
@@ -460,17 +461,20 @@ def test_create_without_upstreams_sends_none():
             [{"server": "deep_wiki", "tool_names": ["ask_wiki_question", "nah"]}],
             "upstream 'deep_wiki' has no tool(s) ask_wiki_question, nah. Its tools: "
             "deep_wiki__ask_wiki_question, deep_wiki__read_wiki_contents, "
-            "deep_wiki__read_wiki_structure.",
+            "deep_wiki__read_wiki_structure. List them with `kizen mcp-servers "
+            "upstreams`.",
         ),
         (
             [{"server": "deep_wiki", "tool_ids": [ASK, SID]}],
             f"upstream 'deep_wiki' has no tool with id(s) {SID}. Its tools: "
             "deep_wiki__ask_wiki_question, deep_wiki__read_wiki_contents, "
-            "deep_wiki__read_wiki_structure.",
+            "deep_wiki__read_wiki_structure. List them with `kizen mcp-servers "
+            "upstreams`.",
         ),
         (
             [{"server": "slack", "tool_names": ["slack__send_message"]}],
-            "upstream 'slack' has no tool(s) slack__send_message. Its tools: none.",
+            "upstream 'slack' has no tool(s) slack__send_message. Its tools: none. "
+            "List them with `kizen mcp-servers upstreams`.",
         ),
     ],
     ids=["unknown-server", "listed-twice", "unknown-tool", "unknown-id", "no-tools"],
