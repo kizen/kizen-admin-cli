@@ -63,6 +63,13 @@ automation steps).
   as a team member. `detail_readonly.json`, `tools.json`, `step_options.json`
   and `events_history.json` (newest first; three updates and the create) are
   the matching raw responses.
+- `references/` — raw `GET /api/references/custom-objects/{o}/fields/{f}`
+  bodies from cli-testing, 2026-11-11. `field_used.json` is a team-selector
+  field named by one merge-field message, two automations' conditions and one
+  filter group (the automation and message names replaced);
+  `field_unused.json` is a field nothing uses; `field_403.json` is the body
+  Kizen returns for the built-in `created`, `updated` and `display_name`
+  fields.
 - `automations/llm_metadata.json` — the `llm` key of
   `GET /api/automation2/automations/metadata`, captured 2026-10-30 and
   trimmed to the `kizen` row and four `open_ai` models, with `secrets`

@@ -264,3 +264,24 @@ def test_condition_automation_raw_fixture_fidelity(drift_automation):  # noqa: F
     )
     live_condition = next(s for s in live["steps"] if s.get("step_type") == "condition")
     assert_keys_present(fixture_condition, live_condition, path="steps[condition]")
+
+
+# ---------------------------------------------------------------------------
+# 5. references/field_unused.json vs. a field of drift_object
+# ---------------------------------------------------------------------------
+
+
+def test_field_references_fixture_fidelity(drift_client, drift_object):
+    """The where-used body for a field of a fresh object has every key the
+    fixture does. The built-in `created`, `updated` and `display_name` fields
+    403, so the lookup uses another one."""
+    from kizen_builder.api import custom_objects as co_api
+    from kizen_builder.api.references import field_references
+
+    fields = co_api.list_fields(drift_client, drift_object["uuid"])
+    field = next(
+        f for f in fields if f["name"] not in ("created", "updated", "display_name")
+    )
+    live = field_references(drift_client, drift_object["uuid"], field["id"])
+
+    assert_keys_present(load_fixture("references/field_unused.json"), live)

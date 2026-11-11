@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from kizen_builder.api import references as ref_api
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import FieldDef
+from kizen_builder.tools import references as ref_tools
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 
@@ -212,7 +214,7 @@ def plan_update_field(
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
 
-    existing = _find_field(obj, field_api_name)
+    existing = find_field(obj, field_api_name)
 
     payload: dict[str, Any] = {}
     diff: dict[str, Any] = {}
@@ -300,7 +302,8 @@ _OPTION_FIELD_TYPES = {
 }
 
 
-def _find_field(obj: dict[str, Any], field_api_name: str) -> dict[str, Any]:
+def find_field(obj: dict[str, Any], field_api_name: str) -> dict[str, Any]:
+    """The live, undeleted field ``field_api_name`` on ``obj``."""
     existing = next(
         (
             f
@@ -327,7 +330,7 @@ def plan_delete_field(object_api_name: str, field_api_name: str) -> Plan:
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
 
-    existing = _find_field(obj, field_api_name)
+    existing = find_field(obj, field_api_name)
 
     op = PlanOperation(
         action="delete",
@@ -338,6 +341,10 @@ def plan_delete_field(object_api_name: str, field_api_name: str) -> Plan:
             "object": object_api_name,
             "field": field_api_name,
             "field_type": existing.get("field_type"),
+            "used_by": ref_tools.preview_used_by(
+                lambda c: ref_api.field_references(c, obj["id"], existing["id"]),
+                f"kizen fields where-used {object_api_name} {field_api_name}",
+            ),
         },
         existing_uuid=existing["id"],
         parent_object_uuid=obj["id"],
@@ -392,7 +399,7 @@ def plan_add_field_options(
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
 
-    existing = _find_field(obj, field_api_name)
+    existing = find_field(obj, field_api_name)
     _reject_if_stage_backed(obj, object_api_name, field_api_name, existing)
     if existing.get("field_type") not in _OPTION_FIELD_TYPES:
         raise PlanError(
@@ -455,7 +462,7 @@ def plan_remove_field_option(
     except LookupError as e:
         raise PlanError(f"object '{object_api_name}' not found: {e}") from e
 
-    existing = _find_field(obj, field_api_name)
+    existing = find_field(obj, field_api_name)
     _reject_if_stage_backed(obj, object_api_name, field_api_name, existing)
     opts = existing.get("options") or []
 

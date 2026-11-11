@@ -436,12 +436,27 @@ def test_apply_unarchive_record_patches(patch_live_lookups):
 # ---------------------------------------------------------------------------
 
 
+def _mock_gender_references() -> respx.Route:
+    return respx.get(
+        f"{FAKE_BASE_URL}/api/references/custom-objects/{PATIENTS_ID}"
+        f"/fields/{_gender_field_id()}"
+    ).respond(json=load_fixture("references/field_used.json"))
+
+
+@respx.mock
 def test_plan_delete_field(patch_live_lookups):
+    _mock_gender_references()
     plan = plan_delete_field(PATIENTS, "gender")
     (op,) = plan.operations
     assert op.action == "delete" and op.kind == "field"
     assert op.existing_uuid == _gender_field_id()
     assert op.parent_object_uuid == PATIENTS_ID
+    assert op.preview["used_by"] == (
+        "messages: 1 (Lead follow-up with merge {{ entity); "
+        "automations: 2 (Route leads by owner, Escalate unowned leads); "
+        "filter groups: 1 (My Records); records with a value: 1"
+        " — run `kizen fields where-used patients gender` for the list"
+    )
 
 
 def test_plan_add_options_skips_existing(patch_live_lookups):
@@ -514,6 +529,7 @@ def test_apply_delete_field_deletes(patch_live_lookups):
     route = respx.delete(
         f"{FAKE_BASE_URL}/api/custom-objects/{PATIENTS_ID}/fields/{fid}"
     ).mock(return_value=httpx.Response(204))
+    _mock_gender_references()
     plan = plan_delete_field(PATIENTS, "gender")
     result = plan_tools.apply_plan(plan)
     assert route.call_count == 1
