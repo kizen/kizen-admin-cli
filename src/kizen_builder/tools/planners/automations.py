@@ -44,11 +44,13 @@ keys it reads with :func:`honours` (or :func:`honours_all`), add it to
 from __future__ import annotations
 
 import re
+import shlex
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from kizen_builder.api import references as ref_api
 from kizen_builder.config import load_env_config
 from kizen_builder.filtering import VariableReferenceError
 from kizen_builder.models.spec import (
@@ -61,6 +63,7 @@ from kizen_builder.models.spec.automations_triggers import (
     trigger_config_field,
 )
 from kizen_builder.tools import merge_fields
+from kizen_builder.tools import references as ref_tools
 from kizen_builder.tools.automations import get_automation, list_automations
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
@@ -816,7 +819,15 @@ def plan_delete_automation(api_name: str) -> Plan:
         action="delete",
         kind="automation",
         key=api_name,
-        preview={"env": env, "api_name": api_name, "name": existing.get("name")},
+        preview={
+            "env": env,
+            "api_name": api_name,
+            "name": existing.get("name"),
+            "used_by": ref_tools.preview_used_by(
+                lambda c: ref_api.automation_references(c, existing["id"]),
+                f"kizen automations where-used {shlex.quote(api_name)}",
+            ),
+        },
         existing_uuid=existing["id"],
     )
     return Plan.build(

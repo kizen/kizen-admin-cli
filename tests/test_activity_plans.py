@@ -33,7 +33,7 @@ from kizen_builder.tools.planners.activities import (
     plan_update_activity_field,
 )
 from kizen_builder.tools.plans import PlanError
-from tests.conftest import FAKE_BASE_URL
+from tests.conftest import FAKE_BASE_URL, load_fixture
 
 ACTIVITY_ID = "00000000-0000-4000-8000-000000000a01"
 FIELD_ID = "00000000-0000-4000-8000-000000000a02"
@@ -307,12 +307,21 @@ def test_plan_update_activity_raises_when_not_found():
 @respx.mock
 def test_plan_delete_activity():
     _mock_activity_detail()
+    respx.get(f"{FAKE_BASE_URL}/api/activities/{ACTIVITY_ID}/references").respond(
+        json=load_fixture("references/activity_used.json")
+    )
     plan = plan_delete_activity("site_visit")
     (op,) = plan.operations
     assert op.action == "delete"
     assert op.kind == "activity"
     assert op.existing_uuid == ACTIVITY_ID
+    assert op.payload == {}
     assert op.preview["n_submissions"] == 3
+    assert op.preview["used_by"] == (
+        "automations: 2 (Summarize meetings, Mark meeting follow-ups done); "
+        "homepages: 1 (Team Homepage); logged activities: 1"
+        " — run `kizen activities where-used site_visit` for the list"
+    )
 
 
 @respx.mock

@@ -1355,6 +1355,39 @@ def test_goal_step_embeds_triggers_in_the_trigger_dialect(drift_control_flow):
     ]
 
 
+def test_automation_references_name_the_starting_step(
+    drift_client, drift_control_flow, drift_startable_automation
+):
+    """`kizen automations where-used` reads this body: the automation whose
+    `start_automation` step points here is listed down to that step."""
+    from kizen_builder.api.references import automation_references
+    from tests.conftest import load_fixture
+    from tests.drift.test_fixture_fidelity import _assert_references_fidelity
+
+    live = automation_references(drift_client, drift_startable_automation["uuid"])
+    (caller,) = live["automations"]
+    assert caller["id"] == drift_control_flow["uuid"]
+    assert [s["type"] for s in caller["steps"]] == ["start_automation"]
+    _assert_references_fidelity(load_fixture("references/automation_used.json"), [live])
+
+
+def test_activity_references_name_the_triggers(
+    drift_client, drift_triggers, drift_control_flow, drift_activity_type
+):
+    """`kizen activities where-used` reads this body: the counts, and the
+    automations that trigger on the activity type or wait for it."""
+    from kizen_builder.api.references import activity_references
+    from tests.conftest import load_fixture
+    from tests.drift.test_fixture_fidelity import _assert_references_fidelity
+
+    live = activity_references(drift_client, drift_activity_type["id"])
+    assert {a["id"] for a in live["automations"]} >= {
+        drift_triggers["uuid"],
+        drift_control_flow["uuid"],
+    }
+    _assert_references_fidelity(load_fixture("references/activity_used.json"), [live])
+
+
 # ---------------------------------------------------------------------------
 # Branch groups: a merged condition, then parallel lanes under a branch step
 # ---------------------------------------------------------------------------

@@ -1,0 +1,41 @@
+{
+  "objects": [],
+  "automations": [
+    {
+      "id": "1800a96e-fb22-4ec3-a912-ca1795744b7a",
+      "display_name": "Link the organization",
+      "can_view": true,
+      "use_types": [
+        "direct"
+      ],
+      "steps": [
+        {
+          "id": "20105ea7-9130-4c13-99b1-2de302fc568b",
+          "display_name": "start_automation - 7",
+          "type": "start_automation"
+        },
+        {
+          "id": "6bbbfea1-6dbe-413f-a61f-a1395782d7e6",
+          "display_name": "start_automation - 11",
+          "type": "start_automation"
+        }
+      ]
+    }
+  ],
+  "smart_connectors": [],
+  "dashboards": [],
+  "homepages": [],
+  "chart_groups": [],
+  "filter_groups": [],
+  "broadcasts": [],
+  "messages": [
+    {
+      "id": null,
+      "display_name": null,
+      "can_view": true,
+      "use_types": [
+        "conditional_content"
+      ]
+    }
+  ]
+}
