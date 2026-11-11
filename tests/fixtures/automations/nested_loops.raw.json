@@ -1,0 +1,535 @@
+{
+  "id": "be87478b-bf94-44dd-835d-13dc1950f078",
+  "name": "nested loops",
+  "api_name": "nested_loops",
+  "ai_description": null,
+  "active": false,
+  "type": "global",
+  "custom_object": null,
+  "user_description": "",
+  "folder": {
+    "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+    "name": "<business_root>"
+  },
+  "triggers": [
+    {
+      "id": "759ffef9-8dfd-41d3-b36d-3fdf4d1c85fe",
+      "description": "Manual",
+      "user_description": "",
+      "trigger_type": "manual",
+      "stats": {
+        "number_completed": 0
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "98ee7c44-0cdd-418c-8143-637565a95c80",
+      "step_type": "initialize_variable",
+      "order": 0,
+      "description": "loop_1 = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": null,
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "3961e9a7-68e4-4d6e-86de-b23eb075d20c",
+          "name": "loop_1",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-11-11T14:41:03.601614Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "f79f2b17-e7ff-4601-aa14-fe59ddae4ea3",
+      "step_type": "initialize_variable",
+      "order": 1,
+      "description": "loop_2 = []",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "98ee7c44-0cdd-418c-8143-637565a95c80",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "be7d0c46-bc6f-4b0f-a5ea-51bf3fefe13b",
+          "name": "loop_2",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-11-11T14:41:03.613581Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "2b7a676f-f8d4-4b2c-a791-acec3feb3c55",
+      "step_type": "initialize_variable",
+      "order": 2,
+      "description": "loop_1_item = <i>empty</i>",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "f79f2b17-e7ff-4601-aa14-fe59ddae4ea3",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "e01ad87e-eba9-4fd9-8586-980dd446ea3d",
+          "name": "loop_1_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-11-11T14:41:03.625651Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": true,
+          "source_array_variable": "loop_1"
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "6255c83a-973c-4984-9ab5-d52ad80cffcc",
+      "step_type": "initialize_variable",
+      "order": 3,
+      "description": "loop_2_item = <i>empty</i>",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "2b7a676f-f8d4-4b2c-a791-acec3feb3c55",
+      "parent_condition": "",
+      "action_initialize_variable": {
+        "sources": [],
+        "variable": {
+          "id": "45f64b61-b8a2-4e2c-bcd3-f3f4c5f2771f",
+          "name": "loop_2_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-11-11T14:41:03.640783Z",
+          "deleted": false,
+          "is_array": false,
+          "is_array_item_variable": true,
+          "source_array_variable": "loop_2"
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "48f7ef88-d047-412b-bbe8-c2a90c781463",
+      "step_type": "loop",
+      "order": 4,
+      "description": "For each item in 'loop_1'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "6255c83a-973c-4984-9ab5-d52ad80cffcc",
+      "parent_condition": "",
+      "step_loop": {
+        "loop_type": "for_each_item",
+        "array_variable": {
+          "id": "3961e9a7-68e4-4d6e-86de-b23eb075d20c",
+          "name": "loop_1",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": true
+        },
+        "item_variable": {
+          "id": "e01ad87e-eba9-4fd9-8586-980dd446ea3d",
+          "name": "loop_1_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": false
+        }
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "74853a4b-aa87-46ba-a9e9-96b5160ede5a",
+      "step_type": "loop",
+      "order": 5,
+      "description": "For each item in 'loop_2'",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "48f7ef88-d047-412b-bbe8-c2a90c781463",
+      "parent_condition": "",
+      "step_loop": {
+        "loop_type": "for_each_item",
+        "array_variable": {
+          "id": "be7d0c46-bc6f-4b0f-a5ea-51bf3fefe13b",
+          "name": "loop_2",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": true
+        },
+        "item_variable": {
+          "id": "45f64b61-b8a2-4e2c-bcd3-f3f4c5f2771f",
+          "name": "loop_2_item",
+          "data_type": "string",
+          "data_subtype": null,
+          "deleted": false,
+          "is_array": false
+        }
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "8dfd2e40-5ea8-44f8-8b31-75a8cb4c2e7f",
+      "step_type": "condition",
+      "order": 6,
+      "description": "Variable Value 'loop_1_item' Equals Static Value 12",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0,
+        "number_yes": 0,
+        "number_no": 0
+      },
+      "parent_step_id": "74853a4b-aa87-46ba-a9e9-96b5160ede5a",
+      "parent_condition": "",
+      "step_condition": {
+        "type": "custom_filter",
+        "filter_config": {
+          "and": false,
+          "query": [
+            {
+              "id": "query-0",
+              "and": false,
+              "filters": [
+                {
+                  "type": "variable",
+                  "subtype": "automation_variable",
+                  "condition": "=",
+                  "rhs_value": "12",
+                  "view_model": [
+                    [
+                      "filter_type",
+                      {
+                        "vars": [
+                          [
+                            "fields_settings_search",
+                            true
+                          ],
+                          [
+                            "client_tag_field_id",
+                            "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+                          ]
+                        ],
+                        "filter_type": "variable"
+                      }
+                    ],
+                    [
+                      "lhs_variable",
+                      {
+                        "name": "loop_1_item",
+                        "is_array": false,
+                        "data_type": "string"
+                      }
+                    ],
+                    [
+                      "condition",
+                      "equals"
+                    ],
+                    [
+                      "value_type",
+                      "static"
+                    ],
+                    [
+                      "value",
+                      "12"
+                    ]
+                  ],
+                  "description": "Variable Value 'loop_1_item' Equals Static Value 12",
+                  "rhs_value_type": "static",
+                  "lhs_variable_name": "loop_1_item"
+                }
+              ]
+            }
+          ],
+          "invalid": false
+        },
+        "llm_decision": null,
+        "yes_steps": [
+          {
+            "id": "6a511b6f-f2cd-4cf4-9bcb-9bf9a8534574"
+          }
+        ],
+        "no_steps": [
+          {
+            "id": "cebe3335-bad6-4762-ad09-a7052673c4dd"
+          }
+        ],
+        "groups": []
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": true
+    },
+    {
+      "id": "cebe3335-bad6-4762-ad09-a7052673c4dd",
+      "step_type": "update_variable",
+      "order": 7,
+      "description": "loop_2 = [1 item]",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "8dfd2e40-5ea8-44f8-8b31-75a8cb4c2e7f",
+      "parent_condition": "no",
+      "action_update_variable": {
+        "sources": [
+          {
+            "source_type": "static",
+            "source_subtype": "string",
+            "value_category": null,
+            "field": null,
+            "relationship_field": null,
+            "variable": null,
+            "value": [
+              "1"
+            ],
+            "array_separator": "comma"
+          }
+        ],
+        "variable": {
+          "id": "be7d0c46-bc6f-4b0f-a5ea-51bf3fefe13b",
+          "name": "loop_2",
+          "data_type": "string",
+          "data_subtype": null,
+          "input_format": null,
+          "output_format": null,
+          "created": "2026-11-11T14:41:03.613581Z",
+          "deleted": false,
+          "is_array": true,
+          "is_array_item_variable": false,
+          "source_array_variable": null
+        },
+        "is_required": false,
+        "array_aggregation_mode": "add_all",
+        "value_resolution": "add_only",
+        "deduplicate_array": false
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "25003ef2-9021-419c-ade0-88bb9e870d9c",
+      "step_type": "merge_branches",
+      "order": 8,
+      "description": "Merge Branch",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "8dfd2e40-5ea8-44f8-8b31-75a8cb4c2e7f",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "6a511b6f-f2cd-4cf4-9bcb-9bf9a8534574",
+      "step_type": "exit_loop",
+      "order": 9,
+      "description": "Exit loop_1 Loop",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "8dfd2e40-5ea8-44f8-8b31-75a8cb4c2e7f",
+      "parent_condition": "yes",
+      "action_exit_loop": {
+        "step": "48f7ef88-d047-412b-bbe8-c2a90c781463"
+      },
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "6ba99ac3-2bc2-4ca4-b2ca-7771d712472c",
+      "step_type": "next_or_finish",
+      "order": 10,
+      "description": "Next item or finish loop and continue",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "74853a4b-aa87-46ba-a9e9-96b5160ede5a",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    },
+    {
+      "id": "9df98e38-3b70-45a6-bc35-51957053cc06",
+      "step_type": "next_or_finish",
+      "order": 11,
+      "description": "Next item or finish loop and continue",
+      "user_description": "",
+      "stats": {
+        "number_completed": 0,
+        "number_failed": 0,
+        "number_pending": 0
+      },
+      "parent_step_id": "48f7ef88-d047-412b-bbe8-c2a90c781463",
+      "parent_condition": "",
+      "action_on_failure": "notify_pause",
+      "should_skip_execution": false,
+      "error_notification_severity_level": "inherit",
+      "is_branch_group_initiator": false
+    }
+  ],
+  "variables": [
+    {
+      "id": "3961e9a7-68e4-4d6e-86de-b23eb075d20c",
+      "name": "loop_1",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-11-11T14:41:03.601614Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "be7d0c46-bc6f-4b0f-a5ea-51bf3fefe13b",
+      "name": "loop_2",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-11-11T14:41:03.613581Z",
+      "deleted": false,
+      "is_array": true,
+      "is_array_item_variable": false,
+      "source_array_variable": null
+    },
+    {
+      "id": "e01ad87e-eba9-4fd9-8586-980dd446ea3d",
+      "name": "loop_1_item",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-11-11T14:41:03.625651Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": true,
+      "source_array_variable": "loop_1"
+    },
+    {
+      "id": "45f64b61-b8a2-4e2c-bcd3-f3f4c5f2771f",
+      "name": "loop_2_item",
+      "data_type": "string",
+      "data_subtype": null,
+      "input_format": null,
+      "output_format": null,
+      "created": "2026-11-11T14:41:03.640783Z",
+      "deleted": false,
+      "is_array": false,
+      "is_array_item_variable": true,
+      "source_array_variable": "loop_2"
+    }
+  ],
+  "revision": 3,
+  "error_notification_email": null,
+  "skip_non_working_days": false,
+  "number_active": 0,
+  "number_paused": 0,
+  "number_completed": 0,
+  "priority_rank": 10,
+  "trigger_throttle_seconds": 0.5,
+  "created": "2026-10-27T08:37:38.142898-05:00",
+  "updated": "2026-11-11T08:42:25.609209-06:00",
+  "debug_next_n_executions": 0,
+  "error_notification_severity_level": "error"
+}

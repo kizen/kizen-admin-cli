@@ -405,6 +405,9 @@ def _step_label(step: dict[str, Any]) -> str:
     if goto:
         target = goto.get("step_key") or goto.get("trigger_key") or "?"
         label += f" [cyan]→ {target}[/cyan]"
+    if step.get("type") == "exit_loop":
+        target = (step.get("action_exit_loop") or {}).get("step") or "innermost loop"
+        label += f" [cyan]→ {escape(str(target))}[/cyan]"
     if step.get("should_skip_execution"):
         label += " [yellow](skipped)[/yellow]"
     if desc:

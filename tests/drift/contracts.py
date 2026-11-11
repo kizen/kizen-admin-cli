@@ -290,7 +290,7 @@ def automation_block_contracts() -> tuple[Contract, ...]:
     from kizen_builder.tools.planners.automations import (
         _STEP_BUILDERS,
         _TRIGGER_BUILDERS,
-        _prefix_for,
+        _block_field_for,
     )
 
     out: list[Contract] = []
@@ -299,7 +299,7 @@ def automation_block_contracts() -> tuple[Contract, ...]:
             Contract(
                 "automations",
                 f"step config: {step_type}",
-                schema_name=f"WriteStepRequest.{_prefix_for(step_type)}_{step_type}",
+                schema_name=f"WriteStepRequest.{_block_field_for(step_type)}",
             )
         )
     for trigger_type in sorted(_TRIGGER_BUILDERS):
