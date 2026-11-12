@@ -38,7 +38,13 @@ from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.plans import PlanError
 
 autos_app = typer.Typer(
-    help="Read, create, update, and run automations.", no_args_is_help=True
+    help=(
+        "Read, create, update, and run automations. Writing a spec? "
+        "`step-types show <type>` prints a step's config block, its choices "
+        "and a block to start from; `lint` checks a spec file. Neither needs "
+        "a live env."
+    ),
+    no_args_is_help=True,
 )
 app.add_typer(autos_app, name="automations")
 

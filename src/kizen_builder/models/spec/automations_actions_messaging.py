@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kizen_builder.models.spec.automations_shared import TeamMemberConfig
 
@@ -224,6 +224,167 @@ class ActionChangeTagsConfig(BaseModel):
     )
 
 
+ActivityAssignmentType = Literal[
+    "round_robin_all",
+    "round_robin_role",
+    "round_robin_team_members",
+    "owner",
+    "team_member",
+    "team_selector_field",
+    "last_active",
+    "last_active_role",
+    "specific_role",
+    "team_member_from_variable",
+    "role_from_variable",
+]
+"""`schedule_activity.assigned_to`'s selector: the server's
+`AssignmentTypeEnum`, the 11 "Assign To" options in the builder. Not the
+smaller sets `assign_team_member` and the notify steps use."""
+
+
+class ActivityAssigneeConfig(TeamMemberConfig):
+    """Who a scheduled activity is assigned to (`schedule_activity.assigned_to`).
+
+    `assignment_type` is the wire key; `type` is accepted as an alias. The
+    companion key each option takes is in `kizen automations step-types show
+    schedule_activity`.
+    """
+
+    assignment_type: ActivityAssignmentType | None = None
+    type: ActivityAssignmentType | None = Field(
+        default=None, description="Alias for `assignment_type`."
+    )
+    role_id: str | None = Field(
+        default=None, description="Role UUID (`kizen roles list`)."
+    )
+    employee_id: str | None = Field(
+        default=None, description="Team member UUID (`kizen team list`)."
+    )
+    employee_ids: list[str] = Field(
+        default_factory=list, description="Team member UUIDs, for a round-robin pool."
+    )
+    field_id: str | None = Field(
+        default=None,
+        description="UUID of a team-selector field on the record. Or use `field_ref`.",
+    )
+    variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description="Automation variable name, for the two `*_from_variable` options.",
+    )
+
+
+_TimeOffsetRelative = Literal[
+    "hours_before", "hours_after", "minutes_before", "minutes_after"
+]
+
+
+class ScheduleWithDelayConfig(BaseModel):
+    """`schedule.with_delay`: due a fixed delay after the step runs.
+
+    Choices are the server's (`GET /api/docs/schema`, 2026-10-30).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    delay_type: Literal["minute", "hour", "day"] = Field(
+        description="Unit of the delay. Singular: `days` is a 400."
+    )
+    delay_value_type: Literal["static", "automation_variable"] | None = Field(
+        default=None,
+        description=(
+            "`static` (the default) reads `delay_value`; `automation_variable` "
+            "reads the number from `delay_variable`."
+        ),
+    )
+    delay_value: int | None = Field(
+        default=None, ge=1, description="Whole number of `delay_type` units."
+    )
+    delay_variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description='`{"name": <number variable>}`, for `delay_value_type: automation_variable`.',
+    )
+    time_offset: (
+        Literal["automation_time", "specific_time"] | _TimeOffsetRelative | None
+    ) = Field(
+        default=None,
+        description=(
+            "Time of day it falls due. `automation_time` (the default) keeps "
+            "the run's time of day; `specific_time` takes `time`; the "
+            "before/after options take `time_offset_value`."
+        ),
+    )
+    time: str | None = Field(
+        default=None, description='`HH:MM` on a 24-hour clock, e.g. "21:00".'
+    )
+    time_offset_value: int | None = None
+
+
+class ScheduleOnOrAroundDateConfig(BaseModel):
+    """`schedule.on_or_around_date`: due relative to a date field or variable.
+
+    Choices are the server's (`GET /api/docs/schema`, 2026-10-30).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    field_ref: str | None = Field(
+        default=None,
+        description=(
+            "A date or datetime field on the record, as `<object>.<field>` "
+            "or a bare field api_name. Resolved to `field_id` at apply time. "
+            "Set this, `field_id` or `variable`."
+        ),
+    )
+    field_id: str | dict[str, Any] | None = Field(
+        default=None, description="The field's UUID, in place of `field_ref`."
+    )
+    variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description='`{"name": <date variable>}`, in place of a field.',
+    )
+    date_offset: Literal["on_day", "on_day_and_time", "days_before", "days_after"]
+    date_offset_days: int | None = Field(
+        default=None,
+        ge=1,
+        description="1 or more, even under `on_day`: 0 is a 400.",
+    )
+    time_offset: (
+        Literal["specific_time", "from_field", "from_variable"]
+        | _TimeOffsetRelative
+        | None
+    ) = Field(
+        default=None,
+        description="`specific_time` (the default) takes `time`.",
+    )
+    time: str | None = Field(
+        default=None, description='`HH:MM` on a 24-hour clock, e.g. "10:00".'
+    )
+    time_offset_value: int | None = None
+
+
+class ActivityScheduleConfig(BaseModel):
+    """`schedule_activity.schedule`: when the activity falls due. `type`
+    picks the shape, and the block named after it carries the detail."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["immediately", "with_delay", "on_or_around_date"]
+    with_delay: ScheduleWithDelayConfig | None = None
+    on_or_around_date: ScheduleOnOrAroundDateConfig | None = None
+    skip_non_working_days: bool | None = Field(
+        default=None,
+        description="With a `day` delay, count working days only.",
+    )
+
+    @model_validator(mode="after")
+    def _block_matches_type(self) -> Self:
+        if self.type != "immediately" and getattr(self, self.type) is None:
+            raise ValueError(
+                f"schedule type '{self.type}' needs a '{self.type}' block beside it"
+            )
+        return self
+
+
 class ActionScheduleActivityConfig(BaseModel):
     """Config for `step_type: schedule_activity`.
 
@@ -245,14 +406,11 @@ class ActionScheduleActivityConfig(BaseModel):
         default=None,
         description="Activity type api_name or UUID. Same as `activity_type`.",
     )
-    schedule: dict[str, Any] | None = Field(
+    schedule: ActivityScheduleConfig | None = Field(
         default=None,
         description=(
-            "Schedule detail block, e.g. {'type': 'on_or_around_date', "
-            "'on_or_around_date': {'date_offset': ..., 'date_offset_days': ...}}. "
-            "NOTE: date_offset_days must be >= 1 live even under date_offset "
-            "'on_day' — 0 is rejected ('Ensure this value is greater than or "
-            "equal to 1'), despite 'on_day' reading like same-day/zero-offset."
+            "When the activity falls due. `kizen automations step-types show "
+            "schedule_activity` has a block for each shape."
         ),
     )
     notifications: list[Any] | dict[str, Any] | None = Field(
@@ -263,7 +421,7 @@ class ActionScheduleActivityConfig(BaseModel):
             "non-empty wire shape is unconfirmed."
         ),
     )
-    assigned_to: TeamMemberConfig | None = Field(
+    assigned_to: ActivityAssigneeConfig | None = Field(
         default=None,
         description=(
             "Who the activity is assigned to. Unlike assign_team_member/"

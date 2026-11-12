@@ -14,6 +14,39 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **`kizen automations step-types`** shows what a step's config block takes,
+  with no environment. `step-types show <type>` prints blocks to copy, the
+  keys each choice needs, every field with its choices, and the values to look
+  up first. `--variant <name>` prints one block as JSON for a spec file or
+  `steps add`, and `--json` adds the block's JSON Schema. `step-types list`
+  names every type the CLI can write and `step-types concepts` covers what
+  most steps share. `schedule_activity` has a block for each schedule shape
+  and lists what each of its `time_offset` and `assignment_type` options
+  needs; other types show their fields and a required-keys block.
+  `kizen automations trigger-types` does the same for triggers.
+- **`kizen automations lint --spec-file <path>`** checks an automation spec
+  with no environment and reports every problem in one pass: config block
+  shape and choices, the step graph (branch groups, loops, variable steps at
+  the front), variables no step declares, and keys a chosen option is
+  normally written with. Each finding names the step and the path inside it,
+  and a wrong choice gets the allowed values and the nearest one. `--json`
+  emits `{ok, errors, warnings}`. It exits 1 on an error.
+- **`schedule_activity` takes field names.** `schedule.on_or_around_date`
+  and an `assigned_to` of `team_selector_field` accept `field_ref`
+  (`<object>.<field>`), resolved to the field's UUID. `field_id` still works.
+
+### Changed
+
+- **A wrong `schedule_activity` choice is a spec error.** `schedule.type`,
+  the `with_delay` and `on_or_around_date` choices, `assigned_to`'s
+  `assignment_type`, and a `delay_value` or `date_offset_days` below 1 are
+  now refused when the spec is read, by `lint`, `--dry-run` and `steps
+  add`. Before, they went to the server and came back as a 400. A
+  `with_delay` or `on_or_around_date` schedule with no block of that name is
+  refused the same way.
+
 ## [0.6.0] — 2026-11-11
 
 ### Added

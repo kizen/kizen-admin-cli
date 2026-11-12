@@ -3,6 +3,12 @@
 **Consumed by:** `kizen automations create|update --spec-file <f>` (also stdin).
 An automation is triggers + a step graph, sent as one atomic POST/PUT.
 
+**Writing one:** `kizen automations step-types show <type>` prints a step's
+config block, with blocks to copy and the keys each choice needs.
+`kizen automations lint --spec-file <f>` checks the finished file with no
+environment. This page holds what those two don't: the graph rules, worked
+patterns, and how the API behaves.
+
 > This is the richest spec. The graph rules below (one root, `parent_key`
 > chaining, `parent_branch` on branch entries) are enforced at plan time — a
 > violation fails the dry-run with a specific message. This file covers the
@@ -1882,6 +1888,9 @@ name or UUID. `schedule.type` picks one of three shapes:
 | `with_delay` | a `with_delay` block |
 | `on_or_around_date` | an `on_or_around_date` block |
 
+`kizen automations step-types show schedule_activity` has a block for each
+shape and lists what every `time_offset` and `assignment_type` option needs.
+
 `skip_non_working_days` (bool) sits on `schedule` itself. This step schedules a
 Follow Up for the deal's owner two working days after the run:
 
@@ -1916,8 +1925,9 @@ Follow Up for the deal's owner two working days after the run:
 
 **`on_or_around_date`:**
 
-- `field_id` (a date or datetime field's UUID) or `variable: {"name": …}`.
-  The CLI doesn't resolve names inside `schedule`, so give the UUID.
+- `field_ref` (a date or datetime field, as `<object>.<field>` or a bare
+  api_name) or `variable: {"name": …}`. The CLI resolves `field_ref` to the
+  wire's `field_id`; a `field_id` UUID works too.
 - `date_offset` (required): `on_day`, `on_day_and_time`, `days_before` or
   `days_after`, with `date_offset_days` 1 or more.
 - `time_offset`: `specific_time` (the default, with `time` as `HH:MM`),
@@ -1987,6 +1997,9 @@ team_member_from_variable, role_from_variable). Wire keys are
 `role_id`/`employee_id`/`employee_ids`/`field_id` — the same `*_id` dialect
 `assign_team_member` uses, and a live 400 caught the builder emitting bare
 `role`/`employee`/`field` here.
+
+`team_selector_field` takes the field as `field_ref` (`<object>.<field>`),
+which the CLI resolves to `field_id`.
 
 But **`variable` must be an `{"id"|"name": …}` object** — not the bare name
 string this codebase's other variable references use. `assign_team_member` has a

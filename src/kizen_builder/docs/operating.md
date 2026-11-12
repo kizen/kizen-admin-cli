@@ -198,7 +198,22 @@ For `kizen automations create` / `update`, the JSON is an `AutomationDef`.
 and step types, `field_ref` resolution, condition `filter_config`, the GET→PUT
 wire dialect, and the quirks that bite — lives in
 `kizen docs show automation`.** Read that before authoring one; don't grep
-the source. A few load-bearing reminders:
+the source.
+
+Write the spec one step at a time, then check it before it touches an
+environment:
+
+1. `kizen automations step-types show <type>` prints that step's config block:
+   blocks to copy, the keys each choice needs, and the values to look up
+   first. `step-types list` names every type; `trigger-types` does the same
+   for triggers.
+2. `kizen automations lint --spec-file <path>` checks the whole file with no
+   environment and reports every problem at once, each with its step and the
+   path inside it. Fix until it prints `ok`.
+3. `kizen automations create --spec-file <path> --dry-run` then checks what
+   only the environment knows: fields, activity types, team members.
+
+A few load-bearing reminders:
 
 - One root (`parent_key: null`); branch entries under a `condition`/`goal` set
   `parent_branch: "yes"|"no"`; rejoin branches with a branch group rather

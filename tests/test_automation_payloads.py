@@ -4736,6 +4736,63 @@ def test_step_schedule_activity_sends_note_and_html_note(patch_live_lookups):
     assert action["html_note"] == "<p><strong>Rich</strong> note</p>"
 
 
+def test_step_schedule_activity_resolves_field_refs_to_field_ids(patch_live_lookups):
+    """`field_ref` is a spec convenience: the wire takes only `field_id`."""
+    patients = load_fixture("objects/patients.json")
+    by_name = {f["api_name"]: f["id"] for f in patients["fields"]}
+    payload = _build(
+        _schedule_activity_spec(
+            {
+                "activity_type_id": "11111111-1111-4111-8111-111111111111",
+                "schedule": {
+                    "type": "on_or_around_date",
+                    "on_or_around_date": {
+                        "field_ref": "patients.date_of_birth",
+                        "date_offset": "days_after",
+                        "date_offset_days": 1,
+                    },
+                },
+                "assigned_to": {
+                    "assignment_type": "team_selector_field",
+                    "field_ref": "owner",
+                },
+            }
+        )
+    )
+    action = payload["steps"][0]["action_schedule_activity"]
+    assert action["schedule"]["on_or_around_date"] == {
+        "field_id": by_name["date_of_birth"],
+        "date_offset": "days_after",
+        "date_offset_days": 1,
+    }
+    assert action["assigned_to"] == {
+        "assignment_type": "team_selector_field",
+        "field_id": by_name["owner"],
+    }
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"type": "later"},
+        {"type": "with_delay"},
+        {"type": "with_delay", "with_delay": {"delay_type": "days", "delay_value": 1}},
+        {"type": "with_delay", "with_delay": {"delay_type": "day", "delay_value": 0}},
+        {
+            "type": "on_or_around_date",
+            "on_or_around_date": {"date_offset": "on_day", "date_offset_days": 0},
+        },
+    ],
+)
+def test_step_schedule_activity_refuses_a_malformed_schedule(schedule):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AutomationDef.model_validate(
+            _schedule_activity_spec({"activity_type": "call", "schedule": schedule})
+        )
+
+
 def test_step_schedule_activity_association_configs_author_shape(patch_live_lookups):
     patients = load_fixture("objects/patients.json")
     encounters_field = next(

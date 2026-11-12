@@ -1143,14 +1143,7 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     if auto.priority_rank is not None:
         payload["priority_rank"] = auto.priority_rank
 
-    triggers = list(auto.triggers)
-    if not any(t.trigger_type == "manual" for t in triggers):
-        from kizen_builder.models.spec import AutomationTriggerDef
-
-        manual = AutomationTriggerDef(trigger_type="manual", order=0)
-        triggers = [manual] + [
-            t.model_copy(update={"order": i + 1}) for i, t in enumerate(triggers)
-        ]
+    triggers = triggers_with_manual(auto)
     payload["triggers"] = [_build_trigger_payload(t, auto, ctx) for t in triggers]
     _validate_trigger_orders(payload["triggers"])
     payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
@@ -1161,6 +1154,19 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     if problems:
         raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
     return payload
+
+
+def triggers_with_manual(auto: AutomationDef) -> list[AutomationTriggerDef]:
+    """The spec's triggers as they are sent: every automation carries a
+    `manual` trigger, so one is put first when the spec has none, and the
+    others renumber after it."""
+    triggers = list(auto.triggers)
+    if any(t.trigger_type == "manual" for t in triggers):
+        return triggers
+    manual = AutomationTriggerDef(trigger_type="manual", order=0)
+    return [manual] + [
+        t.model_copy(update={"order": i + 1}) for i, t in enumerate(triggers)
+    ]
 
 
 def _validate_trigger_orders(triggers: list[dict[str, Any]]) -> None:
@@ -3571,10 +3577,15 @@ def _step_schedule_activity(
     if schedule:
         # Drop null sub-fields — API rejects null for with_delay / on_or_around_date
         out["schedule"] = {k: v for k, v in schedule.items() if v is not None}
+        on_date = out["schedule"].get("on_or_around_date")
+        if isinstance(on_date, dict):
+            out["schedule"]["on_or_around_date"] = _with_field_id(on_date, auto, ctx)
     if block.get("notifications") is not None:
         out["notifications"] = block["notifications"]
     if block.get("assigned_to"):
-        out["assigned_to"] = _normalize_assigned_to(block["assigned_to"])
+        out["assigned_to"] = _normalize_assigned_to(
+            _with_field_id(block["assigned_to"], auto, ctx)
+        )
     if block.get("association_configs") is not None:
         out["association_configs"] = [
             _normalize_association_config(a, auto, ctx, n)
@@ -3588,6 +3599,22 @@ def _step_schedule_activity(
     if block.get("variable_field_resolution") is not None:
         out["variable_field_resolution"] = block["variable_field_resolution"]
     return out
+
+
+def _with_field_id(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """``block`` with a `field_ref` resolved into `field_id`, for the
+    schedule_activity sub-blocks whose wire key takes only the UUID. A
+    `field_id` beside it wins. A live read carries no `field_ref`, so this
+    never looks anything up while translating one."""
+    ref = block.get("field_ref")
+    if not ref:
+        return block
+    rest = {k: v for k, v in block.items() if k != "field_ref"}
+    if not rest.get("field_id"):
+        rest["field_id"] = _resolve_field_ref(ref, auto, ctx)
+    return rest
 
 
 def _normalize_association_config(

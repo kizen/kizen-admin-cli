@@ -22,6 +22,12 @@ kizen automations show <api_name>            # step tree with synthesized step k
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
 kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms
 kizen automations diff <api_name> --spec-file <path>  # preview what `update` from this spec would change — read-only
+kizen automations step-types list            # every step type the CLI can write (no env needed)
+kizen automations step-types show <type>     # one step's config block: blocks to copy, what each choice needs, every field (--json adds the JSON Schema)
+kizen automations step-types show <type> --variant <name>   # just that block as JSON, for a spec file or `steps add`
+kizen automations step-types concepts        # ideas most steps share: who, when, variables, fields, value sources
+kizen automations trigger-types list|show <type>            # the same for triggers
+kizen automations lint --spec-file <path>    # check a whole spec offline: block shape, graph, variables (--json for {ok, errors, warnings})
 kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen docs show automation)
 kizen automations runs list <api_name>       # recent runs for an automation
 kizen automations runs view <exec_uuid>      # one run: summary + step-by-step trace (per-step status/duration)

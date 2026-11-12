@@ -371,6 +371,11 @@ exit 1 from any command, and anything else into `error: internal: …`.
    `test_every_captured_read_key_is_classified` fails on a fixture that has
    one.
 6. Update the wired list in `src/kizen_builder/docs/specs/automation.md`.
+   `kizen automations step-types` picks the new type up from the registry and
+   reads its purpose from that table. If the block has a key whose value
+   decides which other keys it carries, add a `Guide` for it in
+   `tools/step_catalog.py`: a block per shape, and what each option needs.
+   `automations lint` warns from the same guide.
 7. If the type has an enum-typed field whose valid values you've confirmed
    (live, in a fixture, or via the drift snapshot once it captures enum
    values), add them to `KNOWN_ENUM_CHOICES` / `KNOWN_ENUM_CHOICES_TRIGGERS`

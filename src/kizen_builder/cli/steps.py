@@ -212,7 +212,11 @@ def steps_edit(
 
 @steps_app.command(
     "add",
-    epilog="Step spec shape (one AutomationDef step): see `kizen docs show automation-step`",
+    epilog=(
+        "Step spec shape (one AutomationDef step): see `kizen docs show "
+        "automation-step`. A block to start from: `kizen automations step-types "
+        "show <type> --variant <name>`."
+    ),
 )
 def steps_add(
     api_name: str = typer.Argument(..., help="Automation api_name."),
