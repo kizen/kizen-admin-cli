@@ -1,4 +1,4 @@
-"""Toolbar templates: a named, ordered left-hand menu."""
+"""Toolbar templates: a named, ordered toolbar (the bar across the top of the page)."""
 
 from __future__ import annotations
 

@@ -69,7 +69,7 @@ kizen quick-filters list <object> [--search <text>]     # per-object quick-filte
 kizen quick-filters get <object> <uuid|name>            # one quick filter's config + sharing_settings
 kizen columns list <object> [--search <text>]           # per-object saved column layouts
 kizen columns get <object> <uuid|name>                  # one column template's config + sharing_settings
-kizen toolbar-templates list [--search <text>]          # named left-hand menus
+kizen toolbar-templates list [--search <text>]          # named top-of-page toolbars
 kizen toolbar-templates get <uuid|name> [--json|--raw]  # entry tree; --json is the spec `update` takes
 
 kizen roles list                             # list roles (name, user count, # perm groups, default flag)

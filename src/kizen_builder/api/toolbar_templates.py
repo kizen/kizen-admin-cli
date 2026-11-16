@@ -1,4 +1,4 @@
-"""Toolbar templates: named left-hand menus a user or role can be given.
+"""Toolbar templates: named toolbars (the bar across the top of the page) a user or role can be given.
 
 Endpoints:
   GET    /api/toolbar-templates        list (DRF page; ``light=true`` → {id, name})

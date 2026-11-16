@@ -3,7 +3,7 @@
 **Consumed by:** `kizen toolbar-templates create|update <template> --spec-file <f>`
 (also stdin). `delete <template>` takes no spec.
 
-A toolbar template is a named, ordered left-hand menu. A template is
+A toolbar template is a named, ordered toolbar: the bar across the top of the page. A template is
 referenced by UUID or exact name; names are unique.
 
 Read first: `kizen toolbar-templates list`, and `get <template> --json`, which

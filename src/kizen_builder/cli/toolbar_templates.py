@@ -1,4 +1,4 @@
-"""`kizen toolbar-templates` — named left-hand menus (toolbar templates)."""
+"""`kizen toolbar-templates` — named toolbars (the bar across the top of the page)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ EPILOG = "Spec shape and examples: see `kizen docs show toolbar-templates`"
 TEMPLATE_ARG_HELP = "Toolbar template UUID or exact name."
 
 toolbar_templates_app = typer.Typer(
-    help="Toolbar templates: named left-hand menus. Nothing here applies one "
+    help="Toolbar templates: named top-of-page toolbars. Nothing here applies one "
     "to anyone.",
     no_args_is_help=True,
 )
