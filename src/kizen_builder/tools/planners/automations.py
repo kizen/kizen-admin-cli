@@ -2227,6 +2227,7 @@ def _built_block_problem(
     accept anyway, or reject only at apply with a less useful message. The
     checks `automations create`/`update`, `steps add` and `steps edit`
     share; live reads skip them so existing automations still translate.
+    A check that can name the path in the step raises `SpecProblems` instead.
     """
     if step_type == "condition":
         return _condition_rules_problem(key, block)
@@ -2240,6 +2241,10 @@ def _built_block_problem(
         return _llm_tools_pairing_problem(key, block)
     if step_type == "create_related_entity":
         return _contact_creation_problem(key, block, ctx)
+    if step_type in ("code_step", "plugin_code_step"):
+        findings = _to_many_related_field_findings(step_type, key, block, auto, ctx)
+        if findings:
+            raise SpecProblems(findings)
     if step_type == "start_automation" and ctx.refuse_inactive_start_targets:
         problems = inactive_start_targets(
             [{"key": key, "type": step_type, "action_start_automation": block}],
@@ -2575,6 +2580,16 @@ _ASSIGN_TEAM_MEMBER_KEYS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
 }
 _SINGLE_VALUE_CARDINALITIES = ("many_to_one", "one_to_one")
+
+
+def _is_single_value_relationship(field: dict[str, Any]) -> bool:
+    """Whether a live field record is a relationship to at most one record
+    (many_to_one or one_to_one). False for a to-many relationship, and for
+    a field that isn't a relationship."""
+    cardinality = (field.get("relation") or {}).get("cardinality")
+    return cardinality in _SINGLE_VALUE_CARDINALITIES
+
+
 _KEYS_ARE_NOT_A_RUN = (
     "A complete selector only means the keys are there, not that a run "
     "assigns anyone (see `kizen docs show automation`, assign_team_member)."
@@ -2614,8 +2629,8 @@ def _assign_team_member_problem(
             f"a field on '{auto.target_object}'. It must be the hop from this "
             "object; field_id names the selector on the far object."
         )
-    cardinality = (hop.get("relation") or {}).get("cardinality")
-    if cardinality not in _SINGLE_VALUE_CARDINALITIES:
+    if not _is_single_value_relationship(hop):
+        cardinality = (hop.get("relation") or {}).get("cardinality")
         return (
             f"assign_team_member step '{key}': related_field_id is "
             f"'{hop.get('api_name')}' on '{auto.target_object}', which isn't a "
@@ -4110,24 +4125,7 @@ def _code_input(
         else:
             out["static_value"] = {"value": sv, "entity_record": None, "employee": None}
     elif it == "related_field":
-        # Wire requires BOTH the relationship field on this object (`field`)
-        # and the field on the related object (`related_field`), each {id}.
-        fld = inp.get("field")
-        fld_id = _unwrap_id(fld) or inp.get("field_id")
-        if not fld_id:
-            raise PlanError(
-                f"{where} input '{inp['name']}' is type 'related_field' but "
-                "has no `field` (the relationship field on the automation's object)"
-            )
-        out["field"] = {"id": fld_id}
-        rf = inp.get("related_field")
-        rf_id = _unwrap_id(rf)
-        if not rf_id:
-            raise PlanError(
-                f"{where} input '{inp['name']}' is type 'related_field' but "
-                "has no `related_field` (the field on the related object)"
-            )
-        out["related_field"] = {"id": rf_id}
+        out |= _related_field_binding(inp, f"{where} input", auto, ctx)
     if inp.get("data_type"):
         out["data_type"] = inp["data_type"]
     if inp.get("is_list") is not None:
@@ -4174,25 +4172,7 @@ def _code_output(
             )
         out["variable"] = {"name": name}
     elif ot == "related_field":
-        # Mirrors the related_field branch in _code_input: wire requires
-        # BOTH the relationship field on this object (`field`) and the
-        # field on the related object (`related_field`), each {id}.
-        fld = o.get("field")
-        fld_id = _unwrap_id(fld) or o.get("field_id")
-        if not fld_id:
-            raise PlanError(
-                f"{where} output '{o['name']}' is type 'related_field' but "
-                "has no `field` (the relationship field on the automation's object)"
-            )
-        out["field"] = {"id": fld_id}
-        rf = o.get("related_field")
-        rf_id = _unwrap_id(rf)
-        if not rf_id:
-            raise PlanError(
-                f"{where} output '{o['name']}' is type 'related_field' but "
-                "has no `related_field` (the field on the related object)"
-            )
-        out["related_field"] = {"id": rf_id}
+        out |= _related_field_binding(o, f"{where} output", auto, ctx)
     if o.get("conflict_resolution"):
         out["conflict_resolution"] = o["conflict_resolution"]
     if o.get("create_missing_option") is not None:
@@ -4201,6 +4181,88 @@ def _code_output(
         out["data_type"] = o["data_type"]
     if o.get("is_list") is not None:
         out["is_list"] = o["is_list"]
+    return out
+
+
+def _related_field_binding(
+    item: dict[str, Any], what: str, auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """The wire ``field`` and ``related_field`` of a code-step input or
+    output of type ``related_field``. ``field`` is the relationship field on
+    the automation's object, given as for a ``field`` input (``field_id``,
+    ``field`` or ``field_ref``); ``related_field`` is the field on the
+    related object, as an id or an ``object.field`` ref."""
+    fld_id = (
+        item.get("field_id")
+        or _resolve_field(item.get("field"), auto, ctx)
+        or (
+            _resolve_field_ref(item["field_ref"], auto, ctx)
+            if item.get("field_ref")
+            else None
+        )
+    )
+    if not fld_id:
+        raise PlanError(
+            f"{what} '{item['name']}' is type 'related_field' but has no "
+            "`field` (the relationship field on the automation's object)"
+        )
+    rf_id = _unwrap_id(item.get("related_field")) or item.get("related_field_ref")
+    if not rf_id:
+        raise PlanError(
+            f"{what} '{item['name']}' is type 'related_field' but has no "
+            "`related_field` (the field on the related object)"
+        )
+    if not is_uuid(rf_id) and "." in rf_id:
+        rf_id = ctx.field_uuid(*rf_id.split(".", 1))
+    return {"field": {"id": fld_id}, "related_field": {"id": rf_id}}
+
+
+def _to_many_related_field_findings(
+    step_type: str,
+    key: str,
+    block: dict[str, Any],
+    auto: AutomationDef,
+    ctx: LiveContext,
+) -> list[Finding]:
+    """A finding per built ``related_field`` input or output whose ``field``
+    is a to-many relationship on ``target_object``. The server 400s it with
+    "The field must not allow multiple values for type 'related_field'"
+    (confirmed live 2026-11-16)."""
+    if not auto.target_object:
+        return []
+    try:
+        fields = ctx.object_data(auto.target_object)["fields"]
+    except PlanError:
+        return []  # can't read the object: leave it to the server
+    by_id = {f.get("id"): f for f in fields}
+    block_field = _block_field_for(step_type)
+    out: list[Finding] = []
+    for side, kind in (("inputs", "input_type"), ("outputs", "output_type")):
+        for i, item in enumerate(block.get(side) or []):
+            if item.get(kind) != "related_field":
+                continue
+            hop = by_id.get(_unwrap_id(item.get("field")))
+            if not hop or not hop.get("relation") or _is_single_value_relationship(hop):
+                continue
+            name = hop.get("api_name")
+            if side == "inputs":
+                fix = (
+                    f"Read the related records with input_type 'field' on "
+                    f"'{name}', data_type 'entity' and is_list true."
+                )
+            else:
+                fix = "Update the related records with a modify_related_entities step."
+            out.append(
+                Finding(
+                    f"'{name}' is a to-many relationship "
+                    f"({hop['relation'].get('cardinality')}); related_field "
+                    f"needs a single-value one. {fix}",
+                    path=f"{block_field}.{side}[{i}].field",
+                    step=key,
+                    got=name,
+                    hint=f"kizen objects get {auto.target_object}",
+                )
+            )
     return out
 
 

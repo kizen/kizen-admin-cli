@@ -698,3 +698,109 @@ def test_steps_add_reports_warnings_and_still_validates(monkeypatch):
     result = _steps(monkeypatch, ["add", "auto", "--root"], spec)
     assert result.exit_code == 0, result.output
     assert "warning: " in result.stderr and "team_member" in result.stderr
+
+
+# --- shapes the server rejects -------------------------------------------
+
+_CONDITIONS = "ae78e103-ab10-47d5-9dbc-730c26ae4882"  # encounters, many_to_many
+_PATIENT_REL = "889f65e2-dd31-42f0-a088-c3c1dd8ea484"  # encounters, many_to_one
+_PATIENT_DOB = "de05fa11-6ea1-400c-8349-e4c24543eaa1"  # patients.date_of_birth
+
+
+def _encounter_spec(*steps):
+    return {**_spec(*steps), "target_object": "encounters"}
+
+
+def _code(inputs=(), outputs=()):
+    return {
+        "key": "code",
+        "step_type": "code_step",
+        "action_code_step": {
+            "script": "outputs = {}",
+            "inputs": list(inputs),
+            "outputs": list(outputs),
+        },
+    }
+
+
+def _plan_problems(spec):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    with pytest.raises(SpecProblems) as e:
+        plan_create_automation(spec)
+    return e.value.errors
+
+
+def _planned_step(spec):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    (op,) = plan_create_automation(spec).operations
+    return op.payload["steps"][0]
+
+
+def test_a_related_field_input_on_a_to_many_relationship_names_the_binding(
+    patch_live_lookups,
+):
+    rel = {"name": "conds", "input_type": "related_field", "related_field": "x"}
+    spec = _encounter_spec(_code([{**rel, "field": _CONDITIONS}]))
+    (f,) = _plan_problems(spec)
+    assert f.step == "code"
+    assert f.path == "action_code_step.inputs[0].field"
+    assert f.got == "conditions"
+    assert "to-many relationship (many_to_many)" in f.message
+    assert (
+        "input_type 'field' on 'conditions', data_type 'entity' and is_list true"
+        in f.message
+    )
+
+
+def test_a_related_field_output_on_a_to_many_relationship_is_an_error(
+    patch_live_lookups,
+):
+    out = {"name": "cond", "output_type": "related_field", "related_field": "x"}
+    spec = _encounter_spec(_code(outputs=[{**out, "field": _CONDITIONS}]))
+    (f,) = _plan_problems(spec)
+    assert f.path == "action_code_step.outputs[0].field"
+    assert "modify_related_entities" in f.message
+
+
+def test_a_single_value_related_field_builds_from_ids_or_refs(patch_live_lookups):
+    by_id = {
+        "name": "dob",
+        "input_type": "related_field",
+        "field": _PATIENT_REL,
+        "related_field": _PATIENT_DOB,
+    }
+    by_ref = {
+        "name": "dob",
+        "input_type": "related_field",
+        "field_ref": "encounters.patient_rel",
+        "related_field_ref": "patients.date_of_birth",
+    }
+    built = [
+        _planned_step(_encounter_spec(_code([i])))["action_code_step"]["inputs"]
+        for i in (by_id, by_ref)
+    ]
+    assert built[0] == built[1]
+    assert built[0] == [
+        {
+            "name": "dob",
+            "input_type": "related_field",
+            "field": {"id": _PATIENT_REL},
+            "related_field": {"id": _PATIENT_DOB},
+        }
+    ]
+
+
+def test_the_to_many_binding_the_finding_names_builds(patch_live_lookups):
+    conds = {
+        "name": "conds",
+        "input_type": "field",
+        "field_ref": "encounters.conditions",
+        "data_type": "entity",
+        "is_list": True,
+    }
+    (built,) = _planned_step(_encounter_spec(_code([conds])))["action_code_step"][
+        "inputs"
+    ]
+    assert built["field"] == {"id": _CONDITIONS}
