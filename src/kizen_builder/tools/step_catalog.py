@@ -473,6 +473,7 @@ _CREATE_RELATED_ENTITY = Guide(
             "context_entity_field_resolution",
             _RESOLUTIONS,
             "overwrite",
+            "add_only when context_entity_field is to-many",
         ),
         Selector("variable_field_resolution", _RESOLUTIONS, "overwrite"),
         Selector(

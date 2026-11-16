@@ -143,7 +143,11 @@ class ActionCreateRelatedEntityConfig(BaseModel):
     )
     context_entity_field_resolution: RecordFieldResolution | None = Field(
         default=None,
-        description="How context_entity_field takes the new record. Builder default: overwrite.",
+        description=(
+            "How context_entity_field takes the new record. Left out: add_only "
+            "on a to-many field, where overwrite unlinks the records already "
+            "related, else overwrite. An update keeps the live value."
+        ),
     )
     target_variable: str | dict[str, Any] | None = Field(
         default=None, description="A variable that receives the new record."

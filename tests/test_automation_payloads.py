@@ -1420,6 +1420,106 @@ def test_create_related_entity_reduces_expanded_variable_refs(patch_live_lookups
     assert action["target_variable"] == "new_record"
 
 
+def _related_entity_spec(target_object: str, field: str, **extra) -> dict:
+    block = {
+        "target_custom_object": "encounters",
+        "new_entity_name": "Follow-up",
+        "new_entity_owner_type": "assign_from_context_record",
+        "context_entity_field": field,
+        **extra,
+    }
+    return {
+        **_one_step_spec("create_related_entity", block),
+        "target_object": target_object,
+    }
+
+
+@pytest.mark.parametrize(
+    "target_object, field, planned, many",
+    [
+        ("patients", "encounters", "add_only", "is"),
+        ("document_sets", "primary_audit_log_record", "overwrite", "isn't"),
+    ],
+    ids=["to-many", "to-one"],
+)
+def test_create_related_entity_resolution_follows_cardinality(
+    patch_live_lookups, target_object, field, planned, many
+):
+    """overwrite on a to-many field unlinks every record already related."""
+    (op,) = plan_create_automation(
+        _related_entity_spec(target_object, field)
+    ).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == planned
+    assert op.preview["defaults"] == [
+        f"step 'only' context_entity_field_resolution: '{planned}' "
+        f"(context_entity_field {many} to-many)"
+    ]
+
+
+def test_create_related_entity_explicit_resolution_wins(patch_live_lookups):
+    spec = _related_entity_spec(
+        "patients", "encounters", context_entity_field_resolution="overwrite"
+    )
+    (op,) = plan_create_automation(spec).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == "overwrite"
+    assert "defaults" not in op.preview
+
+
+_CRE_STEP_ID = "6a2e4c8f-1b3d-4f5a-9c7e-0d2b4f6a8c05"
+
+
+@pytest.mark.parametrize(
+    "live_resolution, planned",
+    [("overwrite", "overwrite"), (None, "add_only")],
+)
+def test_update_omitting_the_context_resolution_keeps_the_live_one(
+    patch_live_lookups, monkeypatch, live_resolution, planned
+):
+    import kizen_builder.tools.planners.automations as ma
+
+    spec = _related_entity_spec("patients", "encounters")
+    spec["steps"][0]["id"] = _CRE_STEP_ID
+    live_step = {
+        "id": _CRE_STEP_ID,
+        "step_type": "create_related_entity",
+        "order": 0,
+        "description": "Create",
+        "user_description": "",
+        "parent_step_id": None,
+        "parent_condition": "",
+        "action_on_failure": "silent_continue",
+        "should_skip_execution": False,
+        "error_notification_severity_level": "inherit",
+        "action_create_related_entity": {
+            "context_entity_field_resolution": live_resolution
+        },
+    }
+    spec["steps"][0].update(_live_step_keys(live_step))
+    raw = {
+        "id": "7b3f5d9a-2c4e-4a6b-8d0f-1e3a5c7b9d06",
+        "api_name": spec["api_name"],
+        "name": spec["name"],
+        "revision": 2,
+        "active": False,
+        "triggers": [],
+        "steps": [live_step],
+    }
+    listing = [{"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    (op,) = plan_update_automation(spec).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == planned
+    if live_resolution:
+        assert "only" in op.preview["keeps_live"]
+        assert "defaults" not in op.preview
+    else:
+        assert "only" not in op.preview.get("keeps_live", [])
+        assert len(op.preview["defaults"]) == 1
+
+
 @pytest.mark.parametrize(
     "target", ["client_client", {"name": "client_client"}, {"id": "client_client"}]
 )

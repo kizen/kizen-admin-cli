@@ -616,6 +616,9 @@ _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
         _KeptBlockKeys(("notify",), default=False),
     ),
     "plugin_code_step": (_KeptBlockKeys(("preview_user_id",)),),
+    # The planner always sends this one. Carried so its add_only default
+    # for a to-many field doesn't replace a live overwrite.
+    "create_related_entity": (_KeptBlockKeys(("context_entity_field_resolution",)),),
 }
 
 
@@ -1082,13 +1085,15 @@ def _automation_preview(
 def _planned_defaults(
     auto: AutomationDef, payload: dict[str, Any], current: dict[str, Any] | None
 ) -> list[str]:
-    """A `defaults` line for each match mode the planner chose: the spec
-    sets the value but not its mode, and the live trigger has no mode."""
+    """A `defaults` line for each match mode and context_entity_field
+    resolution the planner chose: the spec leaves it out, and the live
+    trigger or step has none."""
     live = current or {}
     live_by_id = {
         x["id"]: x
         for x in [
             *(live.get("triggers") or []),
+            *(live.get("steps") or []),
             *(
                 t
                 for s in live.get("steps") or []
@@ -1112,6 +1117,20 @@ def _planned_defaults(
             spec_block = _to_dict(t.trigger_field_updated)
             modes(f"trigger '{built['key']}'", spec_block, built[field], t.id)
     for step, built in zip(auto.steps, payload["steps"], strict=True):
+        if step.step_type == "create_related_entity":
+            key = "context_entity_field_resolution"
+            block = built["action_create_related_entity"]
+            live_step = live_by_id.get(step.id or "") or {}
+            if (
+                block.get("context_entity_field")
+                and not _to_dict(step.action_create_related_entity).get(key)
+                and not (live_step.get("action_create_related_entity") or {}).get(key)
+            ):
+                many = "is" if block[key] == "add_only" else "isn't"
+                lines.append(
+                    f"step '{step.key}' {key}: '{block[key]}' "
+                    f"(context_entity_field {many} to-many)"
+                )
         if step.step_type != "goal" or step.step_goal is None:
             continue
         nested = zip(
@@ -3296,6 +3315,7 @@ def _step_modify_related_entities(
 def _step_create_related_entity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
+    context_field = _resolve_field(block.get("context_entity_field"), auto, ctx)
     out: dict[str, Any] = {
         "new_entity_name": block.get("new_entity_name"),
         "new_entity_name_html": block.get("new_entity_name_html"),
@@ -3309,9 +3329,7 @@ def _step_create_related_entity(
         "new_entity_owner_employees": [
             _unwrap_id(e) for e in (block.get("new_entity_owner_employees") or []) if e
         ],
-        "context_entity_field": _resolve_field(
-            block.get("context_entity_field"), auto, ctx
-        ),
+        "context_entity_field": context_field,
         "target_custom_object": _resolve_object(
             block.get("target_custom_object") or block.get("target_object"), ctx
         ),
@@ -3319,9 +3337,8 @@ def _step_create_related_entity(
         "variable_field_resolution": block.get(
             "variable_field_resolution", "overwrite"
         ),
-        "context_entity_field_resolution": block.get(
-            "context_entity_field_resolution", "overwrite"
-        ),
+        "context_entity_field_resolution": block.get("context_entity_field_resolution")
+        or _context_field_resolution(context_field, auto, ctx),
         "automations_to_start": [
             _unwrap_id(a) for a in (block.get("automations_to_start") or []) if a
         ],
@@ -3333,6 +3350,20 @@ def _step_create_related_entity(
         ),
     }
     return {k: v for k, v in out.items() if v is not None}
+
+
+def _context_field_resolution(
+    field_id: str | None, auto: AutomationDef, ctx: LiveContext
+) -> str:
+    """``add_only`` for a to-many context_entity_field, where ``overwrite``
+    unlinks every record already related; ``overwrite`` otherwise."""
+    if not field_id or not auto.target_object:
+        return "overwrite"
+    fields = ctx.object_data(auto.target_object)["fields"]
+    field = next((f for f in fields if f.get("id") == field_id), None)
+    if field and field.get("relation") and not _is_single_value_relationship(field):
+        return "add_only"
+    return "overwrite"
 
 
 @honours(
