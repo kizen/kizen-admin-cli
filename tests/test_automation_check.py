@@ -13,8 +13,10 @@ from typer.testing import CliRunner
 
 import kizen_builder.cli as cli
 from kizen_builder.cli._mutations import _run_mutation
+from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools.automation_check import check_automation
 from kizen_builder.tools.findings import Finding, SpecProblems
+from tests.conftest import FIXTURES
 
 runner = CliRunner()
 _PLACEHOLDER = "replace the placeholder with a real value"
@@ -544,3 +546,83 @@ def test_the_preview_names_what_was_defaulted(patch_live_lookups):
         "step order from position: 'a' 0, 'b' 1",
     ]
     assert defaulted.payload == explicit.payload
+
+
+# --- steps add / edit -------------------------------------------------------
+
+_LIVE = sorted(FIXTURES.glob("automations/*.raw.json"))
+
+
+@pytest.mark.parametrize("path", _LIVE, ids=lambda p: p.name.split(".")[0])
+def test_steps_get_output_passes_the_step_checks(path):
+    """`steps edit` starts from `steps get`, so a live step sent back
+    unchanged must raise nothing."""
+    from kizen_builder.tools.automations import check_step_spec
+    from kizen_builder.translate import live_to_payload
+
+    payload = live_to_payload(json.loads(path.read_text()))
+    for step in payload["steps"]:
+        patch = {k: v for k, v in step.items() if k != "type"}
+        check_step_spec({**patch, "step_type": step["type"]}, payload)
+
+
+def _steps(monkeypatch, argv, spec, steps=()):
+    payload = {"steps": list(steps)}
+    monkeypatch.setattr(
+        auto_tools,
+        "patch_steps",
+        lambda _api, mutate, execute: {
+            "report": mutate(payload, {}),
+            "revision_before": 1,
+            "payload": payload,
+            "validation_problems": [],
+        },
+    )
+    return runner.invoke(
+        cli.app, ["automations", "steps", *argv, "--dry-run"], input=json.dumps(spec)
+    )
+
+
+def test_steps_add_lists_every_problem(monkeypatch):
+    spec = _activity(target_variable="activity_id", fieldd=1)
+    result = _steps(monkeypatch, ["add", "auto", "--root"], spec)
+    assert result.exit_code == 1
+    lines = [ln for ln in result.stderr.splitlines() if ln.startswith("spec error")]
+    assert lines == [
+        "spec error: step 'act' action_schedule_activity.fieldd: unknown key; the "
+        "planner doesn't read it, so it would be dropped",
+        "spec error: step 'act' action_schedule_activity.target_variable: variable "
+        "'activity_id' is not declared by an initialize_variable step",
+    ]
+
+    result = _steps(monkeypatch, ["add", "auto", "--root", "--json"], spec)
+    assert [e["path"] for e in json.loads(result.stdout)["errors"]] == [
+        "action_schedule_activity.fieldd",
+        "action_schedule_activity.target_variable",
+    ]
+
+
+def test_steps_edit_checks_against_the_live_variables(monkeypatch):
+    live = [
+        {"key": "act", "type": "schedule_activity"},
+        {
+            "key": "init",
+            "type": "initialize_variable",
+            "action_initialize_variable": {
+                "variable": {"name": "activity_ids", "data_type": "string"}
+            },
+        },
+    ]
+    patch = {"action_schedule_activity": {"target_variable": "activity_id"}}
+    result = _steps(monkeypatch, ["edit", "auto", "act"], patch, live)
+    assert result.exit_code == 1
+    assert "(did you mean 'activity_ids'?)" in result.stderr
+
+
+def test_steps_add_reports_warnings_and_still_validates(monkeypatch):
+    monkeypatch.setattr(auto_tools, "build_wire_step", lambda spec, *_: spec)
+    spec = _activity(assigned_to={"employee_id": "x"})
+    result = _steps(monkeypatch, ["add", "auto", "--root", "--json"], spec)
+    assert result.exit_code == 0, result.output
+    (warning,) = json.loads(result.stdout)["report"]["warnings"]
+    assert "set it to 'team_member'" in warning

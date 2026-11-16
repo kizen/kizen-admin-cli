@@ -16,10 +16,12 @@ from kizen_builder.cli._shared import (
     console,
     err_console,
     exit_spec_errors,
+    exit_spec_problems,
 )
 from kizen_builder.cli.automations import autos_app
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
+from kizen_builder.tools.findings import SpecProblems
 from kizen_builder.tools.plans import PlanError
 
 steps_app = typer.Typer(
@@ -65,6 +67,10 @@ def _detect_message_auto_versions(diff: list[dict[str, Any]]) -> list[str]:
     return callouts
 
 
+def _with_warnings(report: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    return {**report, "warnings": warnings} if warnings else report
+
+
 def _run_step_patch(
     api_name: str,
     mutate: Callable[[dict[str, Any], dict[str, Any]], Any],
@@ -83,7 +89,10 @@ def _run_step_patch(
     def patch(execute: bool) -> dict[str, Any]:
         try:
             with cli_errors(LookupError, PlanError):
-                return auto_tools.patch_steps(api_name, mutate, execute=execute)
+                try:
+                    return auto_tools.patch_steps(api_name, mutate, execute=execute)
+                except SpecProblems as e:
+                    exit_spec_problems(e, json_out)
         except ValidationError as e:
             exit_spec_errors(e)
 
@@ -202,10 +211,14 @@ def steps_edit(
     def mutate(payload: dict[str, Any], raw: dict[str, Any]) -> Any:
         step = step_tools.find_step(payload, key)
         target_object = (raw.get("custom_object") or {}).get("name")
+        checked = {k: v for k, v in patch.items() if k != "type"}
+        warnings = auto_tools.check_step_spec(
+            {**checked, "key": key, "step_type": step["type"]}, payload
+        )
         normalized = auto_tools.normalize_step_patch(
             dict(patch), key, step["type"], payload, target_object
         )
-        return step_tools.edit_step(payload, key, normalized)
+        return _with_warnings(step_tools.edit_step(payload, key, normalized), warnings)
 
     _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
 
@@ -260,15 +273,18 @@ def steps_add(
     def mutate(payload: dict[str, Any], raw: dict[str, Any]) -> Any:
         target_object = (raw.get("custom_object") or {}).get("name")
         parent_key, adopt = parent or None, not leaf
+        warnings = auto_tools.check_step_spec(spec, payload)
         if spec.get("step_type") == "loop":
             loop, closer, item = auto_tools.build_wire_loop(
                 spec, payload, target_object
             )
-            return step_tools.insert_loop(
+            report = step_tools.insert_loop(
                 payload, loop, closer, item, parent_key, branch, adopt
             )
-        wire = auto_tools.build_wire_step(spec, payload, target_object)
-        return step_tools.insert_step(payload, wire, parent_key, branch, adopt)
+        else:
+            wire = auto_tools.build_wire_step(spec, payload, target_object)
+            report = step_tools.insert_step(payload, wire, parent_key, branch, adopt)
+        return _with_warnings(report, warnings)
 
     _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
 
