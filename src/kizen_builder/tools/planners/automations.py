@@ -1447,6 +1447,23 @@ def _qualify_trigger_field_ref(
     return {**block, "field_ref": ".".join(_split_field_ref(ref, auto))}
 
 
+def _resolve_trigger_option_labels(
+    trigger_type: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """A `field_updated` block with option names in `from_value`/`to_value`
+    resolved to option UUIDs, as `change_field_value` resolves them. An
+    unknown name lists the field's options. Other trigger types pass
+    through."""
+    if trigger_type != "field_updated":
+        return block
+    field = block.get("field_ref") or block.get("field_id") or block.get("field")
+    out = dict(block)
+    for k in ("from_value", "to_value"):
+        if out.get(k) is not None:
+            out[k] = _option_labels_to_ids(field, out[k], auto.target_object, auto, ctx)
+    return out
+
+
 # The server's default and the UI's text. A description in either form names
 # no user intent, only (possibly old) stages, so it is rewritten from the
 # stages being sent: a spec copied from a read would otherwise label a changed
@@ -1567,6 +1584,12 @@ def _build_trigger_payload(
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
     block_dict = _qualify_trigger_field_ref(t.trigger_type, block_dict, auto)
+    try:
+        block_dict = _resolve_trigger_option_labels(
+            t.trigger_type, block_dict, auto, ctx
+        )
+    except PlanError as e:
+        raise PlanError(f"trigger '{p['key']}': {e}") from e
     block_dict, description = _resolve_trigger_stages(
         t.trigger_type, p["key"], block_dict, p.get("description"), auto, ctx
     )
@@ -2484,6 +2507,10 @@ def _step_goal(
         nested = _qualify_trigger_field_ref(
             trigger_type, dict(t.get(cfg_field) or {}), auto
         )
+        try:
+            nested = _resolve_trigger_option_labels(trigger_type, nested, auto, ctx)
+        except PlanError as e:
+            raise PlanError(f"goal trigger '{p['key']}': {e}") from e
         builder = _TRIGGER_BUILDERS.get(trigger_type)
         p[cfg_field] = builder(nested, ctx) if builder else _strip(nested)
         triggers.append(p)

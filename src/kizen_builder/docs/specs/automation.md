@@ -1788,7 +1788,7 @@ Beyond the step/trigger tables above:
 
 | where | the key |
 |---|---|
-| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. **`from_value`/`to_value` write as bare UUIDs** — an expanded dict is silently stored as null |
+| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. `from_value`/`to_value` write as bare UUIDs; the builder sends an option name, or a read's `{id, …}`, as its UUID. Keys and modes: `kizen automations step-types show field_updated` |
 | `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it. The other keys: [Date trigger](#date-trigger-on_or_around_date) |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}`; the spec takes an api_name or UUID |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |

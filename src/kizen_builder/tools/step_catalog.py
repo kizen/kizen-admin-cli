@@ -670,13 +670,116 @@ _SEARCH_RECORDS = Guide(
     concepts=("filter", "variable"),
 )
 
+
+def _match_modes(value_key: str) -> tuple[Option, ...]:
+    return (
+        Option("any_including_blank", note="any value, blank too"),
+        Option("any_excluding_blank", note="any value but blank"),
+        Option("blank"),
+        Option("specific_value", (value_key,), "an option, team member or record"),
+        Option("date_between", (value_key,), "a date field"),
+        Option("values_added"),
+        Option("values_removed"),
+        Option("contains_any_of"),
+        Option("contains_none_of"),
+    )
+
+
+_FIELD_UPDATED = Guide(
+    variants=(
+        Variant(
+            "changed_to",
+            "A dropdown, radio or status field changes to one option, from anything.",
+            {
+                "field_ref": "<object>.<field>",
+                "fire_on_create": False,
+                "to_match_mode": "specific_value",
+                "to_value": "<option name>",
+            },
+        ),
+        Variant(
+            "changed_from_to",
+            "A field moves from one option to another.",
+            {
+                "field_ref": "<object>.<field>",
+                "fire_on_create": False,
+                "from_match_mode": "specific_value",
+                "from_value": "<option name>",
+                "to_match_mode": "specific_value",
+                "to_value": "<option name>",
+            },
+        ),
+        Variant(
+            "any_change",
+            "Any change to the field, on create too.",
+            {"field_ref": "<object>.<field>", "fire_on_create": True},
+        ),
+        Variant(
+            "filled_in",
+            "A blank field gets a value.",
+            {
+                "field_ref": "<object>.<field>",
+                "fire_on_create": False,
+                "from_match_mode": "blank",
+                "to_match_mode": "any_excluding_blank",
+            },
+        ),
+        Variant(
+            "date_between",
+            "A date field is set to a date in a range.",
+            {
+                "field_ref": "<object>.<date field>",
+                "to_match_mode": "date_between",
+                "to_value": {
+                    "date_start": "2026-07-05T06:15:00.000Z",
+                    "date_end": "2026-07-19T04:00:00.000Z",
+                    "type": "date_range",
+                },
+            },
+        ),
+        Variant(
+            "owner_changed_to",
+            "A team selector field (owner here) changes to one team member.",
+            {
+                "field_ref": "<object>.owner",
+                "to_match_mode": "specific_value",
+                "to_value": "<employee UUID>",
+            },
+        ),
+    ),
+    selectors=(
+        Selector("from_match_mode", _match_modes("from_value"), "any_including_blank"),
+        Selector("to_match_mode", _match_modes("to_value"), "any_including_blank"),
+    ),
+    lookups=(
+        Lookup(
+            "field_ref",
+            "kizen objects get <object>",
+            "<object>.<field>, or a bare field name on the automation's object",
+        ),
+        Lookup(
+            "to_value",
+            "kizen objects get <object>",
+            "an option name as the field lists it; a team member's UUID from "
+            "`kizen team search <name>`",
+        ),
+    ),
+    notes=(
+        "A match mode left out is stored as any_including_blank.",
+        "values_added, values_removed, contains_any_of and contains_none_of "
+        "are the server's enum but haven't been built from the CLI; check the "
+        "value shape on a read of a UI-built trigger first.",
+    ),
+    concepts=("field",),
+)
+
 _STEP_GUIDES: dict[str, Guide] = {
     "condition": _CONDITION,
     "create_related_entity": _CREATE_RELATED_ENTITY,
     "schedule_activity": _SCHEDULE_ACTIVITY,
     "search_records": _SEARCH_RECORDS,
 }
-_TRIGGER_GUIDES: dict[str, Guide] = {}
+_TRIGGER_GUIDES: dict[str, Guide] = {"field_updated": _FIELD_UPDATED}
 
 
 # ---------------------------------------------------------------------------

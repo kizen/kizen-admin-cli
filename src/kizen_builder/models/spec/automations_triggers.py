@@ -12,6 +12,31 @@ from kizen_builder.models.spec.automations_shared import (
     RawFilterConfig,
 )
 
+FieldChangeMatchMode = Literal[
+    "any_including_blank",
+    "any_excluding_blank",
+    "blank",
+    "specific_value",
+    "values_added",
+    "values_removed",
+    "date_between",
+    "contains_any_of",
+    "contains_none_of",
+]
+"""The server's `FromMatchModeEnum`/`ToMatchModeEnum`, the same list."""
+
+FieldChangeValue = str | int | float | bool | list[Any] | dict[str, Any]
+
+# A dropdown option's UUID reads back as {id, name} (confirmed live
+# 2026-11-16), and so does a team member's; date_between reads back as the
+# date range (tests/fixtures/automations/kitchen_sink_triggers.raw.json).
+_FIELD_CHANGE_VALUE = (
+    "The value its match mode compares with: an option's name or UUID (or a "
+    "list of them), a team member's or record's UUID, or for date_between "
+    '{"date_start", "date_end", "type": "date_range"}. Option names resolve '
+    "to their UUIDs."
+)
+
 
 class TriggerFieldUpdatedConfig(BaseModel):
     """Config for `trigger_type: field_updated`."""
@@ -25,10 +50,19 @@ class TriggerFieldUpdatedConfig(BaseModel):
         )
     )
     fire_on_create: bool = True
-    from_match_mode: str | None = None
-    to_match_mode: str | None = None
-    from_value: dict[str, Any] | None = None
-    to_value: dict[str, Any] | None = None
+    # Kizen stores any_including_blank for a mode left out.
+    from_match_mode: FieldChangeMatchMode | None = Field(
+        default=None, description="What the field held before the change."
+    )
+    to_match_mode: FieldChangeMatchMode | None = Field(
+        default=None, description="What the field holds after the change."
+    )
+    from_value: FieldChangeValue | None = Field(
+        default=None, description=_FIELD_CHANGE_VALUE
+    )
+    to_value: FieldChangeValue | None = Field(
+        default=None, description=_FIELD_CHANGE_VALUE
+    )
 
 
 class TriggerContactTagAddedRemovedConfig(BaseModel):

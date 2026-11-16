@@ -213,12 +213,15 @@ def test_guide_selectors_match_the_model_choices():
     )
 
 
-@pytest.mark.parametrize("type_name", sorted(step_catalog._STEP_GUIDES))
+_GUIDES = {**step_catalog._STEP_GUIDES, **step_catalog._TRIGGER_GUIDES}
+
+
+@pytest.mark.parametrize("type_name", sorted(_GUIDES))
 def test_every_guide_selector_matches_the_model(type_name):
     """Where the model types a selector, the guide offers exactly its
     choices, and every key an option needs is a key of the block."""
     fields = {f["path"]: f for f in step_catalog.describe(type_name)["fields"]}
-    for selector in step_catalog._STEP_GUIDES[type_name].selectors:
+    for selector in _GUIDES[type_name].selectors:
         choices = fields[selector.path].get("choices")
         if choices:
             assert {o.value for o in selector.options} == set(choices), selector.path
