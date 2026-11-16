@@ -130,8 +130,8 @@ sets a step's own severity. Omitted, a new step inherits and an `update`
 keeps an existing step's live severity. Confirmed live 2026-09-28.
 
 **Field references — two forms, don't mix them up:**
-- **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations)
-  uses the object-qualified `"<object_api>.<field_api>"`, resolved to this
+- **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations,
+  a team-member selector's `team_selector_field`) uses the object-qualified `"<object_api>.<field_api>"`, resolved to this
   business's UUID at apply time. A bare `field_id` UUID also works.
 - **Condition `filter_config` `field`** uses the **bare field api_name**
   (`account_region`), *not* object-qualified — it's the filter DSL, same as
@@ -1481,6 +1481,10 @@ message belongs to one automation. So the order is fixed:
 ```
 
 - `send_related_contact_email` takes the message as `email: {"id": <id>}`.
+- To email whoever a team-selector field names, set `team_member` (or
+  `cc_team_member`) to `{"type": "team_selector_field", "field_ref":
+  "<object>.<field>"}`. The CLI sends the field's UUID as `field_id`
+  (confirmed live 2026-11-16).
 - **Messages outlive their automation.** Deleting the automation leaves its
   messages bound to the deleted id, and Kizen answers a `DELETE` of one with
   405. A recreated automation can't use them, so it needs new ones (confirmed
@@ -1893,6 +1897,9 @@ name or UUID. `schedule.type` picks one of three shapes:
 | `with_delay` | a `with_delay` block |
 | `on_or_around_date` | an `on_or_around_date` block |
 
+The dry-run refuses any other `type`, a `type` without its block, and any
+value outside what the lists below allow.
+
 `skip_non_working_days` (bool) sits on `schedule` itself. This step schedules a
 Follow Up for the deal's owner two working days after the run:
 
@@ -1912,8 +1919,7 @@ Follow Up for the deal's owner two working days after the run:
 
 **`with_delay`:**
 
-- `delay_type` (required): `minute`, `hour` or `day`. `days` is a 400, and the
-  CLI's error lists the three.
+- `delay_type` (required): `minute`, `hour` or `day`.
 - `delay_value`: a whole number, 1 or more. `delay_value_type` is `static`
   (the default, read back when omitted) or `automation_variable`, which reads
   the number from `delay_variable: {"name": <variable>}`.
@@ -1927,8 +1933,9 @@ Follow Up for the deal's owner two working days after the run:
 
 **`on_or_around_date`:**
 
-- `field_id` (a date or datetime field's UUID) or `variable: {"name": …}`.
-  The CLI doesn't resolve names inside `schedule`, so give the UUID.
+- `field_ref` (a date or datetime field, as `<object>.<field>` or a bare
+  api_name) or `variable: {"name": …}`. The CLI resolves `field_ref` to the
+  wire's `field_id`; a `field_id` UUID works too.
 - `date_offset` (required): `on_day`, `on_day_and_time`, `days_before` or
   `days_after`, with `date_offset_days` 1 or more.
 - `time_offset`: `specific_time` (the default, with `time` as `HH:MM`),
@@ -1997,7 +2004,9 @@ owner, team_member, team_selector_field, last_active(_role), specific_role,
 team_member_from_variable, role_from_variable). Wire keys are
 `role_id`/`employee_id`/`employee_ids`/`field_id` — the same `*_id` dialect
 `assign_team_member` uses, and a live 400 caught the builder emitting bare
-`role`/`employee`/`field` here.
+`role`/`employee`/`field` here. `team_selector_field` takes the field as
+`field_ref` (`<object>.<field>`), which the CLI resolves to `field_id`, as
+it does in every team-member selector.
 
 But **`variable` must be an `{"id"|"name": …}` object** — not the bare name
 string this codebase's other variable references use. `assign_team_member` has a
@@ -2015,7 +2024,7 @@ and not the `team_member` selector's set on notify/send steps. Confirmed live
 | `round_robin_role` | `role_id` |
 | `round_robin_team_members` | `employee_ids` |
 | `round_robin_all` | — |
-| `team_selector_field` | `field_id`: a team-selector field on the automation's own object |
+| `team_selector_field` | `field_id` (or `field_ref`): a team-selector field on the automation's own object |
 | `related_team_selector_field` | **Both required**: `related_field_id` is a single-value relationship field on the automation's own object (the hop); `field_id` is the team-selector field on the object it points to |
 
 `owner`, `last_active`, `last_active_role` and `employees` are all valid on
