@@ -22,9 +22,12 @@ from kizen_builder.models.spec import AutomationDef
 from kizen_builder.tools import step_catalog
 from kizen_builder.tools.findings import Finding, SpecProblems
 from kizen_builder.tools.planners.automations import (
+    _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
     NO_MOVE_STAGE_STEP,
     _block_field_for,
+    _fan_out_warnings,
+    _unwrap_variable_name,
 )
 
 
@@ -38,7 +41,10 @@ class CheckedSpec:
 
 def check_automation(spec: Any) -> CheckedSpec:
     """Parse ``spec`` into an `AutomationDef`, or raise :class:`SpecProblems`
-    listing every problem found."""
+    listing every problem found. An `AutomationDef` passes as it is, with
+    the warnings the parsed model alone can give."""
+    if isinstance(spec, AutomationDef):
+        return CheckedSpec(spec, _fan_out(spec))
     if not isinstance(spec, dict):
         raise SpecProblems(
             [
@@ -52,6 +58,7 @@ def check_automation(spec: Any) -> CheckedSpec:
     steps: list[Any] = raw_steps if isinstance(raw_steps, list) else []
 
     errors: list[Finding] = []
+    warnings: list[Finding] = []
     errors.extend(_unwired_types(spec))
     auto: AutomationDef | None = None
     try:
@@ -62,13 +69,37 @@ def check_automation(spec: Any) -> CheckedSpec:
             for f in (_from_pydantic(err, spec) for err in e.errors())
             if f is not None
         )
+    errors.extend(_placeholders({k: v for k, v in spec.items() if k != "steps"}, ""))
+    declared = declared_variables(steps)
     for i, step in enumerate(steps):
-        errors.extend(_unread_block_keys(i, step))
+        step_errors, step_warnings = check_step(step, declared, index=i)
+        errors.extend(step_errors)
+        warnings.extend(step_warnings)
+    warnings.extend(_order_warnings(steps))
+    if auto is not None:
+        warnings.extend(_fan_out(auto))
 
     errors = _unique(errors)
     if errors or auto is None:
-        raise SpecProblems(errors)
-    return CheckedSpec(auto)
+        raise SpecProblems(errors, warnings)
+    return CheckedSpec(auto, warnings)
+
+
+def check_step(
+    step: Any, declared: dict[str, dict[str, Any]], *, index: int | None = None
+) -> tuple[list[Finding], list[Finding]]:
+    """The checks one step gets on its own: block keys nothing reads,
+    placeholders left in, variables nothing declares, and selector options
+    missing the keys they're written with. Returns ``(errors, warnings)``.
+    ``declared`` maps each variable name to its declaration."""
+    if not isinstance(step, dict):
+        return [], []
+    errors = [
+        *_unread_block_keys(index, step),
+        *_placeholders(step, "", _type_hint(step.get("step_type")), step, index),
+        *_variable_errors(index, step, declared),
+    ]
+    return errors, _selector_warnings(index, step)
 
 
 def _unique(findings: list[Finding]) -> list[Finding]:
@@ -148,14 +179,13 @@ def _from_pydantic(err: Any, spec: dict[str, Any]) -> Finding | None:
             where["hint"] = "kizen automations step-types show initialize_variable"
         else:
             message = "unknown key"
-            meant = _MEANT.get(key)
-            close = (
-                [meant]
-                if meant in allowed
-                else difflib.get_close_matches(key, allowed, n=1)
-            )
-            if close:
-                extra["suggestion"] = close[0]
+            # Typos of a common wrong name (`objct`) resolve through it.
+            meant = [
+                _MEANT.get(m, m)
+                for m in difflib.get_close_matches(key, [*allowed, *_MEANT], n=1)
+            ]
+            if meant and meant[0] in allowed:
+                extra["suggestion"] = meant[0]
     elif isinstance(got, (str, int, float, bool)):
         extra = {"got": got}
     return Finding(message, path=path, **where, **extra)
@@ -229,11 +259,11 @@ def _unwired_types(spec: dict[str, Any]) -> list[Finding]:
     return out
 
 
-def _unread_block_keys(index: int, step: Any) -> list[Finding]:
+def _unread_block_keys(index: int | None, step: dict[str, Any]) -> list[Finding]:
     """A block key the step's builder doesn't read would be dropped on
     write. The block models carry no aliases, so the keys given are the
     keys the planner checks."""
-    if not isinstance(step, dict) or step.get("step_type") not in _STEP_BUILDERS:
+    if step.get("step_type") not in _STEP_BUILDERS:
         return []
     step_type = step["step_type"]
     honoured = _STEP_BUILDERS[step_type].honoured_keys  # type: ignore[attr-defined]
@@ -255,3 +285,226 @@ def _unread_block_keys(index: int, step: Any) -> list[Finding]:
         )
         for key in sorted(set(block) - honoured)
     ]
+
+
+# ---------------------------------------------------------------------------
+# Placeholders
+# ---------------------------------------------------------------------------
+
+# A value made only of `<...>` slots, as `step-types` prints them:
+# `<activity api_name>`, `<object>.<date field>`. A closing tag or an email
+# address isn't one, and keys that hold HTML are skipped. The root folder
+# really is named `<business_root>`.
+_PLACEHOLDER = re.compile(r"[\w.]*(?:<[^<>/@]+>[\w.]*)+")
+_REAL_NAMES = frozenset({"<business_root>"})
+
+
+def _is_placeholder(value: str) -> bool:
+    return value not in _REAL_NAMES and bool(_PLACEHOLDER.fullmatch(value))
+
+
+def _placeholders(
+    node: Any,
+    path: str,
+    hint: str | None = None,
+    step: dict[str, Any] | None = None,
+    index: int | None = None,
+) -> list[Finding]:
+    if isinstance(node, dict):
+        return [
+            f
+            for k, v in node.items()
+            if "html" not in str(k)
+            for f in _placeholders(
+                v, f"{path}.{k}" if path else str(k), hint, step, index
+            )
+        ]
+    if isinstance(node, list):
+        return [
+            f
+            for i, v in enumerate(node)
+            for f in _placeholders(v, f"{path}[{i}]", hint, step, index)
+        ]
+    if not isinstance(node, str) or not _is_placeholder(node):
+        return []
+    step_type = (step or {}).get("step_type")
+    block_path = re.sub(r"\[\d+\]", "", path).partition(".")[2]
+    lookup = (
+        step_catalog.lookup_command(step_type, block_path)
+        if isinstance(step_type, str)
+        else None
+    )
+    return [
+        Finding(
+            "replace the placeholder with a real value",
+            path=path,
+            step=(step or {}).get("key") if step is not None else None,
+            index=index,
+            got=node,
+            hint=lookup or hint,
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Variables
+# ---------------------------------------------------------------------------
+
+# Variables only these types hold: `schedule_activity.target_variable` takes
+# the new activity's id (see `kizen docs show automation`).
+_ID_VARIABLE_TYPES = frozenset({"string", "uuid"})
+
+# step_type -> (dotted path to a variable reference, requirement). The
+# requirement is "" (any declared variable), "array", or "id".
+_VARIABLE_REFS: dict[str, tuple[tuple[str, str], ...]] = {
+    "schedule_activity": (
+        ("target_variable", "id"),
+        ("schedule.with_delay.delay_variable", ""),
+        ("schedule.on_or_around_date.variable", ""),
+        ("assigned_to.variable", ""),
+    ),
+    "search_records": (("destination_variable", "array"),),
+    "update_variable": (("variable", ""), ("sources[].variable", "")),
+    "initialize_variable": (("sources[].variable", ""),),
+    "call_llm": (("destinations[].variable", ""),),
+    "file_content_extraction": (("destinations[].variable", ""),),
+    "audio_transcription": (("destinations[].variable", ""),),
+    "code_step": (("inputs[].variable_name", ""), ("outputs[].variable_name", "")),
+    "plugin_code_step": (
+        ("inputs[].variable_name", ""),
+        ("outputs[].variable_name", ""),
+    ),
+}
+
+
+def declared_variables(steps: list[Any]) -> dict[str, dict[str, Any]]:
+    """Each variable an `initialize_variable` step declares, by name. Reads
+    spec steps (`step_type`) and wire steps (`type`) alike."""
+    declared: dict[str, dict[str, Any]] = {}
+    for s in steps:
+        if not isinstance(s, dict):
+            continue
+        if (s.get("step_type") or s.get("type")) != "initialize_variable":
+            continue
+        block = s.get("action_initialize_variable")
+        var = block.get("variable") if isinstance(block, dict) else None
+        if isinstance(var, dict) and isinstance(var.get("name"), str):
+            declared.setdefault(var["name"], var)
+    return declared
+
+
+def _dig(node: Any, path: str) -> list[tuple[str, Any]]:
+    """Values at a dotted path, with ``[]`` fanning out over a list. Returns
+    ``(concrete path, value)`` pairs for the values that are present."""
+    found: list[tuple[str, Any]] = [("", node)]
+    for part in path.split("."):
+        fan = part.endswith("[]")
+        name = part.removesuffix("[]")
+        nxt: list[tuple[str, Any]] = []
+        for prefix, value in found:
+            child = value.get(name) if isinstance(value, dict) else None
+            here = f"{prefix}.{name}" if prefix else name
+            if fan:
+                if isinstance(child, list):
+                    nxt.extend((f"{here}[{i}]", c) for i, c in enumerate(child))
+            elif child is not None:
+                nxt.append((here, child))
+        found = nxt
+    return found
+
+
+def _variable_errors(
+    index: int | None, step: dict[str, Any], declared: dict[str, dict[str, Any]]
+) -> list[Finding]:
+    step_type = step.get("step_type")
+    if not isinstance(step_type, str) or step_type not in _VARIABLE_REFS:
+        return []
+    block_field = _block_field_for(step_type)
+    block = step.get(block_field)
+    out: list[Finding] = []
+    for path, requirement in _VARIABLE_REFS[step_type]:
+        for where, value in _dig(block, path):
+            name = _unwrap_variable_name(value)
+            if not name or _is_placeholder(name):
+                continue
+            base: dict[str, Any] = {
+                "step": step.get("key"),
+                "index": index,
+                "path": f"{block_field}.{where}",
+                "got": name,
+            }
+            var = declared.get(name)
+            if var is None:
+                out.append(
+                    Finding(
+                        f"variable {name!r} is not declared by an "
+                        "initialize_variable step",
+                        **base,
+                        allowed=sorted(declared),
+                        suggestion=next(
+                            iter(difflib.get_close_matches(name, declared, n=1)),
+                            None,
+                        ),
+                        hint="kizen automations step-types show initialize_variable",
+                    )
+                )
+            elif requirement == "array" and not var.get("is_array"):
+                out.append(
+                    Finding(f"variable {name!r} must be an array variable", **base)
+                )
+            elif requirement == "id" and (
+                var.get("is_array") or var.get("data_type") not in _ID_VARIABLE_TYPES
+            ):
+                out.append(
+                    Finding(
+                        f"variable {name!r} must be a single string or uuid "
+                        f"variable; it is declared as {var.get('data_type')!r}",
+                        **base,
+                    )
+                )
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Warnings: selector companions, step order, fan-out
+# ---------------------------------------------------------------------------
+
+
+def _selector_warnings(index: int | None, step: dict[str, Any]) -> list[Finding]:
+    step_type = step.get("step_type")
+    if not isinstance(step_type, str) or step_type not in step_catalog.STEP_TYPES:
+        return []
+    if step_type in _CONFIGLESS_STEP_TYPES:
+        return []
+    block_field = _block_field_for(step_type)
+    block = step.get(block_field)
+    if not isinstance(block, dict):
+        return []
+    return [
+        Finding(
+            f["message"],
+            path=f"{block_field}.{f['path']}",
+            step=step.get("key"),
+            index=index,
+            hint=_type_hint(step_type),
+        )
+        for f in step_catalog.selector_findings(step_type, block)
+    ]
+
+
+def _order_warnings(steps: list[Any]) -> list[Finding]:
+    raw = [s.get("order") if isinstance(s, dict) else None for s in steps]
+    orders = [o for o in raw if isinstance(o, int)]
+    if len(orders) != len(raw) or sorted(orders) == list(range(len(orders))):
+        return []  # the model reports a missing or non-integer order
+    return [
+        Finding(
+            f"step orders should run 0 to {len(orders) - 1} with no gaps or "
+            f"duplicates; got {sorted(orders)}",
+            path="steps",
+        )
+    ]
+
+
+def _fan_out(auto: AutomationDef) -> list[Finding]:
+    return [Finding(w) for w in _fan_out_warnings(auto)]

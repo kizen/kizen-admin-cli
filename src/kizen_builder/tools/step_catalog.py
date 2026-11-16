@@ -12,6 +12,7 @@ needs. `tests/test_step_catalog.py` runs every block through the model.
 from __future__ import annotations
 
 import difflib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -779,3 +780,80 @@ def skeleton(target_object: str | None = None) -> dict[str, Any]:
             }
         ],
     }
+
+
+def lookup_command(type_name: str, path: str) -> str | None:
+    """The command that lists candidates for a block path, if the type's
+    guide names one."""
+    guide = _STEP_GUIDES.get(type_name)
+    for lk in guide.lookups if guide else ():
+        if lk.path == path:
+            return lk.command
+    return None
+
+
+def _has(node: dict[str, Any], key: str) -> bool:
+    """Whether a block carries ``key``, under that name or the one a live
+    read gives it (`employee_id` reads back as `employee`)."""
+    base = re.sub(r"_(id|ref)(s?)$", r"\2", key)
+    names = {key, base, f"{base}_id", f"{base}_ref"}
+    return any(node.get(k) not in (None, [], "") for k in names)
+
+
+def selector_findings(type_name: str, block: dict[str, Any]) -> list[dict[str, Any]]:
+    """Where a step block picks a selector option but leaves out a key that
+    option is written with, or names an option's keys without picking one.
+    Advisory: the guide records how an option is normally written, not what
+    the server refuses."""
+    guide = _STEP_GUIDES.get(type_name)
+    findings: list[dict[str, Any]] = []
+    for selector in guide.selectors if guide else ():
+        *parents, leaf = selector.path.split(".")
+        node: Any = block
+        for part in parents:
+            node = node.get(part) if isinstance(node, dict) else None
+        if not isinstance(node, dict):
+            continue
+        parent = ".".join(parents)
+        value = node.get(leaf)
+        if value is None and leaf == "assignment_type":
+            value = node.get("type")
+        if value is None and selector.default is None:
+            fits = [
+                o.value
+                for o in selector.options
+                if o.needs and all(_has(node, n) for n in o.needs)
+            ]
+            if fits:
+                named = sorted(
+                    {n for o in selector.options if o.value in fits for n in o.needs}
+                )
+                findings.append(
+                    {
+                        "path": selector.path,
+                        "message": (
+                            f"{', '.join(repr(n) for n in named)} is given but "
+                            f"{selector.path} isn't; set it to "
+                            + " or ".join(repr(v) for v in fits)
+                        ),
+                    }
+                )
+            continue
+        value = value if value is not None else selector.default
+        option = next((o for o in selector.options if o.value == value), None)
+        if option is None:
+            continue
+        missing = [n for n in option.needs if not _has(node, n)]
+        if missing:
+            findings.append(
+                {
+                    "path": ".".join([*parents, missing[0]]),
+                    "message": (
+                        f"{selector.path} '{value}' is written with "
+                        f"{', '.join(repr(m) for m in missing)}"
+                        + (f" in '{parent}'" if parent else "")
+                        + (f" ({option.note})" if option.note else "")
+                    ),
+                }
+            )
+    return findings

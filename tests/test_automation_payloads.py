@@ -4273,6 +4273,25 @@ def test_preview_warns_about_rules_saved_without_the_editor_layout(
             },
         }
     )
+    spec["steps"][0].update(parent_key="init", order=1)
+    spec["steps"][1]["order"] = 2
+    spec["steps"].insert(
+        0,
+        {
+            "key": "init",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "action_initialize_variable": {
+                "sources": [],
+                "variable": {
+                    "name": "found",
+                    "data_type": "entity",
+                    "data_subtype": patients["id"],
+                    "is_array": True,
+                },
+            },
+        },
+    )
     assert plan_create_automation(spec).operations[0].preview["warnings"] == [
         "step 'check': the rule on 'mrn' (text, starts_with) is saved without the "
         "Kizen editor's layout, so the editor may not show it. It still runs.",

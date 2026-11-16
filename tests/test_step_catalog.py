@@ -136,6 +136,37 @@ def test_unknown_variant_names_the_variants():
         step_catalog.variant_spec("delay", "nope")
 
 
+@pytest.mark.parametrize(
+    ("type_name", "guide"),
+    list(step_catalog._STEP_GUIDES.items()),
+    ids=list(step_catalog._STEP_GUIDES),
+)
+def test_guide_blocks_raise_no_selector_findings(type_name, guide):
+    for variant in guide.variants:
+        assert step_catalog.selector_findings(type_name, variant.block) == []
+
+
+def test_selector_findings_accept_the_live_read_spelling():
+    block = {
+        "assigned_to": {"assignment_type": "team_member", "employee": {"id": "x"}},
+        "schedule": {"type": "immediately"},
+    }
+    assert step_catalog.selector_findings("schedule_activity", block) == []
+    block["assigned_to"] = {"type": "team_member"}
+    (finding,) = step_catalog.selector_findings("schedule_activity", block)
+    assert finding["path"] == "assigned_to.employee_id"
+
+
+def test_an_id_key_without_its_selector_names_the_options_it_fits():
+    block = {"assigned_to": {"role_id": "x"}, "schedule": {"type": "immediately"}}
+    (finding,) = step_catalog.selector_findings("schedule_activity", block)
+    assert finding["path"] == "assigned_to.assignment_type"
+    assert finding["message"] == (
+        "'role_id' is given but assigned_to.assignment_type isn't; set it to "
+        "'specific_role' or 'round_robin_role' or 'last_active_role'"
+    )
+
+
 def test_guide_selectors_match_the_model_choices():
     """A guide can't offer an option the model refuses, or leave one out."""
     fields = {

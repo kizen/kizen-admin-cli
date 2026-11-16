@@ -47,7 +47,7 @@ import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kizen_builder.config import load_env_config
 from kizen_builder.filtering import VariableReferenceError
@@ -62,9 +62,13 @@ from kizen_builder.models.spec.automations_triggers import (
 )
 from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
+from kizen_builder.tools.findings import Finding
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 from kizen_builder.utils import is_uuid, match_option
+
+if TYPE_CHECKING:
+    from kizen_builder.tools.automation_check import CheckedSpec
 
 # ---------------------------------------------------------------------------
 # Live-context cache (fetched once per plan call)
@@ -353,7 +357,8 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     references, and refuses if an automation with the same api_name is
     already present.
     """
-    auto = _checked(automation)
+    checked = _checked(automation)
+    auto = checked.auto
     ctx = LiveContext()
     env = ctx.env
 
@@ -383,7 +388,7 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
                 kind="automation",
                 key=auto.api_name,
                 preview={
-                    **_automation_preview(env, auto, payload, ctx),
+                    **_automation_preview(env, auto, payload, ctx, checked),
                     **_folder_preview(auto, ctx),
                 },
                 payload=payload,
@@ -394,7 +399,8 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
 
 def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     """Plan an update to an existing automation."""
-    auto = _checked(automation)
+    checked = _checked(automation)
+    auto = checked.auto
     ctx = LiveContext()
     env = ctx.env
 
@@ -421,7 +427,9 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     auto = auto.model_copy(update={"active": resolved_active})
 
     payload, keeps_live = _update_payload(auto, ctx, current)
-    preview = _automation_preview(env, auto, payload, ctx, live_active=live_active)
+    preview = _automation_preview(
+        env, auto, payload, ctx, checked, live_active=live_active
+    )
     preview.update(_folder_preview(auto, ctx, current))
     preview["current_revision"] = current.get("revision")
     if keeps_live:
@@ -442,14 +450,12 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     )
 
 
-def _checked(automation: dict[str, Any] | AutomationDef) -> AutomationDef:
+def _checked(automation: dict[str, Any] | AutomationDef) -> CheckedSpec:
     """The spec parsed, after the offline checks: a malformed spec raises
     `SpecProblems` with every problem, before any live call."""
-    if isinstance(automation, AutomationDef):
-        return automation
     from kizen_builder.tools.automation_check import check_automation
 
-    return check_automation(automation).auto
+    return check_automation(automation)
 
 
 def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any]:
@@ -964,6 +970,7 @@ def _automation_preview(
     auto: AutomationDef,
     payload: dict[str, Any],
     ctx: LiveContext,
+    checked: CheckedSpec,
     *,
     live_active: bool | None = None,
 ) -> dict[str, Any]:
@@ -985,7 +992,10 @@ def _automation_preview(
             else "ACTIVATES an inactive automation"
         )
         active_display = f"{live_active} → {auto.active} ({direction})"
-    warnings = [*_fan_out_warnings(auto), *_unlaid_rule_warnings(auto, payload, ctx)]
+    warnings = [
+        *(_warning_line(f) for f in checked.warnings),
+        *_unlaid_rule_warnings(auto, payload, ctx),
+    ]
     return {
         "env": env,
         "api_name": auto.api_name,
@@ -997,6 +1007,10 @@ def _automation_preview(
         "step_count": len(auto.steps),
         **({"warnings": warnings} if warnings else {}),
     }
+
+
+def _warning_line(f: Finding) -> str:
+    return f"{f.text()} (see: {f.hint})" if f.hint else f.text()
 
 
 def _folder_preview(
