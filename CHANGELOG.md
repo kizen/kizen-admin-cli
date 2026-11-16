@@ -66,6 +66,19 @@ called out explicitly under **Changed** or **Removed**.
   before, and the server answered with *"field_id is required"*;
   `assign_team_member` refused it at plan time. `schedule.on_or_around_date`
   takes `field_ref` too. A `field_id` beside it still wins.
+- **A code step's `related_field` input or output on a to-many relationship
+  fails the dry-run.** The server refused it with *"The field must not allow
+  multiple values"*. The finding says to read the relationship with
+  `input_type: field` and `is_list: true`, or to write with
+  `modify_related_entities`. `related_field` also takes `related_field_ref`
+  and an `object.field` ref.
+- **An entity variable's `data_subtype` takes the object's api_name; a
+  missing one fails the dry-run.** The server wanted the UUID and answered an
+  api_name with *"is not a valid UUID"*.
+- **A date schedule or date trigger with no `time` fails the dry-run.** A
+  schedule's `on_or_around_date` needs `time` unless `time_offset` is not
+  `specific_time` or `date_offset` is `on_day_and_time`; a trigger needs
+  `time` and `period` unless it's `on_day_and_time`. Each was a 400 before.
 
 ## [0.7.0] — 2026-11-16
 

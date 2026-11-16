@@ -700,8 +700,8 @@ at a time of day. This one fires three days before each deal's close date, at
 | `field_ref` | `"object.field"`, or a bare field name on `target_object` (sent as `field_id`) | required |
 | `date_offset` | `on_day`, `on_day_and_time`, `days_before`, `days_after` | required |
 | `date_offset_days` | 0 or more | `0` |
-| `time` | `hh:mm` on a 12-hour clock: `09:00`, `05:00` | required |
-| `period` | `am` or `pm` | required |
+| `time` | `hh:mm` on a 12-hour clock: `09:00`, `05:00` | required unless `on_day_and_time` |
+| `period` | `am` or `pm` | required unless `on_day_and_time` |
 | `every_year` | bool | `false` |
 | `skip_non_working_days` | bool | `null` |
 | `past_date_action` | `proceed_down_met_path`, `proceed_down_not_met_path`, `wait_for_not_met_path_delay` | `proceed_down_met_path` |
@@ -709,8 +709,8 @@ at a time of day. This one fires three days before each deal's close date, at
 - `"09:00:00"` and `"21:00"` are each a 400: "Time has wrong format. Use one of
   these formats instead: hh:mm." Write 9 pm as `"09:00"` with `"pm"`.
 - `time` without `period` is a 400 ("This field is required."), and so is a
-  trigger with neither. Kizen's schema says `period` doesn't apply with
-  `on_day_and_time`; that case is unprobed.
+  trigger with neither; the dry-run refuses both. `on_day_and_time` takes
+  the time from the field and needs neither. Confirmed live 2026-11-16.
 
 Confirmed live 2026-10-30: four configs saved and read back as sent, with the
 defaults above filled in. A date trigger fires only on its date, so no run of
@@ -760,13 +760,19 @@ Each entry in `action_code_step.inputs`/`.outputs` picks its shape via
 | `field` (default) | `{"field": {"id": <uuid>}}` | From `field_ref` (`"object.field"`, resolved at apply time), `field_id`, or a raw `field` UUID — first one present wins. |
 | `variable` | `{"variable": {"name": <name>}}` | From `variable_name` or a `variable` dict/string. |
 | `static_value` | `{"static_value": {"value": ..., "entity_record": ..., "employee": ...}}` | `static_value` may be the literal value directly, or a dict with those three keys for the richer forms. |
-| `related_field` | `{"field": {"id": <uuid>}, "related_field": {"id": <uuid>}}` | **Both required**: `field` is the relationship field on the automation's own object (the hop); `related_field` is the field on the object it points to. |
+| `related_field` | `{"field": {"id": <uuid>}, "related_field": {"id": <uuid>}}` | **Both required**: `field` is the relationship field on the automation's own object (the hop), from `field_ref`, `field_id` or `field`; `related_field` (or `related_field_ref`) is the field on the object it points to, as a UUID or `"object.field"`. The hop must be single-value (`many_to_one` or `one_to_one`); a to-many hop is a 400 and the dry-run refuses it. Confirmed live 2026-11-16. |
 
 `output_type` is the same enum minus `static_value` (an output can't be a
 literal): `field` (default), `variable`, `related_field` — same wire shapes
 as their `input_type` counterparts. `inputs`/`outputs` entries also accept
 `data_type` and `is_list` when the script needs to declare a type/array
 explicitly rather than inferring it from the bound field.
+
+To read the records on a to-many relationship, bind the relationship itself:
+`{"name": "conditions", "input_type": "field", "field_ref":
+"encounters.conditions", "data_type": "entity", "is_list": true}`. The script
+gets the related records' ids. To write to them, use a
+`modify_related_entities` step. Confirmed live 2026-11-16.
 
 For the Python side — the `inputs.` / `outputs.` / `secrets[…]` / `kizen.api`
 namespace, how each `data_type` arrives inside the script, and unit-testing a
@@ -1521,6 +1527,10 @@ Confirmed live 2026-10-30, in this order.
   else is a spec error. The server answers an unknown type with a bare HTTP
   500, confirmed live 2026-10-14. Only `string`, `uuid` and `entity`
   variables can be arrays.
+- **An `entity` variable needs `data_subtype`**: the object its records
+  belong to, as an api_name (`"patients"`) or UUID. The CLI sends the UUID;
+  the server 400s on an api_name or a missing one. Confirmed live
+  2026-11-16.
 - **Unknown keys in `variable`** are a spec error, because the server drops
   them silently (`isArray` saved a scalar). Confirmed live 2026-10-14.
 - **String, UUID and entity arrays** are a variable with `is_array: true`,
@@ -1932,7 +1942,11 @@ Follow Up for the deal's owner two working days after the run:
   `days_after`, with `date_offset_days` 1 or more.
 - `time_offset`: `specific_time` (the default, with `time` as `HH:MM`),
   `from_field`, `from_variable`, `hours_before`, `hours_after`,
-  `minutes_before` or `minutes_after`.
+  `minutes_before` or `minutes_after`. A left-out `time_offset` is
+  `specific_time`, so `time` is required unless the `time_offset` is another
+  one; the server 400s without it and the dry-run refuses it.
+  `on_day_and_time` takes the time from the field and ignores `time_offset`.
+  Confirmed live 2026-11-16.
 - `{"field_id": "<start date field uuid>", "date_offset": "days_after",
   "date_offset_days": 1, "time_offset": "specific_time", "time": "10:00"}` on a
   record starting 2026-11-16 was due 2026-11-17 at 10:00 in the business's
