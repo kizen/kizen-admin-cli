@@ -576,8 +576,8 @@
 │                       trace (`--no-steps` for summary only, `--wait` to block until it           │
 │                       finishes); `logs <id>` prints each step's `detailed_log`. Mirrors `gh run  │
 │                       list` / `gh run view`.                                                     │
-│ step-types            What each automation step type takes: its config block, fields, choices,   │
-│                       and a step to start from. No live env needed.                              │
+│ step-types            What each automation step and trigger type takes: its config block,        │
+│                       fields, choices, and an entry to start from. No live env needed.           │
 │ folders               Automation folders, for organization.                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1140,18 +1140,20 @@
                                                                                                     
  Usage: automations step-types [OPTIONS] COMMAND [ARGS]...                                          
                                                                                                     
- What each automation step type takes: its config block, fields, choices, and a step to start from. 
- No live env needed.                                                                                
+ What each automation step and trigger type takes: its config block, fields, choices, and an entry  
+ to start from. No live env needed.                                                                 
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ list      List every step type this CLI can write.                                               │
-│ show      Show one step type: steps to start from, the keys each choice needs,                   │
-│           every field, and the values to look up first.                                          │
+│ list      List every step and trigger type this CLI can write.                                   │
+│ show      Show one step or trigger type: entries to start from, the keys each                    │
+│           choice needs, every field, and the values to look up first.                            │
 │ concepts  The ideas most step types share: who, when, variables, fields, value                   │
 │           sources, filters, merge fields.                                                        │
+│ skeleton  Print a minimal automation spec as JSON: name, api_name, type,                         │
+│           target_object, a manual trigger and one step. Add steps from `show`.                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: automations step-types concepts [OPTIONS]                                                   
@@ -1169,7 +1171,7 @@
                                                                                                     
  Usage: automations step-types list [OPTIONS]                                                       
                                                                                                     
- List every step type this CLI can write.                                                           
+ List every step and trigger type this CLI can write.                                               
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --output  -o      <str>  Output format: table (default), json, or csv.                           │
@@ -1182,17 +1184,30 @@
                                                                                                     
  Usage: automations step-types show [OPTIONS] {TYPE}                                                
                                                                                                     
- Show one step type: steps to start from, the keys each choice needs, every field, and the values   
- to look up first.                                                                                  
+ Show one step or trigger type: entries to start from, the keys each choice needs, every field, and 
+ the values to look up first.                                                                       
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
-│ *    TYPE      <str>  A step type, from `step-types list`. [required]                            │
+│ *    TYPE      <str>  A step or trigger type, from `step-types list`. [required]                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --variant        <str>  Print only this variant's step as JSON, ready for a spec file or `steps  │
-│                         add`.                                                                    │
+│ --variant        <str>  Print only this variant's entry as JSON, ready for a spec file (or       │
+│                         `steps add`, for a step).                                                │
 │ --json                  Emit everything as JSON, with the JSON Schema.                           │
 │ --help                  Show this message and exit.                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+                                                                                                    
+                                                                                                    
+ Usage: automations step-types skeleton [OPTIONS]                                                   
+                                                                                                    
+ Print a minimal automation spec as JSON: name, api_name, type, target_object, a manual trigger and 
+ one step. Add steps from `show`.                                                                   
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --object        <str>  The automation's target_object api_name.                                  │
+│ --help                 Show this message and exit.                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
@@ -5204,6 +5219,9 @@
 
 
 ===== automations step-types show =====
+
+
+===== automations step-types skeleton =====
 
 
 ===== automations steps =====

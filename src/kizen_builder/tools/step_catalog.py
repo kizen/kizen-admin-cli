@@ -1,5 +1,6 @@
-"""What a spec author needs to write one automation step, with no live
-environment: the config block, its fields and choices, and a step to copy.
+"""What a spec author needs to write one automation step or trigger, with no
+live environment: the config block, its fields and choices, an entry to copy,
+and a whole automation to start from.
 
 Everything here derives from the planner registries and the spec models, so
 it can't describe a type the CLI doesn't wire or a field the model doesn't
@@ -10,17 +11,26 @@ needs. `tests/test_step_catalog.py` runs every block through the model.
 
 from __future__ import annotations
 
+import difflib
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel
 
 from kizen_builder.models.spec.automations import AutomationStepDef
+from kizen_builder.models.spec.automations_triggers import (
+    AutomationTriggerDef,
+    trigger_config_field,
+)
 from kizen_builder.tools.planners.automations import (
     _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
+    _TRIGGER_BUILDERS,
     KNOWN_ENUM_CHOICES,
+    KNOWN_ENUM_CHOICES_TRIGGERS,
     STEP_PURPOSES,
+    TRIGGER_PURPOSES,
     KnownChoices,
     _block_field_for,
 )
@@ -28,10 +38,17 @@ from kizen_builder.tools.planners.automations import (
 # Step types that take no config block are wired in `_build_step_payload`, not
 # in `_STEP_BUILDERS`.
 STEP_TYPES: tuple[str, ...] = tuple(sorted({*_STEP_BUILDERS, *_CONFIGLESS_STEP_TYPES}))
+TRIGGER_TYPES: tuple[str, ...] = tuple(sorted(_TRIGGER_BUILDERS))
+
+# Names agents reach for that aren't wired, and the wired types they mean.
+ALIASES: dict[str, tuple[str, ...]] = {
+    "create_activity": ("schedule_activity",),
+    "send_email": ("notify_member_via_email", "send_related_contact_email"),
+}
 
 
 class UnknownType(LookupError):
-    """Not a step type this CLI wires."""
+    """Not a step or trigger type this CLI wires."""
 
 
 # ---------------------------------------------------------------------------
@@ -369,10 +386,11 @@ _CREATE_RELATED_ENTITY = Guide(
     concepts=("field", "variable", "merge-fields"),
 )
 
-_GUIDES: dict[str, Guide] = {
+_STEP_GUIDES: dict[str, Guide] = {
     "create_related_entity": _CREATE_RELATED_ENTITY,
     "schedule_activity": _SCHEDULE_ACTIVITY,
 }
+_TRIGGER_GUIDES: dict[str, Guide] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -380,17 +398,77 @@ _GUIDES: dict[str, Guide] = {
 # ---------------------------------------------------------------------------
 
 
-def _block_field(type_name: str) -> str | None:
+def _step_block_field(type_name: str) -> str | None:
     if type_name in _CONFIGLESS_STEP_TYPES:
         return None
     return _block_field_for(type_name)
 
 
-def _block_model(type_name: str) -> type[BaseModel] | None:
+def _step_entry(type_name: str) -> dict[str, Any]:
+    return {"key": type_name, "parent_key": None, "step_type": type_name, "order": 0}
+
+
+def _trigger_entry(type_name: str) -> dict[str, Any]:
+    return {"trigger_type": type_name, "order": 0}
+
+
+@dataclass(frozen=True)
+class _Kind:
+    name: str  # "step" | "trigger"
+    types: tuple[str, ...]
+    envelope: type[BaseModel]
+    block_field: Callable[[str], str | None]
+    entry: Callable[[str], dict[str, Any]]
+    purposes: dict[str, str]
+    guides: dict[str, Guide]
+    known: dict[str, dict[str, KnownChoices]]
+
+
+_STEP = _Kind(
+    "step",
+    STEP_TYPES,
+    AutomationStepDef,
+    _step_block_field,
+    _step_entry,
+    STEP_PURPOSES,
+    _STEP_GUIDES,
+    KNOWN_ENUM_CHOICES,
+)
+_TRIGGER = _Kind(
+    "trigger",
+    TRIGGER_TYPES,
+    AutomationTriggerDef,
+    trigger_config_field,
+    _trigger_entry,
+    TRIGGER_PURPOSES,
+    _TRIGGER_GUIDES,
+    KNOWN_ENUM_CHOICES_TRIGGERS,
+)
+# No step and trigger share a name; a test keeps it that way, so a name alone
+# finds its kind.
+_KINDS = (_STEP, _TRIGGER)
+
+
+def _kind_of(type_name: str) -> _Kind:
+    for kind in _KINDS:
+        if type_name in kind.types:
+            return kind
+    wired = [*STEP_TYPES, *TRIGGER_TYPES]
+    close = difflib.get_close_matches(type_name, wired, n=3)
+    meant = list(dict.fromkeys([*ALIASES.get(type_name, ()), *close]))
+    hint = (
+        f"Did you mean {' or '.join(repr(m) for m in meant)}?"
+        if meant
+        else "`kizen automations step-types list` lists every type."
+    )
+    raise UnknownType(f"'{type_name}' is not a wired step or trigger type. {hint}")
+
+
+def _block_model(kind: _Kind, type_name: str) -> type[BaseModel] | None:
     """The spec model of a type's config block, or None when the block is
     untyped or the type has none."""
-    field = _block_field(type_name)
-    info = AutomationStepDef.model_fields.get(field) if field else None
+    field = kind.block_field(type_name)
+    info = kind.envelope.model_fields.get(field) if field else None
     if info is None:
         return None
     for candidate in (info.annotation, *getattr(info.annotation, "__args__", ())):
@@ -490,47 +568,50 @@ def _placeholder_block(schema: dict[str, Any], node: dict[str, Any]) -> dict[str
     return out
 
 
-def _as_step(type_name: str, block: dict[str, Any] | None) -> dict[str, Any]:
-    """A whole step entry, as it sits in a spec's `steps` list."""
-    step: dict[str, Any] = {
-        "key": type_name,
-        "parent_key": None,
-        "step_type": type_name,
-        "order": 0,
-    }
-    field = _block_field(type_name)
+def _as_entry(
+    kind: _Kind, type_name: str, block: dict[str, Any] | None
+) -> dict[str, Any]:
+    """A whole step or trigger entry, as it sits in a spec's `steps` or
+    `triggers` list."""
+    entry = kind.entry(type_name)
+    field = kind.block_field(type_name)
     if field and block is not None:
-        step[field] = block
-    return step
+        entry[field] = block
+    return entry
 
 
 def list_types() -> list[dict[str, Any]]:
-    """Every wired type with its config block, for `step-types list`."""
+    """Every wired step and trigger type, for `step-types list`."""
     return [
         {
             "type": t,
-            "block": _block_field(t),
-            "purpose": STEP_PURPOSES[t],
-            "variants": [v.name for v in _GUIDES[t].variants] if t in _GUIDES else [],
+            "kind": kind.name,
+            "block": kind.block_field(t),
+            "purpose": kind.purposes[t],
+            "variants": (
+                [v.name for v in kind.guides[t].variants] if t in kind.guides else []
+            ),
         }
-        for t in STEP_TYPES
+        for kind in _KINDS
+        for t in kind.types
     ]
 
 
 def describe(type_name: str) -> dict[str, Any]:
     """All the catalog holds on one type. Raises :class:`UnknownType`."""
-    if type_name not in STEP_TYPES:
-        raise UnknownType(
-            f"'{type_name}' is not a wired step type. Wired: {', '.join(STEP_TYPES)}"
-        )
-    model = _block_model(type_name)
+    kind = _kind_of(type_name)
+    model = _block_model(kind, type_name)
     schema = model.model_json_schema() if model else None
-    guide = _GUIDES.get(type_name)
-    block_field = _block_field(type_name)
+    guide = kind.guides.get(type_name)
+    block_field = kind.block_field(type_name)
 
     if guide:
         variants = [
-            {"name": v.name, "summary": v.summary, "spec": _as_step(type_name, v.block)}
+            {
+                "name": v.name,
+                "summary": v.summary,
+                "spec": _as_entry(kind, type_name, v.block),
+            }
             for v in guide.variants
         ]
     else:
@@ -543,19 +624,18 @@ def describe(type_name: str) -> dict[str, Any]:
             {
                 "name": "minimal",
                 "summary": "Required keys only." if block else "No required keys.",
-                "spec": _as_step(type_name, block),
+                "spec": _as_entry(kind, type_name, block),
             }
         ]
 
     out: dict[str, Any] = {
         "type": type_name,
-        "purpose": STEP_PURPOSES[type_name],
+        "kind": kind.name,
+        "purpose": kind.purposes[type_name],
         "block": block_field,
         "variants": variants,
         "fields": (
-            _fields(schema, schema, KNOWN_ENUM_CHOICES.get(type_name, {}))
-            if schema
-            else []
+            _fields(schema, schema, kind.known.get(type_name, {})) if schema else []
         ),
         "doc": guide.doc if guide else "kizen docs show automation",
     }
@@ -592,10 +672,33 @@ def describe(type_name: str) -> dict[str, Any]:
 
 
 def variant_spec(type_name: str, variant: str) -> dict[str, Any]:
-    """One variant's step entry, ready for a spec file or `steps add`."""
+    """One variant's entry, ready for a spec file (or `steps add`, for a step)."""
     info = describe(type_name)
     for v in info["variants"]:
         if v["name"] == variant:
             return dict(v["spec"])
     names = ", ".join(v["name"] for v in info["variants"])
     raise UnknownType(f"'{type_name}' has no variant '{variant}'. Variants: {names}")
+
+
+def skeleton(target_object: str | None = None) -> dict[str, Any]:
+    """A minimal automation: the envelope, a manual trigger and one step."""
+    obj = target_object or "my_object"
+    return {
+        "name": "<automation name>",
+        "api_name": "my_automation",
+        "type": "record_based",
+        "target_object": obj,
+        "active": False,
+        "triggers": [_as_entry(_TRIGGER, "manual", {})],
+        "steps": [
+            {
+                **_step_entry("change_field_value"),
+                "key": "set_field",
+                "action_change_field_value": {
+                    "field_ref": f"{obj}.<field api_name>",
+                    "specific_field_value": "<value>",
+                },
+            }
+        ],
+    }

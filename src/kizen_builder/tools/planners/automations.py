@@ -1785,6 +1785,22 @@ _TRIGGER_BUILDERS: dict[str, Any] = {
     "stage_updated": _trigger_stage_updated,
 }
 
+# One line per wired trigger type, for `kizen automations step-types list`.
+TRIGGER_PURPOSES: dict[str, str] = {
+    "manual": "a user starts it on a record",
+    "new_entity_created": "a record is created",
+    "activity_logged": "an activity of a given type is logged",
+    "on_or_around_date": "a date field on the record comes around",
+    "webhook": "an external system calls its URL",
+    "field_updated": "a field on the record changes",
+    "schedule": "a recurring schedule (an rrule)",
+    "scheduled_activity_overdue": "a scheduled activity goes overdue",
+    "form_submitted": "a form on the target object is submitted",
+    "survey_submitted": "a survey on the target object is submitted",
+    "email_received": "the Contact emails in (Contact automations only)",
+    "stage_updated": "a record moves between stages (pipelines only)",
+}
+
 
 # ---------------------------------------------------------------------------
 # Known enum choices — enriching a real 400, not rejecting a spec value

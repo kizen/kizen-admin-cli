@@ -1,4 +1,5 @@
-"""`kizen automations step-types`: what each step's config block takes.
+"""`kizen automations step-types`: what each step's and trigger's config
+block takes, and a whole automation to start from.
 
 Nothing here touches an environment. It prints the catalog in
 `tools/step_catalog.py`.
@@ -24,8 +25,8 @@ _EPILOG = "Spec shape (an AutomationDef: triggers + step graph): see `kizen docs
 
 types_app = typer.Typer(
     help=(
-        "What each automation step type takes: its config block, fields, "
-        "choices, and a step to start from. No live env needed."
+        "What each automation step and trigger type takes: its config block, "
+        "fields, choices, and an entry to start from. No live env needed."
     ),
     no_args_is_help=True,
 )
@@ -51,9 +52,9 @@ def _unknown(e: step_catalog.UnknownType) -> typer.Exit:
 
 
 def _print_type(info: dict[str, Any]) -> None:
-    name = info["type"]
+    kind, name = info["kind"], info["type"]
     echo = typer.echo
-    echo(f"{name}: {info['purpose']}")
+    echo(f"{name} ({kind}): {info['purpose']}")
     echo(
         f"config block: {info['block']}"
         if info["block"]
@@ -104,7 +105,7 @@ def _print_type(info: dict[str, Any]) -> None:
             + "  (kizen automations step-types concepts)"
         )
     echo(
-        f"\nOne step alone: kizen automations step-types show {name} "
+        f"\nOne {kind} alone: kizen automations step-types show {name} "
         "--variant <name>\n"
         f"Full schema: --json.  Quirks and wire format: {info['doc']}"
     )
@@ -112,17 +113,21 @@ def _print_type(info: dict[str, Any]) -> None:
 
 @types_app.command("list", epilog=_EPILOG)
 def types_list(output: str = OUTPUT_OPTION, json_out: bool = JSON_OPTION) -> None:
-    """List every step type this CLI can write."""
+    """List every step and trigger type this CLI can write."""
     fmt = out.resolve_format(output, json_out)
     rows = step_catalog.list_types()
 
     def table() -> None:
-        t = Table(title="Step types")
-        for column in ("type", "block", "purpose", "variants"):
+        t = Table(title="Step and trigger types")
+        for column in ("type", "kind", "block", "purpose", "variants"):
             t.add_column(column)
         for r in rows:
             t.add_row(
-                r["type"], r["block"] or "", r["purpose"], ", ".join(r["variants"])
+                r["type"],
+                r["kind"],
+                r["block"] or "",
+                r["purpose"],
+                ", ".join(r["variants"]),
             )
         console.print(t)
         console.print("One type in full: kizen automations step-types show <type>")
@@ -134,6 +139,7 @@ def types_list(output: str = OUTPUT_OPTION, json_out: bool = JSON_OPTION) -> Non
         csv_rows=rows,
         csv_columns=[
             out.Column("type", "type"),
+            out.Column("kind", "kind"),
             out.Column("block", "block"),
             out.Column("purpose", "purpose"),
             out.Column("variants", lambda r: ", ".join(r["variants"])),
@@ -144,20 +150,20 @@ def types_list(output: str = OUTPUT_OPTION, json_out: bool = JSON_OPTION) -> Non
 @types_app.command("show", epilog=_EPILOG)
 def types_show(
     type_name: str = typer.Argument(
-        ..., metavar="TYPE", help="A step type, from `step-types list`."
+        ..., metavar="TYPE", help="A step or trigger type, from `step-types list`."
     ),
     variant: str = typer.Option(
         "",
         "--variant",
-        help="Print only this variant's step as JSON, ready for a spec file or "
-        "`steps add`.",
+        help="Print only this variant's entry as JSON, ready for a spec file "
+        "(or `steps add`, for a step).",
     ),
     json_out: bool = typer.Option(
         False, "--json", help="Emit everything as JSON, with the JSON Schema."
     ),
 ) -> None:
-    """Show one step type: steps to start from, the keys each choice needs,
-    every field, and the values to look up first."""
+    """Show one step or trigger type: entries to start from, the keys each
+    choice needs, every field, and the values to look up first."""
     try:
         if variant:
             typer.echo(
@@ -184,3 +190,14 @@ def types_concepts(
         return
     for name, text in step_catalog.CONCEPTS.items():
         typer.echo(f"{name}\n  {text}\n")
+
+
+@types_app.command("skeleton", epilog=_EPILOG)
+def types_skeleton(
+    obj: str = typer.Option(
+        "", "--object", help="The automation's target_object api_name."
+    ),
+) -> None:
+    """Print a minimal automation spec as JSON: name, api_name, type,
+    target_object, a manual trigger and one step. Add steps from `show`."""
+    typer.echo(json.dumps(step_catalog.skeleton(obj or None), indent=2))
