@@ -215,10 +215,10 @@ documents, `confirmed live 2026-08-13`.
 
 ## 3. The automation
 
-One automation, one branch, one merge, one `code_step` — `automation.md`'s
-graph rules (one root, `parent_key` chaining, `parent_branch` on the first
-step of each branch, merge via `go_to_automation_step`) in the smallest shape
-that exercises all of them.
+One automation, one branch, one merge, one `code_step` — the graph rules in
+`kizen docs show automation` (one root, `parent_key` chaining,
+`parent_branch` on the first step of each branch) plus a merge via
+`go_to_automation_step`, in the smallest shape that exercises all of them.
 
 <!-- fixture: examples/service_ticket/automation.json -->
 ```json
@@ -298,7 +298,7 @@ the rest of the step's keys.
 **label** (`"High"`), not a UUID — `kizen docs show filters` resolves it at
 apply time, same DSL as `records list --filter`. `code_step`'s
 `inputs[].field_ref` is `"service_tickets.priority"`, not a UUID — see
-`kizen docs show automation`, 'Field references'.
+`kizen automations step-types concepts`.
 
 ```bash
 kizen automations create --spec-file automation.json --dry-run
@@ -307,9 +307,9 @@ kizen automations activate escalate_high_priority_tickets --yes
 ```
 
 `kizen automations show escalate_high_priority_tickets` renders the graph —
-a `manual` trigger is auto-prepended (documented in `automation.md`'s "wire
-keys that differ from the obvious guess" section). The render below is the
-literal captured output, `confirmed live 2026-08-13`:
+a `manual` trigger is auto-prepended (the `triggers` row of `kizen docs show
+automation`'s field table). The render below is the literal captured
+output, `confirmed live 2026-08-13`:
 
 ```
 rev 2, active, for service_tickets

@@ -23,7 +23,7 @@ re-run through the DSL.
 |---|---|---|
 | `records list --filter` | search body `query` | `kizen docs show records` |
 | Filter groups (segments) | `config` | `kizen docs show saved-views` |
-| Automation `condition` step | `step_condition.filter_config` | `kizen docs show automation` |
+| Automation `condition` step | `step_condition.filter_config` | `kizen automations step-types show condition` |
 | Automation `search_records` step | `filter_config` | resolved against the step's **own** `custom_object`, not the automation's `target_object` |
 | Dashlets (`dashboards dashlet-config --filter`, or a dashboard spec) | `config.filters.custom_filters` | a spec in `config.filters` compiles against the dashlet's object; an empty filter is a specific literal, not `{}` — `kizen docs show dashboard` |
 

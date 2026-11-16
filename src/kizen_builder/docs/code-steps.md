@@ -7,7 +7,7 @@ the script works.
 
 - **The `code test` flags** → `kizen code test --help` (authoritative).
 - **The `code_step` JSON shape** (inputs/outputs binding, `secrets`, `is_list`)
-  → `kizen docs show automation`.
+  → `kizen automations step-types show code_step`.
 - **Everything about writing the script itself** → this file.
 
 ## The code-step namespace
@@ -64,7 +64,8 @@ records' `{id, name, display_name}`, and an empty one is left out (see
 [Reading and writing records from a script](#reading-and-writing-records-from-a-script),
 confirmed live 2026-10-30). To read one field of the related record without a
 call, bind it directly as a `related_field` step input; that takes a
-single-value relationship only. See `kizen docs show automation`.
+single-value relationship only. See `kizen automations step-types show
+code_step`.
 
 ## Testing it: `kizen code test`
 

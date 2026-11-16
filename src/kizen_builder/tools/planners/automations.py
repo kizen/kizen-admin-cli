@@ -2045,14 +2045,15 @@ _SCHEMA_2026_10_30 = "GET /api/docs/schema, 2026-10-30"
 # `KNOWN_ENUM_CHOICES` (steps, next to `_STEP_BUILDERS` below) and
 # `KNOWN_ENUM_CHOICES_TRIGGERS` (triggers, here) are keyed by
 # `(step_or_trigger_type, dotted_field_path)`, never by bare field name —
-# `docs/specs/automation.md` documents at least three different enums all
-# named `type`, so a flat `field_name → choices` table would mismatch the
-# moment it touched an ambiguous name.
+# automation steps use at least three different enums all named `type`
+# (`assign_team_member`, `assigned_to`, the notify steps' `team_member`),
+# so a flat `field_name → choices` table would mismatch the moment it
+# touched an ambiguous name.
 #
 # Not exhaustive. Add an entry the moment a value is confirmed elsewhere in
 # this repo (a fixture, a docstring, a drift finding, or a captured live
-# session). The registry is the error-path source. `automation.md` may show
-# the values a user needs to write a first spec.
+# session). The registry is the error-path source. `kizen automations
+# step-types show` prints the values a user needs to write a first spec.
 KNOWN_ENUM_CHOICES_TRIGGERS: dict[str, dict[str, KnownChoices]] = {
     "email_received": {
         "receiving_inbox": KnownChoices(

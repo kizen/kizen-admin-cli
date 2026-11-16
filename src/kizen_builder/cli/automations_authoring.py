@@ -109,7 +109,7 @@ def _print_type(info: dict[str, Any]) -> None:
     echo(
         f"\nOne {kind} alone: kizen automations step-types show {name} "
         "--variant <name>\n"
-        f"Full schema: --json.  Quirks and wire format: {info['doc']}"
+        f"Full schema: --json.  Run-time notes and patterns: {info['doc']}"
     )
 
 

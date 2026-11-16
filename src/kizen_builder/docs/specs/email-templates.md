@@ -295,7 +295,8 @@ settings), `contact`, `automation_variable`, `automation_history`, and
 `custom_objects` (the literal token `call_llm`/`initialize_variable` use for
 the automation's own target_object) — never carry it. No API-queryable
 catalog of namespaces exists; any custom object's api_name can be one. Full
-table and the shared span-building rules: `kizen docs show automation`.
+table: `kizen docs show automation`, "Merge-field namespace tokens by step
+type".
 
 **A `paragraphs`-based `Text` block is one of the places this format is
 authored**: a `{{ ns.field }}` token inline in a `ParagraphDef.text` string is

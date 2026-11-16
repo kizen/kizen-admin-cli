@@ -195,8 +195,8 @@ the PUT fails loudly instead of clobbering their change.
 
 For `kizen automations create` / `update`, the JSON is an `AutomationDef`.
 **The full spec — graph rules (`parent_key`/`parent_branch`), the wired triggers
-and step types, `field_ref` resolution, condition `filter_config`, the GET→PUT
-wire dialect, and the quirks that bite — lives in
+and step types, `field_ref` resolution, condition `filter_config`, and what
+steps do at run time — lives in `kizen automations step-types` and
 `kizen docs show automation`.** Read that before authoring one; don't grep
 the source.
 
@@ -218,20 +218,20 @@ A few load-bearing reminders:
 - One root (`parent_key: null`); branch entries under a `condition`/`goal` set
   `parent_branch: "yes"|"no"`; rejoin branches with a branch group rather
   than duplicating tails.
-- `field_ref` resolves at apply time (`kizen docs show automation`, 'Field
-  references').
+- `field_ref` resolves at apply time (`kizen automations step-types
+  concepts`).
 - `stop_execution`'s `action` sets the run's final status; the planner sends
   `stop_and_complete` when it's omitted.
 - A step or trigger type the CLI doesn't wire is a `PlanError`.
   `kizen automations step-types list` lists the wired ones, and
-  `kizen docs show automation` names the unwired ones.
+  `--dry-run` refuses any other.
 - Condition `filter_config` uses the shared filter DSL — the same one
   `records list --filter` and saved views take. `kizen docs show filters` has
   both layers (the friendly DSL and the wire form it resolves to), the per-type
   operator rules, and the clause for a variable compared to a static value,
   which the DSL doesn't cover.
 - A `code_step` spec names its secrets; their values live in Kizen, and a
-  missing one fails the step at runtime (`kizen docs show automation`). Tell
+  missing one fails the step at runtime (`kizen docs show code-steps`). Tell
   the user when a spec uses one.
 
 ### Step/trigger identity across an update depends on `id`

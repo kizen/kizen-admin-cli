@@ -383,7 +383,8 @@ DELETE /api/activities/scheduled-activity/<id>
 ## See also
 
 - `kizen docs show field` — the shared type-specific blocks.
-- `kizen docs show automation` — the `schedule_activity` step, its
-  `association_configs`, and its 11 "Assign To" options.
+- `kizen automations step-types show schedule_activity` — the step's block
+  and its "Assign To" options; `kizen docs show automation` — when it's due,
+  and its `association_configs`.
 - `kizen docs show smart-connectors` — `activity`-type connectors read logged
   activities as their input.

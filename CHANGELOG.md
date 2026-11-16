@@ -72,6 +72,13 @@ called out explicitly under **Changed** or **Removed**.
   leaves `context_entity_field_resolution` out, the CLI now sends `add_only`.
   Before, it sent `overwrite`, which left the new record as the field's only
   link. A step with an `id` keeps its live value.
+- **The automation spec page is now a short guide; per-step detail is in
+  `kizen automations step-types show`.** `kizen docs show automation` keeps
+  the step graph, the multi-step patterns and what steps do at run time.
+  The rules `--dry-run` enforces and the API wire detail are no longer
+  repeated there. The AI-reads-a-reply and knowledge-catalog examples moved
+  to `kizen docs show code-steps` and `kizen docs show mcp-server`. The
+  `step-types show` footer now reads "Run-time notes and patterns".
 
 ### Fixed
 

@@ -312,8 +312,8 @@ def test_modify_related_entities_context_entity_field_dotted_ref_resolves(
     patch_live_lookups,
 ):
     """Regression: context_entity_field only ran through `_unwrap_id`, so a
-    dotted 'object.field' ref (which automation.md's general field_ref rule
-    says should work) was sent to the API as a literal string and 400'd
+    dotted 'object.field' ref (which the `field` concept in `step-types
+    concepts` says should work) was sent to the API as a literal string and 400'd
     ("Must be a valid UUID"). Now resolved via `_resolve_field` like
     field_to_modify/related_object_field already were.
     """

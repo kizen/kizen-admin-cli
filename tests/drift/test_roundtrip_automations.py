@@ -474,8 +474,8 @@ def test_automation_branch_linkage_survives_the_roundtrip(drift_automation):
 
 def test_automation_read_shape_keys_the_planner_depends_on(drift_automation):
     """`plan_update_automation` rebuilds a PUT body from the read response, so
-    these keys are load-bearing (see the normalization notes in
-    ``docs/specs/automation.md``)."""
+    these keys are load-bearing (see the read→write transforms in
+    ``docs/automations-wire.md``)."""
     live = drift_automation["live"]
     for key in (
         "id",
@@ -1117,8 +1117,8 @@ def drift_control_flow(
 
     The two ``initialize_variable`` steps sit on the un-branched root chain on
     purpose — the server rejects a new-variable declaration anywhere else (see
-    automation.md's root-chain rule), and this is the only automated check that
-    the rule still holds.
+    the root-chain rule in docs/automations-wire.md), and this is the only
+    automated check that the rule still holds.
     """
     spec = _base_spec("ctrl", drift_object)
     spec["steps"] = [

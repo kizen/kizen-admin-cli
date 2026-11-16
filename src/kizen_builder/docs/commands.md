@@ -351,8 +351,7 @@ kizen messages create <api> --template <name|uuid>          # UUID → step's em
 Step keys come from `kizen automations show` and re-synthesize after every
 apply — always re-run `show` before the next step operation. The post-apply
 output includes the before/after semantic diff as the audit trail. See
-`kizen docs show automation` / `automation-step` ("GET and PUT are different
-Editing") for the full model.
+`kizen docs show automation-step` for the full model.
 
 The canonical loop:
 
