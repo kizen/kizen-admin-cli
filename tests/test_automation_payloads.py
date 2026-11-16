@@ -4843,6 +4843,28 @@ def test_step_schedule_activity_sends_note_and_html_note(patch_live_lookups):
     assert action["html_note"] == "<p><strong>Rich</strong> note</p>"
 
 
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"type": "later"},
+        {"type": "with_delay"},
+        {"type": "with_delay", "with_delay": {"delay_type": "days", "delay_value": 1}},
+        {"type": "with_delay", "with_delay": {"delay_type": "day", "delay_value": 0}},
+        {
+            "type": "on_or_around_date",
+            "on_or_around_date": {"date_offset": "on_day", "date_offset_days": 0},
+        },
+    ],
+)
+def test_step_schedule_activity_refuses_a_malformed_schedule(schedule):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AutomationDef.model_validate(
+            _schedule_activity_spec({"activity_type": "call", "schedule": schedule})
+        )
+
+
 def test_step_schedule_activity_association_configs_author_shape(patch_live_lookups):
     patients = load_fixture("objects/patients.json")
     encounters_field = next(
