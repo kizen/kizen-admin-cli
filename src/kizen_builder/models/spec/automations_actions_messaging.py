@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from kizen_builder.models.spec.automations_shared import (
     DAYS_OFFSET_MESSAGE,
     DAYS_OFFSETS,
+    RawFilterConfig,
     TeamMemberConfig,
 )
 
@@ -539,4 +540,5 @@ class ActionDeleteScheduledActivityConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    filter_config: dict[str, Any] | None = None
+    # Not wired; nothing compiles the DSL here.
+    filter_config: RawFilterConfig | None = None

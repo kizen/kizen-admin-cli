@@ -1151,3 +1151,87 @@ def test_a_bare_related_field_ref_is_refused(patch_live_lookups):
     }
     with pytest.raises(PlanError, match="must be `object.field` or a field UUID"):
         plan_create_automation(_encounter_spec(_code([dob])))
+
+
+# --- filter_config ------------------------------------------------------------
+
+
+def _filter_step(step_type, filter_config):
+    if step_type == "condition":
+        return {
+            "key": "check",
+            "step_type": "condition",
+            "step_condition": {"type": "custom_filter", "filter_config": filter_config},
+        }
+    return {
+        "key": "check",
+        "step_type": "search_records",
+        "action_search_records": {
+            "custom_object": "deals",
+            "filter_type": "custom_filter",
+            "filter_config": filter_config,
+            "destination_variable": "found",
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("step_type", "block"),
+    [("condition", "step_condition"), ("search_records", "action_search_records")],
+)
+def test_a_bare_filter_clause_prints_the_wrapped_form(step_type, block):
+    clause = {"field": "status", "op": "=", "value": "Won"}
+    errors = _errors(_spec(_filter_step(step_type, clause)))
+    f = _only(errors, path=f"{block}.filter_config")
+    assert f.message == (
+        "a clause needs a group around it: "
+        '{"all": [{"field": "status", "op": "=", "value": "Won"}]}'
+    )
+    assert f.step == "check"
+
+
+def test_a_wrong_op_in_a_nested_group_names_its_path():
+    fc = {"any": [{"all": [{"field": "status", "op": "equal", "value": 1}]}]}
+    f = _only(
+        _errors(_spec(_filter_step("condition", fc))),
+        path="step_condition.filter_config.any.0.all.0.op",
+    )
+    assert f.got == "equal" and "=" in f.allowed
+
+
+@pytest.mark.parametrize(
+    ("fc", "message"),
+    [
+        ({"query": "x"}, "Input should be a valid list"),
+        ({"filters": []}, 'filter_config is a group, {"all": [...]} or {"any": [...]}'),
+        ({"all": [], "any": []}, "List should have at least 1 item"),
+    ],
+    ids=["query-not-a-list", "neither-shape", "empty-group"],
+)
+def test_a_malformed_filter_is_a_finding(fc, message):
+    errors = _errors(_spec(_filter_step("condition", fc)))
+    assert any(message in f.message for f in errors), errors
+
+
+def test_the_wire_filter_form_and_unknown_clause_keys_pass():
+    fc = {
+        "and": True,
+        "invalid": False,
+        "query": [
+            {
+                "id": "query-0",
+                "and": True,
+                "filters": [{"type": "variable", "lhs_variable_name": "score"}],
+            }
+        ],
+    }
+    check_automation(_spec(_filter_step("condition", fc)))
+
+
+def test_the_filter_ops_are_the_ones_the_compiler_takes():
+    from typing import get_args
+
+    from kizen_builder import filtering
+    from kizen_builder.models.spec.automations_shared import FilterOp
+
+    assert sorted(get_args(FilterOp)) == filtering.VALID_SPEC_OPS

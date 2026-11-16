@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from kizen_builder.models.spec.automations_shared import (
     DAYS_OFFSET_MESSAGE,
     DAYS_OFFSETS,
+    RawFilterConfig,
 )
 
 
@@ -308,7 +309,9 @@ class TriggerScheduledActivityOverdueConfig(BaseModel):
             "expanded {id, ...} a live read returns."
         ),
     )
-    filter_config: dict[str, Any] | None = None
+    # The builder sends it as given; only a condition or search_records step
+    # compiles the DSL.
+    filter_config: RawFilterConfig | None = None
 
 
 class TriggerNewEntityCreatedConfig(BaseModel):

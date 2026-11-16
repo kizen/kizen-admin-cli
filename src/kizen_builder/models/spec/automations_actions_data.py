@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from kizen_builder.models.spec._base import ApiName
 from kizen_builder.models.spec.automations_shared import (
     AutomationVariableConfig,
+    FilterConfig,
     VariableSourceConfig,
 )
 
@@ -150,7 +151,7 @@ class ActionSearchRecordsConfig(BaseModel):
             "(filter_config-driven)."
         )
     )
-    filter_config: dict[str, Any] | None = Field(
+    filter_config: FilterConfig | None = Field(
         default=None,
         description=(
             "Same shape as a condition step's filter_config — either a JSON "

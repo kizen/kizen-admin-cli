@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from kizen_builder.models.spec.automations_shared import FilterConfig
+
 
 class StepConditionConfig(BaseModel):
     """Config for `step_type: condition`.
@@ -21,7 +23,7 @@ class StepConditionConfig(BaseModel):
     type: Literal["in_group", "not_in_group", "custom_filter", "llm_decision"] = (
         "custom_filter"
     )
-    filter_config: dict[str, Any] | None = None
+    filter_config: FilterConfig | None = None
     group_ids: list[str] = Field(
         default_factory=list,
         description="Entity group UUIDs for in_group/not_in_group types.",

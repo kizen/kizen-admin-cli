@@ -213,6 +213,32 @@ def test_guide_selectors_match_the_model_choices():
     )
 
 
+@pytest.mark.parametrize("type_name", sorted(step_catalog._STEP_GUIDES))
+def test_every_guide_selector_matches_the_model(type_name):
+    """Where the model types a selector, the guide offers exactly its
+    choices, and every key an option needs is a key of the block."""
+    fields = {f["path"]: f for f in step_catalog.describe(type_name)["fields"]}
+    for selector in step_catalog._STEP_GUIDES[type_name].selectors:
+        choices = fields[selector.path].get("choices")
+        if choices:
+            assert {o.value for o in selector.options} == set(choices), selector.path
+        parent = selector.path.rpartition(".")[0]
+        for option in selector.options:
+            for need in option.needs:
+                key = f"{parent}.{need}" if parent else need
+                assert key in fields, (selector.path, need)
+
+
+def test_condition_lists_the_filter_keys_and_ops():
+    from kizen_builder import filtering
+
+    fields = {f["path"]: f for f in step_catalog.describe("condition")["fields"]}
+    assert fields["filter_config.all[].op"]["choices"] == filtering.VALID_SPEC_OPS
+    assert fields["filter_config.any"]["same_as"] == "filter_config.all"
+    assert "filter_config.query[].filters" in fields
+    assert "filter_config.all[].variable" in fields
+
+
 def test_schedule_activity_variants_build_a_payload(patch_live_lookups):
     """The blocks the CLI hands out go through the real builder once their
     placeholders name things the fixture env has."""
@@ -350,11 +376,10 @@ def test_trigger_cards_say_a_trigger_has_no_key():
 
 def test_condition_card_leads_with_llm_decision():
     variants = step_catalog.describe("condition")["variants"]
-    assert [v["name"] for v in variants] == ["llm_decision", "minimal"]
+    assert variants[0]["name"] == "llm_decision"
     block = variants[0]["spec"]["step_condition"]
     assert block["type"] == "llm_decision"
     assert set(block["llm_decision"]) == {"model_name", "prompt"}
-    assert variants[1]["spec"]["step_condition"] == {}
 
 
 def test_schedule_activity_has_a_round_robin_variant():

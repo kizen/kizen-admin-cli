@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Self
+import json
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Discriminator,
+    Field,
+    Tag,
+    model_validator,
+)
 
 # An on_or_around_date trigger or schedule counts days with these offsets.
 DAYS_OFFSETS = ("days_before", "days_after")
@@ -245,3 +254,194 @@ class CodeStepOutputConfig(BaseModel):
     variable_name: str | None = Field(
         default=None, description="Variable name, used when output_type is 'variable'."
     )
+
+
+# ---------------------------------------------------------------------------
+# filter_config
+# ---------------------------------------------------------------------------
+
+# Tags a discriminated union adds to an error's location. They aren't keys,
+# so the findings leave them out of the path.
+UNION_TAGS = frozenset({"filter clause", "filter group", "raw filter"})
+
+FilterOp = Literal[
+    "!=",
+    "<",
+    "<=",
+    "=",
+    ">",
+    ">=",
+    "between",
+    "contains",
+    "ends_with",
+    "entered_stage",
+    "has_all",
+    "has_any",
+    "has_none",
+    "is_any_of",
+    "is_blank",
+    "is_checked",
+    "is_me",
+    "left_stage",
+    "month_equals",
+    "not_any_of",
+    "not_blank",
+    "not_checked",
+    "not_contains",
+    "not_ends_with",
+    "not_starts_with",
+    "starts_with",
+    "time_in_stage",
+]
+"""The filter DSL's ops (`kizen filters ops`). A test pins this to
+`filtering.VALID_SPEC_OPS`, which compiles them."""
+
+
+class FilterClause(BaseModel):
+    """One test of a field: `{"field", "op", "value"}`. The planner compiles
+    it (`kizen docs show filters`); this only checks the keys."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field: str = Field(description="The field's api_name on the filtered object.")
+    op: FilterOp
+    value: Any = Field(
+        default=None,
+        description=(
+            "What the field is compared to. A list for is_any_of, not_any_of, "
+            "has_* and between; none for is_blank, not_blank, is_me and the "
+            "checkbox ops; the stage for the stage ops."
+        ),
+    )
+    # A dropdown matched on a test run with the array holding option names,
+    # and with it holding option UUIDs.
+    variable: str | None = Field(
+        default=None,
+        description=(
+            "An automation variable in place of `value`, on a condition or "
+            "search_records step: is_any_of or not_any_of with an array "
+            "variable, = or contains with a string one."
+        ),
+    )
+    # The stage keys' values are checked when the clause compiles, which
+    # names the op they belong to.
+    more_than: Any = Field(
+        default=None, description="time_in_stage only: a whole number of units."
+    )
+    less_than: Any = Field(
+        default=None, description="time_in_stage only: a whole number of units."
+    )
+    units: Any = Field(
+        default=None,
+        description="time_in_stage only: days, hours or weeks; days when left out.",
+    )
+    on: str | None = Field(default=None, description="entered_stage/left_stage.")
+    not_on: str | None = Field(default=None, description="entered_stage/left_stage.")
+    earlier_than: str | None = Field(
+        default=None, description="entered_stage/left_stage."
+    )
+    earlier_than_or_on: str | None = Field(
+        default=None, description="entered_stage/left_stage."
+    )
+    later_than: str | None = Field(
+        default=None, description="entered_stage/left_stage."
+    )
+    later_than_or_on: str | None = Field(
+        default=None, description="entered_stage/left_stage."
+    )
+
+
+def _filter_node_kind(node: Any) -> str:
+    if isinstance(node, dict):
+        group = "all" in node or "any" in node
+    else:
+        group = isinstance(node, FilterGroup)
+    return "filter group" if group else "filter clause"
+
+
+FilterNode = Annotated[
+    Annotated[FilterClause, Tag("filter clause")]
+    | Annotated["FilterGroup", Tag("filter group")],
+    Discriminator(_filter_node_kind),
+]
+
+
+class FilterGroup(BaseModel):
+    """`{"all": [...]}` or `{"any": [...]}`: every test, or at least one.
+    Each item is a clause or another group."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    all: list[FilterNode] | None = Field(
+        default=None,
+        min_length=1,
+        description="Clauses or groups that must all hold.",
+    )
+    any: list[FilterNode] | None = Field(
+        default=None,
+        min_length=1,
+        description="Clauses or groups of which one must hold.",
+    )
+
+    @model_validator(mode="after")
+    def _one_kind(self) -> FilterGroup:
+        if (self.all is None) == (self.any is None):
+            raise ValueError('a group is exactly {"all": [...]} or {"any": [...]}')
+        return self
+
+
+class RawFilterGroup(BaseModel):
+    """One group of the wire form: its clauses, as Kizen's editor writes
+    them."""
+
+    model_config = ConfigDict(extra="allow")
+
+    filters: list[dict[str, Any]]
+
+
+class RawFilterConfig(BaseModel):
+    """The wire form, `{"and", "query": [{"id", "and", "filters"}], "invalid"}`,
+    as a live read returns it. The planner assigns missing group ids. A
+    clause the DSL has no op for, such as a variable compared to a static
+    value, is written this way (`kizen docs show filters`)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    query: list[RawFilterGroup]
+
+
+def _filter_config_kind(node: Any) -> str | None:
+    if isinstance(node, FilterGroup):
+        return "filter group"
+    if isinstance(node, RawFilterConfig):
+        return "raw filter"
+    if not isinstance(node, dict):
+        return None
+    if "all" in node or "any" in node:
+        return "filter group"
+    return "raw filter" if "query" in node else None
+
+
+def _refuse_bare_clause(value: Any) -> Any:
+    """A clause on its own is the commonest wrong shape: name the wrap
+    instead of a union error."""
+    if isinstance(value, dict) and "field" in value and "query" not in value:
+        wrapped = json.dumps({"all": [value]})
+        raise ValueError(f"a clause needs a group around it: {wrapped}")
+    return value
+
+
+FilterConfig = Annotated[
+    Annotated[FilterGroup, Tag("filter group")]
+    | Annotated[RawFilterConfig, Tag("raw filter")],
+    Discriminator(
+        _filter_config_kind,
+        custom_error_type="filter_config",
+        custom_error_message=(
+            'filter_config is a group, {"all": [...]} or {"any": [...]}, or '
+            'the wire form with a "query" list'
+        ),
+    ),
+    BeforeValidator(_refuse_bare_clause),
+]
+"""A filter in the DSL, compiled by the planner, or in the wire form."""

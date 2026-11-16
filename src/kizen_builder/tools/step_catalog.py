@@ -417,10 +417,19 @@ _CREATE_RELATED_ENTITY = Guide(
     concepts=("field", "variable", "merge-fields"),
 )
 
-# The llm_decision block is the call_llm keys, untyped in the model, so the
-# derived card can't show it.
+_FILTER_NOTES = (
+    "A clause on its own needs a group around it: "
+    '{"all": [{"field": ..., "op": ..., "value": ...}]}.',
+    "`field` is the bare api_name on the filtered object, not <object>.<field>. "
+    "`kizen filters ops` lists each op and the value it takes.",
+    "A filter value takes no merge fields. To compare with a value from the "
+    'record, copy it into a variable and put `"variable"` in place of `"value"`.',
+)
+
 _CONDITION = Guide(
     variants=(
+        # The llm_decision block is the call_llm keys, untyped in the model,
+        # so the derived fields can't show it.
         Variant(
             "llm_decision",
             "An LLM answers a yes/no question about the record.",
@@ -432,22 +441,240 @@ _CONDITION = Guide(
                 },
             },
         ),
-        Variant("minimal", "No required keys.", {}),
+        Variant(
+            "field_test",
+            "Yes when a field on the record holds a value.",
+            {
+                "type": "custom_filter",
+                "filter_config": {
+                    "all": [
+                        {"field": "<field api_name>", "op": "=", "value": "<value>"}
+                    ]
+                },
+            },
+        ),
+        Variant(
+            "any_of",
+            "Yes when either test holds; groups nest.",
+            {
+                "type": "custom_filter",
+                "filter_config": {
+                    "any": [
+                        {"field": "<field api_name>", "op": "is_blank"},
+                        {
+                            "all": [
+                                {
+                                    "field": "<dropdown api_name>",
+                                    "op": "is_any_of",
+                                    "value": ["<option name>"],
+                                },
+                                {"field": "<number api_name>", "op": ">", "value": 5},
+                            ]
+                        },
+                    ]
+                },
+            },
+        ),
+        Variant(
+            "field_vs_variable",
+            "Yes when a dropdown holds one of the options in an array variable.",
+            {
+                "type": "custom_filter",
+                "filter_config": {
+                    "all": [
+                        {
+                            "field": "<dropdown api_name>",
+                            "op": "is_any_of",
+                            "variable": "<string array variable>",
+                        }
+                    ]
+                },
+            },
+        ),
+        Variant(
+            "variable_vs_static",
+            "Yes when a number variable is 5.5 or more. The DSL has no op for "
+            "this, so it is written in the wire form.",
+            {
+                "type": "custom_filter",
+                "filter_config": {
+                    "and": True,
+                    "query": [
+                        {
+                            "id": "query-0",
+                            "and": True,
+                            "filters": [
+                                {
+                                    "type": "variable",
+                                    "subtype": "automation_variable",
+                                    "lhs_variable_name": "<number variable>",
+                                    "condition": ">=",
+                                    "rhs_value": "5.5",
+                                    "rhs_value_type": "static",
+                                    "view_model": [
+                                        [
+                                            "filter_type",
+                                            {
+                                                "vars": [
+                                                    ["fields_settings_search", True],
+                                                    [
+                                                        "custom_object_id",
+                                                        "<object uuid>",
+                                                    ],
+                                                    ["object_type", "standard"],
+                                                    [
+                                                        "client_tag_field_id",
+                                                        "<client tag field uuid>",
+                                                    ],
+                                                ],
+                                                "filter_type": "variable",
+                                            },
+                                        ],
+                                        [
+                                            "lhs_variable",
+                                            {
+                                                "name": "<number variable>",
+                                                "data_type": "number",
+                                            },
+                                        ],
+                                        ["condition", "more_than_or_equal_to"],
+                                        ["value_type", "static"],
+                                        ["value", "5.5"],
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                    "invalid": False,
+                },
+            },
+        ),
+        Variant(
+            "in_group",
+            "Yes when the record is in a saved filter group.",
+            {"type": "in_group", "group_ids": ["<filter group uuid>"]},
+        ),
+    ),
+    selectors=(
+        Selector(
+            "type",
+            (
+                Option("custom_filter", ("filter_config",)),
+                Option("in_group", ("group_ids",)),
+                Option("not_in_group", ("group_ids",)),
+                Option(
+                    "llm_decision",
+                    ("llm_decision",),
+                    "model_name and prompt, as on call_llm",
+                ),
+            ),
+            default="custom_filter",
+        ),
     ),
     lookups=(
+        Lookup(
+            "filter_config.all[].field",
+            "kizen objects get <object>",
+            "a field api_name on the automation's object",
+        ),
+        Lookup("group_ids", "kizen filter-groups list <object>", "UUID"),
         Lookup(
             "llm_decision.model_name",
             "kizen automations llm-models",
             "a model with a mark under decision",
         ),
     ),
-    concepts=("filter", "merge-fields"),
+    notes=(
+        *_FILTER_NOTES,
+        "A variable in a clause must be declared by an initialize_variable "
+        "step. A text or email field takes a single string variable, with = "
+        "or contains; the other field types take an array (a team-member "
+        "field also takes a single employee variable). For a dropdown the "
+        "array holds option names or option UUIDs.",
+        "variable_vs_static: the view_model, operator names and blank checks "
+        "are in `kizen docs show filters`, 'Variable-comparison clauses'.",
+    ),
+    concepts=("filter", "variable", "field", "merge-fields"),
+    doc="kizen docs show filters",
+)
+
+_SEARCH_RECORDS = Guide(
+    variants=(
+        Variant(
+            "custom_filter",
+            "The records on another object that match a filter, into an "
+            "array variable.",
+            {
+                "custom_object": "<object api_name>",
+                "filter_type": "custom_filter",
+                "filter_config": {
+                    "all": [
+                        {"field": "<field api_name>", "op": "=", "value": "<value>"}
+                    ]
+                },
+                "destination_variable": "<entity array variable>",
+            },
+        ),
+        Variant(
+            "in_group",
+            "The records in a saved filter group.",
+            {
+                "custom_object": "<object api_name>",
+                "filter_type": "in_group",
+                "filter_groups": ["<filter group name or uuid>"],
+                "destination_variable": "<entity array variable>",
+            },
+        ),
+    ),
+    selectors=(
+        Selector(
+            "filter_type",
+            (
+                Option("all_records"),
+                Option("custom_filter", ("filter_config",)),
+                Option("in_group", ("filter_groups",)),
+                Option("not_in_group", ("filter_groups",)),
+            ),
+        ),
+        Selector(
+            "destination_variable_resolution",
+            tuple(
+                Option(v)
+                for v in (
+                    "overwrite",
+                    "add_only",
+                    "remove_only",
+                    "update_if_blank",
+                    "overwrite_except_null",
+                )
+            ),
+            default="overwrite",
+        ),
+    ),
+    lookups=(
+        Lookup("custom_object", "kizen objects list", "api_name or UUID"),
+        Lookup(
+            "filter_groups",
+            "kizen filter-groups list <object>",
+            "groups saved on custom_object, by name or UUID",
+        ),
+    ),
+    notes=(
+        "`custom_object` is the object searched, independent of the "
+        "automation's own target_object (a global automation has none); "
+        "filter fields and filter groups resolve against it.",
+        "`destination_variable` is an array variable declared by an "
+        "initialize_variable step, named bare.",
+        *_FILTER_NOTES,
+    ),
+    concepts=("filter", "variable"),
 )
 
 _STEP_GUIDES: dict[str, Guide] = {
     "condition": _CONDITION,
     "create_related_entity": _CREATE_RELATED_ENTITY,
     "schedule_activity": _SCHEDULE_ACTIVITY,
+    "search_records": _SEARCH_RECORDS,
 }
 _TRIGGER_GUIDES: dict[str, Guide] = {}
 
@@ -574,10 +801,25 @@ def _resolve(schema: dict[str, Any], node: dict[str, Any]) -> dict[str, Any]:
     return dict(schema.get("$defs", {}).get(ref.rsplit("/", 1)[-1], {}))
 
 
+def _ref_name(node: dict[str, Any]) -> str | None:
+    ref = node.get("$ref")
+    return ref.rsplit("/", 1)[-1] if ref else None
+
+
+def _members(
+    schema: dict[str, Any], prop: dict[str, Any]
+) -> list[tuple[str | None, dict[str, Any]]]:
+    """Each type a property can take, through nested unions, with the name
+    of the model it is, if any."""
+    resolved = _resolve(schema, prop)
+    alts = resolved.get("anyOf") or resolved.get("oneOf")
+    if not alts:
+        return [(_ref_name(prop), resolved)]
+    return [m for a in alts for m in _members(schema, a)]
+
+
 def _alternatives(schema: dict[str, Any], prop: dict[str, Any]) -> list[dict[str, Any]]:
-    prop = _resolve(schema, prop)
-    alts = prop.get("anyOf") or prop.get("oneOf") or [prop]
-    return [_resolve(schema, a) for a in alts]
+    return [node for _, node in _members(schema, prop)]
 
 
 def _type_label(schema: dict[str, Any], prop: dict[str, Any]) -> str:
@@ -604,16 +846,55 @@ def _choices(schema: dict[str, Any], prop: dict[str, Any]) -> list[str]:
     return out
 
 
+def _nested(
+    schema: dict[str, Any], prop: dict[str, Any], path: str
+) -> list[tuple[str | None, dict[str, Any], str]]:
+    """The blocks under a property, a list's items included (as ``path[]``),
+    each with its model name and the prefix of its rows."""
+    out: list[tuple[str | None, dict[str, Any], str]] = []
+    for name, alt in _members(schema, prop):
+        if alt.get("type") == "object" and alt.get("properties"):
+            out.append((name, alt, f"{path}."))
+        elif alt.get("type") == "array" and isinstance(alt.get("items"), dict):
+            out.extend(
+                (item_name, item, f"{path}[].")
+                for item_name, item in _members(schema, alt["items"])
+                if item.get("type") == "object" and item.get("properties")
+            )
+    return out
+
+
+def _add_row(rows: list[dict[str, Any]], row: dict[str, Any]) -> None:
+    """Add ``row``, or fold it into the row already at its path: union
+    members share keys, and a discriminator's choices are the members'."""
+    same = next((r for r in rows if r["path"] == row["path"]), None)
+    if same is None:
+        rows.append(row)
+        return
+    if "choices" in row:
+        merged = same.get("choices", [])
+        same["choices"] = merged + [c for c in row["choices"] if c not in merged]
+    same["required"] = same["required"] and row["required"]
+    if "description" in row and "description" not in same:
+        same["description"] = row["description"]
+
+
 def _fields(
     schema: dict[str, Any],
     node: dict[str, Any],
     known: dict[str, KnownChoices],
     prefix: str = "",
+    within: frozenset[str] = frozenset(),
+    rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """One row per key of a block, nested blocks included, as dotted paths."""
-    rows: list[dict[str, Any]] = []
+    """One row per key of a block, nested blocks and list items included, as
+    dotted paths. A model nested in itself (a filter group) is listed once:
+    ``within`` holds the models above this one. A key holding the same
+    models as a sibling before it says so instead of listing them again."""
+    rows = [] if rows is None else rows
     node = _resolve(schema, node)
     required = set(node.get("required") or [])
+    listed: dict[tuple[str, ...], str] = {}
     for name, prop in (node.get("properties") or {}).items():
         path = f"{prefix}{name}"
         row: dict[str, Any] = {
@@ -632,10 +913,20 @@ def _fields(
         elif path in known:
             # A sample, not the server's full set: see `KnownChoices`.
             row["known_choices"] = list(known[path].values)
-        rows.append(row)
-        for alt in _alternatives(schema, prop):
-            if alt.get("type") == "object" and alt.get("properties"):
-                rows.extend(_fields(schema, alt, known, f"{path}."))
+        nested = _nested(schema, prop, path)
+        models = tuple(sorted({m for m, _, _ in nested if m}))
+        if models and models in listed:
+            row["same_as"] = listed[models]
+            _add_row(rows, row)
+            continue
+        if models:
+            listed[models] = path
+        _add_row(rows, row)
+        for model, sub, sub_prefix in nested:
+            if model in within:
+                continue
+            inner = within | {model} if model else within
+            _fields(schema, sub, known, sub_prefix, inner, rows)
     return rows
 
 
@@ -801,7 +1092,7 @@ def lookup_command(type_name: str, path: str) -> str | None:
     guide names one."""
     guide = _STEP_GUIDES.get(type_name)
     for lk in guide.lookups if guide else ():
-        if lk.path == path:
+        if lk.path.replace("[]", "") == path:
             return lk.command
     return None
 

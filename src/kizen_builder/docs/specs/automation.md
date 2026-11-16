@@ -732,25 +732,7 @@ are covered under [Branch groups](#branch-groups) and [Loops](#loops), and
 where `initialize_variable` goes under
 [Key quirks](#key-quirks-the-ones-that-bite).
 
-`search_records` (the automation-builder equivalent of `records list
---filter`) needs its own `custom_object` — independent of the automation's
-own `target_object` (global automations have none) — plus `filter_type`
-(`all_records`/`in_group`/`not_in_group`/`custom_filter`),
-`destination_variable` (an array-type automation variable, by name), and
-`destination_variable_resolution` (`overwrite`/`overwrite_except_null`/
-`add_only`/`remove_only`/`update_if_blank`). For `in_group`/`not_in_group`,
-`filter_groups` names/ids one or more saved filter groups on `custom_object`
-(same resource as `kizen filter-groups`). For `custom_filter`, `filter_config`
-is the same DSL shape as a condition step's, resolved against `custom_object`
-instead of the automation's target_object. A filter value doesn't take merge
-fields: to search on a value from the record, copy it into a string variable
-and compare with `"variable"` (`kizen docs show filters`, and
-[Find or create a Contact by email](#find-or-create-a-contact-by-email)).
-Confirmed live 2026-07-22 — see
-the "four fields that break the bare-scalar convention" section below for the wire
-quirks (custom_object/filter_groups/destination_variable are each
-`{"id"|"name": ...}` objects on write, unlike most other action steps' bare
-scalars).
+`search_records`: `kizen automations step-types show search_records`.
 
 Other step types exist in Kizen (`send_email`, `change_tags`,
 `http_request`, `modify_automation`, `request_info_via_text`, `delete_scheduled_activity`,
@@ -1283,65 +1265,11 @@ run started by hand on a Contact with no inbound email completed. The code step
 logged that it found no inbound email, and `reply_summary` was set to "No
 reply to summarize."
 
-### Variable-comparison condition step
+### Condition filters
 
-A `condition` step's `filter_config` normally uses the record-field filter
-DSL (see `kizen docs show filters`), but comparing
-an **automation variable** to a static value is a different clause shape,
-`type: "variable"`, wrapped inside the same `query`/`filters` envelope:
-
-```json
-{ "step_type": "condition", "key": "check_score", "parent_key": null,
-  "step_condition": {
-    "type": "custom_filter",
-    "filter_config": { "and": true, "query": [
-      { "id": "query-0", "and": true, "filters": [
-        { "type": "variable", "subtype": "automation_variable",
-          "lhs_variable_name": "score", "condition": ">=",
-          "rhs_value": "5.5", "rhs_value_type": "static",
-          "description": "Variable Value 'score' More Than Or Equal To Static Value 5.5",
-          "view_model": [
-            ["filter_type", { "vars": [
-                ["fields_settings_search", true],
-                ["custom_object_id", "<object-uuid>"],
-                ["object_type", "standard"],
-                ["client_tag_field_id", "<client-tag-field-uuid>"]
-              ], "filter_type": "variable" }],
-            ["lhs_variable", { "name": "score", "data_type": "number" }],
-            ["condition", "more_than_or_equal_to"],
-            ["value_type", "static"],
-            ["value", "5.5"]
-          ] }
-      ] }
-    ], "invalid": false }
-  } }
-```
-
-The clause's rules — `view_model`, the operator mapping, blank checks,
-`client_tag_field_id` — are in `kizen docs show filters`, 'Variable-comparison
-clauses'.
-
-### Field compared to a variable
-
-To test a record field against a variable, put `"variable"` in place of
-`"value"` in a condition's or `search_records` step's filter spec. The
-variable must be declared in the same automation. A text or email field takes
-a single string variable, with `=` or `contains`. The other field types take
-an array (a team-member field also takes a single `employee` variable). For a
-dropdown the array holds option names or option UUIDs; a test run matched
-with each.
-
-```json
-{ "key": "allowed", "parent_key": null, "step_type": "initialize_variable",
-  "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
-    "variable": { "name": "allowed_statuses", "data_type": "string", "is_array": true } } },
-{ "key": "check", "parent_key": "allowed", "step_type": "condition",
-  "step_condition": { "type": "custom_filter", "filter_config": { "all": [
-    { "field": "status", "op": "is_any_of", "variable": "allowed_statuses" } ] } } }
-```
-
-The field types, ops and variable kinds this takes are in
-`kizen docs show filters`.
+A condition's `filter_config`, a variable compared to a static value or a
+field compared to a variable included: `kizen automations step-types show
+condition`.
 
 ### Reading a related record's field into a variable
 
@@ -1667,8 +1595,8 @@ Confirmed live 2026-10-30, in this order.
   `is_any_of`/`not_any_of`, numbers use `>=`/`between` — *not* `in`/`gte`). Run
   `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
   dict for clause types the DSL doesn't cover (a variable compared to a static
-  value — see "Variable-comparison condition step" above). A field compared to
-  a variable is in the DSL ("Field compared to a variable" above). A filter
+  value — see [Condition filters](#condition-filters)). A field compared to
+  a variable is in the DSL. A filter
   value can't hold a `{{ … }}` merge field: Kizen stores it as text and
   matches nothing (confirmed live 2026-11-02), so the CLI refuses it. **A condition needs at least one
   rule.** An empty `query`, a group with no `filters`, or an `in_group`/
