@@ -31,14 +31,17 @@ from kizen_builder.tools.planners.automations import (
     triggers_with_manual,
 )
 from kizen_builder.translate import trigger_order_problem
+from kizen_builder.utils import slugify
 
 
 @dataclass
 class CheckedSpec:
-    """A spec that passed: the parsed automation and what to warn about."""
+    """A spec that passed: the parsed automation, what to warn about, and a
+    line per value it defaulted."""
 
     auto: AutomationDef
     warnings: list[Finding] = field(default_factory=list)
+    defaults: list[str] = field(default_factory=list)
 
 
 def check_automation(spec: Any) -> CheckedSpec:
@@ -56,6 +59,7 @@ def check_automation(spec: Any) -> CheckedSpec:
                 )
             ]
         )
+    spec, defaults = _with_defaults(spec)
     raw_steps = spec.get("steps")
     steps: list[Any] = raw_steps if isinstance(raw_steps, list) else []
 
@@ -88,7 +92,34 @@ def check_automation(spec: Any) -> CheckedSpec:
     errors = _unique(errors)
     if errors or auto is None:
         raise SpecProblems(errors, warnings)
-    return CheckedSpec(auto, warnings)
+    return CheckedSpec(auto, warnings, defaults)
+
+
+def _with_defaults(spec: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """``spec`` with a left-out ``api_name`` taken from ``name`` and each
+    left-out step ``order`` from the step's position. A value given always
+    wins. Returns the spec and a line per default."""
+    spec = dict(spec)
+    defaults: list[str] = []
+    if "api_name" not in spec and isinstance(spec.get("name"), str):
+        spec["api_name"] = slugify(spec["name"])[:100]
+        defaults.append(f"api_name: '{spec['api_name']}' (from name)")
+    steps = spec.get("steps")
+    if isinstance(steps, list):
+        spec["steps"] = [
+            {**step, "order": i}
+            if isinstance(step, dict) and "order" not in step
+            else step
+            for i, step in enumerate(steps)
+        ]
+        positions = [
+            f"'{step.get('key', f'#{i}')}' {i}"
+            for i, step in enumerate(steps)
+            if isinstance(step, dict) and "order" not in step
+        ]
+        if positions:
+            defaults.append(f"step order from position: {', '.join(positions)}")
+    return spec, defaults
 
 
 def check_step(

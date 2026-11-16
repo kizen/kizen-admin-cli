@@ -1010,6 +1010,7 @@ def _automation_preview(
         "active": active_display,
         "trigger_count": len(auto.triggers),
         "step_count": len(auto.steps),
+        **({"defaults": checked.defaults} if checked.defaults else {}),
         **({"warnings": warnings} if warnings else {}),
     }
 

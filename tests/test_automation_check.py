@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -495,3 +496,51 @@ def test_trigger_orders_are_checked_before_any_live_call():
     ]
     f = _only(_errors(spec), path="triggers")
     assert f.message.startswith("trigger orders must be sequential from 0 to 1")
+
+
+# --- defaults ---------------------------------------------------------------
+
+
+def _left_out(spec, *keys):
+    spec = copy.deepcopy(spec)
+    for key in keys:
+        spec.pop(key, None)
+    return spec
+
+
+def test_a_missing_api_name_defaults_from_the_name():
+    spec = _left_out(_spec(_activity()), "api_name")
+    spec["name"] = "Follow Up: Deals!"
+    checked = check_automation(spec)
+    assert checked.auto.api_name == "follow_up_deals"
+    assert checked.defaults == ["api_name: 'follow_up_deals' (from name)"]
+
+    spec["api_name"] = "mine"
+    checked = check_automation(spec)
+    assert (checked.auto.api_name, checked.defaults) == ("mine", [])
+
+
+def test_a_missing_step_order_defaults_to_its_position():
+    spec = _spec(_set_mrn("a"), _set_mrn("b", "a", 5))
+    del spec["steps"][0]["order"]
+    checked = check_automation(spec)
+    assert [s.order for s in checked.auto.steps] == [0, 5]
+    assert checked.defaults == ["step order from position: 'a' 0"]
+
+
+def test_the_preview_names_what_was_defaulted(patch_live_lookups):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    a, b = _set_mrn("a"), _set_mrn("b", "a", 1)
+    spec = {**_spec(a, b), "target_object": "patients"}
+    (explicit,) = plan_create_automation(spec).operations
+    assert "defaults" not in explicit.preview
+
+    for step in spec["steps"]:
+        del step["order"]
+    (defaulted,) = plan_create_automation(_left_out(spec, "api_name")).operations
+    assert defaulted.preview["defaults"] == [
+        "api_name: 'check_me' (from name)",
+        "step order from position: 'a' 0, 'b' 1",
+    ]
+    assert defaulted.payload == explicit.payload
