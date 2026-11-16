@@ -6037,20 +6037,30 @@ def test_pass_through_builders_accept_any_key(patch_live_lookups):
     assert payload["steps"][0]["step_delay"]["not_a_delay_key"] == 2
 
 
-@pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
-def test_unread_key_fails_before_the_plan_renders(patch_live_lookups, flags):
+def test_unread_key_fails_before_the_plan_renders(patch_live_lookups):
     from typer.testing import CliRunner
 
     import kizen_builder.cli as cli
 
     spec = _one_step_spec("create_related_entity", _CRE_WITH_FIELDS_TO_SET)
     result = CliRunner().invoke(
-        cli.app, ["automations", "create", *flags], input=json.dumps(spec)
+        cli.app, ["automations", "create", "--dry-run"], input=json.dumps(spec)
     )
     assert result.exit_code == 1
-    assert "plan error:" in result.stderr
-    assert "fields_to_set" in result.stderr
+    assert (
+        "spec error: step 'only' action_create_related_entity.fields_to_set: "
+        "unknown key"
+    ) in result.stderr
     assert result.stdout == ""
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["automations", "create", "--dry-run", "--json"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 1
+    (error,) = json.loads(result.stdout)["errors"]
+    assert error["path"] == "action_create_related_entity.fields_to_set"
 
 
 def test_create_related_entity_reads_target_object_as_target_custom_object(

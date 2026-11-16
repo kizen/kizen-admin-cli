@@ -353,11 +353,7 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     references, and refuses if an automation with the same api_name is
     already present.
     """
-    auto = (
-        automation
-        if isinstance(automation, AutomationDef)
-        else AutomationDef.model_validate(automation)
-    )
+    auto = _checked(automation)
     ctx = LiveContext()
     env = ctx.env
 
@@ -398,11 +394,7 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
 
 def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     """Plan an update to an existing automation."""
-    auto = (
-        automation
-        if isinstance(automation, AutomationDef)
-        else AutomationDef.model_validate(automation)
-    )
+    auto = _checked(automation)
     ctx = LiveContext()
     env = ctx.env
 
@@ -448,6 +440,16 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
             )
         ],
     )
+
+
+def _checked(automation: dict[str, Any] | AutomationDef) -> AutomationDef:
+    """The spec parsed, after the offline checks: a malformed spec raises
+    `SpecProblems` with every problem, before any live call."""
+    if isinstance(automation, AutomationDef):
+        return automation
+    from kizen_builder.tools.automation_check import check_automation
+
+    return check_automation(automation).auto
 
 
 def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any]:
@@ -1919,6 +1921,13 @@ def _block_field_for(step_type: str) -> str:
     return f"action_{step_type}"
 
 
+NO_MOVE_STAGE_STEP = (
+    "Kizen's automation builder has no move-stage step. Move the record with a "
+    "change_field_value step on the stage field: "
+    '{"step_type": "change_field_value", "action_change_field_value": '
+    '{"field_ref": "stage", "specific_field_value": "<stage name>"}}'
+)
+
 # Kizen saves a stop without an action, but a run that reaches it never
 # finishes (confirmed live 2026-10-30), so the spec path never sends one.
 _STOP_EXECUTION_DEFAULT_ACTION = "stop_and_complete"
@@ -1962,12 +1971,7 @@ def _build_step_payload(
     if step.step_type in _CONFIGLESS_STEP_TYPES:
         return p
     if step.step_type == "update_pipeline_status":
-        raise PlanError(
-            f"step '{step.key}': Kizen's automation builder has no move-stage "
-            "step. Move the record with a change_field_value step on the stage "
-            'field: {"step_type": "change_field_value", "action_change_field_value": '
-            '{"field_ref": "stage", "specific_field_value": "<stage name>"}}'
-        )
+        raise PlanError(f"step '{step.key}': {NO_MOVE_STAGE_STEP}")
     builder = _STEP_BUILDERS.get(step.step_type)
     if builder is None:
         raise PlanError(
