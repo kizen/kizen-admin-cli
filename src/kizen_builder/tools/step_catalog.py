@@ -387,19 +387,108 @@ _SCHEDULE_ACTIVITY = Guide(
 
 # The model requires a target object without marking a field required, so the
 # required-keys block derived from its schema wouldn't validate.
+_RESOLUTIONS = (
+    Option("overwrite"),
+    Option("update_if_blank"),
+    Option("add_only"),
+)
+
+_NEW_RECORD = {
+    "target_custom_object": "<object api_name>",
+    "new_entity_name": "Follow-up for {{ entity_record.name }}",
+    "new_entity_name_html": "<p>Follow-up for {{ entity_record.name }}</p>",
+}
+
 _CREATE_RELATED_ENTITY = Guide(
     variants=(
         Variant(
             "linked",
-            "A record on another object, named from the triggering record and "
-            "linked back to it through a relationship field.",
+            "A record on another object, named from the triggering record, "
+            "owned by its owner and linked back to it through a relationship "
+            "field.",
             {
-                "target_custom_object": "<object api_name>",
-                "new_entity_name": "Follow-up for {{ entity_record.name }}",
-                "new_entity_name_html": "<p>Follow-up for {{ entity_record.name }}</p>",
+                **_NEW_RECORD,
                 "new_entity_owner_type": "assign_from_context_record",
                 "context_entity_field": "<object>.<relationship field>",
             },
+        ),
+        Variant(
+            "specific_owner",
+            "Owned by one team member.",
+            {
+                **_NEW_RECORD,
+                "new_entity_owner_type": "newly_assigned_owner",
+                "new_entity_owner_sub_type": "specific_team_member",
+                "new_entity_owner_employees": ["<employee UUID>"],
+                "context_entity_field": "<object>.<relationship field>",
+            },
+        ),
+        Variant(
+            "round_robin_role",
+            "Owners taken in turn from one role, starting at a stage.",
+            {
+                **_NEW_RECORD,
+                "new_entity_owner_type": "newly_assigned_owner",
+                "new_entity_owner_sub_type": "round_robin_specific_role",
+                "new_entity_owner_role": "<role UUID>",
+                "new_entity_stage": "<stage UUID>",
+            },
+        ),
+        Variant(
+            "into_variable",
+            "Kept in a variable for later steps, with no relationship field. "
+            "An existing record of the same name gets a suffix.",
+            {
+                **_NEW_RECORD,
+                "new_entity_owner_type": "assign_from_context_record",
+                "target_variable": "<variable name>",
+                "existing_record_found_action": "create_append_suffix",
+            },
+        ),
+    ),
+    selectors=(
+        Selector(
+            "new_entity_owner_type",
+            (
+                Option(
+                    "assign_from_context_record", note="the triggering record's owner"
+                ),
+                Option("newly_assigned_owner", ("new_entity_owner_sub_type",)),
+            ),
+        ),
+        Selector(
+            "new_entity_owner_sub_type",
+            (
+                Option("round_robin_any_role", note="anyone, in turn"),
+                Option("round_robin_specific_role", ("new_entity_owner_role",)),
+                Option(
+                    "round_robin_choose_team_members", ("new_entity_owner_employees",)
+                ),
+                Option("specific_team_member", ("new_entity_owner_employees",)),
+                Option("assign_from_variable", ("new_entity_owner_variable",)),
+            ),
+            note="only with newly_assigned_owner",
+        ),
+        Selector(
+            "context_entity_field_resolution",
+            _RESOLUTIONS,
+            "overwrite",
+        ),
+        Selector("variable_field_resolution", _RESOLUTIONS, "overwrite"),
+        Selector(
+            "existing_record_found_action",
+            (Option("error_do_not_create"), Option("create_append_suffix")),
+            "error_do_not_create",
+        ),
+        Selector(
+            "archived_record_found_action",
+            (
+                Option("overwrite"),
+                Option("unarchive"),
+                Option("create_append_suffix"),
+                Option("error_do_not_create"),
+            ),
+            "overwrite",
         ),
     ),
     lookups=(
@@ -409,10 +498,18 @@ _CREATE_RELATED_ENTITY = Guide(
             "kizen objects get <object>",
             "a relationship field on the automation's object, as <object>.<field>",
         ),
+        Lookup("new_entity_owner_employees", "kizen team search <name>"),
+        Lookup("new_entity_owner_role", "kizen roles list"),
+        Lookup(
+            "new_entity_stage",
+            "kizen objects get <object>",
+            "the stage field's options",
+        ),
     ),
     notes=(
         "Field values can't be set at creation: set them in a following "
         "`modify_related_entities` step through the same `context_entity_field`.",
+        "It can't create a Contact (client_client): Kizen refuses it. Use a code step.",
     ),
     concepts=("field", "variable", "merge-fields"),
 )

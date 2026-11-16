@@ -4,6 +4,7 @@ planner registries and the spec models."""
 from __future__ import annotations
 
 import json
+import uuid
 from typing import get_args
 
 import pytest
@@ -269,6 +270,47 @@ def test_schedule_activity_variants_build_a_payload(patch_live_lookups):
         ]
         assert block["schedule"]["type"] == variant.block["schedule"]["type"]
         assert "field_ref" not in json.dumps(block), variant.name
+
+
+_FILLS = {
+    "<object api_name>": "encounters",
+    "<object>.<relationship field>": "patients.encounters",
+    "<employee UUID>": "22222222-2222-4222-8222-222222222222",
+    "<role UUID>": "33333333-3333-4333-8333-333333333333",
+    "<stage UUID>": "44444444-4444-4444-8444-444444444444",
+    "<variable name>": "made",
+}
+
+
+def _built_variants(type_name):
+    """Each variant of ``type_name`` built by the real builder on a
+    `patients` automation, once its placeholders name things the fixture
+    env has."""
+    block_key = step_catalog.describe(type_name)["block"]
+    for variant in step_catalog._STEP_GUIDES[type_name].variants:
+        text = json.dumps(step_catalog.variant_spec(type_name, variant.name))
+        for placeholder, value in _FILLS.items():
+            text = text.replace(placeholder, value)
+        auto = AutomationDef.model_validate(
+            _with_orders(
+                {
+                    "name": "t",
+                    "api_name": "t",
+                    "target_object": "patients",
+                    "steps": [json.loads(text)],
+                }
+            )
+        )
+        payload = _build_automation_payload(auto, LiveContext())
+        yield variant, payload["steps"][0][block_key]
+
+
+def test_create_related_entity_variants_build_a_payload(patch_live_lookups):
+    for variant, block in _built_variants("create_related_entity"):
+        assert set(variant.block) <= set(block), variant.name
+        for key in ("new_entity_owner_type", "new_entity_owner_sub_type"):
+            assert block.get(key) == variant.block.get(key), variant.name
+        uuid.UUID(block["target_custom_object"])
 
 
 # --- CLI ------------------------------------------------------------------

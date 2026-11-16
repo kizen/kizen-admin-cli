@@ -293,7 +293,7 @@ none. It is the search-and-link pattern above, with three differences:
   field into a string variable and compare with `"variable"` (see
   `kizen docs show filters`).
 - **The Contact is created in a code step.** `create_related_entity` can't
-  create a Contact (see [`create_related_entity`](#create_related_entity)).
+  create a Contact: Kizen refuses it with a 400 (confirmed live 2026-10-30).
   The script posts to `/records/client_client/add`, and its `field` output
   links the new Contact.
 - **Kizen refuses a second Contact with the same email**, with a 400 "Entity
@@ -823,50 +823,7 @@ the example leaves out the optional `preview_user_id`:
 
 ### `create_related_entity`
 
-Creates one record on another object and links it to the triggering record.
-
-```json
-{ "step_type": "create_related_entity", "key": "create_followup",
-  "parent_key": null,
-  "action_create_related_entity": {
-    "target_custom_object": "service_tickets",
-    "new_entity_name": "Follow-up for {{ entity_record.name }}",
-    "new_entity_name_html": "<p>Follow-up for {{ entity_record.name }}</p>",
-    "new_entity_owner_type": "assign_from_context_record",
-    "context_entity_field": "accounts.followup_ticket"
-  } }
-```
-
-- **`target_custom_object`** is the object the record is created on: an
-  api_name, a UUID, or an `{id}`/`{name}` dict. **`target_object`** is an
-  alias for it. Give one; `target_custom_object` wins when both are set.
-- **`new_entity_name`**, **`new_entity_name_html`** and
-  **`new_entity_owner_type`** (`assign_from_context_record` or
-  `newly_assigned_owner`) are required by the write schema. The owner can be
-  narrowed with `new_entity_owner_sub_type`, `new_entity_owner_role`,
-  `new_entity_owner_variable` or `new_entity_owner_employees`.
-- **`context_entity_field`** is a field on the automation's own
-  `target_object` that is set to point at the new record: after the step
-  runs, it holds the new record's id (confirmed live 2026-08-13). A bare or
-  `"object.field"` ref resolves at plan time. **`target_variable`** names a
-  variable that receives the new record.
-- The other keys it reads are `new_entity_stage`, `automations_to_start`,
-  `variable_field_resolution` and `context_entity_field_resolution`
-  (default `overwrite`), `existing_record_found_action` (default
-  `error_do_not_create`) and `archived_record_found_action` (default
-  `overwrite`). Any other key is a `spec error:` on `automations
-  create`/`update`, `steps add` and `steps edit`.
-- **Field values can't be set at creation.** The step has no key for them:
-  `field_values` used to be forwarded, and Kizen accepted it and stored
-  nothing (confirmed live 2026-10-05). Create the record empty, then set its
-  values in a following
-  [`modify_related_entities`](#modify_related_entities--field-shape) step
-  whose hop is the same `context_entity_field`.
-- **It can't create a Contact.** Kizen rejects the step at create with a 400,
-  "contact creation not supported", so the CLI refuses a `target_custom_object`
-  of `client_client` at plan time. Create the Contact in a `code_step` instead:
-  see [Find or create a Contact by email](#find-or-create-a-contact-by-email).
-  Confirmed live 2026-10-30.
+Every key, choice and common shape: `kizen automations step-types show create_related_entity`.
 
 ### Moving a record to a stage
 

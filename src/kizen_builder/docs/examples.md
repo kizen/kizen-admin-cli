@@ -280,8 +280,8 @@ Two placeholder tokens, both filled in from the previous two sections:
   field's `id` from `objects get service_tickets`. This is
   `create_related_entity`'s `context_entity_field`: the field on **this
   automation's own `target_object`** that gets set to point at the record
-  this step creates (see `automation.md`'s `create_related_entity`
-  section). The ref
+  this step creates (see `kizen automations step-types show
+  create_related_entity`). The ref
   `"service_tickets.escalation_ticket"` (or bare `"escalation_ticket"`)
   resolves to the same UUID at plan time.
 - `<site_visit_activity_type_uuid>` — the `Site Visit` activity type's `id`
@@ -291,8 +291,8 @@ Two placeholder tokens, both filled in from the previous two sections:
 **`create_related_entity` names its target with `target_object`**, an
 alias for the wire key `target_custom_object`. A spec that sets only
 `target_object` applies, `confirmed live 2026-10-05`. Either key alone is
-enough; see `automation.md`'s `create_related_entity` section for the rest
-of the step's keys.
+enough; `kizen automations step-types show create_related_entity` lists
+the rest of the step's keys.
 
 `condition.filter_config` uses the bare field api_name and an option
 **label** (`"High"`), not a UUID — `kizen docs show filters` resolves it at

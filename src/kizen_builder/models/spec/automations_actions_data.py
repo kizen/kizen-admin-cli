@@ -49,22 +49,121 @@ class ActionChangeFieldValueConfig(BaseModel):
     related_object_field: str | None = None
 
 
+RecordFieldResolution = Literal["overwrite", "update_if_blank", "add_only"]
+
+_UUID_OR_READ = "a UUID, or the {id, ...} a read gives"
+
+
 class ActionCreateRelatedEntityConfig(BaseModel):
-    """Config for `step_type: create_related_entity`."""
+    """Config for `step_type: create_related_entity`. Field values can't be
+    set at creation: Kizen accepted a `field_values` key and stored nothing
+    (confirmed live 2026-10-05), so set them in a following
+    `modify_related_entities` step through the same `context_entity_field`."""
 
     model_config = ConfigDict(extra="allow")
 
+    # Kizen 400s a Contact here ("contact creation not supported", confirmed
+    # live 2026-10-30), and the planner refuses `client_client`.
     target_custom_object: str | dict[str, Any] | None = Field(
         default=None,
         description=(
             "Object the new record is created on — api_name, UUID, or an "
-            "{id}/{name} dict. Resolved to UUID at apply time."
+            "{id}/{name} dict. Resolved to UUID at apply time. Not "
+            "client_client: a Contact is created in a code step."
         ),
     )
     target_object: ApiName | None = Field(
         default=None,
         description=(
             "Alias for `target_custom_object`, which wins when both are given."
+        ),
+    )
+    new_entity_name: str | None = Field(
+        default=None,
+        description="Required by Kizen: the new record's name, with merge fields.",
+    )
+    new_entity_name_html: str | None = Field(
+        default=None,
+        description="Required by Kizen: the same name as HTML, e.g. <p>...</p>.",
+    )
+    new_entity_owner_type: (
+        Literal["assign_from_context_record", "newly_assigned_owner"] | None
+    ) = Field(
+        default=None,
+        description=(
+            "Required by Kizen: assign_from_context_record gives it the "
+            "triggering record's owner; newly_assigned_owner picks one by "
+            "new_entity_owner_sub_type."
+        ),
+    )
+    new_entity_owner_sub_type: (
+        Literal[
+            "round_robin_any_role",
+            "round_robin_specific_role",
+            "round_robin_choose_team_members",
+            "specific_team_member",
+            "assign_from_variable",
+        ]
+        | None
+    ) = Field(default=None, description="How newly_assigned_owner picks the owner.")
+    new_entity_owner_role: str | dict[str, Any] | None = Field(
+        default=None,
+        description=f"The role for round_robin_specific_role: {_UUID_OR_READ}.",
+    )
+    new_entity_owner_employees: list[str | dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Team members for specific_team_member (one) or "
+            f"round_robin_choose_team_members: each {_UUID_OR_READ}."
+        ),
+    )
+    new_entity_owner_variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description="The variable holding the owner, for assign_from_variable.",
+    )
+    new_entity_stage: str | dict[str, Any] | None = Field(
+        default=None,
+        description=f"The starting stage on a pipeline object: {_UUID_OR_READ}.",
+    )
+    # After the step runs, the field holds the new record's id (confirmed
+    # live 2026-08-13).
+    context_entity_field: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "A relationship field on the automation's object, set to the new "
+            "record: 'object.field' or a bare field name, resolved at plan time."
+        ),
+    )
+    context_entity_field_resolution: RecordFieldResolution | None = Field(
+        default=None,
+        description="How context_entity_field takes the new record. Builder default: overwrite.",
+    )
+    target_variable: str | dict[str, Any] | None = Field(
+        default=None, description="A variable that receives the new record."
+    )
+    variable_field_resolution: RecordFieldResolution | None = Field(
+        default=None,
+        description="How target_variable takes the new record. Builder default: overwrite.",
+    )
+    automations_to_start: list[str | dict[str, Any]] | None = Field(
+        default=None,
+        description=f"Automations to start on the new record: each {_UUID_OR_READ}.",
+    )
+    existing_record_found_action: (
+        Literal["create_append_suffix", "error_do_not_create"] | None
+    ) = Field(
+        default=None,
+        description=(
+            "When a record with that name exists. Builder default: error_do_not_create."
+        ),
+    )
+    archived_record_found_action: (
+        Literal["unarchive", "overwrite", "create_append_suffix", "error_do_not_create"]
+        | None
+    ) = Field(
+        default=None,
+        description=(
+            "When an archived record with that name exists. Builder default: overwrite."
         ),
     )
 

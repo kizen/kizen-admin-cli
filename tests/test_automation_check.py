@@ -1235,3 +1235,64 @@ def test_the_filter_ops_are_the_ones_the_compiler_takes():
     from kizen_builder.models.spec.automations_shared import FilterOp
 
     assert sorted(get_args(FilterOp)) == filtering.VALID_SPEC_OPS
+
+
+def _related(**block):
+    return {
+        "key": "make",
+        "step_type": "create_related_entity",
+        "action_create_related_entity": {
+            "target_custom_object": "accounts",
+            "new_entity_name": "n",
+            "new_entity_name_html": "<p>n</p>",
+            "new_entity_owner_type": "assign_from_context_record",
+            **block,
+        },
+    }
+
+
+_WRONG_CHOICES = [
+    (
+        _related(new_entity_owner_type="owner"),
+        "action_create_related_entity.new_entity_owner_type",
+        "newly_assigned_owner",
+    ),
+    (
+        _related(new_entity_owner_sub_type="round_robin"),
+        "action_create_related_entity.new_entity_owner_sub_type",
+        "round_robin_any_role",
+    ),
+    (
+        _related(context_entity_field_resolution="replace"),
+        "action_create_related_entity.context_entity_field_resolution",
+        "update_if_blank",
+    ),
+    (
+        _related(existing_record_found_action="unarchive"),
+        "action_create_related_entity.existing_record_found_action",
+        "create_append_suffix",
+    ),
+]
+
+
+@pytest.mark.parametrize(("step", "path", "allowed"), _WRONG_CHOICES)
+def test_a_wrong_choice_in_a_typed_block_names_the_choices(step, path, allowed):
+    f = _only(_errors(_spec(step)), path=path)
+    assert allowed in f.allowed and f.step == step["key"]
+
+
+def test_create_related_entity_takes_every_key_a_read_gives():
+    """A read's expanded objects and lists check clean, so a roundtrip
+    spec needs no edits."""
+    read = json.loads(
+        (FIXTURES / "automations" / "create_and_modify_related.raw.json").read_text()
+    )
+    blocks = [
+        s["action_create_related_entity"]
+        for s in read["steps"]
+        if s["step_type"] == "create_related_entity"
+    ]
+    assert blocks
+    for block in blocks:
+        step = {"key": "make", "step_type": "create_related_entity"}
+        check_automation(_spec({**step, "action_create_related_entity": block}))
