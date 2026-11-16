@@ -287,6 +287,7 @@ src/kizen_builder/
 docs/                            # Repo-only. Never ships. Maintainer procedures.
   ARCHITECTURE.md
   RELEASING.md
+  automations-wire.md            #   automation2 read/write dialects, transforms, wire keys
 
 .kizen/profile                    # non-secret pin: profile name + business_id
 ~/.config/kizen/credentials.toml  # central secret store (0600), never committed
@@ -304,6 +305,8 @@ An *environment* folder is much smaller: a `.kizen/profile` pin plus the
 
 **A new command on an existing surface.** Document the entity in its existing
 `docs/specs/<surface>.md` — spec shape above the divider, wire behavior below.
+Automations are the exception: their wire behavior is in
+[`docs/automations-wire.md`](docs/automations-wire.md).
 Give the command a Typer `epilog` pointing at `kizen docs show <surface>` (grep
 `epilog=` under `cli/` for the pattern). `tests/test_docs_specs_links.py` fails
 if an epilog names a topic that doesn't resolve.
@@ -390,8 +393,14 @@ exit 1 from any command, and anything else into `error: internal: …`.
    (live, in a fixture, or via the drift snapshot once it captures enum
    values), add them to `KNOWN_ENUM_CHOICES` / `KNOWN_ENUM_CHOICES_TRIGGERS`
    in `tools/planners/automations.py` rather than only writing them into
-   `automation.md` prose — that's what turns a future rejection of the same
+   doc prose — that's what turns a future rejection of the same
    value into a message naming the alternatives instead of a guessing game.
+
+A wire fact the type taught you (a read shape the write refuses, a key that
+differs from the spec) goes in
+[`docs/automations-wire.md`](docs/automations-wire.md). What a spec author
+needs goes in the type's model descriptions or its `Guide`, and what neither
+can say in `kizen docs show automation`.
 
 Wiring a new type also widens the drift suite's scope, which will fail until
 someone covers it.

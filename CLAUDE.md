@@ -34,6 +34,7 @@ Consult these in order. Grepping `src/` for any of them wastes time.
 |---|---|
 | **Command syntax** — what flags a command takes | `kizen <group> <cmd> --help`, generated from the code |
 | **One kind of entity** — spec shape, wire format, endpoints, quirks | `src/kizen_builder/docs/specs/<surface>.md` |
+| **Automation wire dialects** — GET vs PUT, read→write transforms, wire keys | [`docs/automations-wire.md`](docs/automations-wire.md) |
 | **Filters** — DSL, wire format, per-type operators | `src/kizen_builder/docs/filters.md` |
 | **The Python inside a `code_step`** | `src/kizen_builder/docs/code-steps.md` |
 | **Which topic covers this?** | `src/kizen_builder/docs/reference.md` |
