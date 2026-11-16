@@ -477,3 +477,47 @@ rule.
 | `show`, `diff`, `roundtrip`, `activate` and `deactivate` warn, not refuse, about an inactive `start_automation` target, because Kizen also refuses a PUT of an automation whose target was deactivated later | `inactive_start_targets` | 2026-10-30 |
 | What an update keeps: `active`, `folder`, `skip_non_working_days` (a PUT without it turns a live `true` off), webhook auth; on a step whose `id` matches, `description`, `user_description`, `should_skip_execution`, `continue_with_branch` (with a kept skip), `action_on_failure`, `error_notification_severity_level`; on a trigger, `description`, `user_description`, `should_skip_execution`; per type, `schedule_activity` `target_variable`/`variable_field_resolution`, LLM `merge_field_validation`/`is_advanced` (a condition's `llm_decision.merge_field_validation`), `call_llm`'s MCP pair, `max_sequential_turns`, `tool_failure_policy`, a stop's `action`/`notify`, `create_related_entity`'s resolution, and a `field_updated` trigger's match modes | `_KEPT_STEP_KEYS`, `_KEPT_TRIGGER_KEYS`, `_KEPT_BLOCK_KEYS`, `_carry_omitted_step_keys`, `_kept_match_modes`, `_carry_webhook_auth` | 2026-10-30 |
 | A step or trigger without `id` gets a fresh one, orphaning its run history | `_carry_omitted_step_keys` (kept only by `id`) | 2026-08-10 |
+
+## Facts the author guide no longer states
+
+Confirmed-live findings cut from `kizen docs show automation` because
+`step-types` now prints the author-facing half, or because only a contributor
+needs them. Each keeps its date here.
+
+- **Goal `wait_type`.** `wait_forever` is a 400; `step-types show goal` lists
+  `never`, `delay` and `specific_datetime`. Confirmed live 2026-10-14.
+- **Branch lanes.** A lane of a `branch` step can be a `branch` step itself,
+  merged or not, and a `branch` can follow a merge.
+- **`plugin_code_step` round-trips.** `activate`, `deactivate`, `steps` edits
+  to other steps and `roundtrip --execute` keep a plugin step's inputs,
+  outputs and secrets intact. Confirmed live 2026-10-14.
+- **LLM destination defaults.** `is_required` defaults to `false` and
+  `confidence_threshold` (extraction only) to `0.7`.
+- **`merge_field_validation` UI labels**, confirmed live against the builder
+  dropdown: `error_if_required` "Error if any merge field is blank",
+  `default_to_unknown` "Default to 'Unknown'", `blank` "Leave Blank".
+- **MCP keys on `call_llm`.** `max_sequential_turns` takes 1–32767 (default
+  25), and `tool_failure_policy` takes only `never_fail`. Confirmed live
+  2026-10-27.
+- **Array variables in the builder.** `array_aggregation_mode` is "Choose
+  Source Handling" (*Add All Sources* / *First Non-Blank Source Only*) and
+  `deduplicate_array` is "Unique Values Only". Confirmed live 2026-10-14.
+- **`schedule_activity.note` and `html_note`.** Kizen stores them separately,
+  and a PUT without `html_note` clears it while `note` survives (the
+  `step-types show schedule_activity` note). Confirmed live 2026-10-06.
+- **`schedule_activity` times.** A `specific_time` takes `time` on a 24-hour
+  clock: `"21:00"` saves, unlike the date trigger's 12-hour `time`.
+  Confirmed live 2026-10-30.
+- **`schedule_activity.target_variable`** takes a String or UUID variable;
+  `variable_field_resolution` defaults to `overwrite`. Confirmed live
+  2026-10-30.
+- **Date trigger defaults.** A left-out `skip_non_working_days` reads back
+  `null`; `past_date_action`'s other values are `proceed_down_not_met_path`
+  and `wait_for_not_met_path_delay`. Confirmed live 2026-10-30.
+- **`assign_team_member` sources.** Whether `field_id` may name a
+  team-selector field other than the far object's `owner` is unconfirmed (as
+  of 2026-08-13).
+- **Merge-field spans.** The planner, like Kizen's builder, wraps each token
+  in a `kzn-merge-field` span; a bare token is inert text. The span's
+  attributes are in `kizen docs show email-templates` (confirmed live
+  2026-08-26).

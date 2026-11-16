@@ -100,6 +100,50 @@ before validation, and the plan preview lists them under
 The CLI doesn't call a server's `endpoint_url` itself. That's the JSON-RPC
 endpoint MCP clients use at run time; `get` prints it so you can wire one up.
 
+## Searching a knowledge catalog from an AI step
+
+A `call_llm` step searches the business's knowledge catalogs through a server
+that serves the catalog tools. Confirmed live 2026-11-02:
+
+- **`mcp_server`** is the system `readonly` server, or any server whose
+  `tool_names` include `listCatalogs`, `searchCatalog` and `getDocument`.
+- **`run_tools_as`** is Kizen's own automation account, named "Agentic
+  Workflow Code" where this was run. If that name isn't valid on a business,
+  `--dry-run` names the accounts that are.
+- **`kizen/pro`** supports tool calling.
+- `listCatalogs` returns the default catalog, "Business Knowledge", api_name
+  `business_knowledge` (confirmed live 2026-10-30). `searchCatalog` takes
+  `query`, `n` and `catalog`; the model may leave `catalog` null.
+- **To see what each search returned**, run `kizen automations runs view
+  <execution_id> --json`: the step's `detailed_log.tool_calls` lists every call
+  with its `arguments` and `result`.
+
+This drafts an answer to a support request, started by hand on the request:
+
+<!-- fixture: examples/support_desk/draft_reply.automation.json#/triggers -->
+```json
+[ { "trigger_type": "manual", "order": 0, "trigger_manual": {} } ]
+```
+
+<!-- fixture: examples/support_desk/draft_reply.automation.json#/steps -->
+```json
+[ { "key": "answer", "parent_key": null, "step_type": "initialize_variable", "order": 0,
+    "action_initialize_variable": { "sources": [],
+      "variable": { "name": "draft_answer", "data_type": "string" } } },
+  { "key": "draft", "parent_key": "answer", "step_type": "call_llm", "order": 1,
+    "action_call_llm": {
+      "model_name": "kizen/pro",
+      "mcp_server": "readonly",
+      "run_tools_as": "Agentic Workflow Code",
+      "merge_field_validation": "default_to_unknown",
+      "prompt": "Search the knowledge catalog with searchCatalog for this support request, then draft a short answer from what you find. End with the titles of the documents you used, or say that none matched.\nRequest subject: {{ custom_objects.subject }}",
+      "destinations": [ { "variable": "draft_answer" } ] } } ]
+```
+
+Confirmed live 2026-11-02, on a copy of this file: the model called
+`searchCatalog` twice and wrote its draft to `draft_answer`. The step's other
+keys are in `kizen automations step-types show call_llm`.
+
 ---
 
 # Wire format & API behavior
@@ -154,8 +198,8 @@ POST   /api/mcp/{api_name}                    # JSON-RPC, for MCP clients (endpo
   `custom_objects` (`listCustomObjects`, `listObjectFields`,
   `listObjectFieldOptions`, `getCustomObject`). All seven are
   `readOnlyHint: true`. The system `readonly` server serves all seven. For an
-  AI step that searches a catalog, see `kizen docs show automation`,
-  "Searching a knowledge catalog".
+  AI step that searches a catalog, see [Searching a knowledge catalog from an
+  AI step](#searching-a-knowledge-catalog-from-an-ai-step).
 - `step-options` is a bare list of `{id, name, api_name, is_enabled, deleted,
   tool_count}`. It lists disabled servers and leaves out deleted ones.
 
