@@ -831,3 +831,58 @@ def test_an_entity_variable_takes_an_object_api_name(patch_live_lookups):
     assert by_name == by_id
     variable = by_id["action_initialize_variable"]["variable"]
     assert variable["data_subtype"] == _PATIENTS
+
+
+def _on_date(**block):
+    on_date = {"field_ref": "deals.close_date", "date_offset": "days_after", **block}
+    return _activity(
+        schedule={"type": "on_or_around_date", "on_or_around_date": on_date}
+    )
+
+
+def test_a_date_schedule_without_time_is_an_error_with_no_live_call():
+    f = _only(_errors(_spec(_on_date())), step="act")
+    assert f.path == "action_schedule_activity.schedule.on_or_around_date"
+    assert "needs `time`" in f.message
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"time": "09:00"},
+        {"time_offset": "hours_before", "time_offset_value": 2},
+        {"date_offset": "on_day_and_time"},
+    ],
+    ids=["time", "relative", "on_day_and_time"],
+)
+def test_a_date_schedule_that_needs_no_time_passes(block):
+    check_automation(_spec(_on_date(date_offset_days=1, **block)))
+
+
+def _date_trigger(**block):
+    on_date = {"field_ref": "deals.close_date", **block}
+    return [{"trigger_type": "on_or_around_date", "trigger_on_or_around_date": on_date}]
+
+
+@pytest.mark.parametrize(
+    ("block", "needs"),
+    [({}, "`time` and `period`"), ({"time": "09:00"}, "`period`")],
+    ids=["no-time", "no-period"],
+)
+def test_a_date_trigger_without_time_is_an_error(block, needs):
+    triggers = _date_trigger(date_offset="days_before", **block)
+    spec = _spec(_set_mrn("a"), triggers=triggers)
+    f = _only(_errors(spec), path="triggers[0].trigger_on_or_around_date")
+    assert f"needs {needs} (" in f.message
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"date_offset": "days_before", "time": "09:00", "period": "am"},
+        {"date_offset": "on_day_and_time"},
+    ],
+    ids=["time", "on_day_and_time"],
+)
+def test_a_date_trigger_that_needs_no_time_passes(block):
+    check_automation(_spec(_set_mrn("a"), triggers=_date_trigger(**block)))

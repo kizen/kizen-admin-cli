@@ -4914,6 +4914,7 @@ def test_step_schedule_activity_resolves_field_refs_to_field_ids(patch_live_look
                         "field_ref": "patients.date_of_birth",
                         "date_offset": "days_after",
                         "date_offset_days": 1,
+                        "time": "09:00",
                     },
                 },
                 "assigned_to": {
@@ -4928,6 +4929,7 @@ def test_step_schedule_activity_resolves_field_refs_to_field_ids(patch_live_look
         "field_id": by_name["date_of_birth"],
         "date_offset": "days_after",
         "date_offset_days": 1,
+        "time": "09:00",
     }
     assert action["assigned_to"] == {
         "assignment_type": "team_selector_field",

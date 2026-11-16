@@ -157,6 +157,22 @@ class TriggerOnOrAroundDateConfig(BaseModel):
     skip_non_working_days: bool | None = None
     every_year: bool = False
 
+    # Every date_offset but on_day_and_time 400s without `time`, and
+    # without `period` (confirmed live 2026-11-16); on_day_and_time takes
+    # the field's own time.
+    @model_validator(mode="after")
+    def _time_unless_from_field(self) -> Self:
+        if self.date_offset in (None, "on_day_and_time"):
+            return self
+        missing = [f"`{k}`" for k in ("time", "period") if not getattr(self, k)]
+        if missing:
+            raise ValueError(
+                f"date_offset '{self.date_offset}' needs {' and '.join(missing)} "
+                "(time is HH:MM on a 12-hour clock, period am or pm); only "
+                "on_day_and_time takes the time from the field itself"
+            )
+        return self
+
 
 class TriggerWebsiteVisitedConfig(BaseModel):
     """Config for `trigger_type: website_visited`."""

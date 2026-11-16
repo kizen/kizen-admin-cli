@@ -369,6 +369,24 @@ class ScheduleOnOrAroundDateConfig(BaseModel):
     )
     time_offset_value: int | None = None
 
+    # The server reads a left-out time_offset as specific_time and then
+    # 400s for want of `time`; on_day_and_time takes the field's own time
+    # and ignores time_offset (confirmed live 2026-11-16).
+    @model_validator(mode="after")
+    def _time_when_specific(self) -> Self:
+        if (
+            self.date_offset != "on_day_and_time"
+            and self.time_offset in (None, "specific_time")
+            and not self.time
+        ):
+            raise ValueError(
+                "needs `time` (HH:MM): a left-out time_offset is "
+                "specific_time, which takes one. Set `time`, or a time_offset "
+                "that doesn't take it (from_field, from_variable, or "
+                "hours/minutes before/after with time_offset_value)"
+            )
+        return self
+
 
 class ActivityScheduleConfig(BaseModel):
     """`schedule_activity.schedule`: when the activity falls due. `type`
