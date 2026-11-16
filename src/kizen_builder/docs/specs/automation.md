@@ -572,70 +572,43 @@ two deals and started the target once on each, and both briefs were written.
 
 ---
 
-## Wired trigger types
+## Triggers
 
-`kizen automations step-types list` lists them, and `step-types show <type>`
-prints one's block.
+`kizen automations step-types list` names the wired triggers, and `step-types
+show <type>` prints one's `trigger_<type>` block (`email_received`'s is
+`trigger_email_received_from_contact`). Any other trigger type is a plan error.
 
-Each requiring config sets a `trigger_<name>` block matching `trigger_type`
-(e.g. `field_updated` → `trigger_field_updated: { field_ref, fire_on_create, … }`).
-The one exception is `email_received`, whose block is
-`trigger_email_received_from_contact: {receiving_inbox, selected_integrated_inboxes}`.
-`receiving_inbox` is `any` (the default when omitted) or
-`selected_integrated_inboxes`, which needs a list of integrated inbox UUIDs;
-reads expand each to `{id, email}`. It works on Contact automations only: a
-custom object gets 400 "only client custom object is allowed". Confirmed live
-2026-10-14. The run gets the Contact, not the email; to read it, see `kizen
-docs show code-steps`, "Reading a Contact's newest inbound email". Saving
-it and `kizen automations activate` both work (confirmed live 2026-11-02).
-`manual` is an empty `trigger_manual: {}`. `schedule` → `trigger_schedule:
-{rrule, is_advanced}` — a recurring trigger (works on global automations too,
-where it's the only "time-based" option since `on_or_around_date` needs a
-target_object field); the wire shape matches a live read exactly (`rrule` is
-a full RFC 5545 string including `DTSTART`, written in UTC: see
-[Running once per record on a schedule](#running-once-per-record-on-a-schedule)
-for converting a local time). Other trigger types exist in
-Kizen (e.g. `email_interaction`, `email_link_clicked`,
-`contact_tag_added_removed`) but aren't wired here and raise `PlanError` if
-you try to spec them.
+- **`email_received`** works on Contact automations only: on a custom object
+  Kizen 400s "only client custom object is allowed" (confirmed live
+  2026-10-14). The run gets the Contact, not the email; to read the email, see
+  `kizen docs show code-steps`, "Reading a Contact's newest inbound email".
+  Saving it and `kizen automations activate` both work (confirmed live
+  2026-11-02).
+- **`schedule`** is the recurring trigger, and the only time-based one a global
+  automation can use. Its `rrule` is a full RFC 5545 string with `DTSTART` in
+  UTC: see [Running once per record on a schedule](#running-once-per-record-on-a-schedule).
+- **`activity_logged`** and **`scheduled_activity_overdue`** name an activity
+  type (`kizen activities list`). A workflow reads what was logged through the
+  record fields the activity's fields are linked to: `kizen docs show
+  activity`, "Branching on what someone logged". Confirmed live 2026-10-30.
+- **`form_submitted`** and **`survey_submitted`** run on any object, but the
+  form or survey must be on the automation's `target_object`. Otherwise Kizen
+  400s with "Form with ID '…' does not exist.", though the form exists
+  (confirmed live 2026-11-02). To tie a form's answers to the record, see
+  `kizen docs show form`.
+- **`stage_updated`** fires when a record on a pipeline object moves between
+  stages. A null or omitted `from_stage`/`to_stage` means any stage, so any
+  move is `"trigger_stage_updated": {}`. `fire_on_create` also fires it for a
+  record created in `to_stage`, and a move made by another automation fires it
+  too. Without a `description`, the trigger gets the UI's text ("Stage Update
+  from 'Any Stage' to 'Closed Won'"). Confirmed live 2026-10-30.
 
-`activity_logged` → `trigger_activity_logged: {activity_type}` and
-`scheduled_activity_overdue` → `trigger_scheduled_activity_overdue: {activity}`
-take the activity type's api_name, display name or UUID (`kizen activities
-list`). An unknown name is a plan error. A workflow reads what was logged through the record
-fields the activity's custom fields are linked to: see `kizen docs show
-activity`, "Branching on what someone logged". Confirmed live 2026-10-30.
-
-`form_submitted` → `trigger_form_submitted: {form_name}` and `survey_submitted`
-→ `trigger_survey_submitted: {survey_name}` take the form's or survey's
-api_name, display name or UUID (`form_id` / `survey_id` for a raw UUID). They
-run on any object, Contacts or custom, but the form or survey must be on the
-automation's `target_object` (its `related_object`). Otherwise Kizen 400s with
-"Form with ID '…' does not exist.", though the form exists. The write sends
-`{form_id}` / `{survey_id}`, and reads return `{form: {id, name, deleted}}` /
-`{survey: …}`. Confirmed live 2026-11-02. To tie a form's answers to the
-record, see `kizen docs show form`.
-
-`stage_updated` → `trigger_stage_updated: {from_stage, to_stage,
-fire_on_create}` fires when a record moves between stages, on pipeline
-objects only:
-
-```json
-{"trigger_type": "stage_updated", "trigger_stage_updated": {"to_stage": "Closed Won"}}
-```
-
-`from_stage` and `to_stage` each take a stage name or UUID, and null or
-omitted means any stage. The block itself is required, so any stage to any
-stage is `"trigger_stage_updated": {}`. An unknown stage, or a target that
-isn't a pipeline, is a plan error. `fire_on_create` (default false) also fires
-it when a record is created in `to_stage`. A move made by another automation
-fires it too, and the same block works as a goal step's wait-until trigger.
-As a goal, it counts only a move made while the run is waiting at the goal.
-A move made before the run gets there is missed, and the goal stays pending
-with the record already in `to_stage`. Without a `description`, or with one in the UI's form, the
-trigger gets the UI's text for its current stages, e.g. "Stage Update from
-'Any Stage' to 'Closed Won'"; any other description is kept. Confirmed live
-2026-10-30.
+**A goal step** waits on the same trigger types and blocks, under
+`step_goal.triggers`, e.g. `email_received` to wait for a reply. Its
+`wait_type` is `never`, `delay` or `specific_datetime`; `wait_forever` is a
+400 (confirmed live 2026-10-14). A goal counts only an event that happens while
+the run waits at it, so a `stage_updated` goal misses a move made before the
+run got there and stays pending (confirmed live 2026-10-30).
 
 ### Webhook trigger auth (confirmed live 2026-10-27)
 
@@ -650,38 +623,18 @@ trigger gets the UI's text for its current stages, e.g. "Stage Update from
 - `auth_type` is `kizen_api` (the default), `http_header`, `basic_auth` or
   `none`. Every type but `kizen_api` adds `?business_id=<uuid>` to
   `webhook_url`.
-- `http_header` takes `headers: [{name, value}]`: at least one, names 2-100
-  characters, no name twice. A caller must send every header, each matching
-  exactly. Put `{{ integration_secret.<api_name> }}` or
+- With `http_header`, a caller must send every header, each matching exactly,
+  and no header name may repeat. Put `{{ integration_secret.<api_name> }}` or
   `{{ business_variable.<name> }}` in the value. Text around the reference is
-  sent as written, so `Bearer {{ integration_secret.token }}` expects
-  `Bearer <secret>`. A literal value is accepted, but it's stored in plain
-  text and `show --json` prints it, so use a reference. The CLI fills each
-  header's `html_value` the way the UI does.
+  sent as written, so `Bearer {{ integration_secret.token }}` expects `Bearer
+  <secret>`. A literal value works, but it's stored in plain text and `show
+  --json` prints it.
 - `basic_auth` takes `secret: {api_name}`, an integration secret whose value
   is `user:pass`. Callers send `Authorization: Basic <base64 of user:pass>`.
 - `none` accepts any request. Kizen API headers don't get past `http_header`
   or `basic_auth`; a failed check answers 401 `Invalid webhook credentials.`
-- Kizen silently drops `headers` on any type but `http_header`, and `secret`
-  on any type but `basic_auth`, so the spec refuses both. The old
-  `auth_header_name`/`auth_header_value` keys are no longer read and are
-  refused too.
-- On `update`, a webhook trigger that leaves out `auth_type` keeps the live
-  automation's auth. Set `auth_type` to change it. The live trigger is matched
-  by trigger `id`, else by webhook `name`; a renamed trigger without its `id`
-  is a new trigger and gets `kizen_api` (`diff` shows it).
 - `automations duplicate` keeps each webhook's auth and name. The copy's URL
   uses the copy's api_name.
-
-A `goal` step's `step_goal.triggers` are wait-until triggers with the same
-`trigger_type` names and config blocks as the top level, e.g. `email_received`
-to wait for a reply. Its `wait_type` is `never`, `delay` or
-`specific_datetime`; `wait_forever` is a 400. Confirmed live 2026-10-14.
-The goal hands the run the Contact, not the reply; to read the reply, see
-`kizen docs show code-steps`, "Reading a Contact's newest inbound email".
-A goal counts only an event that happens while the run is waiting at it, so a
-`stage_updated` goal misses a move made before the run reaches the goal, and
-stays pending (confirmed live 2026-10-30).
 
 ### Date trigger (`on_or_around_date`)
 
@@ -697,62 +650,47 @@ at a time of day. This one fires three days before each deal's close date, at
     "time": "09:00", "period": "am" } }
 ```
 
-| Key | Values | Omitted |
-|---|---|---|
-| `field_ref` | `"object.field"`, or a bare field name on `target_object` (sent as `field_id`) | required |
-| `date_offset` | `on_day`, `on_day_and_time`, `days_before`, `days_after` | required |
-| `date_offset_days` | 1 or more with `days_before`/`days_after` | `0` |
-| `time` | `hh:mm` on a 12-hour clock: `09:00`, `05:00` | required unless `on_day_and_time` |
-| `period` | `am` or `pm` | required unless `on_day_and_time` |
-| `every_year` | bool | `false` |
-| `skip_non_working_days` | bool | `null` |
-| `past_date_action` | `proceed_down_met_path`, `proceed_down_not_met_path`, `wait_for_not_met_path_delay` | `proceed_down_met_path` |
+- `time` is `hh:mm` on a 12-hour clock, with `period` `am` or `pm`.
+  `"09:00:00"` and `"21:00"` are each a 400, so write 9 pm as `"09:00"` with
+  `"pm"`. `on_day_and_time` takes the time from the field instead.
+- Left out, `date_offset_days` is `0` (1 or more with `days_before` or
+  `days_after`), `every_year` `false`,
+  `skip_non_working_days` `null` and `past_date_action`
+  `proceed_down_met_path` (the others are `proceed_down_not_met_path` and
+  `wait_for_not_met_path_delay`).
 
-- `"09:00:00"` and `"21:00"` are each a 400: "Time has wrong format. Use one of
-  these formats instead: hh:mm." Write 9 pm as `"09:00"` with `"pm"`.
-- `time` without `period` is a 400 ("This field is required."), and so is a
-  trigger with neither; the dry-run refuses both. `on_day_and_time` takes
-  the time from the field and needs neither. Confirmed live 2026-11-16.
-- `on_day_and_time` needs a datetime field. On a date field the server 400s
-  with "Field must be datetime when date_offset is on_day_and_time"; use
-  `on_day` with `time` and `period` there. A goal's trigger and
-  schedule_activity's `on_or_around_date` have the same rule.
-- `days_before` or `days_after` with `date_offset_days` 0 or left out is a
-  400: "This field is required with days_before or days_after". Use `on_day`
-  for the day itself. The dry-run refuses both of these. Confirmed live
-  2026-11-17.
-
-Confirmed live 2026-10-30: four configs saved and read back as sent, with the
-defaults above filled in. A date trigger fires only on its date, so no run of
+Confirmed live 2026-10-30: four configs saved and read back as sent, with
+those defaults filled in. A date trigger fires only on its date, so no run of
 one was observed.
 
-## Wired step types
+## Steps
 
-`kizen automations step-types list` lists them, and `step-types show <type>`
-prints one's block. `branch`, `merge_branches`, `loop` and `next_or_finish`
-are covered under [Branch groups](#branch-groups) and [Loops](#loops), and
-where `initialize_variable` goes under
-[Key quirks](#key-quirks-the-ones-that-bite).
+`kizen automations step-types list` names the wired step types, and
+`step-types show <type>` prints one's block, with entries to copy. `branch`,
+`merge_branches`, `loop` and `next_or_finish` are under
+[Branch groups](#branch-groups) and [Loops](#loops); `code_step`'s Python side
+is in `kizen docs show code-steps`.
 
-`search_records`: `kizen automations step-types show search_records`.
+### Setting a field, or moving a record to a stage
 
-Other step types exist in Kizen (`send_email`, `change_tags`,
-`http_request`, `modify_automation`, `request_info_via_text`, `delete_scheduled_activity`,
-`modify_related_entities_automation` — not to be confused with the wired
-`modify_related_entities`) but aren't wired here and raise `PlanError` if you
-try to spec them.
+`change_field_value.specific_field_value` is a bare value, not `{value: …}`.
+An option field (dropdown, radio, status, checkboxes, choices, yesnomaybe, a
+pipeline's `stage`) takes option labels or UUIDs, and the CLI sends UUIDs.
+That is also how an automation moves a record:
 
-### `code_step` input/output shapes
+```json
+{"step_type": "change_field_value",
+ "action_change_field_value": {"field_ref": "stage", "specific_field_value": "<stage name>"}}
+```
 
-Every input and output type, with the keys each takes: `kizen automations
-step-types show code_step`. The Python side (`inputs.` / `outputs.` /
-`secrets[…]` / `kizen.api`, how each `data_type` arrives, and unit-testing a
-script) is in `kizen docs show code-steps`.
+There's no move-stage step: Kizen's API lists `update_pipeline_status`, but
+its builder doesn't offer one, and the CLI refuses it. The move writes the same
+timeline entry and stage history as a manual move (confirmed live 2026-10-30).
+To react to a move, use the `stage_updated` trigger.
 
 ### `plugin_code_step`
 
-Runs a step from an installed plugin's manifest. The block has seven keys;
-the example leaves out the optional `preview_user_id`:
+Runs a step from an installed plugin's manifest:
 
 ```json
 { "step_type": "plugin_code_step", "key": "summarize", "parent_key": null,
@@ -774,34 +712,21 @@ the example leaves out the optional `preview_user_id`:
   `action_step_api_name` names the step in that plugin's manifest. `GET
   /external-integrations/bootstrap` lists each install's steps under
   `automation_action_configs` (confirmed live 2026-10-14).
-- There's **no plugin-app id**, unlike the LLM steps. `business_plugin_app_id`
-  in this block is a plan error.
-- The server checks the names: an api_name with no install, including a
-  catalog plugin that isn't installed, and an `action_step_api_name` the
-  plugin doesn't ship are each a 400 naming the key. It also checks the
-  bindings against the manifest, and a required input or output that's
-  missing is a 400 naming it (all confirmed live 2026-10-14).
-- `inputs` and `outputs` take the `code_step` shapes (`kizen automations
-  step-types show plugin_code_step`). `inputs` also takes `input_type:
-  business_plugin_config`, for plugin steps only. On the
-  wire it's `{name, input_type, data_type?, is_list?}` with no source key. A
-  UI-built step reads back in that shape (seen 2026-10-14), bound to a
-  parameter the manifest declares `static_value`. Kizen's 2026-10-13 release
-  notes say the step receives the install config as a JSON string and that
-  the manifest declares the parameter with `input_source:
-  business_plugin_config`. Neither is **confirmed live**, and neither is
-  writing one from the CLI.
-- `secrets` takes names, as for `code_step`, and is sent as `[{name}]`.
+- Kizen checks the names and the bindings against the manifest. An api_name
+  with no install (a catalog plugin that isn't installed included), a step
+  the plugin doesn't ship, and a missing required input or output are each a
+  400 naming the key (confirmed live 2026-10-14).
+- `inputs`, `outputs` and `secrets` take the `code_step` shapes. `inputs` also
+  takes `input_type: business_plugin_config`, for plugin steps only. What
+  the step receives through it isn't confirmed live.
 - `preview_user_id` is the user whose preview of a business app the step
   runs. Null, the default, runs the installed version. A non-null id on a
   plugin that isn't a business app is a 400, "Previews are only available
-  for business apps" (confirmed live 2026-11-11). Reads also carry
-  `preview_user` and `preview_missing_message`, which are read-only and
-  never sent. On `update`, a step whose `id` matches keeps its live
-  `preview_user_id` when the spec leaves it out; `null` unpins it.
-- Step `id`s carry over as for any step. `activate`, `deactivate`, `steps`
-  edits to other steps and `roundtrip --execute` keep a plugin step's inputs,
-  outputs and secrets intact (confirmed live 2026-10-14).
+  for business apps" (confirmed live 2026-11-11). An `update` keeps the live
+  value when the spec leaves it out; `null` unpins it.
+- `activate`, `deactivate`, `steps` edits to other steps and `roundtrip
+  --execute` keep a plugin step's inputs, outputs and secrets intact
+  (confirmed live 2026-10-14).
 
 ### `create_related_entity`
 
@@ -814,27 +739,9 @@ every record already related is unlinked; `add_only` keeps them (confirmed
 live 2026-11-16). `--dry-run` lists the planned value under `defaults`. An
 `update` keeps a live step's value.
 
-### Moving a record to a stage
+### `modify_related_entities`
 
-```json
-{"step_type": "change_field_value",
- "action_change_field_value": {"field_ref": "stage", "specific_field_value": "<stage name>"}}
-```
-
-This is how an automation moves a record. There is no separate move-stage
-step: Kizen's API lists an `update_pipeline_status` type, but its automation
-builder doesn't offer one, and the CLI refuses it.
-
-- The stage name resolves to the stage's UUID case-insensitively, as any
-  option label does. An unknown name is a plan error that lists the stages.
-- The move writes the same timeline entry and stage history as a manual move
-  (confirmed live 2026-10-30).
-- To react to a move, use the `stage_updated` trigger (see Wired trigger types).
-
-### `modify_related_entities` — field shape
-
-Updates one or more fields on a record related to the trigger record, via
-one or more relationship-field hops.
+Updates fields on records related to the trigger record:
 
 ```json
 { "step_type": "modify_related_entities", "key": "sync_encounter",
@@ -850,51 +757,28 @@ one or more relationship-field hops.
   } }
 ```
 
-- **`automation_target_relationship_fields`** (list) is the hop chain from
-  the automation's `target_object` to `object_to_modify` — each entry
-  accepts an `"object.field"` ref (resolved at apply time, like any other
-  `field_ref`) or a raw field UUID. A single-hop convenience alias,
-  `relationship_field_ref` (or `relationship_field_id`), is also accepted
-  and folded into this list — but the list is the real wire key; don't
-  confuse this with `object_to_modify` (a plain object reference).
-- **`record_source`** says where the records come from:
-  `related_object_field` (the hop chain above) or `automation_variable`. For
-  `automation_variable`, set `record_source_variables` to the names of
-  **non-array** entity variables (an array variable 400s) and
-  `automation_target_relationship_fields: []`. Omitted, the server uses
-  `related_object_field`, which 400s without a hop:
-  *"automation_target_relationship_fields should be set"*. Confirmed live
-  2026-10-06.
-- **`fields_to_modify`** items use the *same* per-item shape as
-  `change_field_value`'s flat form (`field_to_modify`/`field_ref`,
-  `specific_field_value`, `related_object`, `related_object_field`,
-  `field_value_mappings`, `variable`), with one dialect swap and one scoping
-  exception:
-  - **`value_type` replaces `change_type`.** A standalone `change_field_value`
-    step's item uses `change_type`; a `modify_related_entities` item uses
-    `value_type` for the identical concept (e.g. `"specific_value"`,
-    `"context_entity_value"`, `"variable"`). Using the wrong key for the
-    step you're in doesn't error clearly — the API instead complains
-    `"specific_field_value should be passed"`, which reads like an unrelated
-    problem.
-  - **`field_to_modify`/`field_ref` names a field on `object_to_modify`**
-    (the *related* object) — but **`context_entity_field` names a field on
-    the automation's own `target_object`** (the *triggering* record, i.e.
-    the "context entity"). A bare (undotted) ref for either resolves against
-    the object that field actually lives on.
-- **`field_value_mappings`** — for copying a status/dropdown/radio field
-  between two objects whose option UUIDs differ (a very common pattern,
-  e.g. mirroring a risk-level field): `[{"source_values": [<uuid>],
-  "target_values": [<uuid>], "order": 0}, ...]`. Each entry maps one source
-  option UUID (on the field being read) to one target option UUID (on
-  `field_to_modify`); `order` controls evaluation order for multiple rules.
+- `automation_target_relationship_fields` is the hop chain from
+  `target_object` to `object_to_modify`, each an `"object.field"` ref or a
+  field UUID. `relationship_field_ref` is a one-hop shorthand for it.
+- `record_source` is `related_object_field` (the default, which needs the hop
+  chain) or `automation_variable`. For `automation_variable`, set
+  `record_source_variables` to the names of **non-array** entity variables
+  (an array variable 400s) and `automation_target_relationship_fields: []`.
+  Confirmed live 2026-10-06.
+- `fields_to_modify` items take `change_field_value`'s keys, with
+  `value_type` in place of `change_type`. The wrong one gets a 400 that
+  reads like another problem: "specific_field_value should be passed".
+- `field_to_modify` names a field on `object_to_modify`, but
+  `context_entity_field` names one on the automation's own `target_object`.
+- `field_value_mappings` copies an option field between two objects whose
+  option UUIDs differ: `[{"source_values": [<uuid>], "target_values":
+  [<uuid>], "order": 0}, …]`, one source option to one target option, tried
+  in `order`.
 
 ### Extraction input
 
-`file_content_extraction` and `audio_transcription` read their file from one
-of two keys, and Kizen accepts **exactly one**. Both, even when they agree, or
-neither, is a 400: `Only one of input_field or input_value_source should be
-set`. The planner refuses either case with a `PlanError` first.
+`file_content_extraction` and `audio_transcription` read their file from
+exactly one of `input_field_ref` and `input_value_source`:
 
 ```json
 { "input_field_ref": "claims.claim_attachment" }
@@ -905,32 +789,22 @@ set`. The planner refuses either case with a `PlanError` first.
 { "input_value_source": { "type": "context_entity_field", "field": "claims.claim_attachment" } }
 ```
 
-- `input_field_ref` (or `input_field` / `input_field_id`) is a file field on
-  the automation's own record.
+- `input_field_ref` is a file field on the automation's own record.
 - `related_object_field` reads a file field on a related record:
   `relationship_field` is the hop on `target_object`, `field` the file field
-  on the related object. **The hop must be single-valued** — a to-many hop
-  400s `Relationship field must be single-valued`.
-- `automation_variable` reads the file from a variable, named by `variable`.
-- `field` and `relationship_field` take a UUID or a dotted `"object.field"`
-  ref. The wire takes bare UUIDs, and `variable` as the name.
-- Every read mirrors `input_field` into a `context_entity_field` source as
-  well, and nulls `input_field` for the other source types. The planner
-  collapses the mirror back to `input_field`, so `steps get` output re-applies
-  as it is.
+  on the related object. **The hop must be single-valued**; a to-many hop
+  400s with `Relationship field must be single-valued`.
+- `automation_variable` reads the file from the variable `variable` names.
+- `steps get` prints the input in a form that re-applies as it is.
 
-Confirmed live 2026-10-14. The type enum also lists `specific_value`,
-`automation_entity_variable_field` and `blank`; those are unprobed as file
-inputs and pass through with the same unwrapping. The builder UI offers only
-fields on the record as a source, and an automation with a related-record or
-variable source does not open in the UI editor — it returns to the
-automation list.
+Confirmed live 2026-10-14. The builder UI offers only fields on the record as
+a source, and an automation with a related-record or variable source does not
+open in the UI editor: it returns to the automation list.
 
 ### LLM & extraction destinations
 
-`call_llm`, `file_content_extraction`, and `audio_transcription` all write
-results via the same `destinations` list shape. Two shapes, not three
-mutually-exclusive options:
+`call_llm`, `file_content_extraction` and `audio_transcription` write their
+results through a `destinations` list:
 
 ```json
 { "destinations": [
@@ -941,154 +815,59 @@ mutually-exclusive options:
 ] }
 ```
 
-- **Same-object write**: `field_ref` (or a raw `field` UUID) names the
-  destination directly on the automation's own `target_object`; `variable`
-  writes into an automation variable instead. `field_ref` resolves like any
-  other `"object.field"` ref.
-- **Related-object write** (single relationship hop): `related_object_field`
-  names the *destination* field on the related record — dotted
-  `"object.field"` ref (resolved like `field_ref`) or a raw field UUID.
-  Confirmed live 2026-07-27: the wire dialect then repurposes `field` as the
-  **relationship hop** (the field on `target_object` that points at the
-  related object), not a second destination — sending `related_object_field`
-  alone 400s (`"Either field or variable should be provided"`), and pointing
-  `field`/`field_ref` at the destination field itself 400s against the wrong
-  object (`"field should belong to agentic workflow custom object"`). Name
-  the hop explicitly with `relationship_field_ref` (or its alias
-  `relationship_field_id`) — same convenience-alias pattern as
-  `modify_related_entities`'s `relationship_field_ref`. Omit it and the
-  planner auto-detects the hop when exactly one relationship field exists
-  between `target_object` and the destination's object; with zero or more
-  than one candidate it raises a clear `PlanError` rather than guessing.
-  `field_ref`/`field` are also accepted as the hop (the shape the builder UI
-  itself produces when you hand-pick "related field" for a destination), but
-  `relationship_field_ref` reads clearer in a spec.
+- `field_ref` names a field on the automation's own `target_object`, and
+  `variable` an automation variable.
+- `related_object_field` names a field on a related record, and
+  `relationship_field_ref` the relationship field on `target_object` that
+  reaches it (one hop, confirmed live 2026-07-27). Leave the hop out and the
+  CLI uses the only relationship field between the two objects, or refuses
+  when there are none or several.
+- A choice-type destination gets its `options` from the field. `is_required`
+  and `confidence_threshold` (extraction only) default to `false` and `0.7`.
+- **Several destinations in one step need `is_advanced: true`.** Without it
+  Kizen 400s "Multiple destinations are not allowed for non-advanced LLM call
+  actions", on `file_content_extraction` and `audio_transcription` too
+  (confirmed live 2026-11-17). With it, one `call_llm` can write a field on `target_object` and a
+  field on a related object in the same call (confirmed live).
 
-For a choice-type destination field (dropdown, radio, status, checkboxes,
-choices, yesnomaybe), `options` (the field's option UUIDs) auto-populates from
-live field metadata when the destination field is named via
-`field_ref`/`related_object_field` and `options` isn't given explicitly. `is_required` and
-`confidence_threshold` (extraction only) default to `false`/`0.7`.
+**The model.** `kizen automations llm-models` lists every `model_name` the
+business can use, which LLM steps each supports, and what replaces a
+deprecated one. `gemini/…` and `openai/…` models need the prefix; Claude
+models are bare (`claude-3-7-sonnet-20250219`). Leave `business_plugin_app_id`
+out: the CLI fills it from that catalog for every model, Kizen AI included, so
+the step reads back like one saved in the Kizen UI (confirmed live
+2026-10-30).
 
-**Multiple destinations in one step** require `is_advanced: true` — without
-it the server 400s with `"Multiple destinations are not allowed for
-non-advanced LLM call actions"` even if every destination is otherwise
-valid. `file_content_extraction` and `audio_transcription` have the same
-rule (confirmed live 2026-11-17), and the dry-run refuses it on all three.
-Confirmed live: with `is_advanced: true`, one `call_llm` step can write to a
-field on `target_object` *and* a field on a related object (two different
-objects) in the same call.
-
-**`model_name` + `business_plugin_app_id`** — run `kizen automations
-llm-models` for the live catalog (wraps `GET
-/api/automation2/automations/metadata`'s `llm.provider_model_details`):
-every enabled `model_name` this business can use, which of
-call_llm/condition-`llm_decision`/file_content_extraction/audio_transcription
-each one supports, deprecation status + suggested replacement, and the
-`business_plugin_app_id` of the provider install that runs each one:
-
-```
-$ kizen automations llm-models
-provider   model_name                   business_plugin_app_id                 call  decision  extract  transcribe
-kizen      kizen/pro                    145fa07b-ffe0-49cb-89af-8f126a0a2f13    ✓      ✓        ✓         ·
-gemini     gemini/gemini-2.5-flash      92dfef31-8b9b-49dc-b54b-3e47cd6b4523    ✓      ✓        ✓         ✓
-anthropic  claude-sonnet-4-5-20250929   96bae762-ad8c-4431-bf21-95aaedadaa08    ✓      ✓        ✓         ·
-```
-
-`model_name` is a free string — `gemini/...` and `openai/...` models need
-the provider prefix; Claude models are bare (e.g.
-`claude-3-7-sonnet-20250219`, no `claude/` prefix). **`business_plugin_app_id`
-is optional in a spec: the CLI fills it from this catalog for every model,
-Kizen AI included**, so a step reads back with the same `business_plugin_app`
-a step saved in the Kizen UI has. Each business has its own Kizen AI install
-id, as it does for every other provider (confirmed live 2026-10-30). The
-write itself doesn't need it for `kizen/*`, but then stores the step with
-`business_plugin_app: null`, unlike a step saved in the Kizen UI; for any
-other provider, `model_name` alone 400s with
-`{'business_plugin_app_id': ['Business plugin app not found']}`. With
-`business_plugin_app_id` omitted, a `model_name` the catalog doesn't list
-is refused at plan time; with an explicit id, the server decides. An id
-that belongs to a different provider than the model's is refused too: the
-write accepts `kizen/pro` with the OpenAI install's id and stores that
-pairing (confirmed live 2026-10-30).
-
-**If you set `business_plugin_app_id` by hand, take it from the right
-endpoint.** A wrong id gets the same 400 the raw API gives a missing one,
-so it's easy to think the id itself is bad rather than the source it came
-from. Two endpoints return something that LOOKS like the right id and
-isn't:
-- `GET /api/external-integrations/bootstrap` returns each plugin's
-  **catalog/app-definition id** — identical across every business (it's the
-  "Gemini the product" id, not "your business's installed Gemini
-  integration"). Sending this 400s the same way as omitting the field.
-- `GET /api/external-integrations/business-plugin-apps` returns the
-  correct per-business **installed instance** id (each entry's own `id`,
-  distinct from the nested `plugin_app.id`), keyed by `plugin_app.api_name`
-  matching the `model_name` prefix (`gemini`, `anthropic`, `open_ai`,
-  `mistral`) — but requires a second join against the model list yourself.
-- `GET /api/automation2/automations/metadata`'s
-  `llm.provider_model_details[].plugin_app.id` is the same correct
-  installed-instance id, already joined to each provider's model list —
-  this is what `automations llm-models` reads.
-
-Prefer `kizen automations llm-models` over hitting either endpoint by
-hand — it already does the provider→id join and tells you which models
-are usable for which step type in one shot.
-
-**`merge_field_validation`** — how a blank merge field in `prompt`/
-`html_prompt` is handled at run time. Same three-way enum on `call_llm`,
-`file_content_extraction`, `audio_transcription`, and a condition step's
-`llm_decision` block; confirmed live against the builder UI's own dropdown:
+**`merge_field_validation`** says what a blank merge field in the prompt does
+at run time. It's the same on `call_llm`, `file_content_extraction`,
+`audio_transcription` and a condition's `llm_decision`, confirmed live against
+the builder UI's dropdown:
 
 | Wire value | UI label |
 |---|---|
-| `error_if_required` | "Error if any merge field is blank" (the default for a new step; `update` keeps an existing step's live value) |
-| `default_to_unknown` | "Default to 'Unknown'" — fixed literal text, not a configurable string |
+| `error_if_required` | "Error if any merge field is blank" (the default for a new step) |
+| `default_to_unknown` | "Default to 'Unknown'": fixed text, not configurable |
 | `blank` | "Leave Blank" |
 
-**`prompt`/`html_prompt` are kept in sync automatically** — same quirk as
-`notify_member_via_text`'s `content`/`html_content`. Give plain `prompt`
-text and the planner derives `html_prompt` (merge-field tokens rendered
-into the UI's `kzn-merge-field` span markup); a plain-prompt-only step
-still runs fine via the raw API, but its rich-text prompt editor renders
-blank in the builder UI without this. Pass `html_prompt` explicitly to
-override the derivation.
+Give `prompt`, and the CLI derives the `html_prompt` the UI's editor shows. An
+explicit `html_prompt` wins.
 
-**Tools (MCP server)** — a `call_llm` step can let the model call an MCP
+**Tools (MCP server).** A `call_llm` step can let the model call an MCP
 server's tools. Confirmed live 2026-10-27:
 
-| Spec key | Wire key | Value |
-|---|---|---|
-| `mcp_server` | `mcp_server_id` | the server's `api_name` or UUID |
-| `run_tools_as` | `run_tools_as_id` | the service account's `name` or UUID |
-| `max_sequential_turns` | same | 1–32767, default 25 |
-| `tool_failure_policy` | same | `never_fail`, the only value Kizen accepts |
+| Key | Value |
+|---|---|
+| `mcp_server` | the server's `api_name` or UUID |
+| `run_tools_as` | the service account's `name` or UUID |
+| `max_sequential_turns` | 1–32767, default 25 |
+| `tool_failure_policy` | `never_fail`, the only value Kizen accepts |
 
-- Names resolve against the step's own pickers:
-  `GET /api/mcp-servers/step-options` for servers and
-  `GET /api/automation2/automations/run-tools-as-options` for accounts. The
-  second leaves out a plugin's own service account, and a write naming that
-  account is a 400. A service account resolves by `name` because a user-made
-  one has no `api_name`. A name two accounts share is an error; give the UUID.
-  The `*_id` spellings take the same values.
-- Set both `mcp_server` and `run_tools_as`, or neither. Kizen 400s on either
-  alone, and `--dry-run` refuses it first.
+- Set `mcp_server` and `run_tools_as` together. A plugin's own service account
+  can't run the tools, and a name two accounts share needs the UUID.
 - A model without tool calling 400s with "The selected model does not support
-  tool calling". The model catalog has no flag for it, so the server's 400 is
-  the only check.
-- Reads expand both references (`mcp_server {id, name, api_name, …}`,
-  `run_tools_as {id, name}`), and every `call_llm` step reads
-  `max_sequential_turns` and `tool_failure_policy`, server or not.
-- A new step that omits them gets no server, no account, 25 turns and
-  `never_fail`. On `update`, a step whose `id` matches a live one keeps its
-  live server and account when the spec sets none of `mcp_server`,
-  `mcp_server_id`, `run_tools_as` and `run_tools_as_id`, and keeps its live
-  `max_sequential_turns` and `tool_failure_policy` when the spec leaves them
-  out. `--dry-run` names those steps under `keeps_live`. To remove the
-  server, set `mcp_server` (or `run_tools_as`) to `null`: both go. A live
-  step with a server but no account gets neither, because Kizen rejects that
-  pairing. Kizen itself, given a PUT that omits both ids, keeps the server
-  and clears the account, which leaves a step its own validator rejects.
+  tool calling". The model catalog has no flag for it.
+- To remove the server, set `mcp_server` (or `run_tools_as`) to `null`: both
+  go.
 
 #### Searching a knowledge catalog
 
@@ -1100,9 +879,7 @@ serves the catalog tools. Confirmed live 2026-11-02:
   `kizen docs show mcp-server`).
 - **`run_tools_as`** is Kizen's own automation account, named "Agentic
   Workflow Code" where this was run. If that name isn't valid on a business,
-  `--dry-run` names the accounts that are: `plan error: step 'draft': service
-  account 'No Such Account' can't run a Call LLM step's tools in '<env>'.
-  Available: …`.
+  `--dry-run` names the accounts that are.
 - **`kizen/pro`** supports tool calling.
 - `listCatalogs` returns the default catalog, "Business Knowledge", api_name
   `business_knowledge` (confirmed live 2026-10-30). `searchCatalog` takes
@@ -1143,9 +920,8 @@ Confirmed live 2026-11-02, on a copy of this file: the model called
 
 ### An AI step reads an emailed reply
 
-A customer replies by email, and an AI step reads the reply. The
-`email_received` trigger hands the run the Contact but not the email, so a code
-step reads the newest inbound email from the Contact's timeline into a
+The `email_received` trigger hands the run the Contact but not the email, so a
+code step reads the newest inbound email from the Contact's timeline into a
 variable, and the AI step's prompt quotes that variable. The script, the calls
 it makes and the inboxes the trigger watches are in `kizen docs show
 code-steps`, "Reading a Contact's newest inbound email".
@@ -1211,33 +987,22 @@ run started by hand on a Contact with no inbound email completed. The code step
 logged that it found no inbound email, and `reply_summary` was set to "No
 reply to summarize."
 
-### Condition filters
+### Conditions
 
-A condition's `filter_config`, a variable compared to a static value or a
-field compared to a variable included: `kizen automations step-types show
-condition`.
+A condition's `filter_config` uses the filter DSL (`kizen docs show
+filters`): fields are **bare api_names**, and ops depend on the field type
+(`kizen filters ops [<field_type>]`). Every shape, a variable compared to a
+static value and a field compared to a variable included, is in `kizen
+automations step-types show condition`. Kizen's editor lays out a step's rules
+only when every rule carries its layout, and the plan warns about each rule
+saved without one.
 
 ### Reading a related record's field into a variable
 
-`initialize_variable`/`update_variable` sources support pulling a value
-off a record related to the trigger record — the pattern has no field_ref
-convenience; both fields are raw UUIDs **on the current automation's
-target_object**, not `"object.field"` refs:
-
-```json
-{ "sources": [
-    { "source_type": "field_value",
-      "source_subtype": "primary_related_object_field",
-      "relationship_field": "<uuid — the relationship field on target_object>",
-      "field": "<uuid — the field on the RELATED object being read>" }
-] }
-```
-
-Confirmed from a live capture: `relationship_field` is the hop (same
-object as `automation_target_relationship_fields`, above); `field` is a
-field UUID on the object that relationship points to, not on
-`target_object` itself — look it up via `kizen objects get <related_object>`
-first.
+A `field_value` source with `source_subtype: primary_related_object_field`
+reads a field off a related record. Both keys are raw UUIDs, not
+`"object.field"` refs: `relationship_field` is the relationship field on
+`target_object`, and `field` the field on the object it points to.
 
 This reads the industry of the deal's account. The tokens are the `id`s of
 `deals.account` and `accounts.industry` in `kizen objects get deals --json` and
@@ -1374,66 +1139,49 @@ message belongs to one automation. So the order is fixed:
 
 Confirmed live 2026-10-30, in this order.
 
----
+### Stopping a run
 
-## Key quirks (the ones that bite)
+`stop_execution`'s `action` sets how the run ends, and two of the five don't
+stop it. Confirmed live 2026-07-27, against the builder UI's "Action Options":
 
-- **Branching is `parent_key` + `parent_branch`, never `yes_step_ids`.** The
-  OpenAPI `yes_step_ids`/`no_step_ids` fields return HTTP 500 — don't use them.
-- **`condition` steps need `action_on_failure: notify_pause`** (the default
-  `notify_continue` is rejected 400). The planner sets this automatically.
-- **`initialize_variable` declaring a NEW variable must be a root-chain
-  step — never nested under a `parent_branch`.** The server's own graph
-  rule ("All `initialize_variable` steps must precede every other step",
-  see the graph rules below) is stricter than it sounds: it's not enough for the
-  step to come before its consumer, it must sit on the unbranched chain
-  from the root (`parent_key` never crosses a `parent_branch` on the way
-  back to `parent_key: null`) — confirmed via bisection, a plain `HTTP
-  400` with no field-level detail otherwise. Only steps that *read* an
-  already-declared variable (`call_llm` destinations, `update_variable`,
-  etc.) may live inside a branch:
+| `action` | UI label | What it does |
+|---|---|---|
+| `stop_and_fail` | Stop and mark as Failed | stops, run shows Failed |
+| `stop_and_complete` | Stop and mark as Successfully Completed | stops, run shows Completed |
+| `stop_and_cancel` | Stop and mark as Cancelled | stops, run shows Cancelled |
+| `pause_and_error` | Pause and Error | **pauses**, shows Error |
+| `pause` | Pause | **pauses** |
 
-  ```
-  initialize_variable (NEW variable)   ← root, un-branched
-  └── condition
-      ├── yes: stop_execution
-      └── no: call_llm (writes into the variable declared above)   ← fine, branch-scoped CONSUMER
-  ```
+`"notify": true` also sends the matching notification. A step without
+`action` gets `stop_and_complete`. Kizen accepts a null `action`, but that
+step never finishes and the editor shows it as "Unknown" (confirmed live
+2026-10-30). `translate`, `steps get` and `roundtrip` show and resend a saved
+`null` as it is; fix one with `steps edit`.
 
-  Moving the same `initialize_variable` step to be the first step *inside*
-  the `no` branch (declaring it only where it's used) 400s with no other
-  change.
-- **A variable the UI creates inline** (from a step's variable picker) is an
-  ordinary root-chain `initialize_variable` with `sources: []`. Spec it that
-  way. Confirmed live 2026-09-28.
-- **`variable.data_type`** is one of `string`, `number`, `boolean`, `date`,
-  `datetime`, `phone_number`, `email`, `uuid`, `employee`, `entity`; anything
-  else is a spec error. The server answers an unknown type with a bare HTTP
-  500, confirmed live 2026-10-14. Only `string`, `uuid` and `entity`
-  variables can be arrays.
-- **An `entity` variable needs `data_subtype`**: the object its records
-  belong to, as an api_name (`"patients"`) or UUID. The CLI sends the UUID;
-  the server 400s on an api_name or a missing one. Confirmed live
-  2026-11-16.
-- **A `static` source needs `source_subtype`**: its value's type, such as
-  `string`, `number`, `boolean` or `datetime`. Without it the server 400s
-  with "source_subtype should be one of [...]", and the dry-run refuses it.
-  Confirmed live 2026-11-17.
-- **Unknown keys in `variable`** are a spec error, because the server drops
-  them silently (`isArray` saved a scalar). Confirmed live 2026-10-14.
-- **String, UUID and entity arrays** are a variable with `is_array: true`,
-  plus two keys on the variable step: `array_aggregation_mode` (`add_all` or
-  `add_first_non_blank`) and `deduplicate_array` (bool). A static array
-  value is a `static` source with `source_subtype` (`string`/`uuid`), a list
-  `value` and `array_separator`. Give `value` as a list: with a single string
-  such as `"a\nb"`, GET drops `array_separator`, so the separator is lost on
-  any read-back and `diff` shows it as a change. Confirmed live 2026-09-29.
-  In the builder, `array_aggregation_mode` is "Choose Source Handling"
-  (*Add All Sources* / *First Non-Blank Source Only*) and `deduplicate_array`
-  is "Unique Values Only". Confirmed live 2026-10-14.
+## Variables
+
+- **Declare every variable at the front.** Each new variable is an
+  `initialize_variable` step on the unbranched chain from the root, before any
+  other step. Steps inside a branch can read and update a variable but not
+  declare one. A variable the UI creates inline from a step's picker is the
+  same: a root-chain `initialize_variable` with `sources: []` (confirmed live
+  2026-09-28).
+- **An `entity` variable** names its records' object in `data_subtype`, as an
+  api_name or UUID.
+- **Arrays.** A `string`, `uuid` or `entity` variable can be an array: set
+  `is_array: true` on the variable, plus `array_aggregation_mode` (`add_all`
+  or `add_first_non_blank`) and `deduplicate_array` (bool) on the step. In the
+  builder those are "Choose Source Handling" (*Add All Sources* / *First
+  Non-Blank Source Only*) and "Unique Values Only" (confirmed live
+  2026-10-14). A static array value is a `static` source with
+  `source_subtype` (`string`/`uuid`), a list `value` and `array_separator`.
+  Give `value` as a list: a single string such as `"a\nb"` loses its
+  separator on read-back, and `diff` then shows a change (confirmed live
+  2026-09-29).
 - **`value_resolution` on `update_variable`** says how the sources combine
-  with an array variable's current value. Confirmed live 2026-10-14, starting
-  from `[a]` with `deduplicate_array: false`:
+  with an array variable's current value. It works on array variables and on
+  `update_variable` only. Confirmed live 2026-10-14, starting from `[a]` with
+  `deduplicate_array: false`:
 
   | `value_resolution` | sources `[b]` | sources empty |
   |---|---|---|
@@ -1442,120 +1190,33 @@ Confirmed live 2026-10-30, in this order.
   | `overwrite_except_null` | `[b]` | `[a]`: kept |
   | null / omitted | `[b]` | `[]` |
 
-  - It works on array variables only. On a scalar variable the server 400s
-    with "Value resolution is supported for array variables only." The
-    planner refuses it first when the spec's `initialize_variable` for that
-    name has no `is_array: true`.
-  - Only `update_variable` takes it. On `initialize_variable` the server
-    drops it silently, so the planner refuses it there.
-  - Any other value is a plan error.
-  - **A PUT that omits it keeps the stored value** on a step whose `id` is
-    carried. Only an explicit `null` resets it, and the planner drops nulls,
-    so deleting the key from a spec doesn't clear it. Set `overwrite`
-    instead, which behaved the same as null.
-  - The builder UI has no control for it as of 2026-10-14, and opening the
-    step doesn't show a stored value.
-- **`stop_execution`'s "Action Options" dropdown is a required choice in
-  the builder UI, and two of its five options don't stop anything.**
-  Confirmed live (one automation with all 5 steps built through the UI,
-  2026-07-27):
+  An update that leaves it out keeps the stored value, so deleting the key
+  from a spec doesn't clear it: set `overwrite`, which behaves like null. The
+  builder UI has no control for it and doesn't show a stored value (as of
+  2026-10-14).
 
-  | UI label | `action` wire value | what it actually does |
-  |---|---|---|
-  | Stop and mark as Failed | `stop_and_fail` | stops, run shows Failed |
-  | Stop and mark as Successfully Completed | `stop_and_complete` | stops, run shows Completed |
-  | Stop and mark as Cancelled | `stop_and_cancel` | stops, run shows Cancelled |
-  | Pause and Error | `pause_and_error` | **pauses** (doesn't stop), shows Error |
-  | Pause | `pause` | **pauses** (doesn't stop) |
+## What an update keeps
 
-  Pair any of these with `"notify": true` to also fire the corresponding
-  notification (the UI's separate "Send Notification" toggle). Kizen
-  accepts a block without `action` and reads it back `null`, but that step
-  never finishes. The run stays active while the step retries ("unexpected
-  failure"), and the editor shows the action as "Unknown" (confirmed live
-  2026-10-30). So the CLI never sends one. A new step without `action` gets
-  `stop_and_complete`. On `update` and `steps edit`, a step whose `id`
-  matches keeps its live `action` and `notify` when you leave them out, and
-  a live `null` becomes `stop_and_complete`. `translate`, `steps get` and
-  `roundtrip` show and resend a saved `null` as it is. Fix one with
-  `steps edit`.
-- **`change_field_value.specific_field_value` is a bare scalar** — not
-  `{value: …}`. The planner wraps it in the `actions: [...]` array. For an
-  option field (dropdown, radio, status, checkboxes, choices, yesnomaybe, a
-  pipeline's `stage`) give option labels or UUIDs, with the field by name or
-  by UUID (as `steps get` prints it). The CLI sends UUIDs and refuses an
-  unknown label. Kizen itself answers a label with a 500, or saves an
-  automation it then can't read (confirmed live 2026-10-30).
-- **`notify_member_via_email` content is a separate resource, not inline.** Its
-  config points at an `AutomationMessage` by `id`, made from a template after
-  the automation exists. See [Email steps: build order](#email-steps-build-order).
-- **`code_step.secrets` are env-specific** — the spec carries secret *names*; the
-  target env must have each configured or the step fails at runtime. Surface
-  this when authoring.
-- **A step/trigger's `id` field controls whether it keeps its identity across
-  an update.** PUT replaces the whole step set, so a step without `id` gets a
-  fresh server-assigned one every time — which orphans that step's execution
-  history against the old id (confirmed live 2026-08-10). Set `id` (copied
-  from a live read, e.g. `kizen automations show`) on any step that isn't
-  actually new, and it keeps the same id and history across the write.
-  Carrying `id` is also what keeps the step's settings below when the spec
-  leaves them out.
-- **What an update keeps when the spec is silent.** An update PUT is a full
-  replace, so `automations update` fills in these live values before
-  building the payload. An explicit value in the spec always wins, `""` and
-  `false` included. A `description: ""` is sent as no description, so
-  Kizen writes the type's default text rather than an empty one.
-  - `active`. A spec that doesn't mention it never turns a running
-    automation off. An explicit `true`/`false` is echoed in the `--dry-run`
-    preview as a transition (`True → False (DEACTIVATES a live automation)`)
-    rather than a bare value.
-  - The automation's `skip_non_working_days`. Without it a PUT turns a live
-    `true` off (confirmed live 2026-10-30).
-  - A webhook trigger's auth ([Webhook trigger auth](#webhook-trigger-auth-confirmed-live-2026-10-27)).
-  - On a step whose `id` matches a live step: `description`,
-    `user_description`, `should_skip_execution`, `continue_with_branch`
-    (only with a kept skip), `action_on_failure` and
-    `error_notification_severity_level`. On a trigger whose `id` matches:
-    `description`, `user_description` and `should_skip_execution`.
-    On a `schedule_activity` step whose `id` matches, its block's
-    `target_variable` and `variable_field_resolution` too
-    ([below](#schedule_activitytarget_variable-and-variable_field_resolution)).
-    On an LLM step whose `id` matches, its `merge_field_validation` and
-    `is_advanced` (on a condition, `llm_decision.merge_field_validation`),
-    and on `call_llm` also its MCP server and run-as account (as a pair),
-    `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
-    server)**). On a `stop_execution` whose `id` matches, its `action` and
-    `notify`. On a `plugin_code_step` whose `id` matches, its
-    `preview_user_id`. On a `create_related_entity` step whose `id` matches,
-    its `context_entity_field_resolution`. On a `field_updated` trigger whose
-    `id` matches, top-level or in a goal step, the match mode for a
-    `from_value`/`to_value` the spec sets without one.
-    `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
-    A Kizen PUT without them resets each to its default, except the stop's,
-    which Kizen keeps when the block is empty (confirmed live 2026-10-30).
-    For `preview_user_id` that reset is unconfirmed: Kizen only accepts a
-    pin on a business app's preview.
-  - A step or trigger without `id` is new to Kizen, so what its spec leaves
-    out gets Kizen's defaults: the type's default description, an empty
-    note, not skipped.
-- **`condition.filter_config`** uses the filtering DSL (`{"all"|"any": [...]}`,
-  single conditions wrapped in `{"all": [...]}`) — same as `saved-views.md`.
-  Fields are **bare api_names**; **ops are per field type** (e.g. dropdown uses
-  `is_any_of`/`not_any_of`, numbers use `>=`/`between` — *not* `in`/`gte`). Run
-  `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
-  dict for clause types the DSL doesn't cover (a variable compared to a static
-  value — see [Condition filters](#condition-filters)). A field compared to
-  a variable is in the DSL. A filter
-  value can't hold a `{{ … }}` merge field: Kizen stores it as text and
-  matches nothing (confirmed live 2026-11-02), so the CLI refuses it. **A condition needs at least one
-  rule.** An empty `query`, a group with no `filters`, or an `in_group`/
-  `not_in_group` with no `group_ids` is rejected at plan time. The API accepts
-  an empty filter, but the UI then shows an error on the step (reported
-  2026-09-29). A group condition with no groups has nothing to test.
-  Compiled rules carry the Kizen editor's `view_model` where the CLI has the
-  rule's layout. The editor uses them only when every rule in the step has
-  one, and the `create`/`update` plan warns about each rule saved without one
-  (`kizen docs show filters`).
+A step or trigger keeps its identity, its run history and the settings below
+only when it carries its `id` from a live read (`kizen automations show`).
+Without one it's new: it gets a fresh id, orphaning the old one's history
+(confirmed live 2026-08-10), and Kizen's defaults for whatever the spec leaves
+out.
+
+An update replaces the whole automation, so `automations update` fills in what
+the spec leaves out from the live one:
+
+- `active` (a spec that doesn't mention it never turns a running automation
+  off), `folder`, `skip_non_working_days` and each webhook trigger's auth.
+- On a step or trigger whose `id` matches: its descriptions, its skip and
+  failure settings, and the per-type settings a Kizen PUT would otherwise
+  reset, such as an LLM step's `merge_field_validation` and MCP server, a
+  stop's `action`, a plugin step's `preview_user_id`, and a
+  `schedule_activity`'s `target_variable`.
+
+`--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`. An
+explicit value always wins, `""` and `false` included; `description: ""`
+gets the type's default text.
 
 ## Scheduling activities and assigning owners
 
@@ -1568,19 +1229,10 @@ namespace (see [Merge-field namespace tokens by step type](#merge-field-namespac
 
 ### When a scheduled activity is due
 
-`activity_type` (or `activity_type_id`) takes the type's api_name, display
-name or UUID. `schedule.type` picks one of three shapes:
-
-| `schedule.type` | with |
-|---|---|
-| `immediately` | nothing else: due when the step runs |
-| `with_delay` | a `with_delay` block |
-| `on_or_around_date` | an `on_or_around_date` block |
-
-The dry-run refuses any other `type`, a `type` without its block, and any
-value outside what the lists below allow.
-
-`skip_non_working_days` (bool) sits on `schedule` itself. This step schedules a
+`schedule.type` is `immediately`, `with_delay` or `on_or_around_date`, the
+last two with a block of the same name; `kizen automations step-types show
+schedule_activity` lists each block's choices and defaults.
+`skip_non_working_days` sits on `schedule` itself. This step schedules a
 Follow Up for the deal's owner two working days after the run:
 
 <!-- fixture: examples/first_build/log_call.automation.json#/steps/5 -->
@@ -1597,102 +1249,53 @@ Follow Up for the deal's owner two working days after the run:
     "note": "Try again. Last call: {{ custom_objects.call_notes }}" } }
 ```
 
-**`with_delay`:**
-
-- `delay_type` (required): `minute`, `hour` or `day`.
-- `delay_value`: a whole number, 1 or more. `delay_value_type` is `static`
-  (the default, read back when omitted) or `automation_variable`, which reads
-  the number from `delay_variable: {"name": <variable>}`.
-- `time_offset`: `automation_time` (the default: the run's time of day),
-  `specific_time` (with `time` as `HH:MM` on a 24-hour clock: `"21:00"` saves,
-  unlike the date trigger's 12-hour `time`), `hours_before`, `hours_after`,
-  `minutes_before` or `minutes_after` (with `time_offset_value`).
-- With `skip_non_working_days: true`, a `day` delay counts working days and
-  keeps the run's time of day. Started on a Friday at 19:48 UTC, the step
-  above was due the next Tuesday at 19:48 UTC.
-
-**`on_or_around_date`:**
-
-- `field_ref` (a date or datetime field, as `<object>.<field>` or a bare
-  api_name) or `variable: {"name": …}`. The CLI resolves `field_ref` to the
-  wire's `field_id`; a `field_id` UUID works too.
-- `date_offset` (required): `on_day`, `on_day_and_time`, `days_before` or
-  `days_after`, with `date_offset_days` 1 or more.
-- `time_offset`: `specific_time` (the default, with `time` as `HH:MM`),
-  `from_field`, `from_variable`, `hours_before`, `hours_after`,
-  `minutes_before` or `minutes_after`. A left-out `time_offset` is
-  `specific_time`, so `time` is required unless the `time_offset` is another
-  one; the server 400s without it and the dry-run refuses it.
-  `on_day_and_time` takes the time from the field and ignores `time_offset`.
-  Confirmed live 2026-11-16.
-- `on_day_and_time` needs a datetime field, and `days_before`/`days_after`
-  need `date_offset_days`; the server 400s on either, and the dry-run
-  refuses both. Confirmed live 2026-11-17.
+- Started on a Friday at 19:48 UTC, the step above was due the next Tuesday at
+  19:48 UTC: a `day` delay with `skip_non_working_days` counts working days
+  and keeps the run's time of day.
+- A `specific_time` takes `time` on a 24-hour clock: `"21:00"` saves, unlike
+  the date trigger's 12-hour `time`.
 - `{"field_id": "<start date field uuid>", "date_offset": "days_after",
   "date_offset_days": 1, "time_offset": "specific_time", "time": "10:00"}` on a
   record starting 2026-11-16 was due 2026-11-17 at 10:00 in the business's
-  time zone.
+  time zone. `on_day_and_time` takes the time from the field and ignores
+  `time_offset`. Confirmed live 2026-11-16.
 
-Confirmed live 2026-10-30. The values are those in `GET /api/docs/schema` that
-day.
+Confirmed live 2026-10-30.
 
 ### `schedule_activity.target_variable` and `variable_field_resolution`
 
 `target_variable` names a String or UUID automation variable that receives
-the scheduled activity's id. Write it as the variable's name; a read expands
-it to `{id, name, data_type, …}`, and `steps get` prints the name again.
-`variable_field_resolution` is `overwrite` (the default) or
-`update_if_blank`, which leaves a variable that already holds a value alone
-(the activity is still scheduled).
-A step that binds no variable reads `target_variable: null` with
-`overwrite`. Confirmed live 2026-10-30, including runs: `overwrite` replaced a
-seeded value with the new activity's id, and `update_if_blank` kept it.
+the scheduled activity's id. `variable_field_resolution` is `overwrite` (the
+default) or `update_if_blank`, which leaves a variable that already holds a
+value alone; the activity is still scheduled. Confirmed live 2026-10-30,
+including runs: `overwrite` replaced a seeded value with the new activity's
+id, and `update_if_blank` kept it.
 
-A PUT that leaves either key out resets it to `null`/`overwrite`. `steps edit`,
-`activate` and the other read-back verbs send both from the live read, and
-`update` keeps the live values when the spec omits them. An explicit
-`"target_variable": null` unbinds the variable. If an update removes the
-bound variable from `variables`, send that `null` too: otherwise the kept name
-points at a variable that no longer exists, and Kizen refuses the PUT with
-`HTTP 400 … variable '<name>' does not exist.`
+An explicit `"target_variable": null` unbinds the variable. If an update
+removes the bound variable from `variables`, send that `null` too: otherwise
+the kept name points at a variable that no longer exists, and Kizen refuses
+the PUT with `HTTP 400 … variable '<name>' does not exist.`
 
 ### `schedule_activity.association_configs`
 
 For an activity type tied to more than one object, these rules bite:
 
-- **`context_record` is only valid when that entry's `custom_object_id` IS the
-  automation's own `target_object`** — otherwise 400: *"context_record
-  custom_object_id must match the … workflow's custom object."*
+- **`context_record` is only valid on the entry for the automation's own
+  `target_object`**; elsewhere it's a 400.
 - **The server adds one entry per object the activity type is associated
-  with** — `context_record` for the automation's own object, `none` for the
-  others — so you needn't author them, and they appear in the live GET even
-  when you sent `[]`. A block copied from `steps get` already carries them and
-  re-applies unchanged through `steps edit`/`steps add`. An entry with a null
-  `custom_object_id` 400s with *"This field may not be null."*; the CLI rejects
-  an entry that names no object before sending. (Confirmed live 2026-10-14.)
-- **`related_field` requires a relationship field that exists ON THE ASSOCIATED
-  OBJECT itself** — passing one from the automation's own `target_object` 400s
-  with *"Relationship field … not found on source object"*. Resolution rules
+  with**, `context_record` for the automation's own object and `none` for the
+  others, so you needn't author them. A block copied from `steps get` already
+  carries them and re-applies unchanged (confirmed live 2026-10-14).
+- **`related_field` must be a relationship field on the associated object
+  itself**; one from the automation's own `target_object` 400s with
+  *"Relationship field … not found on source object"*. Resolution rules
   beyond that are unconfirmed.
 
-### `assign_team_member.type`
+### `assign_team_member`
 
-A **third** enum, not the `assigned_to.assignment_type` set above and not
-the notify steps' `team_member` set. Every choice and the keys each needs:
-`kizen automations step-types show assign_team_member`.
-
-The planner checks these keys per `type` and fails the plan if one is missing.
-The read spellings (`employee`, `role`, `field`, `related_field`, `employees`)
-count too. For `related_team_selector_field` it also checks that the hop is a
-single-value relationship field on `target_object`, so the far object's
-selector passed as the hop fails the plan. It skips that check on a global
-automation, or when `target_object` can't be read. The server
-enforces the same rules (confirmed live 2026-10-16, on create and on PUT):
-
-- a missing key 400s with *"This field is required for "<type>" type."*
-- the far object's selector passed as `related_field_id`, or a many-to-many
-  hop, 400s with *"Custom object has no single value relationship field with id
-  "<uuid>""*. The message names the field you passed, not the field it wanted.
+Every `type` and the keys each needs: `kizen automations step-types show
+assign_team_member`. The plan checks them, and Kizen enforces the same rules
+(confirmed live 2026-10-16).
 
 **A complete selector only means the keys are right.** It doesn't mean a run
 assigns anyone:
@@ -1732,28 +1335,21 @@ has `message`, `path`, and where they apply `step`, `index`, `got`,
 `allowed`, `suggestion` and `hint` (the command to run).
 
 The server's error is nested: `{step_key: {action_block_name: {field_name: [message]}}}`.
-Work inside-out — which step, which config block, which wire field. A
-"not a valid choice" rejection for `create_related_entity`,
-`notify_member_via_text`, `schedule_activity`'s `schedule`, or
-`on_or_around_date`: the error lists the valid values the CLI knows. Common causes:
+Work inside-out: which step, which config block, which wire field. Common
+causes:
 
-- `null` for a non-nullable field (often a model default leaking through).
-- `action_on_failure: notify_continue` on a condition step — use `notify_pause`.
+- `null` for a non-nullable field.
 - `filter_config` structure wrong: check the query group `id`, the `filters`
   key, and that no `value` is null.
-- A destination field of the wrong type — `wysiwyg`, `files`, and `timezone`
+- A destination field of the wrong type: `wysiwyg`, `files` and `timezone`
   fields can't be extraction destinations.
 
 ### A 500 from the PUT
 
-Usually one of two things:
-
-- **Wrong branching wire key** — the spec used `yes_step_ids` instead of
-  `parent_key` + `parent_yes_no`.
-- **A corrupt automation server-side.** If the 500 persists regardless of
-  payload changes, the automation itself may be in a bad state: the tell is that
-  it *executes* correctly when triggered but every PUT returns 500. That needs a
-  server-side repair, not a payload change — escalate to Kizen.
+If the 500 persists whatever the payload, the automation itself may be in a
+bad state: the tell is that it *executes* correctly when triggered but every
+PUT returns 500. That needs a server-side repair, not a payload change, so
+escalate to Kizen.
 
 ## See also
 
