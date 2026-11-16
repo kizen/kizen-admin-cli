@@ -804,3 +804,30 @@ def test_the_to_many_binding_the_finding_names_builds(patch_live_lookups):
         "inputs"
     ]
     assert built["field"] == {"id": _CONDITIONS}
+
+
+def _entity_var(**var):
+    return {
+        "key": "init",
+        "step_type": "initialize_variable",
+        "action_initialize_variable": {
+            "variable": {"name": "patient", "data_type": "entity", **var}
+        },
+    }
+
+
+_PATIENTS = "ceed733b-9dd9-4bf9-8c52-8ba1ac41da45"
+
+
+def test_an_entity_variable_without_data_subtype_points_at_objects_list():
+    f = _only(_errors(_encounter_spec(_entity_var())), step="init")
+    assert f.path == "action_initialize_variable.variable.data_subtype"
+    assert f.hint == "kizen objects list"
+
+
+def test_an_entity_variable_takes_an_object_api_name(patch_live_lookups):
+    by_name = _planned_step(_encounter_spec(_entity_var(data_subtype="patients")))
+    by_id = _planned_step(_encounter_spec(_entity_var(data_subtype=_PATIENTS)))
+    assert by_name == by_id
+    variable = by_id["action_initialize_variable"]["variable"]
+    assert variable["data_subtype"] == _PATIENTS

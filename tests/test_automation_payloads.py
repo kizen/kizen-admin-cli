@@ -6443,7 +6443,11 @@ _BAD_VARIABLES = [
 _GOOD_VARIABLES = [
     pytest.param({"name": "owner", "data_type": "employee"}, id="employee"),
     pytest.param(
-        {"name": "branch", "data_type": "entity", "data_subtype": "obj-uuid"},
+        {
+            "name": "branch",
+            "data_type": "entity",
+            "data_subtype": "ceed733b-9dd9-4bf9-8c52-8ba1ac41da45",
+        },
         id="entity",
     ),
     pytest.param({"name": "inbox", "data_type": "email"}, id="email"),

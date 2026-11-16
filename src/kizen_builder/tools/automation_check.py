@@ -135,8 +135,9 @@ def check_step(
     step: Any, declared: dict[str, dict[str, Any]], *, index: int | None = None
 ) -> tuple[list[Finding], list[Finding]]:
     """The checks one step gets on its own: block keys nothing reads,
-    placeholders left in, variables nothing declares, and selector options
-    missing the keys they're written with. Returns ``(errors, warnings)``.
+    placeholders left in, variables nothing declares, an entity variable
+    with no object, and selector options missing the keys they're written
+    with. Returns ``(errors, warnings)``.
     ``declared`` maps each variable name to its declaration."""
     if not isinstance(step, dict):
         return [], []
@@ -144,6 +145,7 @@ def check_step(
         *_unread_block_keys(index, step),
         *_placeholders(step, "", _type_hint(step.get("step_type")), step, index),
         *_variable_errors(index, step, declared),
+        *_entity_subtype_errors(index, step),
     ]
     return errors, _selector_warnings(index, step)
 
@@ -529,6 +531,29 @@ def _variable_errors(
                     )
                 )
     return out
+
+
+def _entity_subtype_errors(index: int | None, step: dict[str, Any]) -> list[Finding]:
+    """An entity variable declared with no ``data_subtype``: the server
+    400s it (confirmed live 2026-11-16)."""
+    if step.get("step_type") != "initialize_variable":
+        return []
+    block = step.get("action_initialize_variable")
+    var = block.get("variable") if isinstance(block, dict) else None
+    if not isinstance(var, dict) or var.get("data_type") != "entity":
+        return []
+    if var.get("data_subtype"):
+        return []
+    return [
+        Finding(
+            "an entity variable needs data_subtype: the api_name or UUID of "
+            "the object its records belong to",
+            path="action_initialize_variable.variable.data_subtype",
+            step=step.get("key"),
+            index=index,
+            hint="kizen objects list",
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

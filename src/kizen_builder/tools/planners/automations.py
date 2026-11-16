@@ -3304,17 +3304,24 @@ def _variable_step_extras(block: dict[str, Any]) -> dict[str, Any]:
 
 @honours_all
 def _step_initialize_variable(
-    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     # The server accepts it here and silently drops it (confirmed live 2026-10-14).
     if block.get("value_resolution") is not None:
         raise PlanError(
             "initialize_variable doesn't take value_resolution — only update_variable does."
         )
+    variable = _normalize_variable(block.get("variable"))
+    # An entity variable's data_subtype is the object's UUID on the wire; an
+    # api_name is a 400 (confirmed live 2026-11-16).
+    if isinstance(variable, dict) and variable.get("data_type") == "entity":
+        api_name = _api_name_of(variable.get("data_subtype"))
+        if api_name:
+            variable["data_subtype"] = ctx.object_uuid(api_name)
     return {
         **_variable_step_extras(block),
         "sources": _normalize_variable_sources(block.get("sources") or []),
-        "variable": _normalize_variable(block.get("variable")),
+        "variable": variable,
         "is_required": block.get("is_required", False),
     }
 
