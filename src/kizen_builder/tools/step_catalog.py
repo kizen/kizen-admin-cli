@@ -870,9 +870,121 @@ _FIELD_UPDATED = Guide(
     concepts=("field",),
 )
 
+_MATH_OPERATOR = Guide(
+    variants=(
+        Variant(
+            "increment_field",
+            "Add 1 to a number field on the record.",
+            {
+                "type": "simple_builder",
+                "subtype": "addition",
+                "field_id": "<number field UUID>",
+                "simple_builder_arguments": [
+                    {
+                        "argument_type": "field",
+                        "operation_type": "regular",
+                        "field_id": "<number field UUID>",
+                    },
+                    {
+                        "argument_type": "constant",
+                        "operation_type": "regular",
+                        "constant": 1,
+                    },
+                ],
+            },
+        ),
+        Variant(
+            "difference_into_variable",
+            "One field minus another, kept in a number variable.",
+            {
+                "type": "simple_builder",
+                "subtype": "addition",
+                "variable": "<variable name>",
+                "simple_builder_arguments": [
+                    {
+                        "argument_type": "field",
+                        "operation_type": "regular",
+                        "field_id": "<number field UUID>",
+                    },
+                    {
+                        "argument_type": "field",
+                        "operation_type": "negative",
+                        "field_id": "<number field UUID>",
+                    },
+                ],
+            },
+        ),
+        Variant(
+            "ratio_into_field",
+            "A variable divided by a field, written to a field.",
+            {
+                "type": "simple_builder",
+                "subtype": "multiplication",
+                "field_id": "<number field UUID>",
+                "simple_builder_arguments": [
+                    {
+                        "argument_type": "variable",
+                        "operation_type": "regular",
+                        "variable": "<variable name>",
+                    },
+                    {
+                        "argument_type": "field",
+                        "operation_type": "inverse",
+                        "field_id": "<number field UUID>",
+                    },
+                ],
+            },
+        ),
+    ),
+    selectors=(
+        Selector(
+            "subtype",
+            (
+                Option("addition", note="arguments summed; negative subtracts"),
+                Option("multiplication", note="arguments multiplied; inverse divides"),
+            ),
+        ),
+        Selector(
+            "simple_builder_arguments[].argument_type",
+            (
+                Option("field", ("field_id",)),
+                Option("constant", ("constant",)),
+                Option("variable", ("variable",)),
+            ),
+        ),
+        Selector(
+            "simple_builder_arguments[].operation_type",
+            (
+                Option("regular"),
+                Option("negative", note="addition only"),
+                Option("inverse", note="multiplication only"),
+            ),
+        ),
+    ),
+    lookups=(
+        Lookup(
+            "field_id",
+            "kizen objects get <object>",
+            "a number field's id; the result goes in it",
+        ),
+        Lookup(
+            "simple_builder_arguments[].field_id",
+            "kizen objects get <object>",
+            "a number field's id",
+        ),
+    ),
+    notes=(
+        "The result goes in `field_id` or in `variable`: give one.",
+        "Field ids are UUIDs here; a field name isn't resolved.",
+        "A variable named here is a number variable the spec declares.",
+    ),
+    concepts=("field", "variable"),
+)
+
 _STEP_GUIDES: dict[str, Guide] = {
     "condition": _CONDITION,
     "create_related_entity": _CREATE_RELATED_ENTITY,
+    "math_operator": _MATH_OPERATOR,
     "schedule_activity": _SCHEDULE_ACTIVITY,
     "search_records": _SEARCH_RECORDS,
 }

@@ -279,6 +279,7 @@ _FILLS = {
     "<role UUID>": "33333333-3333-4333-8333-333333333333",
     "<stage UUID>": "44444444-4444-4444-8444-444444444444",
     "<variable name>": "made",
+    "<number field UUID>": "55555555-5555-4555-8555-555555555555",
 }
 
 
@@ -311,6 +312,19 @@ def test_create_related_entity_variants_build_a_payload(patch_live_lookups):
         for key in ("new_entity_owner_type", "new_entity_owner_sub_type"):
             assert block.get(key) == variant.block.get(key), variant.name
         uuid.UUID(block["target_custom_object"])
+
+
+def test_math_operator_variants_build_a_payload(patch_live_lookups):
+    for variant, block in _built_variants("math_operator"):
+        assert block["subtype"] == variant.block["subtype"]
+        if "variable" in variant.block:
+            assert block["variable"] == {"name": "made"}
+        for arg in block["simple_builder_arguments"]:
+            assert arg["argument_type"] in arg or (
+                arg["argument_type"] == "field" and "field_id" in arg
+            )
+            if arg["argument_type"] == "variable":
+                assert arg["variable"] == {"name": "made"}
 
 
 # --- CLI ------------------------------------------------------------------

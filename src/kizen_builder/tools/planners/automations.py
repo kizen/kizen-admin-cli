@@ -4095,6 +4095,8 @@ def _step_math_operator(
         v = item.get("variable")
         if isinstance(v, dict) and v.get("name"):
             item["variable"] = {"name": v["name"]}
+        elif isinstance(v, str):
+            item["variable"] = {"name": v}
         args.append(item)
     out["simple_builder_arguments"] = args
     return {k: v for k, v in out.items() if v is not None}

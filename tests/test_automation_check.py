@@ -1251,7 +1251,36 @@ def _related(**block):
     }
 
 
+def _math(subtype="addition", **arg):
+    return {
+        "key": "sum",
+        "step_type": "math_operator",
+        "action_math_operator": {
+            "subtype": subtype,
+            "variable": "total",
+            "simple_builder_arguments": [
+                {
+                    "argument_type": "constant",
+                    "operation_type": "regular",
+                    "constant": 1,
+                },
+                {"argument_type": "constant", "operation_type": "regular", **arg},
+            ],
+        },
+    }
+
+
 _WRONG_CHOICES = [
+    (
+        _math(subtype="subtraction"),
+        "action_math_operator.subtype",
+        "multiplication",
+    ),
+    (
+        _math(argument_type="number", constant=2),
+        "action_math_operator.simple_builder_arguments.1.argument_type",
+        "constant",
+    ),
     (
         _related(new_entity_owner_type="owner"),
         "action_create_related_entity.new_entity_owner_type",
@@ -1281,18 +1310,49 @@ def test_a_wrong_choice_in_a_typed_block_names_the_choices(step, path, allowed):
     assert allowed in f.allowed and f.step == step["key"]
 
 
-def test_create_related_entity_takes_every_key_a_read_gives():
+@pytest.mark.parametrize(
+    ("fixture", "step_type"),
+    [
+        ("create_and_modify_related.raw.json", "create_related_entity"),
+        ("kitchen_sink_triggers.raw.json", "math_operator"),
+    ],
+)
+def test_a_typed_block_takes_every_key_a_read_gives(fixture, step_type):
     """A read's expanded objects and lists check clean, so a roundtrip
     spec needs no edits."""
-    read = json.loads(
-        (FIXTURES / "automations" / "create_and_modify_related.raw.json").read_text()
-    )
-    blocks = [
-        s["action_create_related_entity"]
-        for s in read["steps"]
-        if s["step_type"] == "create_related_entity"
-    ]
+    read = json.loads((FIXTURES / "automations" / fixture).read_text())
+    cfg = f"action_{step_type}"
+    blocks = [s[cfg] for s in read["steps"] if s["step_type"] == step_type]
     assert blocks
     for block in blocks:
-        step = {"key": "make", "step_type": "create_related_entity"}
-        check_automation(_spec({**step, "action_create_related_entity": block}))
+        step = {"key": "s", "step_type": step_type, cfg: block}
+        check_automation(_spec(step))
+
+
+@pytest.mark.parametrize(
+    ("subtype", "operation", "message"),
+    [
+        ("addition", "inverse", "addition takes operation_type regular or negative"),
+        (
+            "multiplication",
+            "negative",
+            "multiplication takes operation_type regular or inverse",
+        ),
+    ],
+)
+def test_a_math_operation_its_subtype_refuses_is_a_finding(subtype, operation, message):
+    step = _math(subtype, constant=2)
+    step["action_math_operator"]["simple_builder_arguments"][1]["operation_type"] = (
+        operation
+    )
+    f = _only(_errors(_spec(step)), path="action_math_operator")
+    assert f.message.startswith(message)
+
+
+def test_a_math_argument_needs_its_type_and_operation():
+    step = _math(constant=2)
+    del step["action_math_operator"]["simple_builder_arguments"][1]["operation_type"]
+    _only(
+        _errors(_spec(step)),
+        path="action_math_operator.simple_builder_arguments.1.operation_type",
+    )

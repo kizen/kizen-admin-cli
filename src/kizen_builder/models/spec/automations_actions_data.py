@@ -333,9 +333,72 @@ class ActionUpdateVariableConfig(BaseModel):
     )
 
 
+_MATH_VARIABLE = 'A number variable: its name, or {"name": ...} / {"id": ...}.'
+
+# Kizen 400s inverse under addition and negative under multiplication
+# (confirmed live 2026-11-16).
+_OPERATIONS = {
+    "addition": ("regular", "negative"),
+    "multiplication": ("regular", "inverse"),
+}
+
+
+class MathArgument(BaseModel):
+    """One term of a `math_operator` sum or product."""
+
+    model_config = ConfigDict(extra="allow")
+
+    argument_type: Literal["field", "constant", "variable"] = Field(
+        description="Which of field_id, constant or variable holds the term."
+    )
+    operation_type: Literal["regular", "inverse", "negative"] = Field(
+        description=(
+            "negative subtracts the term (addition only), inverse divides by "
+            "it (multiplication only), regular uses it as it is."
+        )
+    )
+    constant: float | None = Field(default=None, description="A number.")
+    field_id: str | None = Field(default=None, description="A number field's UUID.")
+    field: str | dict[str, Any] | None = Field(
+        default=None, description="Read spelling of field_id."
+    )
+    variable: str | dict[str, Any] | None = Field(
+        default=None, description=_MATH_VARIABLE
+    )
+
+
 class ActionMathOperatorConfig(BaseModel):
-    """Config for `step_type: math_operator`."""
+    """Config for `step_type: math_operator`: adds or multiplies its
+    arguments and stores the result in `field_id` or `variable`."""
 
     model_config = ConfigDict(extra="allow")
 
     type: Literal["simple_builder"] = "simple_builder"
+    subtype: Literal["addition", "multiplication"] | None = Field(
+        default=None,
+        description="Add the arguments, or multiply them. Required by Kizen.",
+    )
+    field_id: str | None = Field(
+        default=None,
+        description="Where the result goes, on the record: a number field's UUID.",
+    )
+    field: str | dict[str, Any] | None = Field(
+        default=None, description="Read spelling of field_id."
+    )
+    variable: str | dict[str, Any] | None = Field(
+        default=None, description=f"Where the result goes, in the run. {_MATH_VARIABLE}"
+    )
+    simple_builder_arguments: list[MathArgument] | None = Field(
+        default=None, description="The terms, in order."
+    )
+
+    @model_validator(mode="after")
+    def _operation_fits_subtype(self) -> Self:
+        allowed = _OPERATIONS.get(self.subtype or "", ())
+        for arg in self.simple_builder_arguments or ():
+            if allowed and arg.operation_type not in allowed:
+                raise ValueError(
+                    f"{self.subtype} takes operation_type "
+                    f"{' or '.join(allowed)}, not {arg.operation_type}"
+                )
+        return self
