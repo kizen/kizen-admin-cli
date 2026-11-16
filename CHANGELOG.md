@@ -59,6 +59,16 @@ called out explicitly under **Changed** or **Removed**.
   `delay_value` or `date_offset_days` below 1, or an unknown
   `assignment_type` is refused before anything is sent. Before, each came
   back from the server as a 400.
+- **A `field_updated` trigger with a `from_value` or `to_value` but no match
+  mode fires only on that value.** The CLI now sends `specific_value` for the
+  missing mode. Before, Kizen stored `any_including_blank` and the trigger
+  fired on every change to the field. Goal steps' triggers get the same
+  default. A trigger with an `id` keeps its live mode.
+- **A new `create_related_entity` step links the new record without
+  unlinking the others.** When `context_entity_field` is to-many and the spec
+  leaves `context_entity_field_resolution` out, the CLI now sends `add_only`.
+  Before, it sent `overwrite`, which left the new record as the field's only
+  link. A step with an `id` keeps its live value.
 
 ### Fixed
 

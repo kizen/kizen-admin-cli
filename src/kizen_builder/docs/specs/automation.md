@@ -805,6 +805,13 @@ the example leaves out the optional `preview_user_id`:
 
 Every key, choice and common shape: `kizen automations step-types show create_related_entity`.
 
+A step that leaves out `context_entity_field_resolution` gets `add_only`
+when `context_entity_field` is to-many, and `overwrite` otherwise. On a
+to-many field, `overwrite` replaces the field's list with the new record, so
+every record already related is unlinked; `add_only` keeps them (confirmed
+live 2026-11-16). `--dry-run` lists the planned value under `defaults`. An
+`update` keeps a live step's value.
+
 ### Moving a record to a stage
 
 ```json
@@ -1517,7 +1524,10 @@ Confirmed live 2026-10-30, in this order.
     `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
     server)**). On a `stop_execution` whose `id` matches, its `action` and
     `notify`. On a `plugin_code_step` whose `id` matches, its
-    `preview_user_id`.
+    `preview_user_id`. On a `create_related_entity` step whose `id` matches,
+    its `context_entity_field_resolution`. On a `field_updated` trigger whose
+    `id` matches, top-level or in a goal step, the match mode for a
+    `from_value`/`to_value` the spec sets without one.
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
     A Kizen PUT without them resets each to its default, except the stop's,
     which Kizen keeps when the block is empty (confirmed live 2026-10-30).
@@ -1725,7 +1735,7 @@ Beyond the step/trigger tables above:
 
 | where | the key |
 |---|---|
-| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. `from_value`/`to_value` write as bare UUIDs; the builder sends an option name, or a read's `{id, …}`, as its UUID. Keys and modes: `kizen automations step-types show field_updated` |
+| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. `from_value`/`to_value` write as bare UUIDs; the builder sends an option name, or a read's `{id, …}`, as its UUID. A value without its match mode is planned as `specific_value`: Kizen stores `any_including_blank` for a mode left out, and the trigger then fires on every change (confirmed live 2026-11-16). Keys and modes: `kizen automations step-types show field_updated` |
 | `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it. The other keys: [Date trigger](#date-trigger-on_or_around_date) |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}`; the spec takes an api_name or UUID |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
