@@ -50,12 +50,21 @@ class TriggerFieldUpdatedConfig(BaseModel):
         )
     )
     fire_on_create: bool = True
-    # Kizen stores any_including_blank for a mode left out.
+    # Kizen stores any_including_blank for a mode left out, so the planner
+    # sends specific_value for one whose value is set.
     from_match_mode: FieldChangeMatchMode | None = Field(
-        default=None, description="What the field held before the change."
+        default=None,
+        description=(
+            "What the field held before the change. Left out: specific_value "
+            "when from_value is set, else any_including_blank."
+        ),
     )
     to_match_mode: FieldChangeMatchMode | None = Field(
-        default=None, description="What the field holds after the change."
+        default=None,
+        description=(
+            "What the field holds after the change. Left out: specific_value "
+            "when to_value is set, else any_including_blank."
+        ),
     )
     from_value: FieldChangeValue | None = Field(
         default=None, description=_FIELD_CHANGE_VALUE

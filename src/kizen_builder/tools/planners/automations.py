@@ -429,7 +429,7 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
 
     payload, keeps_live = _update_payload(auto, ctx, current, checked.warnings)
     preview = _automation_preview(
-        env, auto, payload, ctx, checked, live_active=live_active
+        env, auto, payload, ctx, checked, live_active=live_active, current=current
     )
     preview.update(_folder_preview(auto, ctx, current))
     preview["current_revision"] = current.get("revision")
@@ -677,6 +677,67 @@ def _kept_block(
     return field, block, changed
 
 
+def _kept_match_modes(
+    spec: AutomationStepDef | AutomationTriggerDef,
+    built: dict[str, Any],
+    live: dict[str, Any],
+) -> tuple[str | None, dict[str, Any], bool]:
+    """`_kept_block` for a field_updated trigger, and for a goal's
+    field_updated triggers matched by id: a side whose value the spec sets
+    without a match mode keeps the live mode, so the specific_value default
+    only reaches a trigger Kizen has no mode for."""
+    field = trigger_config_field("field_updated")
+    if isinstance(spec, AutomationTriggerDef):
+        if spec.trigger_type != "field_updated":
+            return None, {}, False
+        block = _keep_live_match_modes(
+            _to_dict(spec.trigger_field_updated),
+            built.get(field) or {},
+            live.get(field) or {},
+        )
+        return field, block, block != built.get(field)
+    if spec.step_type != "goal" or spec.step_goal is None:
+        return None, {}, False
+    goal = built.get("step_goal") or {}
+    live_goal_triggers = {
+        t["id"]: t
+        for t in (live.get("step_goal") or {}).get("triggers") or []
+        if t.get("id")
+    }
+    triggers = []
+    for t_spec, t_built in zip(
+        spec.step_goal.triggers, goal.get("triggers") or [], strict=True
+    ):
+        t_live = live_goal_triggers.get(t_spec.get("id"))
+        if t_built.get("type") == "field_updated" and t_live:
+            t_built = {
+                **t_built,
+                field: _keep_live_match_modes(
+                    t_spec.get(field) or {},
+                    t_built.get(field) or {},
+                    t_live.get(field) or {},
+                ),
+            }
+        triggers.append(t_built)
+    block = {**goal, "triggers": triggers}
+    return "step_goal", block, block != goal
+
+
+def _keep_live_match_modes(
+    spec: dict[str, Any], built: dict[str, Any], live: dict[str, Any]
+) -> dict[str, Any]:
+    out = dict(built)
+    for side in ("from", "to"):
+        mode = f"{side}_match_mode"
+        if (
+            spec.get(f"{side}_value") is not None
+            and not spec.get(mode)
+            and live.get(mode)
+        ):
+            out[mode] = live[mode]
+    return out
+
+
 def _carry_omitted_step_keys(
     payload: dict[str, Any], auto: AutomationDef, current: dict[str, Any]
 ) -> tuple[dict[str, Any], list[str]]:
@@ -710,6 +771,8 @@ def _carry_omitted_step_keys(
         if values.get("should_skip_execution") is not True:
             values.pop("continue_with_branch", None)
         field, block, block_kept = _kept_block(spec, built, live)
+        if field is None:
+            field, block, block_kept = _kept_match_modes(spec, built, live)
         if block_kept or any(built.get(k) != v for k, v in values.items()):
             kept.append(built["key"])
         out = {**built, **values}
@@ -975,6 +1038,7 @@ def _automation_preview(
     checked: CheckedSpec,
     *,
     live_active: bool | None = None,
+    current: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the `--dry-run` preview cell for one automation.
 
@@ -985,6 +1049,8 @@ def _automation_preview(
     automation)`) instead of a bare bool, so a reviewer scanning
     `--dry-run` output sees a change, not a value. ``plan_create_automation``
     has no live state to compare against and omits ``live_active``.
+    ``current``, the live automation, tells a value kept live from one the
+    planner chose.
     """
     active_display: Any = auto.active
     if live_active is not None and live_active != auto.active:
@@ -998,6 +1064,7 @@ def _automation_preview(
         *(_warning_line(f) for f in checked.warnings),
         *_unlaid_rule_warnings(auto, payload, ctx),
     ]
+    defaults = [*checked.defaults, *_planned_defaults(auto, payload, current)]
     return {
         "env": env,
         "api_name": auto.api_name,
@@ -1007,9 +1074,54 @@ def _automation_preview(
         "active": active_display,
         "trigger_count": len(auto.triggers),
         "step_count": len(auto.steps),
-        **({"defaults": checked.defaults} if checked.defaults else {}),
+        **({"defaults": defaults} if defaults else {}),
         **({"warnings": warnings} if warnings else {}),
     }
+
+
+def _planned_defaults(
+    auto: AutomationDef, payload: dict[str, Any], current: dict[str, Any] | None
+) -> list[str]:
+    """A `defaults` line for each match mode the planner chose: the spec
+    sets the value but not its mode, and the live trigger has no mode."""
+    live = current or {}
+    live_by_id = {
+        x["id"]: x
+        for x in [
+            *(live.get("triggers") or []),
+            *(
+                t
+                for s in live.get("steps") or []
+                for t in (s.get("step_goal") or {}).get("triggers") or []
+            ),
+        ]
+        if x.get("id")
+    }
+    field = trigger_config_field("field_updated")
+    lines: list[str] = []
+
+    def modes(where: str, spec: dict[str, Any], built: dict[str, Any], tid: Any):
+        live_block = (live_by_id.get(tid) or {}).get(field) or {}
+        for side in ("from", "to"):
+            mode = f"{side}_match_mode"
+            if built.get(mode) and not spec.get(mode) and not live_block.get(mode):
+                lines.append(f"{where} {mode}: '{built[mode]}' ({side}_value is set)")
+
+    for t, built in zip(triggers_with_manual(auto), payload["triggers"], strict=True):
+        if t.trigger_type == "field_updated":
+            spec_block = _to_dict(t.trigger_field_updated)
+            modes(f"trigger '{built['key']}'", spec_block, built[field], t.id)
+    for step, built in zip(auto.steps, payload["steps"], strict=True):
+        if step.step_type != "goal" or step.step_goal is None:
+            continue
+        nested = zip(
+            step.step_goal.triggers, built["step_goal"]["triggers"], strict=True
+        )
+        for t_spec, t_built in nested:
+            if t_built["type"] == "field_updated":
+                where = f"step '{step.key}' goal trigger '{t_built['key']}'"
+                modes(where, t_spec.get(field) or {}, t_built[field], t_spec.get("id"))
+    return lines
 
 
 def _warning_line(f: Finding) -> str:
@@ -1721,6 +1833,9 @@ def _carry_webhook_auth(
     return out
 
 
+_VALUE_DEFAULT_MATCH_MODE = "specific_value"
+
+
 @honours_all
 def _trigger_field_updated(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
     ref = block.get("field_ref", "")
@@ -1741,6 +1856,11 @@ def _trigger_field_updated(block: dict[str, Any], ctx: LiveContext) -> dict[str,
         v = out.get(k)
         if isinstance(v, dict) and v.get("id"):
             out[k] = v["id"]
+    # Kizen stores any_including_blank for a mode left out, so a value
+    # without one fired on every change (confirmed live 2026-11-16).
+    for side in ("from", "to"):
+        if out.get(f"{side}_value") is not None and not out.get(f"{side}_match_mode"):
+            out[f"{side}_match_mode"] = _VALUE_DEFAULT_MATCH_MODE
     return out
 
 
