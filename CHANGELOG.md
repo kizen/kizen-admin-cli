@@ -36,6 +36,15 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **Automation dry-runs report every spec problem at once, with the step,
+  path and a suggested fix. `api_name` and step `order` default when left
+  out.** `automations create|update --dry-run` lists every wrong choice,
+  unknown key, placeholder, undeclared variable and graph problem before any
+  live call, each with a "did you mean" and the command that lists the
+  allowed values; `--json` puts them under `errors` and `warnings`. Before,
+  each run stopped at the first. `api_name` defaults to the slugified name,
+  a step's `order` to its position, and the plan preview says so. `steps add`
+  and `steps edit` run the same per-step checks.
 - **schedule_activity's `schedule` and `assigned_to` are typed; a wrong
   choice fails the dry-run.** A wrong `schedule.type`, a `with_delay` or
   `on_or_around_date` type without its block, `delay_type: days`, a

@@ -207,8 +207,11 @@ Build the spec from the catalog, then check it before it touches anything:
 2. `kizen automations step-types show <type>` prints one step's or trigger's
    config block: entries to copy, the keys each choice needs, and the values
    to look up first. `step-types list` names every wired type.
-3. `kizen automations create --spec-file <path> --dry-run` checks the spec
-   against the environment: fields, activity types, team members.
+3. `kizen automations create --spec-file <path> --dry-run` lists every spec
+   problem at once, each with its step, path and fix, then checks the spec
+   against the environment: fields, activity types, team members. Fix them
+   all and dry-run again until the plan renders.
+4. Re-run without `--dry-run` to apply, after the user approves the plan.
 
 A few load-bearing reminders:
 
