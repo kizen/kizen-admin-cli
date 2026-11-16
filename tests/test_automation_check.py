@@ -1356,3 +1356,62 @@ def test_a_math_argument_needs_its_type_and_operation():
         _errors(_spec(step)),
         path="action_math_operator.simple_builder_arguments.1.operation_type",
     )
+
+
+def _bound(inputs=(), outputs=(), step_type="code_step"):
+    block = {"inputs": list(inputs), "outputs": list(outputs)}
+    if step_type == "code_step":
+        block["script"] = "pass"
+    else:
+        block |= {"plugin_app_api_name": "p", "action_step_api_name": "s"}
+    return {"key": "run", "step_type": step_type, f"action_{step_type}": block}
+
+
+def test_a_wrong_input_type_names_the_types_and_the_nearest():
+    step = _bound([{"name": "score", "input_type": "varible", "variable_name": "v"}])
+    f = _only(_errors(_spec(step)), path="action_code_step.inputs.0.input_type")
+    assert f.suggestion == "variable"
+    assert f.allowed == ["field", "variable", "related_field", "static_value"]
+
+
+@pytest.mark.parametrize(
+    ("step", "path", "got"),
+    [
+        (
+            _bound(outputs=[{"name": "out", "output_type": "static_value"}]),
+            "action_code_step.outputs.0.output_type",
+            "static_value",
+        ),
+        (
+            _bound([{"name": "cfg", "input_type": "business_plugin_config"}]),
+            "action_code_step.inputs.0.input_type",
+            "business_plugin_config",
+        ),
+        (
+            _bound(outputs=[{"name": "out", "conflict_resolution": "replace"}]),
+            "action_code_step.outputs.0.conflict_resolution",
+            "replace",
+        ),
+        (
+            _bound([{"name": "n", "data_type": "text"}]),
+            "action_code_step.inputs.0.data_type",
+            "text",
+        ),
+    ],
+    ids=["static-output", "plugin-config-on-code", "resolution", "data-type"],
+)
+def test_a_wrong_code_binding_choice_is_a_finding(step, path, got):
+    assert _only(_errors(_spec(step)), path=path).got == got
+
+
+def test_a_code_binding_that_is_not_an_object_is_a_finding():
+    f = _only(_errors(_spec(_bound(["score"]))), path="action_code_step.inputs.0")
+    assert f.message == "each entry is an object with a name and an input_type"
+
+
+def test_a_plugin_step_takes_the_install_config_input():
+    step = _bound(
+        [{"name": "settings", "input_type": "business_plugin_config"}],
+        step_type="plugin_code_step",
+    )
+    check_automation(_spec(step))

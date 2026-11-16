@@ -981,10 +981,185 @@ _MATH_OPERATOR = Guide(
     concepts=("field", "variable"),
 )
 
+
+def _input_types(*extra: Option) -> Selector:
+    return Selector(
+        "inputs[].input_type",
+        (
+            Option("field", ("field_ref",), "a field on the automation's record"),
+            Option("variable", ("variable_name",)),
+            Option(
+                "related_field",
+                ("field_ref", "related_field"),
+                "field_ref is the single-value relationship hop",
+            ),
+            Option("static_value", ("static_value",)),
+            *extra,
+        ),
+        "field",
+    )
+
+
+_OUTPUT_TYPES = Selector(
+    "outputs[].output_type",
+    (
+        Option("field", ("field_ref",)),
+        Option("variable", ("variable_name",)),
+        Option("related_field", ("field_ref", "related_field")),
+    ),
+    "field",
+)
+
+_CODE_OUTPUT_RESOLUTION = Selector(
+    "outputs[].conflict_resolution",
+    (
+        Option("overwrite"),
+        Option("add_only"),
+        Option("remove_only"),
+        Option("update_if_blank"),
+        Option("overwrite_except_null"),
+    ),
+)
+
+_CODE_STEP = Guide(
+    variants=(
+        Variant(
+            "field_to_field",
+            "Read a field, write a field on the same record.",
+            {
+                "script": "outputs.summary = (inputs.notes or '').strip()[:200]",
+                "inputs": [{"name": "notes", "field_ref": "<object>.<field>"}],
+                "outputs": [{"name": "summary", "field_ref": "<object>.<field>"}],
+            },
+        ),
+        Variant(
+            "variable_out",
+            "A constant and a variable in, a variable out for later steps.",
+            {
+                "script": "outputs.total = inputs.base + inputs.extra",
+                "inputs": [
+                    {
+                        "name": "base",
+                        "input_type": "static_value",
+                        "static_value": 10,
+                        "data_type": "number",
+                    },
+                    {
+                        "name": "extra",
+                        "input_type": "variable",
+                        "variable_name": "<variable name>",
+                    },
+                ],
+                "outputs": [
+                    {
+                        "name": "total",
+                        "output_type": "variable",
+                        "variable_name": "<variable name>",
+                        "data_type": "number",
+                    }
+                ],
+            },
+        ),
+        Variant(
+            "related_field_in",
+            "Read a field on the record a single-value relationship points to.",
+            {
+                "script": "outputs.copy = inputs.parent_name",
+                "inputs": [
+                    {
+                        "name": "parent_name",
+                        "input_type": "related_field",
+                        "field_ref": "<object>.<relationship field>",
+                        "related_field": "<related object>.<field>",
+                    }
+                ],
+                "outputs": [{"name": "copy", "field_ref": "<object>.<field>"}],
+            },
+        ),
+        Variant(
+            "to_many_ids",
+            "The ids of the records on a to-many relationship.",
+            {
+                "script": "outputs.count = len(inputs.related or [])",
+                "inputs": [
+                    {
+                        "name": "related",
+                        "field_ref": "<object>.<relationship field>",
+                        "data_type": "entity",
+                        "is_list": True,
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "count",
+                        "field_ref": "<object>.<field>",
+                        "data_type": "number",
+                    }
+                ],
+            },
+        ),
+    ),
+    selectors=(_input_types(), _OUTPUT_TYPES, _CODE_OUTPUT_RESOLUTION),
+    lookups=(
+        Lookup("inputs[].field_ref", "kizen objects get <object>", "<object>.<field>"),
+        Lookup("outputs[].field_ref", "kizen objects get <object>", "<object>.<field>"),
+    ),
+    notes=(
+        "related_field reads one hop through a single-value relationship "
+        "(many_to_one or one_to_one); a to-many hop is a 400. For a to-many "
+        "relationship, bind it as a field input with data_type entity and "
+        "is_list true: the script gets the related records' ids.",
+        "To write to records on a to-many relationship, use a "
+        "modify_related_entities step.",
+        "The script reads inputs.<name> and sets outputs.<name>: "
+        "`kizen docs show code-steps`.",
+    ),
+    concepts=("field", "variable"),
+    doc="kizen docs show code-steps",
+)
+
+_PLUGIN_CODE_STEP = Guide(
+    variants=(
+        Variant(
+            "with_install_config",
+            "A plugin step given a field and the plugin's install config.",
+            {
+                "plugin_app_api_name": "<installed plugin api_name>",
+                "action_step_api_name": "<step api_name>",
+                "inputs": [
+                    {"name": "heading", "field_ref": "<object>.<field>"},
+                    {"name": "settings", "input_type": "business_plugin_config"},
+                ],
+                "outputs": [
+                    {
+                        "name": "result",
+                        "output_type": "variable",
+                        "variable_name": "<variable name>",
+                    }
+                ],
+            },
+        ),
+    ),
+    selectors=(
+        _input_types(
+            Option("business_plugin_config", note="the install config; no source key")
+        ),
+        _OUTPUT_TYPES,
+        _CODE_OUTPUT_RESOLUTION,
+    ),
+    notes=(
+        "Inputs and outputs are code_step's: `kizen automations step-types "
+        "show code_step`. Kizen checks them against the plugin's manifest.",
+    ),
+    concepts=("field", "variable"),
+)
+
 _STEP_GUIDES: dict[str, Guide] = {
+    "code_step": _CODE_STEP,
     "condition": _CONDITION,
     "create_related_entity": _CREATE_RELATED_ENTITY,
     "math_operator": _MATH_OPERATOR,
+    "plugin_code_step": _PLUGIN_CODE_STEP,
     "schedule_activity": _SCHEDULE_ACTIVITY,
     "search_records": _SEARCH_RECORDS,
 }

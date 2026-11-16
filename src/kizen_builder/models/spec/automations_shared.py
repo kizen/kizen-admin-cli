@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, Literal, Self, Union
 
 from pydantic import (
     BaseModel,
@@ -205,55 +205,219 @@ class LlmDestinationConfig(BaseModel):
     conflict_resolution: str | None = None
 
 
-class CodeStepInputConfig(BaseModel):
-    """An input binding for a code step (CodeStepInputRequest)."""
+# ---------------------------------------------------------------------------
+# code_step / plugin_code_step inputs and outputs
+# ---------------------------------------------------------------------------
 
+_HOP = (
+    "The relationship field on the automation's object: 'object.field', "
+    "resolved at apply time. It must be single-value (many_to_one or "
+    "one_to_one): Kizen 400s a to-many hop."
+)
+_RELATED = (
+    "The field on the related object: a UUID or 'object.field'. "
+    "related_field_ref is the same."
+)
+
+
+class _CodeBinding(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    name: str = Field(min_length=2, max_length=255)
-    input_type: Literal["field", "variable", "related_field", "static_value"] = "field"
+    name: str = Field(
+        min_length=2,
+        max_length=255,
+        description="The key the script reads it under (inputs.<name>, outputs.<name>).",
+    )
+    data_type: AutomationVariableDataType | None = Field(
+        default=None,
+        description="Declares the type, where the bound field or variable doesn't.",
+    )
+    is_list: bool | None = Field(default=None, description="The value is a list.")
+
+
+class _FieldSource(_CodeBinding):
     field_ref: str | None = Field(
         default=None,
         description="'object.field' reference, resolved to field UUID at apply time.",
     )
     field_id: str | None = Field(default=None, description="Direct UUID fallback.")
-    variable_name: str | None = Field(
-        default=None, description="Variable name, used when input_type is 'variable'."
+    field: str | dict[str, Any] | None = Field(
+        default=None, description="Read spelling: a field UUID or {id, ...}."
     )
+
+
+class _VariableSource(_CodeBinding):
+    variable_name: str | None = Field(default=None, description="The variable's name.")
+    variable: str | dict[str, Any] | None = Field(
+        default=None, description="Read spelling: its name or {name, ...}."
+    )
+
+
+# A to-many relationship's records are read by binding the relationship as a
+# field input with data_type entity and is_list true; the script gets their
+# ids (confirmed live 2026-11-16).
+class CodeFieldInput(_FieldSource):
+    """A field on the automation's record."""
+
+    input_type: Literal["field"] = Field(
+        default="field", description="Where the value comes from. Default: field."
+    )
+
+
+class CodeVariableInput(_VariableSource):
+    """An automation variable."""
+
+    input_type: Literal["variable"]
+
+
+# Single-value hops only (confirmed live 2026-11-16).
+class CodeRelatedFieldInput(_FieldSource):
+    """A field on the record a relationship field points to."""
+
+    input_type: Literal["related_field"]
+    field_ref: str | None = Field(default=None, description=_HOP)
+    related_field: str | dict[str, Any] | None = Field(
+        default=None, description=_RELATED
+    )
+    related_field_ref: str | None = None
+
+
+class CodeStaticValueInput(_CodeBinding):
+    """A literal value."""
+
+    input_type: Literal["static_value"]
     static_value: Any = Field(
         default=None,
-        description="Literal value, used when input_type is 'static_value'.",
+        description=(
+            "The value itself, or {value, entity_record, employee} for a "
+            "record or team member."
+        ),
     )
 
 
-class PluginCodeStepInputConfig(CodeStepInputConfig):
-    """An input binding for a plugin step (PluginCodeStepInputRequest).
+class PluginConfigInput(_CodeBinding):
+    """The plugin's install config, for plugin steps only. No source key."""
 
-    Same as a code step input, plus ``business_plugin_config``, which binds
-    the plugin's install config. Run-time delivery is not confirmed live.
-    """
+    input_type: Literal["business_plugin_config"]
 
-    # Widens the base's choices, which mypy reports as an override.
+
+class _Written(BaseModel):
+    conflict_resolution: (
+        Literal[
+            "overwrite",
+            "add_only",
+            "remove_only",
+            "update_if_blank",
+            "overwrite_except_null",
+        ]
+        | None
+    ) = Field(default=None, description="How the value meets one already there.")
+    create_missing_option: bool | None = Field(
+        default=None, description="Add a value the field has no option for."
+    )
+
+
+class CodeFieldOutput(_FieldSource, _Written):
+    """Written to a field on the automation's record."""
+
+    output_type: Literal["field"] = Field(
+        default="field", description="Where the value goes. Default: field."
+    )
+
+
+class CodeVariableOutput(_VariableSource, _Written):
+    """Written to an automation variable."""
+
+    output_type: Literal["variable"]
+
+
+class CodeRelatedFieldOutput(_FieldSource, _Written):
+    """Written to a field on the record a relationship field points to."""
+
+    output_type: Literal["related_field"]
+    field_ref: str | None = Field(default=None, description=_HOP)
+    related_field: str | dict[str, Any] | None = Field(
+        default=None, description=_RELATED
+    )
+    related_field_ref: str | None = None
+
+
+# An entry whose type no member takes lands on one of these, so the finding
+# lists the types. `entity_variable_field` is the server's too, but the
+# planner drops its source, so it isn't offered.
+class _UnknownCodeInput(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    input_type: Literal["field", "variable", "related_field", "static_value"]
+
+
+class _UnknownPluginInput(BaseModel):
+    model_config = ConfigDict(extra="allow")
     input_type: Literal[
         "field", "variable", "related_field", "static_value", "business_plugin_config"
-    ] = "field"  # type: ignore[assignment]
+    ]
 
 
-class CodeStepOutputConfig(BaseModel):
-    """An output binding for a code step (CodeStepOutputRequest)."""
-
+class _UnknownOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
+    output_type: Literal["field", "variable", "related_field"]
 
-    name: str = Field(min_length=2, max_length=255)
-    output_type: Literal["field", "variable", "related_field"] = "field"
-    field_ref: str | None = Field(
-        default=None,
-        description="'object.field' reference, resolved to field UUID at apply time.",
-    )
-    field_id: str | None = Field(default=None, description="Direct UUID fallback.")
-    variable_name: str | None = Field(
-        default=None, description="Variable name, used when output_type is 'variable'."
-    )
+
+def _tagged(key: str, members: dict[str, type[BaseModel]], unknown: type) -> Any:
+    """A list entry picked by ``key``, which defaults to ``field``. Each tag
+    is "<value> <input|output>", which `UNION_TAGS` strips from paths."""
+    noun = key.split("_")[0]
+
+    def kind(v: Any) -> str | None:
+        if isinstance(v, dict):
+            value = v.get(key, "field")
+        elif isinstance(v, BaseModel):
+            value = getattr(v, key, None)
+        else:
+            return None
+        return f"{value} {noun}" if value in members else f"unknown {noun}"
+
+    return Annotated[
+        Union[  # noqa: UP007
+            tuple(Annotated[m, Tag(f"{v} {noun}")] for v, m in members.items())
+            + (Annotated[unknown, Tag(f"unknown {noun}")],)
+        ],
+        Discriminator(
+            kind,
+            custom_error_type="code_binding",
+            custom_error_message=f"each entry is an object with a name and an {key}",
+        ),
+    ]
+
+
+_CODE_INPUTS: dict[str, type[BaseModel]] = {
+    "field": CodeFieldInput,
+    "variable": CodeVariableInput,
+    "related_field": CodeRelatedFieldInput,
+    "static_value": CodeStaticValueInput,
+}
+_CODE_OUTPUTS: dict[str, type[BaseModel]] = {
+    "field": CodeFieldOutput,
+    "variable": CodeVariableOutput,
+    "related_field": CodeRelatedFieldOutput,
+}
+
+CodeStepInputConfig = _tagged("input_type", _CODE_INPUTS, _UnknownCodeInput)
+"""A code step input (CodeStepInputRequest), keyed on `input_type`."""
+PluginCodeStepInputConfig = _tagged(
+    "input_type",
+    {**_CODE_INPUTS, "business_plugin_config": PluginConfigInput},
+    _UnknownPluginInput,
+)
+"""A plugin step input (PluginCodeStepInputRequest): a code step input, or
+`business_plugin_config`."""
+CodeStepOutputConfig = _tagged("output_type", _CODE_OUTPUTS, _UnknownOutput)
+"""A code or plugin step output (CodeStepOutputRequest), keyed on
+`output_type`."""
+
+_CODE_TAGS = frozenset(
+    [f"{v} input" for v in (*_CODE_INPUTS, "business_plugin_config", "unknown")]
+    + [f"{v} output" for v in (*_CODE_OUTPUTS, "unknown")]
+)
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +426,7 @@ class CodeStepOutputConfig(BaseModel):
 
 # Tags a discriminated union adds to an error's location. They aren't keys,
 # so the findings leave them out of the path.
-UNION_TAGS = frozenset({"filter clause", "filter group", "raw filter"})
+UNION_TAGS = frozenset({"filter clause", "filter group", "raw filter", *_CODE_TAGS})
 
 FilterOp = Literal[
     "!=",

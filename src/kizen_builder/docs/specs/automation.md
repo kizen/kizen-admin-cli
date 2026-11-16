@@ -742,31 +742,10 @@ try to spec them.
 
 ### `code_step` input/output shapes
 
-Each entry in `action_code_step.inputs`/`.outputs` picks its shape via
-`input_type`/`output_type`:
-
-| `input_type` | Wire shape | Notes |
-|---|---|---|
-| `field` (default) | `{"field": {"id": <uuid>}}` | From `field_ref` (`"object.field"`, resolved at apply time), `field_id`, or a raw `field` UUID — first one present wins. |
-| `variable` | `{"variable": {"name": <name>}}` | From `variable_name` or a `variable` dict/string. |
-| `static_value` | `{"static_value": {"value": ..., "entity_record": ..., "employee": ...}}` | `static_value` may be the literal value directly, or a dict with those three keys for the richer forms. |
-| `related_field` | `{"field": {"id": <uuid>}, "related_field": {"id": <uuid>}}` | **Both required**: `field` is the relationship field on the automation's own object (the hop), from `field_ref`, `field_id` or `field`; `related_field` (or `related_field_ref`) is the field on the object it points to, as a UUID or `"object.field"`. The hop must be single-value (`many_to_one` or `one_to_one`); a to-many hop is a 400 and the dry-run refuses it. Confirmed live 2026-11-16. |
-
-`output_type` is the same enum minus `static_value` (an output can't be a
-literal): `field` (default), `variable`, `related_field` — same wire shapes
-as their `input_type` counterparts. `inputs`/`outputs` entries also accept
-`data_type` and `is_list` when the script needs to declare a type/array
-explicitly rather than inferring it from the bound field.
-
-To read the records on a to-many relationship, bind the relationship itself:
-`{"name": "conditions", "input_type": "field", "field_ref":
-"encounters.conditions", "data_type": "entity", "is_list": true}`. The script
-gets the related records' ids. To write to them, use a
-`modify_related_entities` step. Confirmed live 2026-11-16.
-
-For the Python side — the `inputs.` / `outputs.` / `secrets[…]` / `kizen.api`
-namespace, how each `data_type` arrives inside the script, and unit-testing a
-script before wiring it in — see `kizen docs show code-steps`.
+Every input and output type, with the keys each takes: `kizen automations
+step-types show code_step`. The Python side (`inputs.` / `outputs.` /
+`secrets[…]` / `kizen.api`, how each `data_type` arrives, and unit-testing a
+script) is in `kizen docs show code-steps`.
 
 ### `plugin_code_step`
 
@@ -800,8 +779,9 @@ the example leaves out the optional `preview_user_id`:
   plugin doesn't ship are each a 400 naming the key. It also checks the
   bindings against the manifest, and a required input or output that's
   missing is a 400 naming it (all confirmed live 2026-10-14).
-- `inputs` and `outputs` take the `code_step` shapes above. `inputs` also
-  takes `input_type: business_plugin_config`, for plugin steps only. On the
+- `inputs` and `outputs` take the `code_step` shapes (`kizen automations
+  step-types show plugin_code_step`). `inputs` also takes `input_type:
+  business_plugin_config`, for plugin steps only. On the
   wire it's `{name, input_type, data_type?, is_list?}` with no source key. A
   UI-built step reads back in that shape (seen 2026-10-14), bound to a
   parameter the manifest declares `static_value`. Kizen's 2026-10-13 release

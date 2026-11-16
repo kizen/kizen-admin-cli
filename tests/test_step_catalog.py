@@ -283,21 +283,21 @@ _FILLS = {
 }
 
 
-def _built_variants(type_name):
+def _built_variants(type_name, target="patients", **fills):
     """Each variant of ``type_name`` built by the real builder on a
-    `patients` automation, once its placeholders name things the fixture
+    ``target`` automation, once its placeholders name things the fixture
     env has."""
     block_key = step_catalog.describe(type_name)["block"]
     for variant in step_catalog._STEP_GUIDES[type_name].variants:
         text = json.dumps(step_catalog.variant_spec(type_name, variant.name))
-        for placeholder, value in _FILLS.items():
+        for placeholder, value in {**_FILLS, **fills}.items():
             text = text.replace(placeholder, value)
         auto = AutomationDef.model_validate(
             _with_orders(
                 {
                     "name": "t",
                     "api_name": "t",
-                    "target_object": "patients",
+                    "target_object": target,
                     "steps": [json.loads(text)],
                 }
             )
@@ -325,6 +325,30 @@ def test_math_operator_variants_build_a_payload(patch_live_lookups):
             )
             if arg["argument_type"] == "variable":
                 assert arg["variable"] == {"name": "made"}
+
+
+def test_code_step_variants_build_a_payload(patch_live_lookups):
+    fills = {
+        "<object>.<field>": "encounters.encounter_priority",
+        "<object>.<relationship field>": "encounters.patient_rel",
+        "<related object>.<field>": "patients.mrn",
+    }
+    for variant, block in _built_variants("code_step", "encounters", **fills):
+        spec = variant.block
+        assert [i["name"] for i in block["inputs"]] == [
+            i["name"] for i in spec["inputs"]
+        ]
+        for built, given in zip(block["inputs"], spec["inputs"], strict=True):
+            assert built["input_type"] == given.get("input_type", "field")
+            source = {
+                "field": "field",
+                "variable": "variable",
+                "related_field": "related_field",
+                "static_value": "static_value",
+            }[built["input_type"]]
+            assert built[source], (variant.name, built)
+        for built in block["outputs"]:
+            assert built.get("field") or built.get("variable"), variant.name
 
 
 # --- CLI ------------------------------------------------------------------
