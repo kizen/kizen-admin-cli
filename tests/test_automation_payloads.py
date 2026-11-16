@@ -14,6 +14,7 @@ import pytest
 
 from kizen_builder.models.spec import AutomationDef
 from kizen_builder.models.spec.automations_triggers import trigger_config_field
+from kizen_builder.tools.findings import SpecProblems
 from kizen_builder.tools.planners.automations import (
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
@@ -5777,10 +5778,9 @@ def test_loop_nested_past_three_is_refused(patch_live_lookups):
     """Kizen's builder holds three levels. The API accepts more, so this is
     the CLI's own rule, checked at plan time."""
     assert "warnings" not in _preview(_authored_loop_spec(_nested_loops(3), False))
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(_authored_loop_spec(_nested_loops(5), False))
-    problems = str(e.value).split("\n  - ")[1:]
-    assert problems == [
+    assert [f.message for f in e.value.errors] == [
         f"loop 'l{n}' is nested {n + 1} levels deep; Kizen's builder allows at "
         "most three. The API accepts deeper loops, but the CLI refuses them so "
         "the automation stays editable in the UI."
@@ -5821,9 +5821,9 @@ def test_nested_loop_over_an_array_already_iterated_is_refused(
     patch_live_lookups, arrays, problem
 ):
     spec = _authored_loop_spec(_nested_loops(len(arrays), arrays=arrays), False)
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(spec)
-    assert str(e.value).split("\n  - ")[1:] == [_same_array_problem(*problem)]
+    assert [f.message for f in e.value.errors] == [_same_array_problem(*problem)]
 
 
 def test_loops_over_one_array_in_sequence_build(patch_live_lookups):

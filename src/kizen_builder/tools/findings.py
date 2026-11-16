@@ -50,7 +50,8 @@ class Finding:
 
 class SpecProblems(PlanError):
     """Every problem found in a spec. ``warnings`` don't block a plan on
-    their own; they ride along so the author sees them in the same pass."""
+    their own; they ride along so the author sees them in the same pass.
+    The message lists each error, for a caller that prints only `str(e)`."""
 
     def __init__(
         self, errors: list[Finding], warnings: list[Finding] | None = None
@@ -58,7 +59,12 @@ class SpecProblems(PlanError):
         self.errors = errors
         self.warnings = warnings or []
         n = len(errors)
-        super().__init__(f"{n} problem{'s' if n != 1 else ''} in the spec")
+        super().__init__(
+            "\n  - ".join(
+                [f"{n} problem{'s' if n != 1 else ''} in the spec:"]
+                + [f.text() for f in errors]
+            )
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {

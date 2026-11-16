@@ -436,3 +436,62 @@ def test_warnings_print_with_the_plan_and_dont_block_it(patch_live_lookups):
     assert op.preview["warnings"] == [
         "steps: step orders should run 0 to 0 with no gaps or duplicates; got [3]"
     ]
+
+
+# --- graph problems -------------------------------------------------------
+
+
+def _set_mrn(key, parent=None, order=0, **extra):
+    return {
+        "key": key,
+        "step_type": "change_field_value",
+        "order": order,
+        "parent_key": parent,
+        "action_change_field_value": {
+            "field_ref": "patients.mrn",
+            "specific_field_value": "A-1",
+        },
+        **extra,
+    }
+
+
+def test_every_graph_problem_is_listed(patch_live_lookups):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    spec = {
+        **_spec(
+            _set_mrn("a"),
+            _set_mrn("b", "ghost", 1),
+            _set_mrn("c", None, 2, parent_branch="yes"),
+            {
+                "key": "jump",
+                "step_type": "go_to_automation_step",
+                "order": 3,
+                "parent_key": "a",
+                "action_go_to_automation_step": {"step_key": "nowhere"},
+            },
+        ),
+        "target_object": "patients",
+    }
+    with pytest.raises(SpecProblems) as e:
+        plan_create_automation(spec)
+    assert [(f.path, f.message) for f in e.value.errors] == [
+        ("steps", "expected exactly 1 root step, found 2 (['a', 'c'])"),
+        ("steps", "step 'b' has dangling parent_key 'ghost'"),
+        (
+            "steps",
+            "step 'c' sets parent_yes_no='yes' but has no parent_key; a branch "
+            "needs the condition or goal it hangs off",
+        ),
+        ("steps", "step 'jump' go_to target 'nowhere' does not exist"),
+    ]
+
+
+def test_trigger_orders_are_checked_before_any_live_call():
+    spec = _spec(_activity())
+    spec["triggers"] = [
+        {"trigger_type": "manual"},
+        {"trigger_type": "activity_logged", "trigger_activity_logged": {}},
+    ]
+    f = _only(_errors(spec), path="triggers")
+    assert f.message.startswith("trigger orders must be sequential from 0 to 1")

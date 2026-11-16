@@ -62,7 +62,7 @@ from kizen_builder.models.spec.automations_triggers import (
 )
 from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
-from kizen_builder.tools.findings import Finding
+from kizen_builder.tools.findings import Finding, SpecProblems
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 from kizen_builder.utils import is_uuid, match_option
@@ -378,7 +378,7 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     if auto.active is None:
         auto = auto.model_copy(update={"active": False})
 
-    payload = _build_automation_payload(auto, ctx)
+    payload = _build_automation_payload(auto, ctx, checked.warnings)
     return Plan.build(
         env=env,
         summary=f"Create automation '{auto.api_name}'",
@@ -426,7 +426,7 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     resolved_active = auto.active if auto.active is not None else live_active
     auto = auto.model_copy(update={"active": resolved_active})
 
-    payload, keeps_live = _update_payload(auto, ctx, current)
+    payload, keeps_live = _update_payload(auto, ctx, current, checked.warnings)
     preview = _automation_preview(
         env, auto, payload, ctx, checked, live_active=live_active
     )
@@ -525,10 +525,15 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
 
 
 def _update_payload(
-    auto: AutomationDef, ctx: LiveContext, current: dict[str, Any]
+    auto: AutomationDef,
+    ctx: LiveContext,
+    current: dict[str, Any],
+    warnings: list[Finding] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """The PUT body `update` sends and `diff` compares against live."""
-    payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    payload = _merge_server_state(
+        _build_automation_payload(auto, ctx, warnings), current
+    )
     _keep_rule_descriptions(payload, current)
     # The model defaults this to False, which a PUT would write over a live
     # true (confirmed live 2026-10-30).
@@ -1140,7 +1145,11 @@ def _rule_field(
 # ---------------------------------------------------------------------------
 
 
-def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str, Any]:
+def _build_automation_payload(
+    auto: AutomationDef, ctx: LiveContext, warnings: list[Finding] | None = None
+) -> dict[str, Any]:
+    """The wire payload. Every graph problem `validate_payload` finds is
+    raised at once, with ``warnings`` riding along."""
     payload: dict[str, Any] = {
         "name": auto.name,
         "api_name": auto.api_name,
@@ -1160,41 +1169,36 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     if auto.priority_rank is not None:
         payload["priority_rank"] = auto.priority_rank
 
-    triggers = list(auto.triggers)
-    if not any(t.trigger_type == "manual" for t in triggers):
-        from kizen_builder.models.spec import AutomationTriggerDef
-
-        manual = AutomationTriggerDef(trigger_type="manual", order=0)
-        triggers = [manual] + [
-            t.model_copy(update={"order": i + 1}) for i, t in enumerate(triggers)
-        ]
-    payload["triggers"] = [_build_trigger_payload(t, auto, ctx) for t in triggers]
-    _validate_trigger_orders(payload["triggers"])
+    payload["triggers"] = [
+        _build_trigger_payload(t, auto, ctx) for t in triggers_with_manual(auto)
+    ]
     payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
 
     from kizen_builder.translate import validate_payload
 
     problems = validate_payload(payload)
     if problems:
-        raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
+        raise SpecProblems(
+            [
+                Finding(p, path="triggers" if p.startswith("trigger") else "steps")
+                for p in dict.fromkeys(problems)
+            ],
+            warnings,
+        )
     return payload
 
 
-def _validate_trigger_orders(triggers: list[dict[str, Any]]) -> None:
-    """Trigger orders must be exactly {0, ..., N-1} — the server rejects
-    anything else with `HTTP 400: triggers: Trigger orders must be
-    sequential from 0 to N-1`. A static, purely arithmetic rule, so
-    --dry-run can catch it here instead of requiring a live apply-and-fail.
-    Left-unset trigger orders all default to 0 (see `_build_trigger_payload`),
-    so two-or-more triggers with no explicit `order` in the spec collide.
-    """
-    orders = sorted(t["order"] for t in triggers)
-    if orders != list(range(len(triggers))):
-        seen = ", ".join(f"{t['type']}(order={t['order']})" for t in triggers)
-        raise PlanError(
-            f"trigger orders must be sequential from 0 to {len(triggers) - 1}, "
-            f"got: {seen} — set an explicit, unique `order` on each trigger"
-        )
+def triggers_with_manual(auto: AutomationDef) -> list[AutomationTriggerDef]:
+    """The spec's triggers as they are sent: every automation carries a
+    `manual` trigger, so one is put first when the spec has none, and the
+    others renumber after it."""
+    triggers = list(auto.triggers)
+    if any(t.trigger_type == "manual" for t in triggers):
+        return triggers
+    manual = AutomationTriggerDef(trigger_type="manual", order=0)
+    return [manual] + [
+        t.model_copy(update={"order": i + 1}) for i, t in enumerate(triggers)
+    ]
 
 
 # ---------------------------------------------------------------------------

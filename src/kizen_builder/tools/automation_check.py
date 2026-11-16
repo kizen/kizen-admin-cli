@@ -28,7 +28,9 @@ from kizen_builder.tools.planners.automations import (
     _block_field_for,
     _fan_out_warnings,
     _unwrap_variable_name,
+    triggers_with_manual,
 )
+from kizen_builder.translate import trigger_order_problem
 
 
 @dataclass
@@ -62,7 +64,8 @@ def check_automation(spec: Any) -> CheckedSpec:
     errors.extend(_unwired_types(spec))
     auto: AutomationDef | None = None
     try:
-        auto = AutomationDef.model_validate(spec)
+        # Graph problems come from the built payload, all at once.
+        auto = AutomationDef.model_validate(spec, context={"graph": False})
     except ValidationError as e:
         errors.extend(
             f
@@ -77,6 +80,9 @@ def check_automation(spec: Any) -> CheckedSpec:
         warnings.extend(step_warnings)
     warnings.extend(_order_warnings(steps))
     if auto is not None:
+        problem = trigger_order_problem([t.order for t in triggers_with_manual(auto)])
+        if problem:
+            errors.append(Finding(problem, path="triggers"))
         warnings.extend(_fan_out(auto))
 
     errors = _unique(errors)
