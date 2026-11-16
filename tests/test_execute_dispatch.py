@@ -362,6 +362,12 @@ ROWS = [
         parent=True,
     )[:2],
     *_crud("mcp_server", "/api/mcp-servers", f"/api/mcp-servers/{E}", parent=False),
+    *_crud(
+        "toolbar_template",
+        "/api/toolbar-templates",
+        f"/api/toolbar-templates/{E}",
+        parent=False,
+    ),
     _row(
         "layout",
         "update",

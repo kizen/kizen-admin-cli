@@ -19,51 +19,52 @@
 │ --help                                  Show this message and exit.                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ apply             Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).     │
-│ upgrade           Update this CLI in place.                                                      │
-│ init              Set up this directory as a Kizen environment folder.                           │
-│ docs              Read the documentation that ships with this CLI.                               │
-│ envs              Discover and inspect configured envs.                                          │
-│ objects           Read objects, custom and built-in; create, update, and delete custom objects.  │
-│ dashboards        Read, create, and update dashboards and homepages.                             │
-│ layouts           Read and update record layouts for a custom object.                            │
-│ records           Read individual records from a custom object.                                  │
-│ filters           Look up valid --filter operators (no live env needed).                         │
-│ team              Look up team members and change their roles.                                   │
-│ roles             Read and manage roles.                                                         │
-│ permissions       Read and manage permission groups + the permissions catalog.                   │
-│ service-accounts  Read and manage integration service accounts (run-tools-as identities). See    │
-│                   `kizen docs show service-account`.                                             │
-│ automations       Read, create, update, and run automations.                                     │
-│ messages          Email templates and automation-scoped messages — the content                   │
-│                   notify_member_via_email steps reference (see `kizen docs show                  │
-│                   email-templates`). Kizen's builder UI 'select email' picker only recognizes a  │
-│                   message as selected when it's seeded from a real template; that's what         │
-│                   `create` does.                                                                 │
-│ fields            Create and update fields on custom objects.                                    │
-│ categories        Create and update field categories on custom objects.                          │
-│ filter-groups     Per-object saved filters (segments): /filter-groups.                           │
-│ quick-filters     Per-object quick-filter chips: /quick-filters.                                 │
-│ columns           Per-object saved column layouts: /columns.                                     │
-│ activities        Read and edit activity types (loggable definitions) and their fields, read     │
-│                   logged instances, and manage scheduled ones. An 'activity' here is the         │
-│                   type/template; logging an activity is done in the Kizen UI by users.           │
-│ forms             Create, read, update, and delete forms, their fields, and their visual page    │
-│                   layout (form_ui).                                                              │
-│ surveys           Create, read, update, and delete surveys, their fields, and their visual page  │
-│                   layout (form_ui).                                                              │
-│ mcp-servers       Read, create, update, and delete MCP servers.                                  │
-│ smart-connectors  Build, inspect, and iterate on smart connectors. Read verbs                    │
-│                   (list/get/executions/scripts/events/metadata) are safe. The local SQL loop is  │
-│                   pull → run → push: `pull` builds a working directory, `run` executes           │
-│                   connector.sql against embedded ClickHouse (needs the 'connectors' extra),      │
-│                   `push` writes the SQL back to the draft and can publish it live. Building one  │
-│                   from scratch runs create → set-input → (SQL loop) → generate-sample → push     │
-│                   --publish → configure-flow → activate → start-flow.                            │
-│ code              Unit-test code_step scripts in the live sandbox via `POST                      │
-│                   /api/coderunner/run`. Runs your script in the same Lambda as a real            │
-│                   `code_step`; `kizen.api` calls in it use real credentials and can write live   │
-│                   data. Asks y/N first (`--yes` skips).                                          │
+│ apply              Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).    │
+│ upgrade            Update this CLI in place.                                                     │
+│ init               Set up this directory as a Kizen environment folder.                          │
+│ docs               Read the documentation that ships with this CLI.                              │
+│ envs               Discover and inspect configured envs.                                         │
+│ objects            Read objects, custom and built-in; create, update, and delete custom objects. │
+│ dashboards         Read, create, and update dashboards and homepages.                            │
+│ layouts            Read and update record layouts for a custom object.                           │
+│ records            Read individual records from a custom object.                                 │
+│ filters            Look up valid --filter operators (no live env needed).                        │
+│ team               Look up team members and change their roles.                                  │
+│ roles              Read and manage roles.                                                        │
+│ permissions        Read and manage permission groups + the permissions catalog.                  │
+│ service-accounts   Read and manage integration service accounts (run-tools-as identities). See   │
+│                    `kizen docs show service-account`.                                            │
+│ automations        Read, create, update, and run automations.                                    │
+│ messages           Email templates and automation-scoped messages — the content                  │
+│                    notify_member_via_email steps reference (see `kizen docs show                 │
+│                    email-templates`). Kizen's builder UI 'select email' picker only recognizes a │
+│                    message as selected when it's seeded from a real template; that's what        │
+│                    `create` does.                                                                │
+│ fields             Create and update fields on custom objects.                                   │
+│ categories         Create and update field categories on custom objects.                         │
+│ filter-groups      Per-object saved filters (segments): /filter-groups.                          │
+│ quick-filters      Per-object quick-filter chips: /quick-filters.                                │
+│ columns            Per-object saved column layouts: /columns.                                    │
+│ toolbar-templates  Toolbar templates: named left-hand menus. Nothing here applies one to anyone. │
+│ activities         Read and edit activity types (loggable definitions) and their fields, read    │
+│                    logged instances, and manage scheduled ones. An 'activity' here is the        │
+│                    type/template; logging an activity is done in the Kizen UI by users.          │
+│ forms              Create, read, update, and delete forms, their fields, and their visual page   │
+│                    layout (form_ui).                                                             │
+│ surveys            Create, read, update, and delete surveys, their fields, and their visual page │
+│                    layout (form_ui).                                                             │
+│ mcp-servers        Read, create, update, and delete MCP servers.                                 │
+│ smart-connectors   Build, inspect, and iterate on smart connectors. Read verbs                   │
+│                    (list/get/executions/scripts/events/metadata) are safe. The local SQL loop is │
+│                    pull → run → push: `pull` builds a working directory, `run` executes          │
+│                    connector.sql against embedded ClickHouse (needs the 'connectors' extra),     │
+│                    `push` writes the SQL back to the draft and can publish it live. Building one │
+│                    from scratch runs create → set-input → (SQL loop) → generate-sample → push    │
+│                    --publish → configure-flow → activate → start-flow.                           │
+│ code               Unit-test code_step scripts in the live sandbox via `POST                     │
+│                    /api/coderunner/run`. Runs your script in the same Lambda as a real           │
+│                    `code_step`; `kizen.api` calls in it use real credentials and can write live  │
+│                    data. Asks y/N first (`--yes` skips).                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  New here? Run `kizen docs show operating` before making changes — it covers the approval gate and  
@@ -4755,6 +4756,111 @@
  Endpoint behavior and the last-Admin guard: see `kizen docs show team`                             
                                                                                                     
                                                                                                     
+ Usage: toolbar-templates [OPTIONS] COMMAND [ARGS]...                                               
+                                                                                                    
+ Toolbar templates: named left-hand menus. Nothing here applies one to anyone.                      
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list    List toolbar templates: name, owner, top-level entries, updated, id.                     │
+│ get     Show one toolbar template's entries as a tree (label, kind, ref).                        │
+│ create  Create a toolbar template from a spec.                                                   │
+│ update  Update a toolbar template. Keys the spec leaves out keep their value.                    │
+│ delete  Delete a toolbar template.                                                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: toolbar-templates create [OPTIONS]                                                          
+                                                                                                    
+ Create a toolbar template from a spec.                                                             
+                                                                                                    
+ Plugin pages are built from the installed plugin. A new template is                                
+ private to its owner unless the spec's `sharing_settings` says otherwise.                          
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON toolbar template spec. Default: read from stdin.      │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
+ Usage: toolbar-templates delete [OPTIONS] {template}                                               
+                                                                                                    
+ Delete a toolbar template.                                                                         
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Toolbar template UUID or exact name. [required]                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
+ Usage: toolbar-templates get [OPTIONS] {template}                                                  
+                                                                                                    
+ Show one toolbar template's entries as a tree (label, kind, ref).                                  
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Toolbar template UUID or exact name. [required]                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --json          Emit {id, name, owner, sharing_settings, entries}, with entries in the spec      │
+│                 shape `update` takes.                                                            │
+│ --raw           Emit the raw API response.                                                       │
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
+ Usage: toolbar-templates list [OPTIONS]                                                            
+                                                                                                    
+ List toolbar templates: name, owner, top-level entries, updated, id.                               
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --search          <str>  Filter by name (server-side search).                                    │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
+ Usage: toolbar-templates update [OPTIONS] {template}                                               
+                                                                                                    
+ Update a toolbar template. Keys the spec leaves out keep their value.                              
+                                                                                                    
+ `entries` replaces the whole list. Every update rebuilds plugin pages                              
+ from the installed plugin, so with no spec this re-saves the template                              
+ after a plugin release. Plugin toolbar-item references are kept as                                 
+ references.                                                                                        
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Toolbar template UUID or exact name. [required]                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON toolbar template spec. Default: read from stdin; none │
+│                             re-saves the template with current plugin pages.                     │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
  Usage: upgrade [OPTIONS]                                                                           
                                                                                                     
  Update this CLI in place.                                                                          
@@ -5530,6 +5636,24 @@
 
 
 ===== team update =====
+
+
+===== toolbar-templates =====
+
+
+===== toolbar-templates create =====
+
+
+===== toolbar-templates delete =====
+
+
+===== toolbar-templates get =====
+
+
+===== toolbar-templates list =====
+
+
+===== toolbar-templates update =====
 
 
 ===== upgrade =====

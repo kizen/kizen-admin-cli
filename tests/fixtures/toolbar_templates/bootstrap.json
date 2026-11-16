@@ -1,0 +1,171 @@
+{
+  "ops_hub": {
+    "id": "00000000-0000-4000-8000-0000000b0000",
+    "name": "Ops Hub",
+    "version": "0.1.14",
+    "installed_version": "0.1.6",
+    "business_config": {
+      "workspace": "main"
+    },
+    "employee_config": {},
+    "routable_pages": [
+      {
+        "api_name": "home",
+        "name": "Home",
+        "type": "script",
+        "callback": "",
+        "css": "/* v-live css */",
+        "event_scripts": {
+          "go": "/* v-live go */",
+          "doc": "/* v-live doc */"
+        },
+        "html": "",
+        "iframe_url": "",
+        "script": "/* v-live script */",
+        "is_toolbar_item": true,
+        "toolbar_color": "#0c595c",
+        "toolbar_icon": "house-laptop"
+      },
+      {
+        "api_name": "observability",
+        "name": "Overview",
+        "type": "script",
+        "callback": "",
+        "css": "/* v-live css */",
+        "event_scripts": {
+          "render": "/* v-live render */",
+          "runLoop": "/* v-live runLoop */"
+        },
+        "html": "",
+        "iframe_url": "",
+        "script": "/* v-live script */",
+        "is_toolbar_item": true,
+        "toolbar_color": "#0c595c",
+        "toolbar_icon": "chart-line"
+      },
+      {
+        "api_name": "processes",
+        "name": "Processes",
+        "type": "script",
+        "callback": "",
+        "css": "/* v-live css */",
+        "event_scripts": {
+          "render": "/* v-live render */",
+          "runLoop": "/* v-live runLoop */"
+        },
+        "html": "",
+        "iframe_url": "",
+        "script": "/* v-live script */",
+        "is_toolbar_item": true,
+        "toolbar_color": "#0c595c",
+        "toolbar_icon": "sitemap"
+      }
+    ],
+    "toolbar_items": []
+  },
+  "kizen_ai": {
+    "id": "00000000-0000-4000-8000-0000000b0001",
+    "name": "Kizen AI",
+    "version": "1.7.0",
+    "installed_version": "1.2.0",
+    "business_config": {},
+    "employee_config": {
+      "chat_position": "right"
+    },
+    "routable_pages": [
+      {
+        "api_name": "build",
+        "name": "Build",
+        "type": "script",
+        "callback": "",
+        "css": "/* v-live css */",
+        "event_scripts": {
+          "copyText": "/* v-live copyText */",
+          "openLink": "/* v-live openLink */"
+        },
+        "html": "",
+        "iframe_url": "",
+        "script": "/* v-live script */",
+        "is_toolbar_item": true,
+        "toolbar_color": "#6646DD",
+        "toolbar_icon": "code"
+      }
+    ],
+    "toolbar_items": []
+  },
+  "route_planner_b1d0aa": {
+    "id": "00000000-0000-4000-8000-0000000b0002",
+    "name": "Route Planner",
+    "version": "",
+    "installed_version": "",
+    "business_config": {},
+    "employee_config": {},
+    "routable_pages": [
+      {
+        "api_name": "routes",
+        "name": "Route Planner",
+        "type": "script",
+        "callback": "",
+        "css": "/* v-live css */",
+        "event_scripts": {
+          "day": "/* v-live day */",
+          "left": "/* v-live left */"
+        },
+        "html": "",
+        "iframe_url": "",
+        "script": "/* v-live script */",
+        "is_toolbar_item": true,
+        "toolbar_color": "#76dfb5",
+        "toolbar_icon": "globe"
+      }
+    ],
+    "toolbar_items": []
+  },
+  "stock_tracker_b1d0aa": {
+    "id": "00000000-0000-4000-8000-0000000b0003",
+    "name": "Stock Tracker",
+    "version": "1",
+    "installed_version": "1",
+    "business_config": {},
+    "employee_config": {},
+    "routable_pages": [
+      {
+        "api_name": "inventory",
+        "name": "Stock Tracker",
+        "type": "script",
+        "callback": "",
+        "css": "/* v-live css */",
+        "event_scripts": {
+          "render": "/* v-live render */",
+          "openEditor": "/* v-live openEditor */"
+        },
+        "html": "",
+        "iframe_url": "",
+        "script": "/* v-live script */",
+        "is_toolbar_item": true,
+        "toolbar_color": "#205441",
+        "toolbar_icon": "boxes-stacked"
+      }
+    ],
+    "toolbar_items": []
+  },
+  "mistral": {
+    "id": "00000000-0000-4000-8000-0000000b0004",
+    "name": "Mistral",
+    "version": "1.1.10",
+    "installed_version": "1.0.13",
+    "business_config": {},
+    "employee_config": {},
+    "routable_pages": [],
+    "toolbar_items": [
+      {
+        "api_name": "quick_ask",
+        "label": "Quick Ask",
+        "icon": "comment",
+        "color": "#4926CC",
+        "script": "/* v-live quick_ask */",
+        "when": "always"
+      }
+    ]
+  }
+}

@@ -143,12 +143,14 @@ src/kizen_builder/
     messages.py                  #   automation-scoped message resources (notify_* step content)
     permissions.py               #   roles, permission groups, permissions catalog
     pipelines.py                 #   pipeline-stage CRUD + record stage-move
+    plugins.py                   #   installed plugins (bootstrap) and business apps
     records.py                   #   record-level reads/writes (custom objects + built-ins)
     saved_views.py               #   filter groups / quick filters / column templates
     schema.py                    #   schema lookups backing the filtering DSL
     service_accounts.py          #   service-account CRUD + history (strips the key from create)
     smart_connectors.py          #   smart-connector CRUD, scripts, executions
     team.py                      #   team-member reads + role changes
+    toolbar_templates.py         #   toolbar template CRUD
   tools/                         # Tool functions. What the CLI mostly calls.
     activities.py                #   list/get activity types + logged/scheduled reads
     automations.py               #   get/list/show/roundtrip/start, executions, step patching
@@ -188,6 +190,7 @@ src/kizen_builder/
         variables.py             #       suggest_execution_variables()
     steps.py                     #   step-graph surgery (find/edit/insert/remove, validation)
     team.py                      #   search, get, resolve a member
+    toolbar_templates.py         #   list/find toolbar templates, entry catalog, to_spec
     planners/                    #   plan_* tools — produce Plans, never mutate
       activities.py              #     plan_create/update/delete activity types + fields
       automations.py             #     plan_create_automation, plan_update_automation
@@ -204,11 +207,13 @@ src/kizen_builder/
       saved_views.py             #     plan_create/update/delete the three saved-view kinds
       service_accounts.py        #     plan_create/update/delete integration service accounts
       team.py                    #     plan_update_team_member_roles
+      toolbar_templates.py       #     plan_create/update/delete toolbar templates
   filtering.py                   # Filter DSL (Field, All/Any, search/filter-config rendering).
   translate.py                   # Automation GET → PUT wire translation.
   models/spec/                   # Pydantic shapes for desired state (spec inputs);
                                   #   package, one module per cluster — see __init__.py.
     mcp_servers.py               #   MCPServerDef + its sharing block
+    toolbar_templates.py         #   ToolbarTemplateDef + ToolbarEntryDef
   output.py                      # Shared table/json/csv output layer for read commands.
   cli/                           # Typer wrappers around tools/. The `kizen` command.
     __init__.py                  #   exports `app`; imports every module below, IN ORDER
@@ -236,6 +241,7 @@ src/kizen_builder/
     filter_groups.py             #   kizen filter-groups
     quick_filters.py             #   kizen quick-filters
     columns.py                   #   kizen columns
+    toolbar_templates.py         #   kizen toolbar-templates
     activities.py                #   kizen activities — types + shared object resolution
     activities_fields.py         #   kizen activities fields (+ options)
     activities_instances.py      #   kizen activities logged / scheduled

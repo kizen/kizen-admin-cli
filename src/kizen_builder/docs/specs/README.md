@@ -26,6 +26,7 @@ field Kizen rejected.
 | `mcp-servers create\|update` | [mcp-server.md](mcp-server.md) | `MCPServerDef` |
 | `layouts update` | [layout.md](layout.md) | `LayoutDef` (record layout) |
 | `filter-groups`, `quick-filters`, `columns` create\|update | [saved-views.md](saved-views.md) | filter DSL / chips / columns |
+| `toolbar-templates create\|update` | [toolbar-templates.md](toolbar-templates.md) | `ToolbarTemplateDef` (entries) |
 | `permissions group-create\|group-update`, `roles …` | [permission-group.md](permission-group.md) | shaping-op list (`--settings-file`) |
 | `team search\|get\|update` | [team.md](team.md) | — |
 | `service-accounts …` (flag-driven) | [service-account.md](service-account.md) | — |

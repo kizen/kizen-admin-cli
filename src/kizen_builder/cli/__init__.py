@@ -47,6 +47,7 @@ from kizen_builder.cli import categories  # noqa: F401
 from kizen_builder.cli import filter_groups  # noqa: F401
 from kizen_builder.cli import quick_filters  # noqa: F401
 from kizen_builder.cli import columns  # noqa: F401
+from kizen_builder.cli import toolbar_templates  # noqa: F401
 from kizen_builder.cli import activities  # noqa: F401
 from kizen_builder.cli import activities_fields  # noqa: F401
 from kizen_builder.cli import activities_instances  # noqa: F401

@@ -14,6 +14,15 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
+  template from a spec of objects, plugin pages, links and categories. Plugin
+  pages are rebuilt from the installed plugin on every write, and `update
+  <template>` with no spec re-saves them after a plugin release; plugin
+  toolbar-item references are kept as references. Nothing applies a template
+  to users.
+
 ## [0.6.0] — 2026-11-11
 
 ### Added
