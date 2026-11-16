@@ -4170,6 +4170,45 @@ _STEP_BUILDERS: dict[str, Any] = {
     "search_records": _step_search_records,
 }
 
+# One line per wired step type, for `kizen automations step-types list`.
+STEP_PURPOSES: dict[str, str] = {
+    "condition": "branch on a filter, group membership or LLM decision",
+    "delay": "wait a duration or until a time",
+    "goal": "wait for a condition or event",
+    "loop": "run its body once per item of an array variable",
+    "stop_execution": "end this branch and set the run's final status",
+    "code_step": "run Python",
+    "plugin_code_step": "run a step an installed plugin ships",
+    "archive_record": "archive the record",
+    "go_to_automation_step": "jump to another step",
+    "start_automation": "start another automation, which must be active",
+    "change_field_value": (
+        "set or clear a field; on a pipeline's stage it moves the record"
+    ),
+    "modify_related_entities": "update related records",
+    "create_related_entity": "create a related record and link it",
+    "initialize_variable": "declare an automation variable, at the front",
+    "update_variable": "change an automation variable",
+    "call_llm": "prompt an LLM, optionally with an MCP server's tools",
+    "file_content_extraction": (
+        "extract from a file on the record, a related record or a variable"
+    ),
+    "audio_transcription": (
+        "transcribe audio on the record, a related record or a variable"
+    ),
+    "assign_team_member": "assign the record's owner (round-robin, role, field…)",
+    "schedule_activity": "schedule an activity",
+    "send_related_contact_email": "email a related contact",
+    "send_related_contact_text": "text a related contact",
+    "notify_member_via_email": "email a team member",
+    "notify_member_via_text": "text a team member",
+    "math_operator": "arithmetic into a variable or field",
+    "search_records": "search an object into an array variable",
+    "branch": "run its children in parallel (a branch group)",
+    "merge_branches": "rejoin a branch group",
+    "next_or_finish": "close a loop body",
+}
+
 
 # See the module comment above `KNOWN_ENUM_CHOICES_TRIGGERS` for what this
 # table is and isn't.
