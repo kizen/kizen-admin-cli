@@ -1154,7 +1154,80 @@ _PLUGIN_CODE_STEP = Guide(
     concepts=("field", "variable"),
 )
 
+_ASSIGN_TEAM_MEMBER = Guide(
+    variants=(
+        Variant(
+            "one_member",
+            "Make one team member the record's owner.",
+            {"type": "team_member", "employee_id": "<employee UUID>"},
+        ),
+        Variant(
+            "round_robin_role",
+            "Owners taken in turn from one role.",
+            {"type": "round_robin_role", "role_id": "<role UUID>"},
+        ),
+        Variant(
+            "round_robin_members",
+            "Owners taken in turn from a list of team members.",
+            {
+                "type": "round_robin_team_members",
+                "employee_ids": ["<employee UUID>", "<employee UUID>"],
+            },
+        ),
+        Variant(
+            "from_field",
+            "The team member in a team selector field on the record.",
+            {
+                "type": "team_selector_field",
+                "field_ref": "<object>.<team selector field>",
+            },
+        ),
+        Variant(
+            "from_related_record",
+            "The team member in a team selector field on a related record.",
+            {
+                "type": "related_team_selector_field",
+                "related_field_id": "<relationship field UUID>",
+                "field_ref": "<related object>.<team selector field>",
+            },
+        ),
+    ),
+    selectors=(
+        Selector(
+            "type",
+            (
+                Option("team_member", ("employee_id",)),
+                Option("round_robin_all", note="anyone, in turn"),
+                Option("round_robin_role", ("role_id",)),
+                Option("round_robin_team_members", ("employee_ids",)),
+                Option("team_selector_field", ("field_ref",)),
+                Option(
+                    "related_team_selector_field",
+                    ("related_field_id", "field_ref"),
+                    "related_field_id is a single-value hop on this object",
+                ),
+            ),
+        ),
+    ),
+    lookups=(
+        Lookup("employee_id", "kizen team search <name>"),
+        Lookup("employee_ids", "kizen team search <name>"),
+        Lookup("role_id", "kizen roles list"),
+        Lookup("field_ref", "kizen objects get <object>", "a team selector field"),
+        Lookup(
+            "related_field_id",
+            "kizen objects get <object>",
+            "a many_to_one or one_to_one relationship field's id",
+        ),
+    ),
+    notes=(
+        "owner, last_active, last_active_role and employees are the notify "
+        "steps' choices and are refused here.",
+    ),
+)
+
 _STEP_GUIDES: dict[str, Guide] = {
+    "assign_team_member": _ASSIGN_TEAM_MEMBER,
     "code_step": _CODE_STEP,
     "condition": _CONDITION,
     "create_related_entity": _CREATE_RELATED_ENTITY,

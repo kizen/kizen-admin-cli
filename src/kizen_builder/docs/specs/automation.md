@@ -1902,21 +1902,9 @@ smaller enum with no variable-based options, so it doesn't share this quirk.
 
 ### `assign_team_member.type`
 
-A **third**, six-value enum — not the `assigned_to.assignment_type` set above
-and not the `team_member` selector's set on notify/send steps. Confirmed live
-2026-08-06, one create per value:
-
-| `type` | needs |
-|---|---|
-| `team_member` | `employee_id` — the **singular** key; `employee_ids` 400s with *"employee_id … is required"* |
-| `round_robin_role` | `role_id` |
-| `round_robin_team_members` | `employee_ids` |
-| `round_robin_all` | — |
-| `team_selector_field` | `field_id` (or `field_ref`): a team-selector field on the automation's own object |
-| `related_team_selector_field` | **Both required**: `related_field_id` is a single-value relationship field on the automation's own object (the hop); `field_id` is the team-selector field on the object it points to. A `field_ref` here must name that object (`<far_object>.<field>`); a bare name resolves against the automation's own object |
-
-`owner`, `last_active`, `last_active_role` and `employees` are all valid on
-*other* selectors and all 400 here with *"… is not a valid choice"*.
+A **third** enum, not the `assigned_to.assignment_type` set above and not
+the notify steps' `team_member` set. Every choice and the keys each needs:
+`kizen automations step-types show assign_team_member`.
 
 The planner checks these keys per `type` and fails the plan if one is missing.
 The read spellings (`employee`, `role`, `field`, `related_field`, `employees`)

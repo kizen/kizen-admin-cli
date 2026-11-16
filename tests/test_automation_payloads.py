@@ -7017,16 +7017,28 @@ def test_notify_team_member_selector_not_checked(patch_live_lookups):
         "order": 0,
         "parent_key": None,
         "action_notify_member_via_text": {
-            "team_member": {"type": "team_member"},
+            "team_member": {"type": "employee"},
             "content": "hi",
         },
     }
     action = _build(spec)["steps"][0]["action_notify_member_via_text"]
-    assert action["team_member"] == {"type": "team_member"}
+    assert action["team_member"] == {"type": "employee"}
 
 
 _BY_OWNER = {"type": "team_selector_field", "field_ref": "owner"}
 _MESSAGE_ID = "11111111-1111-1111-1111-111111111111"
+
+
+@pytest.mark.parametrize("key", ["team_member", "cc_team_member"])
+def test_notify_email_sends_one_employee_as_employees(patch_live_lookups, key):
+    """Kizen refuses `employee` on an email step (confirmed live
+    2026-11-16), the text step's spelling for one team member."""
+    block = {"team_member": {"type": "owner"}, "id": _MESSAGE_ID}
+    block[key] = {"type": "employee", "employee_id": "e-1"}
+    wire = _build(_one_step_spec("notify_member_via_email", block))["steps"][0][
+        "action_notify_member_via_email"
+    ]
+    assert wire[key] == {"type": "employees", "employee_ids": ["e-1"]}
 
 
 @pytest.mark.parametrize(

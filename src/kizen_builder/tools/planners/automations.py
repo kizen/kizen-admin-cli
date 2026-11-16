@@ -3956,12 +3956,9 @@ def _step_notify_member_via_email(
     `email: {id}`).
     """
     out: dict[str, Any] = {}
-    team_member = block.get("team_member")
-    if isinstance(team_member, dict):
-        out["team_member"] = _team_member_selector(team_member, auto, ctx)
-    cc = block.get("cc_team_member")
-    if isinstance(cc, dict):
-        out["cc_team_member"] = _team_member_selector(cc, auto, ctx)
+    for key in ("team_member", "cc_team_member"):
+        if isinstance(block.get(key), dict):
+            out[key] = _email_recipient(_team_member_selector(block[key], auto, ctx))
     message_id = (
         block.get("id")
         or block.get("email_template_id")
@@ -3969,6 +3966,18 @@ def _step_notify_member_via_email(
     )
     if message_id:
         out["id"] = message_id
+    return out
+
+
+def _email_recipient(selector: dict[str, Any]) -> dict[str, Any]:
+    """An email step names one team member as `employees`. It refuses the
+    text step's `employee` (confirmed live 2026-11-16), so that is sent as
+    `employees` with the one id."""
+    if selector.get("type") != "employee":
+        return selector
+    out = {k: v for k, v in selector.items() if k != "employee_id"}
+    ids = [*selector.get("employee_ids", []), selector.get("employee_id")]
+    out |= {"type": "employees", "employee_ids": [i for i in ids if i]}
     return out
 
 
@@ -4515,11 +4524,14 @@ KNOWN_ENUM_CHOICES: dict[str, dict[str, KnownChoices]] = {
     },
     "notify_member_via_text": {
         "team_member.type": KnownChoices(
-            values=("employee",),
-            source=(
-                "First-Use-Feedback session, confirmed live 2026-08-11 "
-                "(00-inbox/First-Use-Feedback.md); no repo fixture yet"
+            values=(
+                "owner",
+                "last_active",
+                "last_active_role",
+                "team_selector_field",
+                "employee",
             ),
+            source="a create per value on cli-testing, 2026-11-16",
         ),
     },
 }

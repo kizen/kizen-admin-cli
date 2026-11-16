@@ -351,6 +351,17 @@ def test_code_step_variants_build_a_payload(patch_live_lookups):
             assert built.get("field") or built.get("variable"), variant.name
 
 
+def test_assign_team_member_variants_build_a_payload(patch_live_lookups):
+    fills = {
+        "<object>.<team selector field>": "encounters.owner",
+        "<related object>.<team selector field>": "patients.owner",
+        "<relationship field UUID>": "889f65e2-dd31-42f0-a088-c3c1dd8ea484",
+    }
+    for variant, block in _built_variants("assign_team_member", "encounters", **fills):
+        assert block["type"] == variant.block["type"]
+        assert "field_ref" not in block
+
+
 # --- CLI ------------------------------------------------------------------
 
 

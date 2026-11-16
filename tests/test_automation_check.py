@@ -1270,7 +1270,39 @@ def _math(subtype="addition", **arg):
     }
 
 
+def _notify(step_type, **block):
+    return {"key": "tell", "step_type": step_type, f"action_{step_type}": block}
+
+
+_TEXT = ("owner", "last_active", "last_active_role", "team_selector_field", "employee")
+
 _WRONG_CHOICES = [
+    *(
+        (
+            _notify("notify_member_via_text", team_member={"type": t}, content="hi"),
+            "action_notify_member_via_text.team_member.type",
+            "employee",
+        )
+        for t in ("employees", "team_member")
+    ),
+    (
+        _notify(
+            "notify_member_via_email",
+            team_member={"type": "owner"},
+            cc_team_member={"type": "team_member"},
+        ),
+        "action_notify_member_via_email.cc_team_member.type",
+        "employees",
+    ),
+    (
+        {
+            "key": "give",
+            "step_type": "assign_team_member",
+            "action_assign_team_member": {"type": "owner"},
+        },
+        "action_assign_team_member.type",
+        "team_selector_field",
+    ),
     (
         _math(subtype="subtraction"),
         "action_math_operator.subtype",
@@ -1415,3 +1447,53 @@ def test_a_plugin_step_takes_the_install_config_input():
         step_type="plugin_code_step",
     )
     check_automation(_spec(step))
+
+
+def test_each_notify_step_offers_its_own_recipient_types():
+    from kizen_builder.tools import step_catalog
+
+    def choices(step_type, path):
+        rows = step_catalog.describe(step_type)["fields"]
+        return next(r["choices"] for r in rows if r["path"] == path)
+
+    assert choices("notify_member_via_text", "team_member.type") == list(_TEXT)
+    assert "employees" in choices("notify_member_via_email", "team_member.type")
+    rows = step_catalog.describe("notify_member_via_email")["fields"]
+    cc = next(r for r in rows if r["path"] == "cc_team_member")
+    assert cc["same_as"] == "team_member"
+
+
+_NEW = {"a_key_kizen_added_later": 1}
+
+
+@pytest.mark.parametrize(
+    "step",
+    [
+        _math(constant=2, **_NEW),
+        _bound(
+            [{"name": "xy", "input_type": "static_value", "static_value": 1, **_NEW}]
+        ),
+        _notify(
+            "notify_member_via_email",
+            team_member={"type": "owner", **_NEW},
+            email_template_id="m",
+        ),
+        _filter_step("condition", {"all": [{"field": "s", "op": "=", "value": 1}]}),
+    ],
+    ids=["math_argument", "code_input", "recipient", "filter"],
+)
+def test_a_typed_block_still_passes_a_key_it_does_not_declare(step):
+    """extra="allow" stays: a key the server accepts but the model doesn't
+    know yet is passed through, not refused. A step block's own top-level
+    keys are still held to what its planner reads."""
+    check_automation(_spec(step))
+    trigger = {
+        "trigger_type": "field_updated",
+        "trigger_field_updated": {
+            "field_ref": "deals.status",
+            "to_match_mode": "specific_value",
+            "to_value": {"id": "1", **_NEW},
+            **_NEW,
+        },
+    }
+    check_automation(_spec(step, triggers=[trigger]))
