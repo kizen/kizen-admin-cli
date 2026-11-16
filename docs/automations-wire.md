@@ -343,6 +343,82 @@ smaller enum with no variable-based options, so it doesn't share this quirk.
   works on automations the CLI can't fully read back. With no `--folder` it
   targets `<business_root>`.
 
+## Run endpoints
+
+What `kizen automations start`, `runs` and the diagnostics verbs send. The CLI
+behaviour is in `kizen docs show automation-runtime`.
+
+**Starting.** `POST /api/automation2/automations/<automation-identifier>/start`
+with `{"record_id" | "client_id": "<uuid>", "variable_overrides":
+[{"variable_name": "org_match", "value": "true"}]}`. `record_id` and
+`client_id` are mutually exclusive: Contacts (`client_client`) use
+`client_id`. `variable_overrides` is a list, not a dict
+(`StartAutomationRequest` → `VariableOverrideRequest`), keyed by the
+variable's `name`, and `value` is always a nullable string that the server
+coerces by the variable's `data_type` (public schema plus a live start). The
+response is `{"execution": {ReadAutomationExecution}}`, or `{"execution":
+null}` when a UUID was passed as the identifier instead of the api_name.
+
+**Watching.**
+
+```
+GET /api/automation2/automation-execution?automation_id=<uuid>&record_id=<uuid>&size=25
+GET /api/automation2/automation-execution/<execution-id>
+GET /api/automation2/automation-execution/<execution-id>/history
+```
+
+- `size` maxes at 100.
+- On a halted execution the detail carries `paused_on_step` (`{id, type,
+  branching_step, label}`).
+- **No trailing slash**: `…/<execution-id>/` 404s with an HTML page.
+- In `/history`, type and description live in a nested `step` / `trigger`
+  object (`{type, description}`), not at the row top level. Timing is
+  `execution_time_ms` (null for async steps like `code_step` / `call_llm`)
+  plus `created` / `updated`.
+- `/history` is a paginated DRF envelope of 100 rows a page; a 211-row run
+  came back as three pages (confirmed live 2026-10-16). The CLI follows every
+  `next` link.
+
+**Controlling.**
+
+```
+POST /api/automation2/automation-execution/<id>/pause
+POST /api/automation2/automation-execution/<id>/play             # resume
+POST /api/automation2/automation-execution/<id>/cancel           # irreversible
+POST /api/automation2/automation-execution/<id>/skip-and-resume
+POST /api/automation2/automation-execution/<id>/debug-sendit
+POST /api/automation2/automation-execution/<id>/debug-rerun
+POST /api/automation2/automation-execution/<id>/debug-restart
+POST /api/automation2/automation-execution/<id>/debug-step
+```
+
+- pause / play / cancel / debug-sendit take a
+  `LightReadAutomationExecutionRequest`: `id`, `automation_id`, `client_id`,
+  `record_id`, `status`, `trigger_history_id`, `debug_mode`, all marked
+  required though the endpoint implies the action. The CLI echoes the
+  execution's own current GET, `status` included; sending the
+  pre-transition status worked in every direction tested.
+- `skip-and-resume` takes `InlineFormRequest`: `{skip_step_id,
+  continue_with_branch?}`. `debug-rerun` / `debug-restart` take
+  `DebugRerunRequest`: `{step_id}`. `debug-step` takes `DebugStepRequest`:
+  `{action: "execute"|"skip"|"debug", history_id, continue_with_branch?}`.
+- Only `debug-sendit` returns an empty/`null` body. `debug-step` returns a full
+  `LightAutomationHistory` (the step's new history row, not the execution),
+  and the schema `$ref`s the same shape for `debug-rerun`/`debug-restart`
+  (confirmed live 2026-08-13). The CLI re-GETs the execution afterwards.
+
+**Diagnostics.**
+
+```
+GET /api/automation2/automations/<identifier>/modification-history
+  ?date_from=<iso>&date_to=<iso>&event_type=<type>&search=<text>
+GET /api/automation2/automations/<identifier>/histories/failures?page=<n>&page_size=<n>
+```
+
+`modification-history` accepts more filters than the CLI exposes
+(`custom_object_ids`, `has_comment`, `role_ids`, `team_member`,
+`include_related`, `ordering`).
+
 ## Rules the CLI enforces or defaults
 
 Each rule here was a quirk in the author guide. It now lives in code, so the
