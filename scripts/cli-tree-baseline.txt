@@ -36,7 +36,9 @@
 │ service-accounts    Read and manage integration service accounts (run-tools-as identities). See  │
 │                     `kizen docs show service-account`.                                           │
 │ business-variables  Read and write business variables (business-wide merge-field values).        │
-│ automations         Read, create, update, and run automations.                                   │
+│ automations         Read, create, update, and run automations. Writing a spec? `step-types show  │
+│                     <type>` prints a step's config block, its choices and a step to start from,  │
+│                     with no live env.                                                            │
 │ messages            Email templates and automation-scoped messages — the content                 │
 │                     notify_member_via_email steps reference (see `kizen docs show                │
 │                     email-templates`). Kizen's builder UI 'select email' picker only recognizes  │
@@ -534,7 +536,8 @@
                                                                                                     
  Usage: automations [OPTIONS] COMMAND [ARGS]...                                                     
                                                                                                     
- Read, create, update, and run automations.                                                         
+ Read, create, update, and run automations. Writing a spec? `step-types show <type>` prints a       
+ step's config block, its choices and a step to start from, with no live env.                       
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                      │
@@ -573,6 +576,8 @@
 │                       trace (`--no-steps` for summary only, `--wait` to block until it           │
 │                       finishes); `logs <id>` prints each step's `detailed_log`. Mirrors `gh run  │
 │                       list` / `gh run view`.                                                     │
+│ step-types            What each automation step type takes: its config block, fields, choices,   │
+│                       and a step to start from. No live env needed.                              │
 │ folders               Automation folders, for organization.                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -603,7 +608,8 @@
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+ Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`. One step's 
+ block: `kizen automations step-types show <type>`.                                                 
                                                                                                     
                                                                                                     
  Usage: automations deactivate [OPTIONS] {api_name}                                                 
@@ -1132,6 +1138,66 @@
 │ --help                                     Show this message and exit.                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: automations step-types [OPTIONS] COMMAND [ARGS]...                                          
+                                                                                                    
+ What each automation step type takes: its config block, fields, choices, and a step to start from. 
+ No live env needed.                                                                                
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list      List every step type this CLI can write.                                               │
+│ show      Show one step type: steps to start from, the keys each choice needs,                   │
+│           every field, and the values to look up first.                                          │
+│ concepts  The ideas most step types share: who, when, variables, fields, value                   │
+│           sources, filters, merge fields.                                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: automations step-types concepts [OPTIONS]                                                   
+                                                                                                    
+ The ideas most step types share: who, when, variables, fields, value sources, filters, merge       
+ fields.                                                                                            
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --json          Emit JSON.                                                                       │
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+                                                                                                    
+                                                                                                    
+ Usage: automations step-types list [OPTIONS]                                                       
+                                                                                                    
+ List every step type this CLI can write.                                                           
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+                                                                                                    
+                                                                                                    
+ Usage: automations step-types show [OPTIONS] {TYPE}                                                
+                                                                                                    
+ Show one step type: steps to start from, the keys each choice needs, every field, and the values   
+ to look up first.                                                                                  
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    TYPE      <str>  A step type, from `step-types list`. [required]                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --variant        <str>  Print only this variant's step as JSON, ready for a spec file or `steps  │
+│                         add`.                                                                    │
+│ --json                  Emit everything as JSON, with the JSON Schema.                           │
+│ --help                  Show this message and exit.                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+                                                                                                    
+                                                                                                    
  Usage: automations steps [OPTIONS] COMMAND [ARGS]...                                               
                                                                                                     
  Step-level surgery on one automation. Each verb fetches live state, mutates one node of the        
@@ -1180,7 +1246,8 @@
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Step spec shape (one AutomationDef step): see `kizen docs show automation-step`                    
+ Step spec shape (one AutomationDef step): see `kizen docs show automation-step`. A step to start   
+ from: `kizen automations step-types show <type> --variant <name>`.                                 
                                                                                                     
                                                                                                     
  Usage: automations steps edit [OPTIONS] {api_name} {key}                                           
@@ -1257,7 +1324,8 @@
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+ Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`. One step's 
+ block: `kizen automations step-types show <type>`.                                                 
                                                                                                     
                                                                                                     
  Usage: business-variables [OPTIONS] COMMAND [ARGS]...                                              
@@ -5124,6 +5192,18 @@
 
 
 ===== automations start =====
+
+
+===== automations step-types =====
+
+
+===== automations step-types concepts =====
+
+
+===== automations step-types list =====
+
+
+===== automations step-types show =====
 
 
 ===== automations steps =====

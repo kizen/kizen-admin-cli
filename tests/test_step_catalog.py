@@ -7,7 +7,9 @@ import json
 from typing import get_args
 
 import pytest
+from typer.testing import CliRunner
 
+import kizen_builder.cli as cli
 from kizen_builder.models.spec import AutomationDef, AutomationStepDef
 from kizen_builder.models.spec.automations_actions_messaging import (
     ActivityAssignmentType,
@@ -20,6 +22,8 @@ from kizen_builder.tools.planners.automations import (
     LiveContext,
     _build_automation_payload,
 )
+
+runner = CliRunner()
 
 
 def test_catalog_lists_exactly_the_wired_types():
@@ -106,3 +110,81 @@ def test_schedule_activity_variants_build_a_payload(patch_live_lookups):
         ]
         assert block["schedule"]["type"] == variant.block["schedule"]["type"]
         assert "field_ref" not in json.dumps(block), variant.name
+
+
+# --- CLI ------------------------------------------------------------------
+
+
+def test_cli_show_prints_steps_choices_and_lookups():
+    r = runner.invoke(
+        cli.app, ["automations", "step-types", "show", "schedule_activity"]
+    )
+    assert r.exit_code == 0, r.output
+    assert "config block: action_schedule_activity" in r.output
+    assert "# with_delay:" in r.output
+    assert '"parent_key": null' in r.output
+    assert "schedule.with_delay.time_offset: pick one" in r.output
+    assert "specific_time    with time" in r.output
+    assert "kizen activities list" in r.output
+
+
+def test_cli_variant_is_pipeable_json():
+    r = runner.invoke(
+        cli.app,
+        [
+            "automations",
+            "step-types",
+            "show",
+            "schedule_activity",
+            "--variant",
+            "on_date",
+        ],
+    )
+    assert r.exit_code == 0, r.output
+    spec = json.loads(r.output)
+    assert spec["key"] == "schedule_activity" and spec["parent_key"] is None
+    assert spec["action_schedule_activity"]["schedule"]["type"] == "on_or_around_date"
+
+
+def test_cli_json_carries_the_schema():
+    r = runner.invoke(
+        cli.app, ["automations", "step-types", "show", "schedule_activity", "--json"]
+    )
+    info = json.loads(r.output)
+    assert "ActivityScheduleConfig" in info["schema"]["$defs"]
+    assert info["selectors"][0]["path"] == "schedule.type"
+
+
+def test_cli_unknown_type_and_variant_exit_2():
+    r = runner.invoke(cli.app, ["automations", "step-types", "show", "nope"])
+    assert r.exit_code == 2
+    r = runner.invoke(
+        cli.app,
+        ["automations", "step-types", "show", "delay", "--variant", "nope"],
+    )
+    assert r.exit_code == 2
+
+
+def test_cli_list_json_rows():
+    r = runner.invoke(cli.app, ["automations", "step-types", "list", "--json"])
+    assert r.exit_code == 0, r.output
+    rows = json.loads(r.output)
+    assert [set(row) for row in rows] == [
+        {"type", "block", "purpose", "variants"}
+    ] * len(step_catalog.STEP_TYPES)
+    r = runner.invoke(cli.app, ["automations", "step-types", "list"])
+    assert r.exit_code == 0 and "schedule_activity" in r.output
+
+
+def test_cli_concepts():
+    r = runner.invoke(cli.app, ["automations", "step-types", "concepts", "--json"])
+    assert set(json.loads(r.output)) == set(step_catalog.CONCEPTS)
+
+
+def test_automations_help_points_at_step_types():
+    r = runner.invoke(cli.app, ["automations", "--help"])
+    assert "step-types show <type>" in " ".join(r.output.split())
+    for args in (["create"], ["update"], ["steps", "add"]):
+        r = runner.invoke(cli.app, ["automations", *args, "--help"])
+        flat = " ".join(r.output.replace("│", " ").split())
+        assert "kizen automations step-types show" in flat, args

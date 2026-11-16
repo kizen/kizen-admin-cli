@@ -254,7 +254,8 @@ class ActivityAssigneeConfig(TeamMemberConfig):
     """Who a scheduled activity is assigned to (`schedule_activity.assigned_to`).
 
     `assignment_type` is the wire key; `type` is accepted as an alias. The
-    companion key each option takes is in `kizen docs show automation`.
+    companion key each option takes is in `kizen automations step-types show
+    schedule_activity`.
     """
 
     assignment_type: ActivityAssignmentType | None = None
@@ -417,7 +418,8 @@ class ActionScheduleActivityConfig(BaseModel):
         default=None,
         description=(
             "When the activity falls due: `type` and the block it names. "
-            "`kizen docs show automation` has an example of each shape."
+            "`kizen automations step-types show schedule_activity` has a "
+            "block for each shape."
         ),
     )
     notifications: list[Any] | dict[str, Any] | None = Field(
