@@ -41,6 +41,7 @@ from kizen_builder.api import records as records_api
 from kizen_builder.api import saved_views as sv_api
 from kizen_builder.api import service_accounts as sa_api
 from kizen_builder.api import team as team_api
+from kizen_builder.api import toolbar_templates as tt_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import EnvConfig, load_env_config
 from kizen_builder.tools.bulk_actions import poll_until, wait_for_bulk_action
@@ -113,6 +114,7 @@ Kind = Literal[
     "column_template",
     "record_bulk_field_value",
     "record_import",
+    "toolbar_template",
 ]
 
 # Forms and surveys are structurally identical — one op-kind pair
@@ -1136,6 +1138,18 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             "column_template": sv_api.COLUMNS_BASE,
         }[op.kind]
         return _execute_saved_view(client, op, base)
+
+    if op.kind == "toolbar_template":
+        if op.action == "create":
+            return tt_api.create_toolbar_template(client, op.payload)
+        if op.existing_uuid is None:
+            raise PlanError(
+                f"{op.action} toolbar_template op '{op.key}' has no existing_uuid "
+                "— planning bug"
+            )
+        if op.action == "delete":
+            return tt_api.delete_toolbar_template(client, op.existing_uuid)
+        return tt_api.update_toolbar_template(client, op.existing_uuid, op.payload)
 
     raise ValueError(f"unknown operation kind: {op.kind}")
 

@@ -24,6 +24,7 @@ the wire formats, endpoints, and confirmed quirks together.
 | MCP servers (the tools AI steps and MCP clients use) | `mcp-server` |
 | Record layouts | `layout` |
 | Filter groups, quick filters, column templates | `saved-views` |
+| Toolbar templates (the toolbar across the top of the page) | `toolbar-templates` |
 | Roles & permission groups | `permission-group` |
 | Team members and their roles | `team` |
 | Service accounts (run-tools-as identities) | `service-account` |

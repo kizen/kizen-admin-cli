@@ -19,51 +19,53 @@
 │ --help                                  Show this message and exit.                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ apply             Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).     │
-│ upgrade           Update this CLI in place.                                                      │
-│ init              Set up this directory as a Kizen environment folder.                           │
-│ docs              Read the documentation that ships with this CLI.                               │
-│ envs              Discover and inspect configured envs.                                          │
-│ objects           Read objects, custom and built-in; create, update, and delete custom objects.  │
-│ dashboards        Read, create, and update dashboards and homepages.                             │
-│ layouts           Read and update record layouts for a custom object.                            │
-│ records           Read individual records from a custom object.                                  │
-│ filters           Look up valid --filter operators (no live env needed).                         │
-│ team              Look up team members and change their roles.                                   │
-│ roles             Read and manage roles.                                                         │
-│ permissions       Read and manage permission groups + the permissions catalog.                   │
-│ service-accounts  Read and manage integration service accounts (run-tools-as identities). See    │
-│                   `kizen docs show service-account`.                                             │
-│ automations       Read, create, update, and run automations.                                     │
-│ messages          Email templates and automation-scoped messages — the content                   │
-│                   notify_member_via_email steps reference (see `kizen docs show                  │
-│                   email-templates`). Kizen's builder UI 'select email' picker only recognizes a  │
-│                   message as selected when it's seeded from a real template; that's what         │
-│                   `create` does.                                                                 │
-│ fields            Create and update fields on custom objects.                                    │
-│ categories        Create and update field categories on custom objects.                          │
-│ filter-groups     Per-object saved filters (segments): /filter-groups.                           │
-│ quick-filters     Per-object quick-filter chips: /quick-filters.                                 │
-│ columns           Per-object saved column layouts: /columns.                                     │
-│ activities        Read and edit activity types (loggable definitions) and their fields, read     │
-│                   logged instances, and manage scheduled ones. An 'activity' here is the         │
-│                   type/template; logging an activity is done in the Kizen UI by users.           │
-│ forms             Create, read, update, and delete forms, their fields, and their visual page    │
-│                   layout (form_ui).                                                              │
-│ surveys           Create, read, update, and delete surveys, their fields, and their visual page  │
-│                   layout (form_ui).                                                              │
-│ mcp-servers       Read, create, update, and delete MCP servers.                                  │
-│ smart-connectors  Build, inspect, and iterate on smart connectors. Read verbs                    │
-│                   (list/get/executions/scripts/events/metadata) are safe. The local SQL loop is  │
-│                   pull → run → push: `pull` builds a working directory, `run` executes           │
-│                   connector.sql against embedded ClickHouse (needs the 'connectors' extra),      │
-│                   `push` writes the SQL back to the draft and can publish it live. Building one  │
-│                   from scratch runs create → set-input → (SQL loop) → generate-sample → push     │
-│                   --publish → configure-flow → activate → start-flow.                            │
-│ code              Unit-test code_step scripts in the live sandbox via `POST                      │
-│                   /api/coderunner/run`. Runs your script in the same Lambda as a real            │
-│                   `code_step`; `kizen.api` calls in it use real credentials and can write live   │
-│                   data. Asks y/N first (`--yes` skips).                                          │
+│ apply              Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).    │
+│ upgrade            Update this CLI in place.                                                     │
+│ init               Set up this directory as a Kizen environment folder.                          │
+│ docs               Read the documentation that ships with this CLI.                              │
+│ envs               Discover and inspect configured envs.                                         │
+│ objects            Read objects, custom and built-in; create, update, and delete custom objects. │
+│ dashboards         Read, create, and update dashboards and homepages.                            │
+│ layouts            Read and update record layouts for a custom object.                           │
+│ records            Read individual records from a custom object.                                 │
+│ filters            Look up valid --filter operators (no live env needed).                        │
+│ team               Look up team members and change their roles.                                  │
+│ roles              Read and manage roles.                                                        │
+│ permissions        Read and manage permission groups + the permissions catalog.                  │
+│ service-accounts   Read and manage integration service accounts (run-tools-as identities). See   │
+│                    `kizen docs show service-account`.                                            │
+│ automations        Read, create, update, and run automations.                                    │
+│ messages           Email templates and automation-scoped messages — the content                  │
+│                    notify_member_via_email steps reference (see `kizen docs show                 │
+│                    email-templates`). Kizen's builder UI 'select email' picker only recognizes a │
+│                    message as selected when it's seeded from a real template; that's what        │
+│                    `create` does.                                                                │
+│ fields             Create and update fields on custom objects.                                   │
+│ categories         Create and update field categories on custom objects.                         │
+│ filter-groups      Per-object saved filters (segments): /filter-groups.                          │
+│ quick-filters      Per-object quick-filter chips: /quick-filters.                                │
+│ columns            Per-object saved column layouts: /columns.                                    │
+│ toolbar-templates  Toolbar templates: named top-of-page toolbars. Nothing here applies one to    │
+│                    anyone.                                                                       │
+│ activities         Read and edit activity types (loggable definitions) and their fields, read    │
+│                    logged instances, and manage scheduled ones. An 'activity' here is the        │
+│                    type/template; logging an activity is done in the Kizen UI by users.          │
+│ forms              Create, read, update, and delete forms, their fields, and their visual page   │
+│                    layout (form_ui).                                                             │
+│ surveys            Create, read, update, and delete surveys, their fields, and their visual page │
+│                    layout (form_ui).                                                             │
+│ mcp-servers        Read, create, update, and delete MCP servers.                                 │
+│ smart-connectors   Build, inspect, and iterate on smart connectors. Read verbs                   │
+│                    (list/get/executions/scripts/events/metadata) are safe. The local SQL loop is │
+│                    pull → run → push: `pull` builds a working directory, `run` executes          │
+│                    connector.sql against embedded ClickHouse (needs the 'connectors' extra),     │
+│                    `push` writes the SQL back to the draft and can publish it live. Building one │
+│                    from scratch runs create → set-input → (SQL loop) → generate-sample → push    │
+│                    --publish → configure-flow → activate → start-flow.                           │
+│ code               Unit-test code_step scripts in the live sandbox via `POST                     │
+│                    /api/coderunner/run`. Runs your script in the same Lambda as a real           │
+│                    `code_step`; `kizen.api` calls in it use real credentials and can write live  │
+│                    data. Asks y/N first (`--yes` skips).                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  New here? Run `kizen docs show operating` before making changes — it covers the approval gate and  
@@ -1396,6 +1398,7 @@
 │ create                      Create one column template (saved list-view column layout) on an     │
 │                             object.                                                              │
 │ update                      Update one column template. Only the flags you set are changed.      │
+│ share                       Change who can view, edit or admin a column template.                │
 │ delete                      Delete one column template.                                          │
 │ apply-to-roles              Grant one or more roles visibility into this column template.        │
 │ apply-to-users              Grant one or more team members visibility into this column template. │
@@ -1458,15 +1461,19 @@
                                                                                                     
  Create one column template (saved list-view column layout) on an object.                           
                                                                                                     
+ Sharing starts where the UI's does: private, with the Admin role as admin.                         
+ Use `share` to open it up.                                                                         
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    object_api_name      <str>  Parent object api_name. [required]                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ *  --name                 <str>  Column template name. [required]                                │
-│    --config-file          <str>  Path to a JSON configuration_json blob. Opaque, undocumented    │
-│                                  shape — copy one from `columns get <object> <id> --json` and    │
-│                                  edit rather than authoring from scratch. Omit for an empty      │
-│                                  starter template.                                               │
+│    --column               <str>  A field api_name to show as a column, in order (repeatable).    │
+│                                  The name column (`full_name` on contacts) is always kept, first │
+│                                  if you leave it out.                                            │
+│    --config-file          <str>  Path to a raw configuration_json, sent as-is. Instead of        │
+│                                  --column.                                                       │
 │    --owner                <str>  Owning team member UUID (defaults to the API caller).           │
 │    --dry-run                     Show the plan without applying.                                 │
 │    --yes          -y             Skip the y/N confirmation prompt.                               │
@@ -1474,8 +1481,7 @@
 │    --help                        Show this message and exit.                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Config-file shape (opaque configuration_json; copy from a live template): see `kizen docs show     
- saved-views`                                                                                       
+ Column rules and examples: see `kizen docs show saved-views`                                       
                                                                                                     
                                                                                                     
  Usage: columns delete [OPTIONS] {object_api_name} {column_template}                                
@@ -1521,6 +1527,27 @@
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: columns share [OPTIONS] {object_api_name} {column_template}                                 
+                                                                                                    
+ Change who can view, edit or admin a column template.                                              
+                                                                                                    
+ Only what you pass changes; other roles and users keep their access.                               
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    object_api_name      <str>  Parent object api_name. [required]                              │
+│ *    column_template      <str>  Column template UUID or exact name. [required]                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --private      --public           Set the template's private flag.                               │
+│ --all                      <str>  Access for all team members: none, view, edit or admin.        │
+│ --role                     <str>  ROLE=LEVEL, role name or UUID (repeatable). none removes it.   │
+│ --user                     <str>  UUID=LEVEL for a team member (repeatable). none removes it.    │
+│ --dry-run                         Show the plan without applying.                                │
+│ --yes      -y                     Skip the y/N confirmation prompt.                              │
+│ --json                            Emit JSON (plan with --dry-run, results otherwise).            │
+│ --help                            Show this message and exit.                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
  Usage: columns update [OPTIONS] {object_api_name} {column_template}                                
                                                                                                     
  Update one column template. Only the flags you set are changed.                                    
@@ -1531,7 +1558,10 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --name                 <str>  New name.                                                          │
-│ --config-file          <str>  Path to a new JSON configuration_json blob.                        │
+│ --column               <str>  A field api_name to show as a column, in order (repeatable). The   │
+│                               name column (`full_name` on contacts) is always kept, first if you │
+│                               leave it out. Replaces the whole column list.                      │
+│ --config-file          <str>  Path to a raw configuration_json, sent as-is. Instead of --column. │
 │ --owner                <str>  New owning team member UUID.                                       │
 │ --dry-run                     Show the plan without applying.                                    │
 │ --yes          -y             Skip the y/N confirmation prompt.                                  │
@@ -1539,8 +1569,7 @@
 │ --help                        Show this message and exit.                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Config-file shape (opaque configuration_json; copy from a live template): see `kizen docs show     
- saved-views`                                                                                       
+ Column rules and examples: see `kizen docs show saved-views`                                       
                                                                                                     
                                                                                                     
  Usage: dashboards [OPTIONS] COMMAND [ARGS]...                                                      
@@ -2952,13 +2981,16 @@
 │ *    object_api_name      <str>  Object api_name to update. [required]                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --object-name          <str>  New display name (plural).                                         │
-│ --entity-name          <str>  New singular form.                                                 │
-│ --description          <str>  New description.                                                   │
-│ --dry-run                     Show the plan without applying.                                    │
-│ --yes          -y             Skip the y/N confirmation prompt.                                  │
-│ --json                        Emit JSON (plan with --dry-run, results otherwise).                │
-│ --help                        Show this message and exit.                                        │
+│ --object-name                                  <str>  New display name (plural).                 │
+│ --entity-name                                  <str>  New singular form.                         │
+│ --description                                  <str>  New description.                           │
+│ --quick-filtering      --no-quick-filtering           Turn quick filters on or off for this      │
+│                                                       object.                                    │
+│ --dry-run                                             Show the plan without applying.            │
+│ --yes              -y                                 Skip the y/N confirmation prompt.          │
+│ --json                                                Emit JSON (plan with --dry-run, results    │
+│                                                       otherwise).                                │
+│ --help                                                Show this message and exit.                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: permissions [OPTIONS] COMMAND [ARGS]...                                                     
@@ -3084,6 +3116,7 @@
 │ get             Show one quick filter's full config and sharing settings.                        │
 │ create          Create one quick filter on an object.                                            │
 │ update          Update one quick filter. Only the flags you set are changed.                     │
+│ share           Change who can view, edit or admin a quick filter template.                      │
 │ delete          Delete one quick filter.                                                         │
 │ apply-to-roles  Grant one or more roles visibility into this quick filter.                       │
 │ apply-to-users  Grant one or more team members visibility into this quick filter.                │
@@ -3127,25 +3160,27 @@
                                                                                                     
  Create one quick filter on an object.                                                              
                                                                                                     
- Sharing defaults to visible to all team members. Use `apply-to-roles` /                            
- `apply-to-users` afterward to push visibility to specific roles/users                              
- without having to know the current sharing state.                                                  
+ Sharing starts where the UI's does: private, with the Admin role as admin.                         
+ Use `share` to open it up, and `apply-to-roles` / `apply-to-users` to put                          
+ its chips on people's record lists.                                                                
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    object_api_name      <str>  Parent object api_name. [required]                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ *  --name                 <str>  Quick filter name. [required]                                   │
-│    --filter               <str>  Filter as JSON, same format as `filter-groups create --filter`. │
-│    --filter-file          <str>  Path to a JSON filter (same format as --filter).                │
-│    --owner                <str>  Owning team member UUID (defaults to the API caller).           │
-│    --dry-run                     Show the plan without applying.                                 │
-│    --yes          -y             Skip the y/N confirmation prompt.                               │
-│    --json                        Emit JSON (plan with --dry-run, results otherwise).             │
-│    --help                        Show this message and exit.                                     │
+│ *  --name             <str>  Quick filter name. [required]                                       │
+│    --chip             <str>  A chip to show, in order (repeatable): `field`,                     │
+│                              `relation:related_field`, or `relation:in_groups`. Users pick the   │
+│                              values when they filter.                                            │
+│    --facets                  Turn on quick_filtering_facets.                                     │
+│    --owner            <str>  Owning team member UUID (defaults to the API caller).               │
+│    --dry-run                 Show the plan without applying.                                     │
+│    --yes      -y             Skip the y/N confirmation prompt.                                   │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Filter shape (the filtering DSL): see `kizen docs show saved-views`                                
+ Chip syntax and examples: see `kizen docs show saved-views`                                        
                                                                                                     
                                                                                                     
  Usage: quick-filters delete [OPTIONS] {object_api_name} {quick_filter}                             
@@ -3191,6 +3226,27 @@
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
+ Usage: quick-filters share [OPTIONS] {object_api_name} {quick_filter}                              
+                                                                                                    
+ Change who can view, edit or admin a quick filter template.                                        
+                                                                                                    
+ Only what you pass changes; other roles and users keep their access.                               
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    object_api_name      <str>  Parent object api_name. [required]                              │
+│ *    quick_filter         <str>  Quick filter UUID or exact name. [required]                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --private      --public           Set the template's private flag.                               │
+│ --all                      <str>  Access for all team members: none, view, edit or admin.        │
+│ --role                     <str>  ROLE=LEVEL, role name or UUID (repeatable). none removes it.   │
+│ --user                     <str>  UUID=LEVEL for a team member (repeatable). none removes it.    │
+│ --dry-run                         Show the plan without applying.                                │
+│ --yes      -y                     Skip the y/N confirmation prompt.                              │
+│ --json                            Emit JSON (plan with --dry-run, results otherwise).            │
+│ --help                            Show this message and exit.                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
  Usage: quick-filters update [OPTIONS] {object_api_name} {quick_filter}                             
                                                                                                     
  Update one quick filter. Only the flags you set are changed.                                       
@@ -3200,17 +3256,20 @@
 │ *    quick_filter         <str>  Quick filter UUID or exact name. [required]                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --name                 <str>  New name.                                                          │
-│ --filter               <str>  New filter as JSON (same format as `create`).                      │
-│ --filter-file          <str>  Path to a JSON filter (same format as --filter).                   │
-│ --owner                <str>  New owning team member UUID.                                       │
-│ --dry-run                     Show the plan without applying.                                    │
-│ --yes          -y             Skip the y/N confirmation prompt.                                  │
-│ --json                        Emit JSON (plan with --dry-run, results otherwise).                │
-│ --help                        Show this message and exit.                                        │
+│ --name                        <str>  New name.                                                   │
+│ --chip                        <str>  A chip to show, in order (repeatable): `field`,             │
+│                                      `relation:related_field`, or `relation:in_groups`. Users    │
+│                                      pick the values when they filter. Replaces the whole chip   │
+│                                      list.                                                       │
+│ --facets       --no-facets           Turn quick_filtering_facets on or off.                      │
+│ --owner                       <str>  New owning team member UUID.                                │
+│ --dry-run                            Show the plan without applying.                             │
+│ --yes      -y                        Skip the y/N confirmation prompt.                           │
+│ --json                               Emit JSON (plan with --dry-run, results otherwise).         │
+│ --help                               Show this message and exit.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Filter shape (the filtering DSL): see `kizen docs show saved-views`                                
+ Chip syntax and examples: see `kizen docs show saved-views`                                        
                                                                                                     
                                                                                                     
  Usage: records [OPTIONS] COMMAND [ARGS]...                                                         
@@ -4698,6 +4757,111 @@
  Endpoint behavior and the last-Admin guard: see `kizen docs show team`                             
                                                                                                     
                                                                                                     
+ Usage: toolbar-templates [OPTIONS] COMMAND [ARGS]...                                               
+                                                                                                    
+ Toolbar templates: named top-of-page toolbars. Nothing here applies one to anyone.                 
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list    List toolbar templates: name, owner, top-level entries, updated, id.                     │
+│ get     Show one toolbar template's entries as a tree (label, kind, ref).                        │
+│ create  Create a toolbar template from a spec.                                                   │
+│ update  Update a toolbar template. Keys the spec leaves out keep their value.                    │
+│ delete  Delete a toolbar template.                                                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: toolbar-templates create [OPTIONS]                                                          
+                                                                                                    
+ Create a toolbar template from a spec.                                                             
+                                                                                                    
+ Plugin pages are built from the installed plugin. A new template is                                
+ private to its owner unless the spec's `sharing_settings` says otherwise.                          
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON toolbar template spec. Default: read from stdin.      │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
+ Usage: toolbar-templates delete [OPTIONS] {template}                                               
+                                                                                                    
+ Delete a toolbar template.                                                                         
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Toolbar template UUID or exact name. [required]                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
+ Usage: toolbar-templates get [OPTIONS] {template}                                                  
+                                                                                                    
+ Show one toolbar template's entries as a tree (label, kind, ref).                                  
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Toolbar template UUID or exact name. [required]                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --json          Emit {id, name, owner, sharing_settings, entries}, with entries in the spec      │
+│                 shape `update` takes.                                                            │
+│ --raw           Emit the raw API response.                                                       │
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
+ Usage: toolbar-templates list [OPTIONS]                                                            
+                                                                                                    
+ List toolbar templates: name, owner, top-level entries, updated, id.                               
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --search          <str>  Filter by name (server-side search).                                    │
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
+ Usage: toolbar-templates update [OPTIONS] {template}                                               
+                                                                                                    
+ Update a toolbar template. Keys the spec leaves out keep their value.                              
+                                                                                                    
+ `entries` replaces the whole list. Every update rebuilds plugin pages                              
+ from the installed plugin, so with no spec this re-saves the template                              
+ after a plugin release. Plugin toolbar-item references are kept as                                 
+ references.                                                                                        
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    template      <str>  Toolbar template UUID or exact name. [required]                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --spec-file          <str>  Path to a JSON toolbar template spec. Default: read from stdin; none │
+│                             re-saves the template with current plugin pages.                     │
+│ --dry-run                   Show the plan without applying.                                      │
+│ --yes        -y             Skip the y/N confirmation prompt.                                    │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Spec shape and examples: see `kizen docs show toolbar-templates`                                   
+                                                                                                    
+                                                                                                    
  Usage: upgrade [OPTIONS]                                                                           
                                                                                                     
  Update this CLI in place.                                                                          
@@ -4954,6 +5118,9 @@
 
 
 ===== columns list =====
+
+
+===== columns share =====
 
 
 ===== columns update =====
@@ -5235,6 +5402,9 @@
 ===== quick-filters list =====
 
 
+===== quick-filters share =====
+
+
 ===== quick-filters update =====
 
 
@@ -5467,6 +5637,24 @@
 
 
 ===== team update =====
+
+
+===== toolbar-templates =====
+
+
+===== toolbar-templates create =====
+
+
+===== toolbar-templates delete =====
+
+
+===== toolbar-templates get =====
+
+
+===== toolbar-templates list =====
+
+
+===== toolbar-templates update =====
 
 
 ===== upgrade =====

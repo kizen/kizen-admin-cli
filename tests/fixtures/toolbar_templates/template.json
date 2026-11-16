@@ -1,0 +1,441 @@
+{
+  "id": "00000000-0000-4000-8000-0000000070a1",
+  "name": "Team menu",
+  "created": "2026-11-13T14:42:22.184107-06:00",
+  "updated": "2026-11-13T14:43:25.243159-06:00",
+  "owner": {
+    "id": "00000000-0000-4000-8000-0000000005e7",
+    "display_name": "Test User"
+  },
+  "employee_access": "Owner",
+  "sharing_settings": {
+    "private": true,
+    "all_team_members": 0,
+    "roles": {
+      "view": [],
+      "edit": [],
+      "admin": [
+        {
+          "id": "00000000-0000-4000-8000-00000000ad01",
+          "display_name": "Admin"
+        }
+      ]
+    },
+    "team_members": {
+      "view": [],
+      "edit": [],
+      "admin": []
+    }
+  },
+  "configuration_json": [
+    {
+      "id": "ops_hub-home",
+      "css": "/* v-old css */",
+      "args": {},
+      "html": "",
+      "icon": "house-laptop",
+      "name": "Home",
+      "type": "item",
+      "color": "#0c595c",
+      "label": "Home",
+      "script": "",
+      "api_name": "home",
+      "callback": "",
+      "isLocked": false,
+      "isDefault": false,
+      "isDynamic": false,
+      "dimensions": {
+        "top": 966,
+        "width": 624,
+        "height": 44
+      },
+      "fromColumn": "find-options",
+      "iframe_url": "",
+      "plugin_name": "Ops Hub",
+      "isPluginItem": true,
+      "toolbar_icon": "house-laptop",
+      "widthPercent": 100,
+      "event_scripts": {
+        "go": "/* v-old go */",
+        "doc": "/* v-old doc */"
+      },
+      "toolbar_color": "#0c595c",
+      "employee_config": {},
+      "is_toolbar_item": true,
+      "plugin_api_name": "ops_hub"
+    },
+    {
+      "id": "route_planner_b1d0aa-routes",
+      "css": "/* v-old css */",
+      "args": {},
+      "html": "",
+      "icon": "globe",
+      "name": "Route Planner",
+      "type": "item",
+      "color": "#76dfb5",
+      "label": "Route Planner",
+      "script": "",
+      "api_name": "routes",
+      "callback": "",
+      "isLocked": false,
+      "isDefault": false,
+      "isDynamic": false,
+      "dimensions": {
+        "top": 1202,
+        "width": 624,
+        "height": 44
+      },
+      "fromColumn": "find-options",
+      "iframe_url": "",
+      "plugin_name": "Route Planner",
+      "isPluginItem": true,
+      "toolbar_icon": "globe",
+      "widthPercent": 100,
+      "event_scripts": {
+        "tick": "/* v-old tick */",
+        "command": "/* v-old command */"
+      },
+      "toolbar_color": "#76dfb5",
+      "employee_config": {},
+      "is_toolbar_item": true,
+      "plugin_api_name": "route_planner_b1d0aa"
+    },
+    {
+      "id": "new_custom_url--1",
+      "url": "https://example.com",
+      "icon": "toolbar-external-link",
+      "type": "item",
+      "color": "#285DE4",
+      "label": "New Custom URL (Drag to Create)",
+      "column": 1,
+      "hasPopup": true,
+      "isLocked": false,
+      "isDynamic": false,
+      "wasDynamic": true,
+      "customLabel": "",
+      "displayName": "Example",
+      "hasPoppedUp": true,
+      "widthPercent": 100
+    },
+    {
+      "id": "kizen_ai-build",
+      "icon": "code",
+      "type": "item",
+      "color": "#6646DD",
+      "label": "Build",
+      "api_name": "build",
+      "isLocked": false,
+      "isDefault": false,
+      "isDynamic": false,
+      "isPluginItem": true,
+      "widthPercent": 100,
+      "plugin_api_name": "kizen_ai"
+    },
+    {
+      "id": "default__dashboard",
+      "icon": "chart-bar",
+      "type": "item",
+      "color": "#285DE4",
+      "label": "Dashboard",
+      "isLocked": false,
+      "isDefault": true,
+      "widthPercent": 100
+    },
+    {
+      "id": "default__data",
+      "icon": "database",
+      "type": "category",
+      "color": "#32C055",
+      "label": "Data",
+      "children": [
+        {
+          "id": "default__contacts",
+          "icon": "user",
+          "type": "item",
+          "label": "Contacts",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50,
+          "isDefaultClientObject": true
+        },
+        {
+          "id": "default__custom_objects",
+          "icon": "layer-group",
+          "type": "item",
+          "label": "Custom Objects",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__smart_connectors",
+          "icon": "arrows-to-circle",
+          "type": "item",
+          "label": "SmartConnectors",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__knowledge",
+          "icon": "books",
+          "type": "item",
+          "label": "Custom Knowledge",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__mcp_servers",
+          "icon": "mcp-entity",
+          "type": "item",
+          "label": "MCP Servers",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 100
+        }
+      ],
+      "isLocked": false,
+      "isDefault": true,
+      "widthPercent": 100
+    },
+    {
+      "id": "ops_hub-processes",
+      "css": "/* v-old css */",
+      "args": {},
+      "html": "",
+      "icon": "sitemap",
+      "name": "Processes",
+      "type": "item",
+      "color": "#0c595c",
+      "label": "Processes",
+      "script": "",
+      "api_name": "processes",
+      "callback": "",
+      "isLocked": false,
+      "isDefault": false,
+      "isDynamic": false,
+      "dimensions": {
+        "top": 1202,
+        "width": 624,
+        "height": 44
+      },
+      "fromColumn": "find-options",
+      "iframe_url": "",
+      "plugin_name": "Ops Hub",
+      "isPluginItem": true,
+      "toolbar_icon": "sitemap",
+      "widthPercent": 100,
+      "event_scripts": {
+        "render": "/* v-old render */",
+        "runLoop": "/* v-old runLoop */"
+      },
+      "toolbar_color": "#0c595c",
+      "employee_config": {},
+      "is_toolbar_item": true,
+      "plugin_api_name": "ops_hub"
+    },
+    {
+      "id": "default__platform",
+      "icon": "browser",
+      "type": "category",
+      "color": "#F3A800",
+      "label": "Platform",
+      "children": [
+        {
+          "id": "default__broadcasts",
+          "icon": "calendar-alt",
+          "type": "item",
+          "label": "Broadscasts",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__library",
+          "icon": "book-alt",
+          "type": "item",
+          "label": "Library",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__forms",
+          "icon": "form-entity",
+          "type": "item",
+          "label": "Forms",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__surveys",
+          "icon": "survey-entity",
+          "type": "item",
+          "label": "Surveys",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__activities",
+          "icon": "clipboard-list",
+          "type": "item",
+          "label": "Activities",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__ads",
+          "icon": "bullseye-pointer",
+          "type": "item",
+          "label": "Ad Manager",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__marketplace",
+          "icon": "store",
+          "type": "item",
+          "color": "#AE764A",
+          "label": "Apps",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        },
+        {
+          "id": "default__business_apps",
+          "icon": "rectangle-code",
+          "type": "item",
+          "label": "Business Apps",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 50
+        }
+      ],
+      "isLocked": false,
+      "isDefault": true,
+      "widthPercent": 100
+    },
+    {
+      "id": "default__automations",
+      "icon": "arrow-progress",
+      "type": "item",
+      "color": "#4926CC",
+      "label": "Agentic Workflows",
+      "isLocked": false,
+      "isDefault": true,
+      "widthPercent": 100
+    },
+    {
+      "id": "default__settings",
+      "icon": "cog",
+      "type": "item",
+      "color": "#38B3B9",
+      "label": "Settings",
+      "editable": true,
+      "isLocked": false,
+      "isDefault": true,
+      "widthPercent": 100
+    },
+    {
+      "id": "default__recent_records",
+      "icon": "history",
+      "type": "category",
+      "color": "#285DE4",
+      "label": "Recent Records",
+      "children": [],
+      "hasPopup": true,
+      "isLocked": false,
+      "isDefault": true,
+      "wasDynamic": true,
+      "widthPercent": 100,
+      "dynamicallyPopulated": true
+    },
+    {
+      "id": "default__help",
+      "icon": "question-circle",
+      "type": "category",
+      "label": "Help",
+      "children": [
+        {
+          "id": "default__knowledge_base",
+          "icon": "graduation-cap",
+          "type": "item",
+          "label": "Knowledge Base",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 100
+        },
+        {
+          "id": "default__chat_with_us",
+          "icon": "comments",
+          "type": "item",
+          "label": "Chat With Us",
+          "isLocked": false,
+          "isDefault": true,
+          "widthPercent": 100
+        }
+      ],
+      "isLocked": false,
+      "isDefault": true,
+      "isTextLocked": true,
+      "widthPercent": 100,
+      "isColorLocked": true
+    },
+    {
+      "id": "default__notification_center",
+      "icon": "bell",
+      "type": "item",
+      "label": "Notification Center",
+      "isLocked": false,
+      "isDefault": true,
+      "isTextLocked": true,
+      "topLevelOnly": true,
+      "widthPercent": 100,
+      "isColorLocked": true
+    },
+    {
+      "id": "default__my_account",
+      "icon": "user",
+      "type": "category",
+      "label": "My Account",
+      "children": [
+        {
+          "id": "default__my_profile",
+          "icon": "user-circle",
+          "type": "item",
+          "label": "My Profile",
+          "isLocked": true,
+          "isDefault": true,
+          "widthPercent": 100
+        },
+        {
+          "id": "default__change_business",
+          "icon": "repeat",
+          "type": "item",
+          "label": "Change Business",
+          "isLocked": true,
+          "isDefault": true,
+          "widthPercent": 100
+        },
+        {
+          "id": "default__logout",
+          "icon": "sign-out",
+          "type": "item",
+          "label": "Logout",
+          "isLocked": true,
+          "isDefault": true,
+          "widthPercent": 100
+        }
+      ],
+      "isLocked": true,
+      "isDefault": true,
+      "widthPercent": 100,
+      "isColorLocked": true
+    }
+  ]
+}

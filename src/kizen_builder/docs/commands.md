@@ -69,6 +69,8 @@ kizen quick-filters list <object> [--search <text>]     # per-object quick-filte
 kizen quick-filters get <object> <uuid|name>            # one quick filter's config + sharing_settings
 kizen columns list <object> [--search <text>]           # per-object saved column layouts
 kizen columns get <object> <uuid|name>                  # one column template's config + sharing_settings
+kizen toolbar-templates list [--search <text>]          # named top-of-page toolbars
+kizen toolbar-templates get <uuid|name> [--json|--raw]  # entry tree; --json is the spec `update` takes
 
 kizen roles list                             # list roles (name, user count, # perm groups, default flag)
 kizen roles get <name|uuid>                  # one role: default flag, app permissions, attached groups + level counts
@@ -187,6 +189,7 @@ kizen fields create <object_api_name> --api-name X --type text --category Y [...
 kizen fields create <object_api_name> [--spec-file path | < stdin]                  # many at once
 kizen automations create [--spec-file path | < stdin]
 kizen dashboards create [--spec-file path | < stdin]            # dashboard/homepage + dashlets
+kizen toolbar-templates create [--spec-file path | < stdin]     # private to you unless sharing_settings says otherwise
 kizen dashboards dashlet-config --type <t> [--object o] [--field f] [--filter '<json>'|--filter-file f] [--full]   # print one dashlet config (no write)
 kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools + sharing (kizen docs show mcp-server)
 kizen layouts update <object_api_name> [--spec-file | < stdin]  # PUT-replace a record layout
@@ -199,6 +202,7 @@ kizen categories update <object_api_name> <current_name> --name <new>
 kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [...]
 kizen automations update [--spec-file path | < stdin]
 kizen dashboards update <uuid|api_name> [--spec-file | < stdin]   # metadata + dashlets (diff by id)
+kizen toolbar-templates update <uuid|name> [--spec-file | < stdin]   # no spec re-saves plugin pages after a release
 kizen dashboards duplicate <uuid|api_name> [--name X] [--api-name Y]   # unpublished copy, source's sharing
 kizen mcp-servers update <uuid|api_name> [--spec-file | < stdin]   # tools compare as a set; `get --raw` output re-applies as a skip
 kizen records update <object> <uuid> --field api_name=value [...]    # one record
@@ -230,6 +234,7 @@ kizen categories delete <object_api_name> <category_name>
 kizen filter-groups delete <object> <uuid|name>
 kizen quick-filters delete <object> <uuid|name>
 kizen columns delete <object> <uuid|name>
+kizen toolbar-templates delete <uuid|name>
 kizen mcp-servers delete <uuid|api_name>                       # hard delete; Kizen-managed servers are refused
 # activities (activity types / loggable definitions, and scheduled instances) — logging is done in the UI by users
 kizen activities create --name X [--api-name Y] [--association-mode ...] [--object <api_name> ...] [--editable] [--spec-file f]

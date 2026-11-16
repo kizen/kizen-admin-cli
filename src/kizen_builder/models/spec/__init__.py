@@ -133,6 +133,10 @@ from kizen_builder.models.spec.dashboards import (
     ColumnTemplateDef,
     LayoutDef,
 )
+from kizen_builder.models.spec.toolbar_templates import (
+    ToolbarEntryDef,
+    ToolbarTemplateDef,
+)
 from kizen_builder.models.spec.mcp_servers import (
     MCPServerApiName,
     SharingBuckets,
@@ -320,6 +324,8 @@ __all__ = [
     "QuickFilterDef",
     "ColumnTemplateDef",
     "LayoutDef",
+    "ToolbarEntryDef",
+    "ToolbarTemplateDef",
     "MCPServerApiName",
     "SharingBuckets",
     "MCPServerSharing",
