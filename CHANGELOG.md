@@ -21,6 +21,22 @@ called out explicitly under **Changed** or **Removed**.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
 
+
+- `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
+  template from a spec of objects, plugin pages, links and categories. Plugin
+  pages are rebuilt from the installed plugin on every write, and `update
+  <template>` with no spec re-saves them after a plugin release; plugin
+  toolbar-item references are kept as references. Nothing applies a template
+  to users.
+
+### Changed
+
+- **`kizen docs show` prints the raw markdown when piped or captured.** The
+  output is the shipped file byte for byte, so `grep`, `head` and an agent's
+  capture see the source instead of rich's column-padded rendering. A
+  terminal still gets the rendered view. `--raw` still works, and the new
+  `--rendered` forces rich output when piped.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The
@@ -29,15 +45,6 @@ called out explicitly under **Changed** or **Removed**.
   it to `null`.
 
 ## [0.7.0] — 2026-11-16
-
-### Added
-
-- `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
-  template from a spec of objects, plugin pages, links and categories. Plugin
-  pages are rebuilt from the installed plugin on every write, and `update
-  <template>` with no spec re-saves them after a plugin release; plugin
-  toolbar-item references are kept as references. Nothing applies a template
-  to users.
 
 ## [0.6.0] — 2026-11-11
 
