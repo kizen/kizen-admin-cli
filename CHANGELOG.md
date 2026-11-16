@@ -37,6 +37,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- **`step-types show` and dry-run now check and list every key and choice
+  of `filter_config`, the `field_updated` trigger, `create_related_entity`,
+  `math_operator`, code- and plugin-step inputs and outputs, and each notify
+  step's recipient types.** A bare filter clause is reported with its wrapped
+  form, a `field_updated` option can be given by name, and an email
+  recipient of one `employee` is sent as `employees`.
 - **Automation dry-runs report every spec problem at once, with the step,
   path and a suggested fix. `api_name` and step and trigger `order` default
   when left out.** `automations create|update --dry-run` lists every wrong
