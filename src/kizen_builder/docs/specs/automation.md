@@ -7,26 +7,20 @@ An automation is triggers + a step graph, sent as one atomic POST/PUT.
 prints a minimal automation to build on. `kizen automations step-types show
 <type>` prints one step's or trigger's config block, with entries to copy and
 the keys each choice needs; `step-types list` names every wired type. This
-page holds what those don't: the graph rules, worked patterns, and what
-steps do at run time.
+page holds what those don't: the graph, worked patterns, and what steps do at
+run time.
 
 **Checking one:** `--dry-run` reports every spec problem at once, before any
 live call: a wrong choice or unknown key (with a "did you mean"), a
 placeholder left in, a variable no `initialize_variable` declares, and every
 graph rule broken. Each finding names the step key, the dotted path and the
-`kizen` command that lists the allowed values. `kizen automations diff
-<api_name> --spec-file <f>` shows what an update would change. Warnings (a choice missing the
-key it usually needs, step orders with gaps) print with the plan and don't
-block it. Leave out `api_name` and it defaults to the name, slugified; leave
-out a step's `order` and it defaults to the step's position. The plan
-preview lists what was defaulted. `steps add` and `steps edit` run the same
-per-step checks against the automation's live variables.
-
-> This is the richest spec. The graph rules below (one root, `parent_key`
-> chaining, `parent_branch` on branch entries) are enforced at plan time.
-> This file covers the shape, the wired types, and the common patterns; if a
-> step or trigger's field list isn't fully covered here, `--dry-run` reports
-> the exact field Kizen rejected.
+`kizen` command that lists the allowed values. Warnings print with the plan
+and don't block it. Leave out `api_name` and it defaults to the name,
+slugified; leave out a step's `order` and it defaults to the step's position.
+The plan preview lists what was defaulted. `kizen automations diff <api_name>
+--spec-file <f>` shows what an update would change, and `steps add` and
+`steps edit` run the same per-step checks against the automation's live
+variables.
 
 ---
 
@@ -78,43 +72,45 @@ kizen automations create --spec-file auto.json --dry-run
 | `name` | string | **Required.** |
 | `api_name` | string | `^[A-Za-z0-9_]+$`. Left out, it defaults to `name` slugified (`Follow Up` → `follow_up`). |
 | `type` | enum | `record_based` (default) or `global`. |
-| `target_object` | api_name | **Required for `record_based`.** Resolved to `custom_object_id`. |
-| `active` | bool \| null | On create, an omitted/`null` value resolves to `false` — prefer authoring inactive, then `automations activate`. On update, an omitted/`null` value **preserves whatever the live automation already is**; only an explicit `true`/`false` changes it. |
-| `folder` | string | Folder name or UUID (`kizen automations folders list`). On update, leaving it out keeps the current folder. A name two folders share is refused; give the UUID. |
+| `target_object` | api_name | **Required for `record_based`.** |
+| `active` | bool \| null | Left out on create, `false`: author inactive, then `automations activate`. Left out on update, the live value stays. |
+| `folder` | string | Folder name or UUID (`kizen automations folders list`). Left out on update, the current folder stays. |
 | `triggers` | `AutomationTriggerDef[]` | A `manual` trigger is added when the spec has none. |
-| `steps` | `AutomationStepDef[]` | The graph. See wiring rules below. |
+| `steps` | `AutomationStepDef[]` | The graph, below. |
 
 ## The step graph
 
-- Every step has a unique **`key`**. Chain by **`parent_key`** (the predecessor's
-  key). **Exactly one** step has `parent_key: null` — the root.
-- **`id`** (steps and triggers both) is optional and separate from `key` —
-  set it to a step/trigger's real server UUID (from a live read, e.g. `kizen
-  automations show`) to keep that step's identity and execution history
-  across this update. Omit it for anything actually new; the server assigns
-  one.
-- For the **first** step inside a YES/NO branch under a `condition` (or `goal`),
-  set **`parent_branch: "yes"`** (or `"no"`). Linear successors *inside* a branch
-  leave `parent_branch` unset.
-- `order` (int ≥ 0) orders steps for display, across the whole automation,
-  not per branch; leave it out and the CLI numbers by position in `steps`.
-  `step-types` entries leave it out. **Triggers need it too** when there is
-  more than one: two unordered triggers both send 0, and the dry-run refuses
-  them. Sequential `0..N` on both `triggers` and `steps`, no gaps or
-  duplicates.
-- Cycles are rejected; `go_to_automation_step.step_key` must reference a real key.
-- To rejoin branches, use a branch group (below) rather than duplicating the
-  tail of each branch.
+- Every step has a unique **`key`** and chains to its predecessor by
+  **`parent_key`**. Exactly one step, the root, has `parent_key: null`.
+- The **first** step inside a condition's or goal's yes/no branch sets
+  **`parent_branch: "yes"`** (or `"no"`). Steps after it in the branch leave
+  `parent_branch` unset.
+- **`id`** (steps and triggers) is separate from `key`: it's the server UUID
+  from a live read, and keeps the step's history across an update (see
+  [What an update keeps](#what-an-update-keeps)). Omit it for anything new.
+- `order` numbers steps, and triggers, `0..N` for display, across the whole
+  automation, not per branch. `step-types` entries leave it out, and the CLI
+  numbers by position in `steps`.
+- To rejoin branches, use a branch group rather than repeating the tail of
+  each branch.
+
+**Field references — two forms, don't mix them up:**
+- **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm`
+  destinations, a team-member selector's `team_selector_field`) is
+  `"<object_api>.<field_api>"`, resolved to this business's UUID at apply
+  time. A bare `field_id` UUID also works.
+- **Condition `filter_config` `field`** is the **bare field api_name**
+  (`account_region`): it's the filter DSL, as in `records list --filter` and
+  saved views.
 
 ### Branch groups
 
 A step whose branches rejoin is a **branch group initiator**: a `condition`,
-`goal` or `branch` step with `is_branch_group_initiator: true`. It has exactly
-one `merge_branches` child, which carries no `parent_branch`, and the steps
-after the merge hang off the merge step. `branch` and `merge_branches` take no
-config block. `--dry-run` checks the group against the server's rules.
-Confirmed live 2026-09-28 (conditions and
-branches) and 2026-09-29 (goals).
+`goal` or `branch` step with `is_branch_group_initiator: true`. Its one
+`merge_branches` child carries no `parent_branch`, and the steps after the
+merge hang off the merge step. `branch` and `merge_branches` take no config
+block. Confirmed live 2026-09-28 (conditions and branches) and 2026-09-29
+(goals).
 
 ```json
 { "key": "check", "parent_key": null, "step_type": "condition", "order": 0,
@@ -131,48 +127,30 @@ branches) and 2026-09-29 (goals).
 ```
 
 **Parallel branches** are the children of a `branch` step, none with a
-`parent_branch`. Set `is_branch_group_initiator: true` and add a
-`merge_branches` child to rejoin them. Lanes can be `branch` steps themselves,
-merged or not, and a `branch` can follow a merge. Put a `branch` step in front
-of any fan-out: a plain step with two or more children still saves, but the
-plan preview warns about it. A group's closer (`merge_branches` or
-`next_or_finish`) isn't a lane, so it doesn't count toward that warning.
-Kizen's 2026-09-28 migration inserted a `branch` step ahead of every existing
-fan-out, and an `update` from a spec without one removes it again. Confirmed
-live 2026-09-28.
+`parent_branch`; make it an initiator with a `merge_branches` child to rejoin
+them. Lanes can be `branch` steps themselves, merged or not, and a `branch` can
+follow a merge. Put a `branch` step in front of any fan-out: Kizen's
+2026-09-28 migration inserted one ahead of every existing fan-out, and an
+`update` from a spec without it removes it again.
 
 **Skipping a condition or goal** (`should_skip_execution: true`) needs
-`continue_with_branch: "yes"` or `"no"`, the branch the run takes past it. The
-spec is rejected without it. Confirmed live 2026-09-28.
-
+`continue_with_branch: "yes"` or `"no"`, the branch the run takes past it.
 `error_notification_severity_level` (`error`, `warning`, `info`, `inherit`)
-sets a step's own severity. Omitted, a new step inherits and an `update`
-keeps an existing step's live severity. Confirmed live 2026-09-28.
-
-**Field references — two forms, don't mix them up:**
-- **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations,
-  a team-member selector's `team_selector_field`) uses the object-qualified `"<object_api>.<field_api>"`, resolved to this
-  business's UUID at apply time. A bare `field_id` UUID also works.
-- **Condition `filter_config` `field`** uses the **bare field api_name**
-  (`account_region`), *not* object-qualified — it's the filter DSL, same as
-  `records list --filter` and saved views.
+sets a step's own severity; a new step inherits. Confirmed live 2026-09-28.
 
 ### Loops
 
 A loop runs its body once per item of an array variable. Loops are branch
 group initiators, closed by `next_or_finish` instead of `merge_branches`. A
-spec names all six parts; `create` and `update` add none of them. `steps add`
+spec names every part; `create` and `update` add none of them. `steps add`
 of a loop adds its closer and item variable (see `kizen docs show
 automation-step`):
 
 1. **The array variable:** an `initialize_variable` step with `is_array: true`.
 2. **Its item variable:** an `initialize_variable` step with `sources: []`,
    declaring a single variable of the array's type (for records, the same
-   `data_subtype`). It needs no sources, though the server accepts one. Each
-   loop needs its own.
-3. **The `loop` step.** `step_loop` names both variables by **name**; their ids
-   are a 400. The CLI always sends a loop as `is_branch_group_initiator: true`,
-   because the server stores true even when false is sent.
+   `data_subtype`). Each loop needs its own.
+3. **The `loop` step**, naming both variables by **name** in `step_loop`.
 4. **The body**, hanging off the loop.
 5. **One `next_or_finish` child of the loop**, which closes the body. The steps
    after the loop hang off it.
@@ -215,25 +193,13 @@ Both variable steps go at the front of the automation, like every
   ] }
 ```
 
-- **Array types:** strings, UUIDs and records (`data_type` `string`, `uuid` or
-  `entity`). Kizen rejects an array of any other type at the
-  `initialize_variable` step. A `search_records` destination can be the loop's
-  array, as above. Confirmed live 2026-10-27.
-- **Descriptions:** a CLI-created loop reads back as "Loop" and its item step as
-  "Initialize Variable". The UI writes "For each item in '<array>'" and "Item
+- A `search_records` destination can be the loop's array, as above.
+- A CLI-created loop reads back as "Loop" and its item step as "Initialize
+  Variable", where the UI writes "For each item in '<array>'" and "Item
   Reference Variable". Set `description` to match the UI. Confirmed live
   2026-10-27.
-- **`diff`** ignores `is_array_item_variable` and `source_array_variable`, which
-  the server adds to the item variable from the loop. It reads a null key in a
-  top-level or `initialize_variable` variable definition as absent. Confirmed
-  live 2026-10-27.
-- **Body lanes:** a body can be empty or have two lanes. Two lanes get the
-  fan-out warning, like any plain fan-out. Confirmed live 2026-10-27.
-- **Nesting:** a loop can sit in another loop's body, up to three levels, and a
-  nested loop needs a different array from every loop around it. Kizen's
-  builder refuses both, so the CLI refuses them at plan time (`--dry-run` shows
-  it). The API accepts both: six levels, and one array at two levels, each
-  confirmed live 2026-10-27.
+- A loop can sit in another loop's body, up to three levels, over a different
+  array from every loop around it.
 
 ### Working with the records a search found
 
@@ -243,7 +209,8 @@ relationship field; into a to-one relationship it's a 400 ("Variable can't be
 cased to a field"), and no step turns an array into a single record.
 
 To use one found record, loop over the array and work with the loop's item
-variable inside the body:
+variable inside the body, as [Find or create a Contact by
+email](#find-or-create-a-contact-by-email) does:
 
 - `change_field_value` with `change_type: variable` and the item variable sets
   a relationship field to that record.
@@ -253,51 +220,21 @@ variable inside the body:
 
 Every pass of the loop sets the field again, so when the search finds several
 records the last one wins. Narrow the filter until it matches one record.
-
-This links each new hire to the playbook named "Sales Onboarding", and copies
-the playbook's text. Both variable steps sit at the front, as the loop section
-above requires:
-
-```json
-{ "key": "find", "parent_key": "v_item", "step_type": "search_records", "order": 2,
-  "action_search_records": { "custom_object": "playbooks",
-    "filter_type": "custom_filter",
-    "filter_config": { "all": [ { "field": "name", "op": "=", "value": "Sales Onboarding" } ] },
-    "destination_variable": "playbooks", "destination_variable_resolution": "overwrite" } },
-{ "key": "each", "parent_key": "find", "step_type": "loop", "order": 3,
-  "description": "For each item in 'playbooks'",
-  "step_loop": { "array_variable": "playbooks", "item_variable": "playbooks_item" } },
-{ "key": "link", "parent_key": "each", "step_type": "change_field_value", "order": 4,
-  "action_change_field_value": { "field_ref": "hires.hire_playbook",
-    "change_type": "variable", "variable": "playbooks_item" } },
-{ "key": "copy", "parent_key": "link", "step_type": "change_field_value", "order": 5,
-  "action_change_field_value": { "field_ref": "hires.hire_copied",
-    "change_type": "entity_variable_field", "variable": "playbooks_item",
-    "related_object_field": "<playbooks.pb_text field uuid>" } },
-{ "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 6 }
-```
-
-Confirmed live 2026-11-02: the search found one playbook, and the loop's one
-pass linked it and copied its text. With the filter widened to `contains`
-"Sales", it found two, the loop ran twice, and the hire ended linked to the
-second. To read the linked record's fields in a later step, see
-[Reading a related record's field into a variable](#reading-a-related-records-field-into-a-variable).
+Confirmed live 2026-11-02: a search that found two records ran the loop twice,
+and the record ended linked to the second.
 
 ### Find or create a Contact by email
 
 A support request arrives with the customer's email address. This links the
 request to the Contact with that email, and creates the Contact when there is
-none. It is the search-and-link pattern above, with three differences:
+none:
 
 - **The search compares to a variable, not a merge field.** Kizen doesn't fill
-  `{{ … }}` in a filter value. It stores the text and matches nothing, so the
-  CLI refuses one in a condition or `search_records` filter spec. Copy the
-  field into a string variable and compare with `"variable"` (see
-  `kizen docs show filters`).
-- **The Contact is created in a code step.** `create_related_entity` can't
-  create a Contact: Kizen refuses it with a 400 (confirmed live 2026-10-30).
-  The script posts to `/records/client_client/add`, and its `field` output
-  links the new Contact.
+  `{{ … }}` in a filter value, so copy the field into a string variable and
+  compare with `"variable"` (see `kizen docs show filters`).
+- **The Contact is created in a code step**, because `create_related_entity`
+  can't create a Contact (confirmed live 2026-10-30). The script posts to
+  `/records/client_client/add`, and its `field` output links the new Contact.
 - **Kizen refuses a second Contact with the same email**, with a 400 "Entity
   record email must be unique". Confirmed live 2026-10-30.
 
@@ -454,23 +391,6 @@ ends there:
                    "field_ref": "support_requests.customer" } ] } }
 ```
 
-That step's `script`, unescaped:
-
-```python
-# Create a Contact for an email no Contact has yet; the output links it.
-email = (inputs.customer_email or "").strip()
-if not email:
-    raise Exception("customer_email is blank: no Contact to create")
-resp = kizen.api.post(
-    "/records/client_client/add", json={"fields": [{"name": "email", "value": email}]}
-)
-if resp.status_code != 201:
-    raise Exception(
-        f"creating a Contact for {email} failed: {resp.status_code} {resp.text[:200]}"
-    )
-outputs.customer = resp.json()["id"]
-```
-
 A 4xx comes back as a response rather than raising, so the script checks the
 status itself. If another run has just created a Contact with that email,
 Kizen answers 400 "Entity record email must be unique" and the step fails
@@ -560,13 +480,9 @@ from the deal's account (see
       "destinations": [ { "field_ref": "deals.ai_deal_brief" } ] } } ]
 ```
 
-**The started automation must be active first.** Kizen rejects a POST or PUT
-carrying a `start_automation` whose target is inactive with "Automation not
-found", whatever the record source. So `create`, `update`, `steps add` and
-`steps edit` refuse it at plan time, naming the target and the `kizen
-automations activate` command to run. `show`, `diff`, `roundtrip`, `activate`
-and `deactivate` warn instead, because Kizen also refuses a PUT of an
-automation whose target was deactivated later. Build the target, activate it,
+**The started automation must be active first**: Kizen rejects a
+`start_automation` whose target is inactive, and `--dry-run` names the
+`kizen automations activate` command to run. Build the target, activate it,
 then create the scheduled one. Confirmed live 2026-10-30: the manual run found
 two deals and started the target once on each, and both briefs were written.
 
