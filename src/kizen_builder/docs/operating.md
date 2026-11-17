@@ -131,8 +131,9 @@ wire behavior in one place. **Don't grep for a quirk; open the surface's doc.**
   command output (or a tight summary of it) over free-text descriptions. The
   user wants the ground truth.
 - **Piped output is compact.** Captured or piped, tables print as
-  `| a | b |` rows without borders or padding, and `docs show` prints the
-  raw markdown. `KIZEN_OUTPUT=terminal` gives the terminal form anywhere;
+  `| a | b |` rows without borders or padding, `docs show` prints the raw
+  markdown, and an apply with `--yes` prints one plan line before its
+  results. `KIZEN_OUTPUT=terminal` gives the terminal form anywhere;
   `KIZEN_OUTPUT=agent` gives the piped form.
 
 

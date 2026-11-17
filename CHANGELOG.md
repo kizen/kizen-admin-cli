@@ -37,8 +37,12 @@ called out explicitly under **Changed** or **Removed**.
   terminal still gets the rendered view. `--raw` still works, and the new
   `--rendered` forces rich output when piped.
 - **Piped output (agents, scripts) prints tables as plain rows without
-  borders or padding.** A table is a `title:` line, a `| h1 | h2 |` header
-  and one `| c1 | c2 |` line per row. A terminal looks the same as before. `KIZEN_OUTPUT=terminal` gives the
+  borders or padding, and an apply leads with its results.** A table is a
+  `title:` line, a `| h1 | h2 |` header and one `| c1 | c2 |` line per row.
+  A piped apply with `--yes` prints `Plan <id> → env: <env>, <n> op(s)`
+  instead of the operations table (`--dry-run` still prints it in full),
+  and its results say `ok`/`failed`/`skipped`/`adjusted` instead of symbols.
+  A terminal looks the same as before. `KIZEN_OUTPUT=terminal` gives the
   terminal form anywhere; `KIZEN_OUTPUT=agent` gives the piped form, for
   tables and for `docs show`.
 

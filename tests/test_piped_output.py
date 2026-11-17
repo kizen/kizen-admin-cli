@@ -1,4 +1,5 @@
-"""Piped output: `output.for_agent()` and the flat table form.
+"""Piped output: `output.for_agent()`, the flat table form, and the apply
+output that leads with its results.
 
 CliRunner's stdout isn't a terminal, so every invocation here sees the piped
 form unless `KIZEN_OUTPUT=terminal` says otherwise.
@@ -7,6 +8,7 @@ form unless `KIZEN_OUTPUT=terminal` says otherwise.
 from __future__ import annotations
 
 import io
+import json
 import re
 from pathlib import Path
 
@@ -22,7 +24,10 @@ from kizen_builder import output as out
 from kizen_builder.cli._shared import _Console
 from kizen_builder.config import ConfigError
 from kizen_builder.tools import objects as obj_tools
+from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools import records as record_tools
+from kizen_builder.tools.planners import fields as field_planners
+from kizen_builder.tools.plans import ApplyResult, OperationResult, Plan, PlanOperation
 from tests.conftest import load_fixture, mock_automation_lookup
 from tests.test_first_build_examples_plan import (  # noqa: F401  (fixture)
     EXAMPLES,
@@ -211,3 +216,121 @@ def test_piped_dry_run_is_at_least_40_percent_shorter(monkeypatch):
     assert piped.exit_code == terminal.exit_code == 0, terminal.output
     print(f"terminal {len(terminal.stdout)} chars, piped {len(piped.stdout)} chars")
     assert len(piped.stdout) <= 0.6 * len(terminal.stdout)
+
+
+# --- apply --------------------------------------------------------------------
+
+
+def _plan() -> Plan:
+    return Plan.build(
+        env="testenv",
+        business_id=None,
+        summary="test plan",
+        operations=[
+            PlanOperation(
+                action="create",
+                kind="field",
+                key="invoice.total",
+                preview={"api_name": "total"},
+                payload={"name": "total"},
+                parent_object_uuid="11111111-1111-4111-8111-111111111111",
+            )
+        ],
+    )
+
+
+def _result(status: str):
+    def apply(plan):
+        return ApplyResult(
+            plan_id=plan.id,
+            env=plan.env,
+            results=[
+                OperationResult(
+                    key="invoice.total",
+                    kind="field",
+                    action="create",
+                    status=status,
+                    server_uuid="srv-1",
+                    message="done",
+                )
+            ],
+        )
+
+    return apply
+
+
+UPDATE = ["fields", "update", "invoice", "total", "--name", "Total"]
+
+
+@pytest.fixture
+def mutation(monkeypatch):
+    monkeypatch.delenv(out.OUTPUT_ENV, raising=False)
+    plan = _plan()
+    monkeypatch.setattr(field_planners, "plan_update_field", lambda **kw: plan)
+    monkeypatch.setattr(plan_tools, "apply_plan", _result("ok"))
+    return plan
+
+
+def test_piped_apply_leads_with_its_results(mutation):
+    result = runner.invoke(cli.app, [*UPDATE, "--yes"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == (
+        f"Plan {mutation.id} → env: testenv, 1 op(s)\n"
+        f"Results — plan {mutation.id}:\n"
+        "| status | kind | key | server uuid | note |\n"
+        "| ok | field | invoice.total | srv-1 | done |\n"
+    )
+
+
+def test_piped_apply_with_json_sends_the_one_line_to_stderr(mutation):
+    result = runner.invoke(cli.app, [*UPDATE, "--yes", "--json"])
+    assert result.exit_code == 0, result.output
+    assert result.stderr == f"Plan {mutation.id} → env: testenv, 1 op(s)\n"
+    assert json.loads(result.stdout)["results"][0]["status"] == "ok"
+
+
+def test_piped_dry_run_keeps_the_operations_table(mutation):
+    result = runner.invoke(cli.app, [*UPDATE, "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Operations:\n| # | action | kind | key | preview |" in result.stdout
+
+
+def test_a_prompted_apply_shows_the_operations_table(mutation, terminal):
+    result = runner.invoke(cli.app, UPDATE, input="y\n")
+    assert result.exit_code == 0, result.output
+    assert "| 1 | create | field | invoice.total | api_name=total |" in result.stdout
+
+
+def test_a_terminal_apply_keeps_the_table_and_symbols(monkeypatch, mutation):
+    monkeypatch.setenv(out.OUTPUT_ENV, "terminal")
+    result = runner.invoke(cli.app, [*UPDATE, "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "Operations" in result.stdout and "✓" in result.stdout
+
+
+def test_saved_plan_apply_leads_with_its_results(mutation, tmp_path, monkeypatch):
+    monkeypatch.setattr(plan_tools, "resolve_apply_target", _apply_target)
+    plan_file = tmp_path / "plan.json"
+    plan_file.write_text(plan_tools.plan_to_json(mutation))
+    result = runner.invoke(cli.app, ["apply", "--plan-file", str(plan_file), "--yes"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.startswith(f"Plan {mutation.id} → env: testenv, 1 op(s)\n")
+    assert "| ok | field |" in result.stdout
+
+
+def _apply_target(plan):
+    class _Config:
+        name = "testenv"
+        business_id = "b"
+
+    return _Config()
+
+
+@pytest.mark.parametrize(
+    ("status", "exit_code"), [("failed", 1), ("skipped", 0), ("adjusted", 0)]
+)
+def test_piped_results_name_the_status(monkeypatch, mutation, status, exit_code):
+    monkeypatch.setattr(plan_tools, "apply_plan", _result(status))
+    result = runner.invoke(cli.app, [*UPDATE, "--yes"])
+    assert result.exit_code == exit_code, result.output
+    assert f"| {status} | field |" in result.stdout
