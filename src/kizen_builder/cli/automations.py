@@ -113,7 +113,12 @@ def autos_get(
     json_out: bool = typer.Option(
         False,
         "--json",
-        help="Alias for --output json (every trigger and step with its config block).",
+        help=(
+            "Alias for --output json: top-level fields, an outline of every "
+            "trigger and step, then each one with its config block. Strings "
+            "over 2,000 characters and filter-rule view_models print as "
+            "'<N chars elided; kizen automations steps get <api_name> <key>>'."
+        ),
     ),
     raw_out: bool = typer.Option(
         False, "--raw", help="Emit full Kizen API response as JSON."
@@ -122,9 +127,10 @@ def autos_get(
     """Show one automation in full (triggers + steps).
 
     Step rows lead with the key the `steps` verbs take (`s07_condition`).
-    `--output json` / `--json` emit each trigger and step in the shape
-    `steps get` prints, config block included; `--raw` emits the full API
-    response; `--output csv` emits the step list (one row per step).
+    `--output json` / `--json` emit the outline first and the config blocks
+    after it, one trigger or step per line, so a reader that truncates loses
+    configs rather than keys; `--raw` emits the full API response; `--output
+    csv` emits the step list (one row per step).
     """
     fmt = out.resolve_format(output, json_out)
     if raw_out:
@@ -139,7 +145,10 @@ def autos_get(
     payload = result["payload"]
     # A spec trigger takes no `key` (the model refuses one), so a trigger
     # copied from here into a spec mustn't carry it.
-    triggers = [{k: v for k, v in t.items() if k != "key"} for t in payload["triggers"]]
+    triggers = [
+        {k: v for k, v in t.items() if k not in ("key", "prefix")}
+        for t in payload["triggers"]
+    ]
     steps = payload["steps"]
 
     def table() -> None:
@@ -179,18 +188,12 @@ def autos_get(
             )
         console.print(step_table)
 
+    if fmt is out.OutputFormat.JSON:
+        typer.echo(_entry_per_line(_get_json(result, triggers, steps)))
+        return
     out.render(
         fmt,
-        json_data={
-            "api_name": result["api_name"],
-            "name": result["name"],
-            "id": result["id"],
-            "revision": result["revision"],
-            "active": result["active"],
-            "target_object": result["custom_object_name"],
-            "triggers": triggers,
-            "steps": steps,
-        },
+        json_data=None,
         table=table,
         csv_rows=steps,
         csv_columns=[
@@ -201,6 +204,112 @@ def autos_get(
             out.Column("parent_condition", "parent_condition"),
         ],
     )
+
+
+# The in-app agent truncates a response at 64,000 characters; these keep
+# `get --json` under it on the largest live automations.
+_ELIDE_OVER = 2000
+# Fields `type` and `parent_condition` already say.
+_DERIVED_STEP_FIELDS = ("parent_yes_no", "prefix", "goal_type")
+
+
+def _elide(value: Any, full: str) -> Any:
+    """`value` with each long string, and each filter rule's `view_model` (the
+    editor's layout), swapped for a marker naming the command `full` that
+    prints it whole."""
+    if isinstance(value, str) and len(value) > _ELIDE_OVER:
+        return f"<{len(value):,} chars elided; {full}>"
+    if isinstance(value, list):
+        return [_elide(v, full) for v in value]
+    if isinstance(value, dict):
+        return {
+            k: (
+                f"<{len(json.dumps(v)):,} chars elided; {full}>"
+                if k == "view_model" and v
+                else _elide(v, full)
+            )
+            for k, v in value.items()
+        }
+    return value
+
+
+def _get_json(
+    result: dict[str, Any],
+    triggers: list[dict[str, Any]],
+    steps: list[dict[str, Any]],
+) -> dict[str, Any]:
+    payload = result["payload"]
+    api_name = result["api_name"]
+    triggers = _elide(triggers, f"kizen automations get {api_name} --raw")
+    steps = [
+        {
+            "key": s["key"],
+            **_elide(
+                {
+                    k: v
+                    for k, v in s.items()
+                    if k != "key" and k not in _DERIVED_STEP_FIELDS
+                },
+                f"kizen automations steps get {api_name} {s['key']}",
+            ),
+        }
+        for s in steps
+    ]
+    top = {
+        "api_name": api_name,
+        "name": result["name"],
+        "id": result["id"],
+        "revision": result["revision"],
+        "active": result["active"],
+        "type": payload["type"],
+        "target_object": result["custom_object_name"],
+        "user_description": payload.get("user_description", ""),
+        "skip_non_working_days": payload["skip_non_working_days"],
+    }
+    for field in ("error_notification_email", "priority_rank"):
+        if payload.get(field) is not None:
+            top[field] = payload[field]
+    return {
+        **top,
+        "variables": payload.get("variables", []),
+        "outline": {
+            "triggers": [
+                {
+                    "order": t["order"],
+                    "type": t["type"],
+                    "description": t.get("description", ""),
+                }
+                for t in triggers
+            ],
+            "steps": [
+                {
+                    "key": s["key"],
+                    "type": s["type"],
+                    "parent_key": s["parent_key"],
+                    "branch": s["parent_condition"],
+                    "description": s.get("description", ""),
+                }
+                for s in steps
+            ],
+        },
+        "triggers": triggers,
+        "steps": steps,
+    }
+
+
+def _entry_per_line(value: Any, indent: str = "") -> str:
+    """Indented JSON with each object in a list of objects on one line."""
+    inner = indent + "  "
+    if isinstance(value, dict) and value:
+        body = ",\n".join(
+            f"{inner}{json.dumps(k)}: {_entry_per_line(v, inner)}"
+            for k, v in value.items()
+        )
+        return f"{{\n{body}\n{indent}}}"
+    if isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
+        body = ",\n".join(inner + json.dumps(v, default=str) for v in value)
+        return f"[\n{body}\n{indent}]"
+    return json.dumps(value, default=str)
 
 
 @autos_app.command("llm-models")

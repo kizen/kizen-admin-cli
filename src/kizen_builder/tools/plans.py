@@ -260,7 +260,7 @@ class OperationResult(BaseModel):
     message: str | None = None
     raw: dict[str, Any] | None = None
     # Automation create/update: each spec step key → the key a read gives it.
-    step_keys: dict[str, str] | None = None
+    step_keys: dict[str, str] | None = Field(default=None, exclude_if=lambda v: not v)
 
 
 class ApplyResult(BaseModel):

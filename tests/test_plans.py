@@ -332,6 +332,9 @@ def test_apply_automation_create_reports_the_keys_steps_end_up_with():
     (result,) = plan_tools.apply_plan(plan).results
 
     assert result.step_keys == {"check": "s00_condition", "wait": "s01_delay"}
+    assert '"step_keys"' in result.model_dump_json()
+    no_keys = result.model_copy(update={"step_keys": None})
+    assert '"step_keys"' not in no_keys.model_dump_json()
 
 
 @respx.mock

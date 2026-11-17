@@ -32,6 +32,7 @@ from kizen_builder.translate import live_to_payload
 from tests.conftest import (
     FAKE_BASE_URL,
     FAKE_BUSINESS_ID,
+    FIXTURES,
     OTHER_BUSINESS_ID,
     load_fixture,
     mock_automation_lookup,
@@ -413,20 +414,74 @@ def test_automations_get_json_carries_each_steps_config_block():
         "id",
         "revision",
         "active",
+        "type",
         "target_object",
+        "user_description",
+        "skip_non_working_days",
+        "priority_rank",
+        "variables",
+        "outline",
         "triggers",
         "steps",
     ]
     assert data["id"] == raw["id"]
-    assert data["steps"] == live_to_payload(raw)["steps"]
+    assert data["type"] == raw["type"]
+    payload = live_to_payload(raw)
+    assert data["variables"] == payload["variables"]
+    assert [s["key"] for s in data["outline"]["steps"]] == [
+        s["key"] for s in payload["steps"]
+    ]
+    assert all(list(s)[0] == "key" and "prefix" not in s for s in data["steps"])
     assert all("key" not in t for t in data["triggers"])
     (trigger,) = data["triggers"]
-    assert (
-        trigger["trigger_manual"]
-        == live_to_payload(raw)["triggers"][0]["trigger_manual"]
-    )
+    assert trigger["trigger_manual"] == payload["triggers"][0]["trigger_manual"]
     s12 = next(s for s in data["steps"] if s["key"] == "s12_search_records")
-    assert "action_search_records" in s12
+    assert s12["action_search_records"] == next(
+        s["action_search_records"]
+        for s in payload["steps"]
+        if s["key"] == "s12_search_records"
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted((FIXTURES / "automations").glob("*.raw.json")),
+    ids=lambda p: p.name.split(".")[0],
+)
+def test_automations_get_json_fits_the_agent_cap_with_the_outline_first(path):
+    """The in-app agent truncates at 64,000 characters: the outline must fit
+    and come before any config block."""
+    raw = json.loads(path.read_text())
+    with respx.mock:
+        mock_automation_lookup(raw)
+        result = runner.invoke(
+            cli.app, ["automations", "get", raw["api_name"], "--json"]
+        )
+    assert result.exit_code == 0, result.output
+    assert len(result.stdout) < 64_000
+    assert list(json.loads(result.stdout))[-3:] == ["outline", "triggers", "steps"]
+
+
+def test_automations_get_json_elides_long_strings_that_steps_get_prints_whole():
+    raw = load_fixture("automations/on_or_around_date_goto.raw.json")
+    step = next(
+        s
+        for s in live_to_payload(raw)["steps"]
+        if len(s.get("action_code_step", {}).get("script", "")) > 20_000
+    )
+    script = step["action_code_step"]["script"]
+    with respx.mock:
+        mock_automation_lookup(raw)
+        got = runner.invoke(cli.app, ["automations", "get", raw["api_name"], "--json"])
+        one = runner.invoke(
+            cli.app, ["automations", "steps", "get", raw["api_name"], step["key"]]
+        )
+    elided = next(s for s in json.loads(got.stdout)["steps"] if s["key"] == step["key"])
+    assert elided["action_code_step"]["script"] == (
+        f"<{len(script):,} chars elided; "
+        f"kizen automations steps get {raw['api_name']} {step['key']}>"
+    )
+    assert json.loads(one.stdout)["action_code_step"]["script"] == script
 
 
 def test_records_list_csv_flattens_fields(monkeypatch):
