@@ -230,7 +230,7 @@ def activities_get(
             out.Column("is_hidden", "is_hidden"),
             out.Column("id", "id"),
         ],
-        keep_empty=True,
+        prune=False,
     )
 
 

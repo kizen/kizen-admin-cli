@@ -123,7 +123,7 @@ def autos_get(
         result = auto_tools.get_automation(api_name)
 
     if raw_out:
-        out.emit_json(result["raw"], keep_empty=True)
+        out.emit_json(result["raw"])
         return
 
     def table() -> None:
@@ -482,7 +482,7 @@ def autos_show(
 
     print_warnings(result)
     if json_out:
-        out.emit_json(result, keep_empty=True)
+        out.emit_json(result)
         return
     console.print(
         f"[dim]rev {result['revision']}, "

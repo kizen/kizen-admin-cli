@@ -39,9 +39,9 @@ kizen mcp-servers tools                      # the tool catalogue — valid tool
 kizen mcp-servers history <uuid|api_name>    # who changed a server, when, which keys
 kizen layouts list <object_api_name>         # record layouts on a custom object
 kizen layouts get <object_api_name> [--name] # one layout's block/column structure
-kizen records get <object> <uuid>            # one record with all field values
+kizen records get <object> <uuid>            # one record with its field values (piped JSON omits empty ones)
 kizen records get <object> --name "<name>"   # look up one record by its name field (exact, errors if ambiguous)
-kizen records list <object>                  # list records; table shows id + name, --json/-o csv show every field
+kizen records list <object>                  # list records; table shows id + name, -o csv every field, --json every non-empty one
 kizen records list <object> --search <text>  # filter records by text
 kizen records list <object> --filter '<json>'  # structured filter; {"all"|"any": [{"field","op","value"}]}
                                                # or raw {"query": [...]} groups; --filter-file for a path
@@ -186,9 +186,13 @@ carries `"raw_trimmed": true`, and `--full` gives the whole body. The preview
 goes to stderr and only the JSON to stdout, so don't merge `2>&1` into a JSON
 parse.
 
-Piped JSON is indented by one space and leaves out keys whose value is `null`,
-`""`, `[]` or `{}` (jq reads a missing key as `null`). `--raw`, plans and
-`steps get` keep every key.
+Piped JSON is indented by one space. Summaries, meaning `get`/`list`-style
+reads and apply results, also leave out keys whose value is `null`, `""`, `[]`
+or `{}` (jq reads a missing key as `null`). Everything else keeps every key:
+`--raw`, plans and payloads, reads you edit and send back (`automations show`,
+`steps get`, `layouts get`, `activities get`), diffs and drift, run logs and
+step history, `code test`, and every other result. `KIZEN_OUTPUT=terminal`
+gives every key on any command.
 
 ```
 # create

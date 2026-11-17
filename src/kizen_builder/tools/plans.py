@@ -1404,7 +1404,7 @@ def _execute_saved_view(client: KizenClient, op: PlanOperation, base: str) -> An
 
 
 def plan_to_json(plan: Plan) -> str:
-    return out.dumps_json(plan.model_dump(mode="json"), keep_empty=True)
+    return out.dumps_json(plan.model_dump(mode="json"))
 
 
 def plan_from_json(text: str) -> Plan:
@@ -1429,4 +1429,4 @@ def result_to_json(result: ApplyResult, *, full: bool = False) -> str:
             if len(kept) < len(raw):
                 r["raw"] = kept
                 r["raw_trimmed"] = True
-    return out.dumps_json(data, keep_empty=full)
+    return out.dumps_json(data, prune=not full)

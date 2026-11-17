@@ -200,6 +200,7 @@ def runs_view(
         table=table,
         csv_rows=csv_rows,
         csv_columns=csv_columns,
+        prune=not steps,
     )
 
     if wait:

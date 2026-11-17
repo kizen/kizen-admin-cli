@@ -165,11 +165,11 @@ def _fmt_http_body(body: Any, limit: int = 4000) -> Text:
     if body is None or body == "":
         return Text("(empty)", style="dim")
     if isinstance(body, (dict, list)):
-        text = out.dumps_json(body, keep_empty=True)
+        text = out.dumps_json(body)
     else:
         text = str(body)
         with contextlib.suppress(ValueError, TypeError):
-            text = out.dumps_json(json.loads(text), keep_empty=True)
+            text = out.dumps_json(json.loads(text))
     shown = Text(text[:limit])
     if len(text) > limit:
         shown.append(f"\n… (truncated at {limit} chars — --json for full)", style="dim")

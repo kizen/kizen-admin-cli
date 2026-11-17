@@ -97,7 +97,7 @@ def mcp_servers_get(
         detail = mcp_tools.get_mcp_server_detail(server)
 
     if raw:
-        out.emit_json(detail["raw"], keep_empty=True)
+        out.emit_json(detail["raw"])
         return
 
     def table() -> None:

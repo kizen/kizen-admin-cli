@@ -197,7 +197,7 @@ def perms_group(
     group_id = _resolve_group_id(group)
     if raw_out:
         with cli_errors():
-            out.emit_json(perm_tools.get_permission_group(group_id), keep_empty=True)
+            out.emit_json(perm_tools.get_permission_group(group_id))
         return
 
     fmt = out.resolve_format(output, json_out)

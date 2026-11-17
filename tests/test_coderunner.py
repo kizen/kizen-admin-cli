@@ -224,8 +224,7 @@ def test_cli_test_command_renders_outputs(tmp_path):
 
 
 @respx.mock
-def test_cli_test_command_json_output(tmp_path, monkeypatch):
-    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
+def test_cli_test_command_json_output(tmp_path):
     raw = {
         "request_id": "req-9",
         "duration_ms": 12,

@@ -120,7 +120,7 @@ def layouts_get(
             out.Column("displayName", "displayName"),
             out.Column("autoInclude", "autoInclude"),
         ],
-        keep_empty=True,
+        prune=False,
     )
 
 

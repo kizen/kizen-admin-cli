@@ -170,7 +170,7 @@ def steps_get(
     with cli_errors(LookupError, PlanError):
         result = auto_tools.show_automation(api_name)
         step = step_tools.find_step(result["payload"], key)
-    out.emit_json(step, keep_empty=True)
+    out.emit_json(step)
 
 
 @steps_app.command(

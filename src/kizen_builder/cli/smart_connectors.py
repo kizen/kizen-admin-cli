@@ -75,7 +75,7 @@ def _preview_and_confirm(
     render(target)
     if dry_run:
         if json_out:
-            out.emit_json(plan, keep_empty=True)
+            out.emit_json(plan)
         else:
             target.print("[dim]--dry-run: nothing written.[/dim]")
         return False
@@ -496,7 +496,7 @@ def smart_connectors_suggest_variables(
         result = sc_tools.suggest_execution_variables(connector)
 
     if spec:
-        out.emit_json(result["spec"], keep_empty=True)
+        out.emit_json(result["spec"])
         return
 
     fmt = out.resolve_format(output, json_out)

@@ -99,7 +99,7 @@ def messages_templates_get(
         detail = message_tools.get_template_detail(template)
 
     if raw:
-        out.emit_json(detail, keep_empty=True)
+        out.emit_json(detail)
         return
 
     summary = message_tools.craft_summary(detail)
@@ -396,7 +396,7 @@ def messages_templates_craft_config(
         Path(out_html).write_text(content)
         err_console.print(f"[dim]wrote compiled content to {out_html}[/dim]")
 
-    out.emit_json({"craft_json": craft_json, "content": content}, keep_empty=True)
+    out.emit_json({"craft_json": craft_json, "content": content})
 
 
 @messages_app.command("create")

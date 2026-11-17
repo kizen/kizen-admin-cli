@@ -914,7 +914,6 @@ def test_start_wait_json_output_is_valid_json_only(monkeypatch):
     """--json --wait: stdout is exactly one JSON blob — no interleaved
     streaming text — carrying status/timed_out/polls alongside start's
     existing keys."""
-    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     monkeypatch.setattr(
         auto_tools, "start_automation", lambda *a, **k: dict(_START_RESULT)
     )
@@ -947,7 +946,6 @@ def test_start_wait_json_output_is_valid_json_only(monkeypatch):
 def test_start_show_logs_implies_wait_and_adds_steps_to_json(monkeypatch):
     """--show-logs alone (no --wait) still waits, and --json --show-logs
     adds the full step history under "steps"."""
-    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     history = [
         {
             "id": "row-1",

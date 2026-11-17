@@ -101,7 +101,7 @@ def dashboards_get(
         result = dash_tools.get_dashboard_detail(dashboard)
 
     if raw:
-        out.emit_json(result["raw"], keep_empty=True)
+        out.emit_json(result["raw"])
         return
 
     def table() -> None:
@@ -375,4 +375,4 @@ def dashboards_dashlet_config(
         if full
         else config
     )
-    out.emit_json(payload, keep_empty=True)
+    out.emit_json(payload)

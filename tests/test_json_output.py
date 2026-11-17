@@ -19,8 +19,10 @@ from typer.testing import CliRunner
 
 import kizen_builder.cli as cli
 from kizen_builder import output as out
+from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import objects as obj_tools
 from kizen_builder.tools import plans as plan_tools
+from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.plans import ApplyResult, OperationResult, Plan, PlanOperation
 from tests.conftest import load_fixture, mock_automation_lookup
@@ -69,8 +71,8 @@ DATA = {
 }
 
 
-def test_piped_json_is_indented_by_one_and_drops_empty_values(piped):
-    text = out.dumps_json(DATA)
+def test_piped_summary_json_is_indented_by_one_and_drops_empty_values(piped):
+    text = out.dumps_json(DATA, prune=True)
     assert text.startswith('{\n "id"')
     assert json.loads(text) == {
         "id": "a1",
@@ -81,13 +83,13 @@ def test_piped_json_is_indented_by_one_and_drops_empty_values(piped):
 
 
 def test_terminal_json_is_indented_by_two_and_keeps_every_key(terminal_output):
-    text = out.dumps_json(DATA)
+    text = out.dumps_json(DATA, prune=True)
     assert text.startswith('{\n  "id"')
     assert json.loads(text) == DATA
 
 
-def test_keep_empty_changes_only_whitespace(piped):
-    text = out.dumps_json(DATA, keep_empty=True)
+def test_unpruned_json_changes_only_whitespace(piped):
+    text = out.dumps_json(DATA)
     assert text.startswith('{\n "id"')
     assert json.loads(text) == DATA
 
@@ -212,6 +214,108 @@ def _apply_target(plan):
         business_id = "b"
 
     return _Config()
+
+
+# An empty side of a diff is the change itself.
+CLEARED = [
+    {"path": "steps[1].description", "before": "Old text", "after": ""},
+    {"path": "steps[1].tags", "before": [], "after": None},
+]
+RUN_ID = "2461cd64-c82c-406c-a6fd-f27e4918e31e"
+CODE_STEP_LOG = {
+    "id": "e1",
+    "kind": "step",
+    "type": "code_step",
+    "status": "completed",
+    "error": None,
+    "detailed_log": {"inputs": {"email": ""}, "values": {"score": None}, "logs": []},
+}
+
+
+def _diff(monkeypatch):
+    result = {"api_name": "x", "revision": 4, "diff": CLEARED}
+    monkeypatch.setattr(auto_planners, "diff_automation", lambda spec: result)
+    return ["automations", "diff", "x", "--json"], result
+
+
+def _roundtrip(monkeypatch):
+    result = {
+        "env": "testenv",
+        "api_name": "x",
+        "revision_before": 4,
+        "n_steps": 1,
+        "n_triggers": 1,
+        "validation_problems": [],
+        "payload": {"steps": [{"description": None, "tags": []}]},
+        "executed": True,
+        "revision_after": 5,
+        "drift": CLEARED,
+    }
+    monkeypatch.setattr(auto_tools, "roundtrip_automation", lambda *a, **k: result)
+    return ["automations", "roundtrip", "x", "--execute", "--yes", "--json"], result
+
+
+def _step_patch(monkeypatch):
+    result = {
+        "revision_before": 4,
+        "payload": {"steps": [{"key": "s1", "description": ""}]},
+        "report": {},
+        "validation_problems": [],
+        "diff": CLEARED,
+    }
+    monkeypatch.setattr(auto_tools, "patch_steps", lambda *a, **k: result)
+    return ["automations", "steps", "remove", "x", "s1", "--dry-run", "--json"], result
+
+
+def _field_patch(monkeypatch):
+    result = {
+        "api_name": "x",
+        "revision_before": 4,
+        "field": "folder",
+        "before": None,
+        "after": {"id": "f1"},
+        "no_op": False,
+    }
+    monkeypatch.setattr(auto_tools, "list_folders", lambda: [{"id": "f1", "name": "F"}])
+    monkeypatch.setattr(auto_tools, "move_to_folder", lambda *a, **k: result)
+    return ["automations", "move", "x", "--folder", "f1", "--dry-run", "--json"], result
+
+
+def _run_logs(monkeypatch):
+    monkeypatch.setattr(
+        auto_tools, "get_execution_history", lambda *a, **k: [CODE_STEP_LOG]
+    )
+    argv = ["automations", "runs", "logs", RUN_ID, "--json"]
+    return argv, [{"index": 1, **CODE_STEP_LOG}]
+
+
+def _run_view(monkeypatch):
+    summary = {"execution_id": RUN_ID, "status": "completed", "record_id": None}
+    monkeypatch.setattr(auto_tools, "get_execution", lambda *a, **k: summary)
+    monkeypatch.setattr(
+        auto_tools, "get_execution_history", lambda *a, **k: [CODE_STEP_LOG]
+    )
+    argv = ["automations", "runs", "view", RUN_ID, "--json"]
+    return argv, {**summary, "steps": [CODE_STEP_LOG]}
+
+
+@pytest.mark.parametrize(
+    "setup",
+    [_diff, _roundtrip, _step_patch, _field_patch, _run_logs, _run_view],
+    ids=["diff", "roundtrip", "steps patch", "field patch", "runs logs", "runs view"],
+)
+def test_diffs_logs_and_payloads_keep_every_key_piped(monkeypatch, piped, setup):
+    argv, expected = setup(monkeypatch)
+    # Exit code aside: roundtrip exits 1 when it finds drift.
+    result = runner.invoke(cli.app, argv, input='{"api_name": "x"}')
+    assert json.loads(result.stdout) == expected, result.output
+
+
+def test_roundtrip_payload_prints_a_saved_null(monkeypatch, piped):
+    _roundtrip(monkeypatch)
+    result = runner.invoke(cli.app, ["automations", "roundtrip", "x", "--payload"])
+    assert '"description": null' in result.stdout
+    assert '"tags": []' in result.stdout
 
 
 # --- apply results ------------------------------------------------------------
