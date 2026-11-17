@@ -188,7 +188,7 @@ strips volatile keys. Some survive it — `http_request` round-trips clean. A
 
 | where | the key |
 |---|---|
-| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. `from_value`/`to_value` write as bare UUIDs; the builder sends an option name, or a read's `{id, …}`, as its UUID. A value without its match mode is planned as `specific_value`: Kizen stores `any_including_blank` for a mode left out, and the trigger then fires on every change (confirmed live 2026-11-16). Keys and modes: `kizen automations step-types show field_updated` |
+| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. `from_value`/`to_value` write as bare UUIDs; the builder sends an option name, or a read's `{id, …}`, as its UUID. A value without its match mode is planned as `specific_value`, or `date_between` for a `{"date_start", "date_end", "type": "date_range"}` value (the UI's choice; Kizen also accepts `specific_value` for one, probed 2026-11-17): Kizen stores `any_including_blank` for a mode left out, and the trigger then fires on every change (confirmed live 2026-11-16). Keys and modes: `kizen automations step-types show field_updated` |
 | `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it. The other keys: `kizen automations step-types show on_or_around_date` |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}`; the spec takes an api_name or UUID |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
