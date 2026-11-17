@@ -2373,8 +2373,8 @@
 │ --profile,--env    -p,-e      <str>  Profile name for this env (e.g. acme-sandbox). Prompts if   │
 │                                      omitted.                                                    │
 │ --api-key                     <str>  API key (else prompts). [env var: KIZEN_API_KEY]            │
-│ --business-id                 <str>  Business id (else prompts). [env var: KIZEN_BUSINESS_ID]    │
 │ --user-id                     <str>  User id (else prompts). [env var: KIZEN_USER_ID]            │
+│ --business-id                 <str>  Business id (else prompts). [env var: KIZEN_BUSINESS_ID]    │
 │ --base-url                    <str>  Kizen environment: a name (go, fmo, staging, integration)   │
 │                                      or a full URL for self-hosted/one-off setups. Prompts if    │
 │                                      omitted.                                                    │

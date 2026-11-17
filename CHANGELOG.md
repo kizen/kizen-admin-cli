@@ -14,6 +14,14 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Changed
+
+- `kizen init` now asks for the API key, then the user id, then the business
+  id. That is the order the Kizen UI lists a service account's credentials, so
+  values copied across in sequence land in the right prompt. Before, it asked
+  for the business id before the user id. `kizen init --help` lists the flags
+  in the same order. Flag names, env vars and stored profiles are unchanged.
+
 ## [0.7.0] — 2026-11-16
 
 ### Added
