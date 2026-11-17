@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TeamMemberConfig(BaseModel):
@@ -90,9 +90,28 @@ class VariableSourceConfig(BaseModel):
         default=None,
         description="'object.field' reference, resolved to field UUID at apply time.",
     )
+    source_subtype: str | None = Field(
+        default=None,
+        description=(
+            "Required on a static source: its value's type, such as string, "
+            "number, boolean or datetime. A field_value source from a related "
+            "record takes primary_related_object_field."
+        ),
+    )
     field_id: str | None = None
     value: Any = None
     variable: str | None = None
+
+    # The server 400s a static source without one: "source_subtype should
+    # be one of [...]" (seen live 2026-11-17).
+    @model_validator(mode="after")
+    def _static_has_subtype(self) -> Self:
+        if self.source_type == "static" and not self.source_subtype:
+            raise ValueError(
+                "a static source needs source_subtype: the type of its value, "
+                "such as string, number, boolean or datetime"
+            )
+        return self
 
 
 class LlmDestinationConfig(BaseModel):

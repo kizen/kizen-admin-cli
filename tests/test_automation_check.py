@@ -886,3 +886,24 @@ def test_a_date_trigger_without_time_is_an_error(block, needs):
 )
 def test_a_date_trigger_that_needs_no_time_passes(block):
     check_automation(_spec(_set_mrn("a"), triggers=_date_trigger(**block)))
+
+
+def _static_var(**source):
+    return {
+        "key": "greeting",
+        "step_type": "initialize_variable",
+        "action_initialize_variable": {
+            "variable": {"name": "greeting", "data_type": "string"},
+            "sources": [{"source_type": "static", "value": "hello", **source}],
+        },
+    }
+
+
+def test_a_static_source_without_source_subtype_is_an_error():
+    f = _only(_errors(_spec(_static_var())), step="greeting")
+    assert f.path == "action_initialize_variable.sources.0"
+    assert "a static source needs source_subtype" in f.message
+
+
+def test_a_static_source_with_source_subtype_passes():
+    check_automation(_spec(_static_var(source_subtype="string")))
