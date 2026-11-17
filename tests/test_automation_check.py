@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 import kizen_builder.cli as cli
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.tools import automations as auto_tools
+from kizen_builder.tools import step_catalog
 from kizen_builder.tools.automation_check import check_automation
 from kizen_builder.tools.findings import Finding, SpecProblems
 from tests.conftest import FIXTURES
@@ -208,7 +209,7 @@ def test_an_alias_suggests_its_type_for_steps_and_triggers(section, given, meant
 def test_a_trigger_typo_is_not_offered_a_step_alias():
     spec = _spec(_activity(), triggers=[{"trigger_type": "wait"}])
     f = _only(_errors(spec), path="triggers[0].trigger_type")
-    assert f.suggestion != "delay"
+    assert f.suggestion is None or f.suggestion in step_catalog.TRIGGER_TYPES
 
 
 def test_a_move_stage_step_points_at_change_field_value():
@@ -534,8 +535,8 @@ def test_every_graph_problem_is_listed(patch_live_lookups):
 def test_trigger_orders_are_checked_before_any_live_call():
     spec = _spec(_activity())
     spec["triggers"] = [
-        {"trigger_type": "manual"},
-        {"trigger_type": "activity_logged", "trigger_activity_logged": {}},
+        {"trigger_type": "manual", "order": 0},
+        {"trigger_type": "activity_logged", "order": 0, "trigger_activity_logged": {}},
     ]
     f = _only(_errors(spec), path="triggers")
     assert f.message.startswith("trigger orders must be sequential from 0 to 1")
@@ -569,6 +570,20 @@ def test_a_missing_step_order_defaults_to_its_position():
     checked = check_automation(spec)
     assert [s.order for s in checked.auto.steps] == [0, 5]
     assert checked.defaults == ["step order from position: 'a' 0"]
+
+
+def test_a_missing_trigger_order_defaults_to_its_position():
+    logged = {"trigger_type": "activity_logged", "trigger_activity_logged": {}}
+    spec = _spec(_activity(), triggers=[{"trigger_type": "manual"}, logged])
+    checked = check_automation(spec)
+    assert [t.order for t in checked.auto.triggers] == [0, 1]
+    assert checked.defaults == [
+        "trigger order from position: 'manual' 0, 'activity_logged' 1"
+    ]
+
+    # With no manual trigger, the planner puts one first and numbers the rest.
+    checked = check_automation(_spec(_activity(), triggers=[logged]))
+    assert checked.defaults == []
 
 
 def test_the_preview_names_what_was_defaulted(patch_live_lookups):

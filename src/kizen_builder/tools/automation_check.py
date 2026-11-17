@@ -59,7 +59,7 @@ def check_automation(spec: Any) -> CheckedSpec:
                 )
             ]
         )
-    spec, defaults = _with_defaults(spec)
+    spec, defaults = with_defaults(spec)
     raw_steps = spec.get("steps")
     steps: list[Any] = raw_steps if isinstance(raw_steps, list) else []
 
@@ -95,30 +95,39 @@ def check_automation(spec: Any) -> CheckedSpec:
     return CheckedSpec(auto, warnings, defaults)
 
 
-def _with_defaults(spec: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def with_defaults(spec: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """``spec`` with a left-out ``api_name`` taken from ``name`` and each
-    left-out step ``order`` from the step's position. A value given always
-    wins. Returns the spec and a line per default."""
+    left-out step or trigger ``order`` from its position. A value given
+    always wins. Returns the spec and a line per default. `step-types`
+    entries carry no `order` and rely on this."""
     spec = dict(spec)
     defaults: list[str] = []
     if "api_name" not in spec and isinstance(spec.get("name"), str):
         spec["api_name"] = slugify(spec["name"])[:100]
         defaults.append(f"api_name: '{spec['api_name']}' (from name)")
-    steps = spec.get("steps")
-    if isinstance(steps, list):
-        spec["steps"] = [
-            {**step, "order": i}
-            if isinstance(step, dict) and "order" not in step
-            else step
-            for i, step in enumerate(steps)
+    for section, name_key in (("triggers", "trigger_type"), ("steps", "key")):
+        items = spec.get(section)
+        if not isinstance(items, list):
+            continue
+        if section == "triggers" and not any(
+            isinstance(t, dict) and t.get("trigger_type") == "manual" for t in items
+        ):
+            continue  # `triggers_with_manual` numbers them after the manual
+        spec[section] = [
+            {**item, "order": i}
+            if isinstance(item, dict) and "order" not in item
+            else item
+            for i, item in enumerate(items)
         ]
         positions = [
-            f"'{step.get('key', f'#{i}')}' {i}"
-            for i, step in enumerate(steps)
-            if isinstance(step, dict) and "order" not in step
+            f"'{item.get(name_key, f'#{i}')}' {i}"
+            for i, item in enumerate(items)
+            if isinstance(item, dict) and "order" not in item
         ]
         if positions:
-            defaults.append(f"step order from position: {', '.join(positions)}")
+            defaults.append(
+                f"{section[:-1]} order from position: {', '.join(positions)}"
+            )
     return spec, defaults
 
 
@@ -278,13 +287,7 @@ def _unwired_types(spec: dict[str, Any]) -> list[Finding]:
             type_name = item.get(f"{kind}_type")
             if not isinstance(type_name, str) or type_name in wired:
                 continue
-            aliases = {
-                alias: targets
-                for alias, targets in step_catalog.ALIASES.items()
-                if set(targets) <= set(wired)
-            }
-            match = difflib.get_close_matches(type_name, [*wired, *aliases], n=1)
-            meant = list(aliases.get(match[0], match)) if match else []
+            meant = step_catalog.suggest(type_name, wired)
             where: dict[str, Any] = (
                 {"step": item.get("key"), "index": i, "path": "step_type"}
                 if kind == "step"

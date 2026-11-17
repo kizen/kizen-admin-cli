@@ -17,7 +17,7 @@ graph rule broken. Each finding names the step key, the dotted path and the
 `kizen` command that lists the allowed values. Warnings (a choice missing the
 key it usually needs, step orders with gaps) print with the plan and don't
 block it. Leave out `api_name` and it defaults to the name, slugified; leave
-out a step's `order` and it defaults to the step's position. The plan
+out a step's or trigger's `order` and it defaults to its position. The plan
 preview lists what was defaulted. `steps add` and `steps edit` run the same
 per-step checks against the automation's live variables.
 
@@ -97,10 +97,9 @@ kizen automations create --spec-file auto.json --dry-run
   leave `parent_branch` unset.
 - `order` (int ≥ 0) orders steps for display, across the whole automation,
   not per branch; leave it out and the CLI numbers by position in `steps`.
-  `step-types` entries leave it out. **Triggers need it too** when there is
-  more than one: two unordered triggers both send 0, and the dry-run refuses
-  them. Sequential `0..N` on both `triggers` and `steps`, no gaps or
-  duplicates.
+  `step-types` entries leave it out. Triggers number the same way, by
+  position in `triggers`. Given orders must run `0..N` on both `triggers` and
+  `steps`, with no gaps or duplicates.
 - Cycles are rejected; `go_to_automation_step.step_key` must reference a real key.
 - To rejoin branches, use a branch group (below) rather than duplicating the
   tail of each branch.

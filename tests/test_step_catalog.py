@@ -74,7 +74,7 @@ def _variants():
 
 
 def _with_orders(spec):
-    return automation_check._with_defaults(spec)[0]
+    return automation_check.with_defaults(spec)[0]
 
 
 def test_skeleton_and_variants_check_with_no_order_warning():
@@ -91,8 +91,12 @@ def test_skeleton_and_variants_check_with_no_order_warning():
     activity["parent_key"] = "delay"
     activity["action_schedule_activity"]["activity_type"] = "follow_up"
     auto["steps"] += [wait, activity]
+    changed = step_catalog.variant_spec("field_updated", "minimal")
+    changed["trigger_field_updated"]["field_ref"] = "deals.name"
+    auto["triggers"].append(changed)
     checked = automation_check.check_automation(auto)
     assert [s.order for s in checked.auto.steps] == [0, 1, 2]
+    assert [t.order for t in checked.auto.triggers] == [0, 1]
     assert not [w for w in checked.warnings if "order" in w.message]
 
 
@@ -142,6 +146,8 @@ def test_alias_with_several_targets_lists_them():
         ("create_activity", "'schedule_activity'"),
         ("shedule_activity", "'schedule_activity'"),
         ("trigger_manual", "'manual'"),
+        ("update_records", "'change_field_value'"),
+        ("send_emails", "'notify_member_via_email' or 'send_related_contact_email'"),
     ],
 )
 def test_unknown_type_suggests_what_was_meant(given, meant):

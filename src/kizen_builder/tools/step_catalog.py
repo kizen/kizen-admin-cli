@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import difflib
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -510,6 +510,22 @@ _TRIGGER = _Kind(
 _KINDS = (_STEP, _TRIGGER)
 
 
+def suggest(
+    name: str, wired: Sequence[str] = (*STEP_TYPES, *TRIGGER_TYPES), n: int = 1
+) -> list[str]:
+    """The types in ``wired`` that ``name`` most likely means, best first.
+    Near names count among the aliases too, and an alias gives its types.
+    Only aliases whose types are all in ``wired`` count, so a trigger typo
+    isn't offered a step."""
+    aliases = {a: t for a, t in ALIASES.items() if set(t) <= set(wired)}
+    close = (
+        [name]
+        if name in aliases
+        else difflib.get_close_matches(name, [*wired, *aliases], n=n)
+    )
+    return list(dict.fromkeys(t for m in close for t in aliases.get(m, (m,))))
+
+
 def _kind_of(type_name: str) -> _Kind:
     for kind in _KINDS:
         if type_name in kind.types:
@@ -518,9 +534,7 @@ def _kind_of(type_name: str) -> _Kind:
     if len(targets) > 1:
         lines = "\n".join(f"  {t}: {_kind_of(t).purposes[t]}" for t in targets)
         raise UnknownType(f"'{type_name}' isn't a type name. It could be:\n{lines}")
-    wired = [*STEP_TYPES, *TRIGGER_TYPES]
-    close = difflib.get_close_matches(type_name, wired, n=3)
-    meant = list(dict.fromkeys([*ALIASES.get(type_name, ()), *close]))
+    meant = suggest(type_name, n=3)
     hint = (
         f"Did you mean {' or '.join(repr(m) for m in meant)}?"
         if meant
