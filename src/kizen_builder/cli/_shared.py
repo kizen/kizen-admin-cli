@@ -146,6 +146,16 @@ OUTPUT_OPTION = typer.Option(
     None, "--output", "-o", help="Output format: table (default), json, or csv."
 )
 JSON_OPTION = typer.Option(False, "--json", help="Alias for --output json.")
+# Every mutation verb's --json and --full.
+MUTATION_JSON_OPTION = typer.Option(
+    False,
+    "--json",
+    help="Emit JSON (plan with --dry-run, results otherwise). `raw` holds the "
+    "server response's top-level values; `--full` gives the whole body.",
+)
+FULL_OPTION = typer.Option(
+    False, "--full", help="With --json, keep the whole server response in `raw`."
+)
 
 # Every command that talks to Kizen fails the same way: one `error: <message>`
 # line on stderr, exit code 1. `ConfigError` (no usable credentials for this

@@ -96,6 +96,7 @@ def _run_mutation(
     dry_run: bool,
     yes: bool,
     json_out: bool,
+    full: bool = False,
     stdin_consumed: bool = False,
 ) -> None:
     """Shared flow for every create/update verb.
@@ -103,7 +104,8 @@ def _run_mutation(
     Builds the plan (live-state validation), renders it, then either stops
     (`--dry-run`), or confirms and applies. With `--json` the preview
     goes to stderr so stdout carries only the machine-readable payload
-    (plan JSON on --dry-run, apply results otherwise).
+    (plan JSON on --dry-run, apply results otherwise). `full` keeps each
+    result's whole server response.
     """
     # Planning has two failures worth their own wording — `plan error:` for an
     # impossible change, one `spec error:` line per bad field for a malformed
@@ -155,7 +157,7 @@ def _run_mutation(
     _enrich_known_choice_failures(result)
 
     if json_out:
-        typer.echo(plan_tools.result_to_json(result))
+        typer.echo(plan_tools.result_to_json(result, full=full))
     else:
         _render_result(result)
     if not result.all_ok:

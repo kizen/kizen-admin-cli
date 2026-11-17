@@ -180,9 +180,11 @@ output (the plan with `--dry-run`, apply results otherwise).
 
 An apply result is `{plan_id, env, results: [{key, kind, action, status,
 server_uuid, message, raw}]}`, one entry per operation. A created entity's id
-is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. The
-preview goes to stderr and only the JSON to stdout, so don't merge `2>&1` into
-a JSON parse.
+is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. `raw`
+holds the server response's top-level values; a result that lost nested ones
+carries `"raw_trimmed": true`, and `--full` gives the whole body. The preview
+goes to stderr and only the JSON to stdout, so don't merge `2>&1` into a JSON
+parse.
 
 Piped JSON is indented by one space and leaves out keys whose value is `null`,
 `""`, `[]` or `{}` (jq reads a missing key as `null`). `--raw`, plans and

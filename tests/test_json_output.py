@@ -8,6 +8,7 @@ form unless `KIZEN_OUTPUT=terminal` says otherwise.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -21,7 +22,7 @@ from kizen_builder import output as out
 from kizen_builder.tools import objects as obj_tools
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.planners import fields as field_planners
-from kizen_builder.tools.plans import ApplyResult, Plan, PlanOperation
+from kizen_builder.tools.plans import ApplyResult, OperationResult, Plan, PlanOperation
 from tests.conftest import load_fixture, mock_automation_lookup
 
 runner = CliRunner()
@@ -211,3 +212,121 @@ def _apply_target(plan):
         business_id = "b"
 
     return _Config()
+
+
+# --- apply results ------------------------------------------------------------
+
+RAW = {
+    "id": "msg-1",
+    "name": "Welcome",
+    "base_message_id": "tpl-1",
+    "number": 3,
+    "craft_json": {"ROOT": {"nodes": ["a"]}},
+    "recipients": [{"id": "r1"}],
+    "subject": "",
+}
+
+
+@pytest.fixture
+def created(monkeypatch, piped):
+    plan = Plan.build(
+        env="testenv",
+        business_id=None,
+        summary="test plan",
+        operations=[
+            PlanOperation(
+                action="create",
+                kind="field",
+                key="invoice.total",
+                preview={},
+                payload={},
+            )
+        ],
+    )
+
+    def apply(p: Plan) -> ApplyResult:
+        return ApplyResult(
+            plan_id=p.id,
+            env=p.env,
+            results=[
+                OperationResult(
+                    key="invoice.total",
+                    kind="field",
+                    action="create",
+                    status="ok",
+                    server_uuid="msg-1",
+                    raw=RAW,
+                ),
+                OperationResult(
+                    key="invoice.other",
+                    kind="field",
+                    action="update",
+                    status="ok",
+                    raw={"id": "f2", "number_archived": 4},
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(field_planners, "plan_update_field", lambda **kw: plan)
+    monkeypatch.setattr(plan_tools, "apply_plan", apply)
+
+
+UPDATE = ["fields", "update", "invoice", "total", "--name", "Total", "--yes", "--json"]
+
+
+@pytest.mark.usefixtures("created")
+def test_apply_results_keep_the_top_level_values_of_raw():
+    result = runner.invoke(cli.app, UPDATE)
+    assert result.exit_code == 0, result.output
+    first, second = json.loads(result.stdout)["results"]
+    assert first["server_uuid"] == "msg-1"
+    assert first["raw"] == {
+        "id": "msg-1",
+        "name": "Welcome",
+        "base_message_id": "tpl-1",
+        "number": 3,
+    }
+    assert first["raw_trimmed"] is True
+    assert list(first)[-2:] == ["raw", "raw_trimmed"]
+    assert second["raw"] == {"id": "f2", "number_archived": 4}
+    assert "raw_trimmed" not in second
+
+
+@pytest.mark.usefixtures("created")
+def test_full_keeps_the_whole_server_response():
+    result = runner.invoke(cli.app, [*UPDATE, "--full"])
+    assert result.exit_code == 0, result.output
+    first = json.loads(result.stdout)["results"][0]
+    assert first["raw"] == RAW
+    assert "raw_trimmed" not in first
+    assert first["message"] is None
+
+
+def test_every_mutation_verb_passes_full_through():
+    """`--full` exists wherever an apply result is printed."""
+    missing = []
+    for path in CLI.glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "id", None) == "_run_mutation"
+                and "full" not in {k.arg for k in node.keywords}
+            ):
+                missing.append(f"{path.name}:{node.lineno}")
+    assert missing == []
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["fields", "update", "--help"],
+        ["objects", "create", "--help"],
+        ["apply", "--help"],
+    ],
+)
+def test_mutation_json_help_says_where_the_whole_body_is(argv, terminal_output):
+    result = runner.invoke(cli.app, argv, env={"COLUMNS": "200"})
+    assert result.exit_code == 0
+    text = " ".join(result.stdout.split())
+    assert "--full" in text
+    assert "top-level values" in text

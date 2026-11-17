@@ -8,7 +8,9 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
@@ -137,9 +139,8 @@ def layouts_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Replace a record layout from a JSON LayoutDef (--spec-file or stdin).
 
@@ -154,5 +155,6 @@ def layouts_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )

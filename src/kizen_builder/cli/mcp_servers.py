@@ -9,7 +9,9 @@ from rich.text import Text
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
@@ -238,9 +240,6 @@ DRY_RUN_OPTION = typer.Option(
 YES_OPTION = typer.Option(
     False, "--yes", "-y", help="Skip the y/N confirmation prompt."
 )
-MUTATION_JSON_OPTION = typer.Option(
-    False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-)
 
 
 @mcp_servers_app.command("create", epilog=EPILOG)
@@ -249,6 +248,7 @@ def mcp_servers_create(
     dry_run: bool = DRY_RUN_OPTION,
     yes: bool = YES_OPTION,
     json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create an MCP server from a JSON MCPServerDef.
 
@@ -263,6 +263,7 @@ def mcp_servers_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -274,6 +275,7 @@ def mcp_servers_update(
     dry_run: bool = DRY_RUN_OPTION,
     yes: bool = YES_OPTION,
     json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update an MCP server from a JSON MCPServerDef.
 
@@ -287,6 +289,7 @@ def mcp_servers_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -297,6 +300,7 @@ def mcp_servers_delete(
     dry_run: bool = DRY_RUN_OPTION,
     yes: bool = YES_OPTION,
     json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete an MCP server. Kizen deletes it outright, with its history."""
     _run_mutation(
@@ -304,4 +308,5 @@ def mcp_servers_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )

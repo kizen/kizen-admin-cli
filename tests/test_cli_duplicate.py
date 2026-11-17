@@ -136,12 +136,11 @@ def test_dashboard_duplicate_without_name_still_patches_the_sharing():
     ]
 
 
-def test_dashboard_duplicate_json_reports_the_sharing_read_back(monkeypatch):
-    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
+def test_dashboard_duplicate_json_reports_the_sharing_read_back():
     with respx.mock(assert_all_mocked=True, assert_all_called=False) as mock:
         _mock_source(mock, "/api/dashboards")
         result = runner.invoke(
-            cli.app, ["dashboards", "duplicate", SOURCE_ID, "--yes", "--json"]
+            cli.app, ["dashboards", "duplicate", SOURCE_ID, "--yes", "--json", "--full"]
         )
 
     assert result.exit_code == 0, result.output

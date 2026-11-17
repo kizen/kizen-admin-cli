@@ -12,7 +12,9 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     _short,
     app,
@@ -211,9 +213,8 @@ def _add_write_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Create one form/survey from flags, or a JSON FormDef (--spec-file/stdin).
 
@@ -237,6 +238,7 @@ def _add_write_commands(
                 dry_run=dry_run,
                 yes=yes,
                 json_out=json_out,
+                full=full,
                 stdin_consumed=from_stdin,
             )
             return
@@ -270,6 +272,7 @@ def _add_write_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )
 
     @form_app.command(
@@ -305,9 +308,8 @@ def _add_write_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Update one form/survey. Only the flags you set are changed.
 
@@ -340,6 +342,7 @@ def _add_write_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )
 
     @form_app.command(
@@ -359,9 +362,8 @@ def _add_write_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Set the visual page layout (form_ui) for one form/survey from a JSON page spec.
 
@@ -386,6 +388,7 @@ def _add_write_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
             stdin_consumed=from_stdin,
         )
 
@@ -398,9 +401,8 @@ def _add_write_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Delete one form/survey."""
         _run_mutation(
@@ -410,6 +412,7 @@ def _add_write_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )
 
     @form_app.command("duplicate")
@@ -426,9 +429,8 @@ def _add_write_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Duplicate one form/survey."""
         _run_mutation(
@@ -438,6 +440,7 @@ def _add_write_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )
 
 

@@ -9,7 +9,9 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
@@ -158,9 +160,8 @@ def dashboards_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create a dashboard/homepage and its dashlets from a JSON DashboardDef.
 
@@ -174,6 +175,7 @@ def dashboards_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -193,9 +195,8 @@ def dashboards_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update a dashboard's metadata and/or dashlets from a JSON DashboardDef.
 
@@ -209,6 +210,7 @@ def dashboards_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -232,9 +234,8 @@ def dashboards_duplicate(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Copy a dashboard, its dashlets and its sharing.
 
@@ -247,6 +248,7 @@ def dashboards_duplicate(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 

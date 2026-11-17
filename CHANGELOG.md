@@ -53,6 +53,10 @@ called out explicitly under **Changed** or **Removed**.
   `smart-connectors suggest-variables --spec` and dry-run plans keep every
   key too, since their output is edited or sent back. A terminal still gets
   two-space indent and every key; `KIZEN_OUTPUT` picks either form anywhere.
+- **Apply results keep the server response's top-level values only; `--full`
+  restores the whole body.** A result that lost nested values carries
+  `"raw_trimmed": true` beside `raw`. `.results[].server_uuid` and scalar
+  reads like `.results[0].raw.base_message_id` are unchanged.
 
 ### Fixed
 
