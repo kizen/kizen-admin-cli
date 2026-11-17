@@ -260,6 +260,18 @@ def test_condition_lists_the_filter_keys_and_ops():
                 "blank",
             ],
         ),
+        (
+            "change_field_value",
+            "actions[].change_type",
+            [
+                "specific_value",
+                "related_object_field",
+                "this_record_field",
+                "variable",
+                "entity_variable_field",
+                "blank",
+            ],
+        ),
         ("goal", "delay_type", ["minutes", "hours", "days", ""]),
         (
             "modify_related_entities",

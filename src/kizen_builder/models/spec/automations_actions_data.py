@@ -9,8 +9,8 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationInfo,
-    field_serializer,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -20,6 +20,47 @@ from kizen_builder.models.spec.automations_shared import (
     FilterConfig,
     VariableSourceConfig,
 )
+
+# Choices: `GET /api/docs/schema`, 2026-11-17 (`ChangeTypeEnum`, `ValueTypeEnum`).
+ChangeType = Literal[
+    "specific_value",
+    "related_object_field",
+    "this_record_field",
+    "variable",
+    "entity_variable_field",
+    "blank",
+]
+ValueType = Literal[
+    "specific_value",
+    "context_entity_value",
+    "variable",
+    "entity_variable_field",
+    "blank",
+]
+
+
+class FieldChangeConfig(BaseModel):
+    """One field change: a `change_field_value` `actions[]` item, or a
+    `modify_related_entities` `fields_to_modify[]` item, which takes
+    `value_type` in place of `change_type`."""
+
+    model_config = ConfigDict(extra="allow")
+
+    change_type: ChangeType | None = None
+    value_type: ValueType | None = Field(
+        default=None,
+        description=(
+            "Where the new value comes from: context_entity_value reads "
+            "`context_entity_field`, a field on the automation's own record."
+        ),
+    )
+
+    # The keys given, nulls included, whatever the caller excludes: the
+    # planner sends `value_type` only for an item with no `change_type` key.
+    @model_serializer
+    def _as_given(self) -> dict[str, Any]:
+        given = {**self.__dict__, **(self.model_extra or {})}
+        return {k: v for k, v in given.items() if k in self.model_fields_set}
 
 
 class ActionChangeFieldValueConfig(BaseModel):
@@ -39,18 +80,11 @@ class ActionChangeFieldValueConfig(BaseModel):
         default_factory=list,
         description="Field UUIDs to clear (for clear_fields mode).",
     )
-    # Choices: `GET /api/docs/schema`, 2026-11-17 (`ChangeTypeEnum`).
-    change_type: (
-        Literal[
-            "specific_value",
-            "related_object_field",
-            "this_record_field",
-            "variable",
-            "entity_variable_field",
-            "blank",
-        ]
-        | None
-    ) = Field(
+    actions: list[FieldChangeConfig] | None = Field(
+        default=None,
+        description="Several changes, each with the flat form's keys.",
+    )
+    change_type: ChangeType | None = Field(
         default=None,
         description=(
             "Where the new value comes from. Left out, specific_value: "
@@ -206,31 +240,6 @@ class ActionCreateRelatedEntityConfig(BaseModel):
         return self
 
 
-class FieldToModifyConfig(BaseModel):
-    """One `fields_to_modify` item of `modify_related_entities`: a field
-    change with `value_type` in place of `change_type`."""
-
-    model_config = ConfigDict(extra="allow")
-
-    # Choices: `GET /api/docs/schema`, 2026-11-17 (`ValueTypeEnum`).
-    value_type: (
-        Literal[
-            "specific_value",
-            "context_entity_value",
-            "variable",
-            "entity_variable_field",
-            "blank",
-        ]
-        | None
-    ) = Field(
-        default=None,
-        description=(
-            "Where the new value comes from: context_entity_value reads "
-            "`context_entity_field`, a field on the automation's own record."
-        ),
-    )
-
-
 class ActionModifyRelatedEntitiesConfig(BaseModel):
     """Config for `step_type: modify_related_entities`."""
 
@@ -260,17 +269,7 @@ class ActionModifyRelatedEntitiesConfig(BaseModel):
             "`record_source: automation_variable`. An array variable 400s."
         ),
     )
-    fields_to_modify: list[FieldToModifyConfig] | None = None
-
-    # Each item goes to the planner with the keys it was given, nulls
-    # included: a read's `change_type: null` decides which key it sends.
-    @field_serializer("fields_to_modify")
-    def _items_as_given(
-        self, items: list[FieldToModifyConfig] | None
-    ) -> list[dict[str, Any]] | None:
-        if items is None:
-            return None
-        return [item.model_dump(mode="json", exclude_unset=True) for item in items]
+    fields_to_modify: list[FieldChangeConfig] | None = None
 
 
 class ActionModifyRelatedEntitiesAutomationConfig(BaseModel):

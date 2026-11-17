@@ -961,6 +961,23 @@ _STATIC_SUBTYPES = [
 ]
 
 
+_CHANGE_TYPES = [
+    "specific_value",
+    "related_object_field",
+    "this_record_field",
+    "variable",
+    "entity_variable_field",
+    "blank",
+]
+_VALUE_TYPES = [
+    "specific_value",
+    "context_entity_value",
+    "variable",
+    "entity_variable_field",
+    "blank",
+]
+
+
 # The values agents guessed in the docs eval, each a 400 at apply.
 @pytest.mark.parametrize(
     "step, path, got, allowed",
@@ -975,26 +992,25 @@ _STATIC_SUBTYPES = [
             _change(change_type="static", specific_field_value="x"),
             "action_change_field_value.change_type",
             "static",
-            [
-                "specific_value",
-                "related_object_field",
-                "this_record_field",
-                "variable",
-                "entity_variable_field",
-                "blank",
-            ],
+            _CHANGE_TYPES,
+        ),
+        (
+            _change(actions=[{"field_ref": "deals.name", "change_type": "static"}]),
+            "action_change_field_value.actions.0.change_type",
+            "static",
+            _CHANGE_TYPES,
+        ),
+        (
+            _modify(change_type="static", specific_field_value="x"),
+            "action_modify_related_entities.fields_to_modify.0.change_type",
+            "static",
+            _CHANGE_TYPES,
         ),
         (
             _modify(value_type="specific_field_value", specific_field_value="x"),
             "action_modify_related_entities.fields_to_modify.0.value_type",
             "specific_field_value",
-            [
-                "specific_value",
-                "context_entity_value",
-                "variable",
-                "entity_variable_field",
-                "blank",
-            ],
+            _VALUE_TYPES,
         ),
         (
             _static_var(source_subtype="string", array_separator=","),
@@ -1009,7 +1025,15 @@ _STATIC_SUBTYPES = [
             _STATIC_SUBTYPES,
         ),
     ],
-    ids=["goal_delay_type", "change_type", "value_type", "array_separator", "subtype"],
+    ids=[
+        "goal_delay_type",
+        "change_type",
+        "actions_change_type",
+        "fields_to_modify_change_type",
+        "value_type",
+        "array_separator",
+        "subtype",
+    ],
 )
 def test_a_guessed_enum_value_names_the_step_path_and_valid_values(
     step, path, got, allowed

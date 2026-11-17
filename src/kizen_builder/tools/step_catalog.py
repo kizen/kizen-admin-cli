@@ -1471,8 +1471,9 @@ _VARIABLE_SOURCES = Guide(
                 f"`{source_type}`: {', '.join(subtypes)}."
                 for source_type, subtypes in SOURCE_SUBTYPES.items()
             ),
-            "`field_value`: `this_record_field`, or "
-            "`primary_related_object_field` for a related record's field.",
+            "`field_value`: `this_record_field`, "
+            "`primary_related_object_field` for a related record's field, or "
+            "`record_association`.",
         ),
     ),
 )
