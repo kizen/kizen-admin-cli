@@ -439,6 +439,7 @@ The target comes from your shell, so it stays out of the repo.
 | …automations | `test_roundtrip_automations.py` | The same, for **every** wired step and trigger type rather than one representative payload. Two meta-tests reconcile the covered set against `_STEP_BUILDERS`/`_TRIGGER_BUILDERS`. |
 | …records | `test_roundtrip_records.py` | Create/update/upsert (both branches)/bulk-field-value/delete against a real object, including the bare-scalar `bulk-change-field-value` wire quirk and a delete-then-refetch 404. |
 | …filtering | `test_roundtrip_filtering.py` | The DSL resolved to a real search query against real records — that the *right records* come back, not just the shape — plus a filter-group round trip proving a read-back `config` is wire-shaped passthrough. |
+| …business variables | `test_roundtrip_business_variables.py` | Create, update and delete through the whole-list PATCH leave every other variable unchanged by id, and apply refuses a plan another write made stale. |
 | Fixture fidelity | `test_fixture_fidelity.py` | Whether the committed `tests/fixtures/*.json` files still match live shape, as a structural key-shape diff: fixture keys must exist live, extra live keys are fine. |
 
 Fixtures shared by more than one round-trip module (`drift_object`,
