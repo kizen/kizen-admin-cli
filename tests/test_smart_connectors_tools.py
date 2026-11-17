@@ -541,17 +541,17 @@ def _set_sql_params(*args):
 
 @respx.mock
 def test_set_sql_params_dry_run_merges_over_live_and_writes_nothing():
-    detail = {**DETAIL, "sql_parameters": {"region": "west"}}
+    detail = {**DETAIL, "sql_parameters": {"sql_param_2": "west"}}
     respx.get(f"{BASE}/upload_counties").mock(
         return_value=httpx.Response(200, json=detail)
     )
     write = respx.patch(f"{BASE}/conn-uuid")
 
-    result = _set_sql_params("--param", "wtsc_parameter_1=test value", "--dry-run")
+    result = _set_sql_params("--param", "sql_param_1=test value", "--dry-run")
 
     assert result.exit_code == 0, result.output
-    assert "+ wtsc_parameter_1 = 'test value'" in result.output
-    assert "region" not in result.output
+    assert "+ sql_param_1 = 'test value'" in result.output
+    assert "sql_param_2" not in result.output
     assert not write.called
 
 
@@ -560,12 +560,12 @@ def test_set_sql_params_patches_the_whole_merged_dict():
     detail = {
         **DETAIL,
         "status": "setup",
-        "sql_parameters": {"region": "west", "wtsc_parameter_1": "old"},
+        "sql_parameters": {"sql_param_2": "west", "sql_param_1": "old"},
     }
     respx.get(f"{BASE}/upload_counties").mock(
         return_value=httpx.Response(200, json=detail)
     )
-    merged = {"region": "west", "wtsc_parameter_1": "test value"}
+    merged = {"sql_param_2": "west", "sql_param_1": "test value"}
     write = respx.patch(f"{BASE}/conn-uuid").mock(
         return_value=httpx.Response(
             200, json={"api_name": "upload_counties", "sql_parameters": merged}
@@ -573,9 +573,7 @@ def test_set_sql_params_patches_the_whole_merged_dict():
     )
 
     # Padded like a sloppy paste: the UI trims both name and value.
-    result = _set_sql_params(
-        "--param", " wtsc_parameter_1 = test value ", "--yes", "--json"
-    )
+    result = _set_sql_params("--param", " sql_param_1 = test value ", "--yes", "--json")
 
     assert result.exit_code == 0, result.output
     assert json.loads(write.calls.last.request.content) == {"sql_parameters": merged}
@@ -584,13 +582,13 @@ def test_set_sql_params_patches_the_whole_merged_dict():
 
 @respx.mock
 def test_set_sql_params_skips_the_write_when_nothing_changes():
-    detail = {**DETAIL, "sql_parameters": {"wtsc_parameter_1": "test value"}}
+    detail = {**DETAIL, "sql_parameters": {"sql_param_1": "test value"}}
     respx.get(f"{BASE}/upload_counties").mock(
         return_value=httpx.Response(200, json=detail)
     )
     write = respx.patch(f"{BASE}/conn-uuid")
 
-    result = _set_sql_params("--param", "wtsc_parameter_1=test value", "--yes")
+    result = _set_sql_params("--param", "sql_param_1=test value", "--yes")
 
     assert result.exit_code == 0, result.output
     assert "No change to upload_counties's SQL parameters" in result.output
@@ -599,7 +597,7 @@ def test_set_sql_params_skips_the_write_when_nothing_changes():
 
 @respx.mock
 def test_set_sql_params_rejects_a_param_without_equals_before_any_call():
-    result = _set_sql_params("--param", "wtsc_parameter_1", "--dry-run")
+    result = _set_sql_params("--param", "sql_param_1", "--dry-run")
 
     assert result.exit_code == 2
     assert "name=value" in result.output
@@ -611,7 +609,7 @@ def test_set_sql_params_unset_removes_only_the_named_param():
     detail = {
         **DETAIL,
         "status": "setup",
-        "sql_parameters": {"region": "west", "wtsc_parameter_1": "test value"},
+        "sql_parameters": {"sql_param_2": "west", "sql_param_1": "test value"},
     }
     respx.get(f"{BASE}/upload_counties").mock(
         return_value=httpx.Response(200, json=detail)
@@ -619,19 +617,22 @@ def test_set_sql_params_unset_removes_only_the_named_param():
     write = respx.patch(f"{BASE}/conn-uuid").mock(
         return_value=httpx.Response(
             200,
-            json={"api_name": "upload_counties", "sql_parameters": {"region": "west"}},
+            json={
+                "api_name": "upload_counties",
+                "sql_parameters": {"sql_param_2": "west"},
+            },
         )
     )
 
-    dry = _set_sql_params("--unset", "wtsc_parameter_1", "--dry-run")
+    dry = _set_sql_params("--unset", "sql_param_1", "--dry-run")
     assert dry.exit_code == 0, dry.output
-    assert "- wtsc_parameter_1" in dry.output
+    assert "- sql_param_1" in dry.output
     assert not write.called
 
-    result = _set_sql_params("--unset", "wtsc_parameter_1", "--yes")
+    result = _set_sql_params("--unset", "sql_param_1", "--yes")
     assert result.exit_code == 0, result.output
     assert json.loads(write.calls.last.request.content) == {
-        "sql_parameters": {"region": "west"}
+        "sql_parameters": {"sql_param_2": "west"}
     }
 
 
@@ -641,9 +642,9 @@ def test_set_sql_params_needs_a_change_and_no_name_both_set_and_unset():
     assert none.exit_code == 2
     assert "at least one --param or --unset" in none.output
 
-    both = _set_sql_params("--param", "region=west", "--unset", "region")
+    both = _set_sql_params("--param", "sql_param_2=west", "--unset", "sql_param_2")
     assert both.exit_code == 2
-    assert "both set and unset: region" in both.output
+    assert "both set and unset: sql_param_2" in both.output
     assert not respx.calls
 
 
@@ -654,7 +655,7 @@ def test_set_sql_params_deactivates_an_active_connector_like_the_ui(status):
     respx.get(f"{BASE}/upload_counties").mock(
         return_value=httpx.Response(200, json=detail)
     )
-    params = {"wtsc_parameter_1": "test value"}
+    params = {"sql_param_1": "test value"}
     write = respx.patch(f"{BASE}/conn-uuid").mock(
         return_value=httpx.Response(
             200,
@@ -666,12 +667,12 @@ def test_set_sql_params_deactivates_an_active_connector_like_the_ui(status):
         )
     )
 
-    dry = _set_sql_params("--param", "wtsc_parameter_1=test value", "--dry-run")
+    dry = _set_sql_params("--param", "sql_param_1=test value", "--dry-run")
     assert dry.exit_code == 0, dry.output
     assert f"status {status} → inactive" in dry.output
     assert not write.called
 
-    result = _set_sql_params("--param", "wtsc_parameter_1=test value", "--yes")
+    result = _set_sql_params("--param", "sql_param_1=test value", "--yes")
     assert result.exit_code == 0, result.output
     assert json.loads(write.calls.last.request.content) == {
         "sql_parameters": params,

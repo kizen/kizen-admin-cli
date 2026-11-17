@@ -56,7 +56,7 @@ package's `__config.json` is built from.
 
 ## SQL parameters (`sql_parameters`)
 
-A connector-level name → value hash, e.g. `{"wtsc_parameter_1": "test value"}`.
+A connector-level name → value hash, e.g. `{"sql_param_1": "test value"}`.
 The script reads it as the table `meta.parameters` (`name String, value
 String`). The runner stringifies each value. `set-sql-params` sets and removes
 entries.
