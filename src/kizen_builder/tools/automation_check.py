@@ -13,12 +13,12 @@ import difflib
 import re
 import types
 import typing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from kizen_builder.models.spec import AutomationDef
+from kizen_builder.models.spec import AutomationDef, AutomationStepDef
 from kizen_builder.tools import step_catalog
 from kizen_builder.tools.findings import Finding, SpecProblems
 from kizen_builder.tools.planners.automations import (
@@ -148,6 +148,34 @@ def check_step(
         *_entity_subtype_errors(index, step),
     ]
     return errors, _selector_warnings(index, step)
+
+
+def block_rule_errors(step: dict[str, Any]) -> list[Finding]:
+    """The cross-field rules on a step's config model (a static source's
+    source_subtype, a date offset's time and day count, is_advanced for
+    more than one LLM destination), for `steps add`/`edit`. Only those:
+    an edit's block may be a `steps get` shape the rest of the model
+    refuses, such as an update_variable's variable given by name."""
+    cfg_key = _block_field_for(str(step.get("step_type")))
+    info = AutomationStepDef.model_fields.get(cfg_key)
+    model = _model_in(info.annotation) if info else None
+    if model is None or not isinstance(step.get(cfg_key), dict):
+        return []
+    try:
+        model.model_validate(step[cfg_key])
+    except ValidationError as e:
+        spec = {"steps": [step]}
+        return [
+            replace(f, index=None)
+            for err in e.errors()
+            if err["type"] == "value_error"
+            and (
+                f := _from_pydantic(
+                    {**err, "loc": ("steps", 0, cfg_key, *err["loc"])}, spec
+                )
+            )
+        ]
+    return []
 
 
 def _unique(findings: list[Finding]) -> list[Finding]:

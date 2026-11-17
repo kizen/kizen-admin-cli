@@ -1055,3 +1055,61 @@ def test_two_llm_destinations_need_is_advanced(step_type):
 
 def test_two_llm_destinations_with_is_advanced_pass():
     check_automation(_spec(_llm("call_llm", is_advanced=True)))
+
+
+@pytest.mark.parametrize(
+    ("step", "path", "message"),
+    [
+        (
+            _static_var(),
+            "action_initialize_variable.sources.0",
+            "a static source needs source_subtype",
+        ),
+        (
+            _on_date(),
+            "action_schedule_activity.schedule.on_or_around_date",
+            "needs `time`",
+        ),
+        (
+            _on_date(date_offset_days=None, time="09:00"),
+            "action_schedule_activity.schedule.on_or_around_date",
+            "date_offset_days must be at least 1",
+        ),
+        (
+            _llm("call_llm"),
+            "action_call_llm",
+            "more than one destination needs is_advanced: true",
+        ),
+    ],
+    ids=["static_source", "schedule_time", "day_count", "is_advanced"],
+)
+def test_steps_edit_checks_the_block_rules(monkeypatch, step, path, message):
+    key, step_type = step["key"], step["step_type"]
+    patch = {k: v for k, v in step.items() if k not in ("key", "step_type")}
+    live = [{"key": key, "type": step_type}]
+    result = _steps(monkeypatch, ["edit", "auto", key, "--json"], patch, live)
+    assert result.exit_code == 1
+    (error,) = json.loads(result.stdout)["errors"]
+    assert (error["step"], error["path"]) == (key, path)
+    assert "index" not in error
+    assert message in error["message"]
+
+
+def test_steps_edit_block_rules_pass_the_fixed_shape():
+    from kizen_builder.tools.automations import check_step_spec
+
+    fixed = _llm("call_llm", is_advanced=True)
+    assert check_step_spec(fixed, {"steps": []}) == []
+
+
+def test_steps_edit_catches_on_day_and_time_on_a_date_field(patch_live_lookups):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    step = _patient_date_activity("date_of_birth")
+    patch = {"action_schedule_activity": step["action_schedule_activity"]}
+    payload = {"name": "a", "api_name": "a", "type": "record_based", "steps": []}
+    with pytest.raises(SpecProblems) as e:
+        normalize_step_patch(patch, "act", "schedule_activity", payload, "patients")
+    (f,) = e.value.errors
+    assert f.path == "action_schedule_activity.schedule.on_or_around_date"
+    assert "'date_of_birth' is date" in f.message

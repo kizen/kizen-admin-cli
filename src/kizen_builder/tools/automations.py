@@ -419,10 +419,15 @@ def check_step_spec(step: dict[str, Any], payload: dict[str, Any]) -> list[str]:
     add``/``edit``, against the variables the live automation declares.
     Raises `SpecProblems` listing every error; returns the warnings as
     lines for the report."""
-    from kizen_builder.tools.automation_check import check_step, declared_variables
+    from kizen_builder.tools.automation_check import (
+        block_rule_errors,
+        check_step,
+        declared_variables,
+    )
     from kizen_builder.tools.findings import SpecProblems
 
     errors, warnings = check_step(step, declared_variables(payload["steps"]))
+    errors += block_rule_errors(step)
     if errors:
         raise SpecProblems(errors, warnings)
     return [f.text() + (f" (see: {f.hint})" if f.hint else "") for f in warnings]

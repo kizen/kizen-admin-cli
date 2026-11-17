@@ -88,6 +88,8 @@ called out explicitly under **Changed** or **Removed**.
   - two or more `destinations` on `call_llm`, `file_content_extraction` or
     `audio_transcription` without `is_advanced: true`.
 
+  `automations steps add` and `steps edit` run the same checks.
+
 ## [0.7.0] — 2026-11-16
 
 ### Added
