@@ -907,3 +907,66 @@ def test_a_static_source_without_source_subtype_is_an_error():
 
 def test_a_static_source_with_source_subtype_passes():
     check_automation(_spec(_static_var(source_subtype="string")))
+
+
+def _patients_spec(*steps, **top):
+    return {**_spec(*steps, **top), "target_object": "patients"}
+
+
+def _patient_date_trigger(field):
+    return _date_trigger(field_ref=f"patients.{field}", date_offset="on_day_and_time")
+
+
+def _patient_date_activity(field):
+    on_date = {"field_ref": f"patients.{field}", "date_offset": "on_day_and_time"}
+    return _activity(
+        schedule={"type": "on_or_around_date", "on_or_around_date": on_date}
+    )
+
+
+def test_on_day_and_time_on_a_date_field_trigger_is_an_error(patch_live_lookups):
+    spec = _patients_spec(
+        _set_mrn("a"), triggers=_patient_date_trigger("date_of_birth")
+    )
+    (f,) = _plan_problems(spec)
+    assert f.path == "triggers[0].trigger_on_or_around_date"
+    assert f.got == "date_of_birth"
+    assert f.message == (
+        "on_day_and_time needs a datetime field; 'date_of_birth' is date. "
+        "Use on_day with time and period, or a datetime field."
+    )
+
+
+def test_on_day_and_time_on_a_date_field_schedule_is_an_error(patch_live_lookups):
+    (f,) = _plan_problems(_patients_spec(_patient_date_activity("date_of_birth")))
+    assert f.step == "act"
+    assert f.path == "action_schedule_activity.schedule.on_or_around_date"
+    assert "'date_of_birth' is date. Use on_day with time," in f.message
+
+
+def test_on_day_and_time_on_a_date_field_goal_trigger_is_an_error(
+    patch_live_lookups,
+):
+    goal = {
+        "key": "wait",
+        "step_type": "goal",
+        "step_goal": {
+            "wait_type": "never",
+            "triggers": _patient_date_trigger("date_of_birth"),
+        },
+    }
+    (f,) = _plan_problems(_patients_spec(goal))
+    assert f.step == "wait"
+    assert f.path == "step_goal.triggers[0].trigger_on_or_around_date"
+    assert "'date_of_birth' is date" in f.message
+
+
+def test_on_day_and_time_on_a_datetime_field_builds(patch_live_lookups):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    spec = _patients_spec(
+        _patient_date_activity("created"), triggers=_patient_date_trigger("created")
+    )
+    (op,) = plan_create_automation(spec).operations
+    trigger = op.payload["triggers"][1]["trigger_on_or_around_date"]
+    assert trigger["date_offset"] == "on_day_and_time"

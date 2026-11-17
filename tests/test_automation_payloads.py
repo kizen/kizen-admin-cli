@@ -6699,7 +6699,7 @@ def _field_ref_trigger_block(payload: dict, trigger_type: str, goal: bool) -> di
 
 _FIELD_REF_TRIGGER_CASES = [
     ("field_updated", "mrn", {"fire_on_create": True}),
-    ("on_or_around_date", "date_of_birth", {"date_offset": "on_day_and_time"}),
+    ("on_or_around_date", "created", {"date_offset": "on_day_and_time"}),
 ]
 
 

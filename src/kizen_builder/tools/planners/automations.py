@@ -1166,22 +1166,32 @@ def _build_automation_payload(
     if auto.priority_rank is not None:
         payload["priority_rank"] = auto.priority_rank
 
-    payload["triggers"] = [
-        _build_trigger_payload(t, auto, ctx) for t in triggers_with_manual(auto)
+    triggers = triggers_with_manual(auto)
+    payload["triggers"] = [_build_trigger_payload(t, auto, ctx) for t in triggers]
+    added = len(triggers) - len(auto.triggers)
+    findings = [
+        f
+        for i, built in enumerate(payload["triggers"][added:])
+        if (
+            f := _date_field_finding(
+                built.get("trigger_on_or_around_date"),
+                auto,
+                ctx,
+                path=f"triggers[{i}].trigger_on_or_around_date",
+                fix="on_day with time and period",
+            )
+        )
     ]
     payload["steps"] = _build_step_payloads(auto, ctx, warnings)
 
     from kizen_builder.translate import validate_payload
 
-    problems = validate_payload(payload)
-    if problems:
-        raise SpecProblems(
-            [
-                Finding(p, path="triggers" if p.startswith("trigger") else "steps")
-                for p in dict.fromkeys(problems)
-            ],
-            warnings,
-        )
+    findings += [
+        Finding(p, path="triggers" if p.startswith("trigger") else "steps")
+        for p in dict.fromkeys(validate_payload(payload))
+    ]
+    if findings:
+        raise SpecProblems(findings, warnings)
     return payload
 
 
@@ -2232,6 +2242,22 @@ def _built_block_problem(
     if step_type == "condition":
         return _condition_rules_problem(key, block)
     if step_type == "goal":
+        findings = [
+            f
+            for i, t in enumerate(block["triggers"])
+            if (
+                f := _date_field_finding(
+                    t.get("trigger_on_or_around_date"),
+                    auto,
+                    ctx,
+                    path=f"step_goal.triggers[{i}].trigger_on_or_around_date",
+                    fix="on_day with time and period",
+                    step=key,
+                )
+            )
+        ]
+        if findings:
+            raise SpecProblems(findings)
         return _inbox_selection_problem(block["triggers"])
     if step_type == "update_variable":
         return _scalar_value_resolution_problem(key, block, auto)
@@ -2245,6 +2271,17 @@ def _built_block_problem(
         findings = _to_many_related_field_findings(step_type, key, block, auto, ctx)
         if findings:
             raise SpecProblems(findings)
+    if step_type == "schedule_activity":
+        finding = _date_field_finding(
+            (block.get("schedule") or {}).get("on_or_around_date"),
+            auto,
+            ctx,
+            path="action_schedule_activity.schedule.on_or_around_date",
+            step=key,
+            fix="on_day with time",
+        )
+        if finding:
+            raise SpecProblems([finding])
     if step_type == "start_automation" and ctx.refuse_inactive_start_targets:
         problems = inactive_start_targets(
             [{"key": key, "type": step_type, "action_start_automation": block}],
@@ -4222,6 +4259,41 @@ def _related_field_binding(
     if not is_uuid(rf_id) and "." in rf_id:
         rf_id = ctx.field_uuid(*rf_id.split(".", 1))
     return {"field": {"id": fld_id}, "related_field": {"id": rf_id}}
+
+
+def _date_field_finding(
+    block: dict[str, Any] | None,
+    auto: AutomationDef,
+    ctx: LiveContext,
+    *,
+    path: str,
+    fix: str,
+    step: str | None = None,
+) -> Finding | None:
+    """A finding when a built ``on_or_around_date`` block (trigger or
+    schedule) uses ``on_day_and_time`` on a field that isn't a datetime.
+    The server 400s it with "Field must be datetime when date_offset is
+    on_day_and_time" (confirmed live 2026-11-17)."""
+    if not block or block.get("date_offset") != "on_day_and_time":
+        return None
+    field_id = _unwrap_id(block.get("field_id")) or block.get("field_id")
+    if not auto.target_object or not isinstance(field_id, str):
+        return None
+    try:
+        field = ctx.field_by_id(auto.target_object, field_id)
+    except PlanError:
+        return None  # can't read the object: leave it to the server
+    if not field or field.get("field_type") == "datetime":
+        return None
+    name = field.get("api_name")
+    return Finding(
+        f"on_day_and_time needs a datetime field; '{name}' is "
+        f"{field.get('field_type')}. Use {fix}, or a datetime field.",
+        path=path,
+        step=step,
+        got=name,
+        hint=f"kizen objects get {auto.target_object}",
+    )
 
 
 def _to_many_related_field_findings(
