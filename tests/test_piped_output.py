@@ -128,6 +128,15 @@ def test_a_piped_table_is_a_title_a_header_and_one_line_per_row(monkeypatch):
     )
 
 
+def test_a_pipe_inside_a_cell_is_escaped(monkeypatch):
+    monkeypatch.delenv(out.OUTPUT_ENV, raising=False)
+    t = Table()
+    t.add_column("name")
+    t.add_column("v")
+    t.add_row("Acme | West", "x")
+    assert _print(t) == "| name | v |\n| Acme \\| West | x |\n"
+
+
 def test_a_table_without_a_header_or_title_prints_only_rows(monkeypatch):
     monkeypatch.delenv(out.OUTPUT_ENV, raising=False)
     t = Table(show_header=False, box=None)

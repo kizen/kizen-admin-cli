@@ -119,7 +119,7 @@ class _Console(Console):
 
     def _plain(self, cell: RenderableType) -> str:
         """One cell as one line of plain text; a multi-line cell is joined
-        with `; `."""
+        with `; ` and a `|` is escaped so the row keeps its shape."""
         if isinstance(cell, str):
             text = self.render_str(cell).plain
         elif isinstance(cell, Text):
@@ -128,7 +128,8 @@ class _Console(Console):
             scratch = Console(width=self.width, color_system=None, file=io.StringIO())
             scratch.print(cell)
             text = scratch.file.getvalue()  # type: ignore[attr-defined]
-        return "; ".join(s for line in text.splitlines() if (s := line.strip()))
+        joined = "; ".join(s for line in text.splitlines() if (s := line.strip()))
+        return joined.replace("|", "\\|")
 
 
 def _row(cells: Iterable[str]) -> str:
