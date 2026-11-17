@@ -6923,6 +6923,24 @@ def test_field_updated_value_without_a_mode_plans_specific_value(
 
 
 @pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_date_range_without_a_mode_plans_date_between(
+    patch_live_lookups, goal
+):
+    """The UI stores date_between for a date range; Kizen accepts
+    specific_value for one too (probed 2026-11-17)."""
+    date_range = {
+        "date_start": "2026-07-05T06:15:00.000Z",
+        "date_end": "2026-07-19T04:00:00.000Z",
+        "type": "date_range",
+    }
+    block = _field_updated_values(
+        {"field_ref": "encounter_start", "to_value": date_range}, goal=goal
+    )
+    assert block["to_match_mode"] == "date_between"
+    assert block["to_value"] == date_range
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
 def test_field_updated_explicit_mode_wins_and_no_value_gets_no_mode(
     patch_live_lookups, goal
 ):
@@ -6970,12 +6988,17 @@ _FU_GOAL_ID = "8d1c7a52-2b8e-4f0e-a3f4-6b1f5d0c9e02"
 _FU_GOAL_TRIGGER_ID = "c4b6e0d9-7a3f-4e21-8f5b-2d9a1c7e4f03"
 
 
-def _field_updated_update(live_mode: str | None) -> tuple[dict, dict]:
-    """A live encounters automation whose trigger and goal trigger fire when
-    encounter_priority changes to Urgent, stored with ``live_mode``, and an
-    update spec of it that leaves both modes out."""
+def _field_updated_update(live_value: bool) -> tuple[dict, dict]:
+    """A live encounters automation whose trigger and goal trigger store
+    any_including_blank, with a to_value of Urgent or none, and an update
+    spec of it that sets to_value Urgent and leaves the modes out."""
     urgent = _option_id("encounters", "encounter_priority", "Urgent")
-    live_block = {"to_match_mode": live_mode, "to_value": {"id": urgent}}
+    live_block = {
+        "from_match_mode": "any_including_blank",
+        "to_match_mode": "any_including_blank",
+        "from_value": None,
+        "to_value": {"id": urgent} if live_value else None,
+    }
     goal = {
         "id": _FU_GOAL_ID,
         "step_type": "goal",
@@ -7056,17 +7079,19 @@ def _field_updated_update(live_mode: str | None) -> tuple[dict, dict]:
 
 
 @pytest.mark.parametrize(
-    "live_mode, planned",
-    [("any_including_blank", "any_including_blank"), (None, "specific_value")],
+    "live_value, planned",
+    [(True, "any_including_blank"), (False, "specific_value")],
+    ids=["live_value_keeps_mode", "value_added_gets_default"],
 )
 def test_update_omitting_a_match_mode_keeps_the_live_one(
-    patch_live_lookups, monkeypatch, live_mode, planned
+    patch_live_lookups, monkeypatch, live_value, planned
 ):
-    """The default is for a trigger Kizen has no mode for: one read back
-    with any_including_blank keeps it."""
+    """Kizen stores a mode for a side with no value, so a live mode is kept
+    only beside a live value: adding to_value to an any-change trigger must
+    not keep any_including_blank."""
     import kizen_builder.tools.planners.automations as ma
 
-    raw, spec = _field_updated_update(live_mode)
+    raw, spec = _field_updated_update(live_value)
     listing = [{"id": raw["id"], "api_name": raw["api_name"]}]
     monkeypatch.setattr(ma, "list_automations", lambda: listing)
     monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
@@ -7076,7 +7101,7 @@ def test_update_omitting_a_match_mode_keeps_the_live_one(
     assert trigger["trigger_field_updated"]["to_match_mode"] == planned
     assert goal_trigger["trigger_field_updated"]["to_match_mode"] == planned
     named = {trigger["key"], "g0"}
-    if live_mode:
+    if live_value:
         assert named <= set(op.preview["keeps_live"])
         assert "defaults" not in op.preview
     else:

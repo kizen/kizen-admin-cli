@@ -850,13 +850,13 @@ _FIELD_UPDATED = Guide(
             "from_match_mode",
             _match_modes("from_value"),
             "any_including_blank",
-            "specific_value when from_value is set",
+            "specific_value when from_value is set (date_between for a date range)",
         ),
         Selector(
             "to_match_mode",
             _match_modes("to_value"),
             "any_including_blank",
-            "specific_value when to_value is set",
+            "specific_value when to_value is set (date_between for a date range)",
         ),
     ),
     lookups=(
@@ -874,8 +874,9 @@ _FIELD_UPDATED = Guide(
     ),
     notes=(
         "A match mode left out is planned as specific_value when its value "
-        "is set, and stored as any_including_blank when it isn't. An update "
-        "keeps a live trigger's mode.",
+        "is set (date_between for a date range), and stored as "
+        "any_including_blank when it isn't. An update keeps a live trigger's "
+        "mode when the live trigger has that value set too.",
         "values_added, values_removed, contains_any_of and contains_none_of "
         "are the server's enum but haven't been built from the CLI; check the "
         "value shape on a read of a UI-built trigger first.",

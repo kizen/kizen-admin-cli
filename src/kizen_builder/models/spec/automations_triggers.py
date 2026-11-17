@@ -51,19 +51,22 @@ class TriggerFieldUpdatedConfig(BaseModel):
     )
     fire_on_create: bool = True
     # Kizen stores any_including_blank for a mode left out, so the planner
-    # sends specific_value for one whose value is set.
+    # sends specific_value (date_between for a date range) for one whose
+    # value is set.
     from_match_mode: FieldChangeMatchMode | None = Field(
         default=None,
         description=(
             "What the field held before the change. Left out: specific_value "
-            "when from_value is set, else any_including_blank."
+            "when from_value is set (date_between for a date range), else "
+            "any_including_blank."
         ),
     )
     to_match_mode: FieldChangeMatchMode | None = Field(
         default=None,
         description=(
             "What the field holds after the change. Left out: specific_value "
-            "when to_value is set, else any_including_blank."
+            "when to_value is set (date_between for a date range), else "
+            "any_including_blank."
         ),
     )
     from_value: FieldChangeValue | None = Field(

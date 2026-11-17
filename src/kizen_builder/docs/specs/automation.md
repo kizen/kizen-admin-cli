@@ -1527,7 +1527,9 @@ Confirmed live 2026-10-30, in this order.
     `preview_user_id`. On a `create_related_entity` step whose `id` matches,
     its `context_entity_field_resolution`. On a `field_updated` trigger whose
     `id` matches, top-level or in a goal step, the match mode for a
-    `from_value`/`to_value` the spec sets without one.
+    `from_value`/`to_value` the spec sets without one, when the live
+    trigger has that value set too. A value added on update gets the
+    create default.
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
     A Kizen PUT without them resets each to its default, except the stop's,
     which Kizen keeps when the block is empty (confirmed live 2026-10-30).
@@ -1735,7 +1737,7 @@ Beyond the step/trigger tables above:
 
 | where | the key |
 |---|---|
-| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. `from_value`/`to_value` write as bare UUIDs; the builder sends an option name, or a read's `{id, …}`, as its UUID. A value without its match mode is planned as `specific_value`: Kizen stores `any_including_blank` for a mode left out, and the trigger then fires on every change (confirmed live 2026-11-16). Keys and modes: `kizen automations step-types show field_updated` |
+| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. `from_value`/`to_value` write as bare UUIDs; the builder sends an option name, or a read's `{id, …}`, as its UUID. A value without its match mode is planned as `specific_value`, or `date_between` for a `{"date_start", "date_end", "type": "date_range"}` value (the UI's choice; Kizen also accepts `specific_value` for one, probed 2026-11-17): Kizen stores `any_including_blank` for a mode left out, and the trigger then fires on every change (confirmed live 2026-11-16). Keys and modes: `kizen automations step-types show field_updated` |
 | `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it. The other keys: [Date trigger](#date-trigger-on_or_around_date) |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}`; the spec takes an api_name or UUID |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
