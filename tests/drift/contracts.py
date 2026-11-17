@@ -577,7 +577,7 @@ def match_endpoint(
 def extract(schema: dict[str, Any]) -> dict[str, Any]:
     """Reduce a live OpenAPI document to just the tracked contracts.
 
-    The full document is ~1.6 MB / 576 paths / 1399 component schemas; this
+    The full document is ~1.7 MB / 619 paths / 1487 component schemas; this
     keeps only what the CLI writes to, so the committed snapshot is reviewable
     and the diff is about something. ``operationId`` is left out: the CLI
     never sends it, and the schema generator renames it whenever a sibling

@@ -782,7 +782,8 @@ script before wiring it in — see `kizen docs show code-steps`.
 
 ### `plugin_code_step`
 
-Runs a step from an installed plugin's manifest. The block has six keys:
+Runs a step from an installed plugin's manifest. The block has seven keys;
+the example leaves out the optional `preview_user_id`:
 
 ```json
 { "step_type": "plugin_code_step", "key": "summarize", "parent_key": null,
@@ -821,6 +822,13 @@ Runs a step from an installed plugin's manifest. The block has six keys:
   business_plugin_config`. Neither is **confirmed live**, and neither is
   writing one from the CLI.
 - `secrets` takes names, as for `code_step`, and is sent as `[{name}]`.
+- `preview_user_id` is the user whose preview of a business app the step
+  runs. Null, the default, runs the installed version. A non-null id on a
+  plugin that isn't a business app is a 400, "Previews are only available
+  for business apps" (confirmed live 2026-11-11). Reads also carry
+  `preview_user` and `preview_missing_message`, which are read-only and
+  never sent. On `update`, a step whose `id` matches keeps its live
+  `preview_user_id` when the spec leaves it out; `null` unpins it.
 - Step `id`s carry over as for any step. `activate`, `deactivate`, `steps`
   edits to other steps and `roundtrip --execute` keep a plugin step's inputs,
   outputs and secrets intact (confirmed live 2026-10-14).
@@ -1623,10 +1631,13 @@ Confirmed live 2026-10-30, in this order.
     and on `call_llm` also its MCP server and run-as account (as a pair),
     `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
     server)**). On a `stop_execution` whose `id` matches, its `action` and
-    `notify`.
+    `notify`. On a `plugin_code_step` whose `id` matches, its
+    `preview_user_id`.
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
     A Kizen PUT without them resets each to its default, except the stop's,
     which Kizen keeps when the block is empty (confirmed live 2026-10-30).
+    For `preview_user_id` that reset is unconfirmed: Kizen only accepts a
+    pin on a business app's preview.
   - A step or trigger without `id` is new to Kizen, so what its spec leaves
     out gets Kizen's defaults: the type's default description, an empty
     note, not skipped.
