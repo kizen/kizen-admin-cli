@@ -21,10 +21,12 @@ from kizen_builder.tools.plans import PlanError
 from kizen_builder.translate import (
     diff_wire_payloads,
     live_to_payload,
+    planned_step_keys,
     semantic_diff,
     synthesize_step_keys,
     synthesize_trigger_keys,
     validate_payload,
+    written_step_keys,
 )
 from tests.conftest import load_fixture
 
@@ -294,6 +296,28 @@ def test_orders_are_sequential(path: str) -> None:
     assert sorted(t["order"] for t in payload["triggers"]) == list(
         range(len(payload["triggers"]))
     )
+
+
+def test_written_step_keys_match_the_planned_ones() -> None:
+    """The keys a write prints before it (planned from the sent order) are the
+    ones the server's response gives back."""
+    raw = load_fixture("automations/branching_test.raw.json")
+    sent = [
+        {**s, "key": f"spec_{i}"}
+        for i, s in enumerate(reversed(live_to_payload(raw)["steps"]))
+    ]
+
+    planned = planned_step_keys(sent)
+
+    assert planned == written_step_keys(sent, raw)
+    assert list(planned.values()) == list(synthesize_step_keys(raw).values())
+    assert planned[sent[-1]["key"]] == "s00_initialize_variable"
+
+
+def test_written_step_keys_are_empty_when_the_step_count_differs() -> None:
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    sent = live_to_payload(raw)["steps"][:1]
+    assert written_step_keys(sent, raw) == {}
 
 
 @pytest.mark.parametrize("path", ALL_FIXTURES)

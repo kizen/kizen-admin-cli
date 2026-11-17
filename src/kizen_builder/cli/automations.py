@@ -111,7 +111,9 @@ def autos_get(
     api_name: str = typer.Argument(..., help="Automation api_name."),
     output: str = OUTPUT_OPTION,
     json_out: bool = typer.Option(
-        False, "--json", help="Alias for --output json (summarised, no step configs)."
+        False,
+        "--json",
+        help="Alias for --output json (every trigger and step with its config block).",
     ),
     raw_out: bool = typer.Option(
         False, "--raw", help="Emit full Kizen API response as JSON."
@@ -119,64 +121,83 @@ def autos_get(
 ) -> None:
     """Show one automation in full (triggers + steps).
 
-    `--output json` / `--json` emit the summary (no step configs);
-    `--raw` emits the full API response; `--output csv` emits the step
-    list (one row per step).
+    Step rows lead with the key the `steps` verbs take (`s07_condition`).
+    `--output json` / `--json` emit each trigger and step in the shape
+    `steps get` prints, config block included; `--raw` emits the full API
+    response; `--output csv` emits the step list (one row per step).
     """
     fmt = out.resolve_format(output, json_out)
-    with cli_errors(LookupError):
-        result = auto_tools.get_automation(api_name)
-
     if raw_out:
-        typer.echo(json.dumps(result["raw"], indent=2))
+        with cli_errors(LookupError):
+            raw = auto_tools.get_automation(api_name)["raw"]
+        typer.echo(json.dumps(raw, indent=2))
         return
+
+    with cli_errors(LookupError, PlanError):
+        result = auto_tools.show_automation(api_name)
+    print_warnings(result)
+    payload = result["payload"]
+    # A spec trigger takes no `key` (the model refuses one), so a trigger
+    # copied from here into a spec mustn't carry it.
+    triggers = [{k: v for k, v in t.items() if k != "key"} for t in payload["triggers"]]
+    steps = payload["steps"]
 
     def table() -> None:
         console.print(
-            f"[bold]{result['name']}[/bold]  "
-            f"[dim]({result['api_name']}, id={result['id']}, rev={result['revision']})[/dim]"
+            f"[bold]{escape(result['name'] or '')}[/bold]  "
+            f"[dim]({result['api_name']}, id={result['id']}, "
+            f"rev={result['revision']})[/dim]"
         )
 
         trig_table = Table(title="Triggers")
+        trig_table.add_column("ord", justify="right")
         trig_table.add_column("type")
         trig_table.add_column("description")
         trig_table.add_column("auth")
-        for t in result["triggers"]:
+        for t in triggers:
             trig_table.add_row(
-                t["trigger_type"] or "",
-                t["description"] or "",
-                t.get("auth_type") or "",
+                str(t["order"]),
+                t["type"],
+                t.get("description") or "",
+                (t.get("trigger_webhook") or {}).get("auth_type") or "",
             )
         console.print(trig_table)
 
         step_table = Table(title="Steps")
-        step_table.add_column("ord", justify="right")
-        step_table.add_column("id", style="dim")
+        step_table.add_column("key")
         step_table.add_column("type")
         step_table.add_column("description")
         step_table.add_column("parent", style="dim")
         step_table.add_column("branch")
-        for s in result["steps"]:
+        for s in steps:
             step_table.add_row(
-                str(s["order"]) if s["order"] is not None else "",
-                (s["id"] or "")[:8],
-                s["step_type"] or "",
-                s["description"] or "",
-                (s["parent_step_id"] or "")[:8],
-                s["parent_condition"] or "",
+                s["key"],
+                s["type"],
+                s.get("description") or "",
+                s.get("parent_key") or "",
+                s.get("parent_condition") or "",
             )
         console.print(step_table)
 
     out.render(
         fmt,
-        json_data={k: v for k, v in result.items() if k != "raw"},
+        json_data={
+            "api_name": result["api_name"],
+            "name": result["name"],
+            "id": result["id"],
+            "revision": result["revision"],
+            "active": result["active"],
+            "target_object": result["custom_object_name"],
+            "triggers": triggers,
+            "steps": steps,
+        },
         table=table,
-        csv_rows=result["steps"],
+        csv_rows=steps,
         csv_columns=[
-            out.Column("order", "order"),
-            out.Column("step_type", "step_type"),
+            out.Column("key", "key"),
+            out.Column("type", "type"),
             out.Column("description", "description"),
-            out.Column("parent_step_id", "parent_step_id"),
+            out.Column("parent_key", "parent_key"),
             out.Column("parent_condition", "parent_condition"),
         ],
     )

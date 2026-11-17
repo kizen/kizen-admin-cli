@@ -767,16 +767,17 @@
                                                                                                     
  Show one automation in full (triggers + steps).                                                    
                                                                                                     
- `--output json` / `--json` emit the summary (no step configs);                                     
- `--raw` emits the full API response; `--output csv` emits the step                                 
- list (one row per step).                                                                           
+ Step rows lead with the key the `steps` verbs take (`s07_condition`).                              
+ `--output json` / `--json` emit each trigger and step in the shape                                 
+ `steps get` prints, config block included; `--raw` emits the full API                              
+ response; `--output csv` emits the step list (one row per step).                                   
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    api_name      <str>  Automation api_name. [required]                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --output  -o      <str>  Output format: table (default), json, or csv.                           │
-│ --json                   Alias for --output json (summarised, no step configs).                  │
+│ --json                   Alias for --output json (every trigger and step with its config block). │
 │ --raw                    Emit full Kizen API response as JSON.                                   │
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -1324,7 +1325,7 @@
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
- Usage: automations update [OPTIONS]                                                                
+ Usage: automations update [OPTIONS] [api_name]                                                     
                                                                                                     
  Update an existing automation from a JSON AutomationDef (--spec-file or stdin).                    
                                                                                                     
@@ -1333,6 +1334,10 @@
  out keep their live values on steps that carry their `id`; see `kizen docs                         
  show automation`.                                                                                  
                                                                                                     
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│   api_name      <str>  Automation api_name. Fills in a spec that leaves it out; must match one   │
+│                        that has it.                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --spec-file          <str>  Path to JSON AutomationDef. Default: read from stdin.                │
 │ --dry-run                   Show the plan without applying.                                      │

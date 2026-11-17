@@ -17,7 +17,7 @@ kizen objects list                           # list objects, custom and built-in
 kizen objects get <api_name>                 # one object incl. categories, fields, option UUIDs; full stage detail for pipelines
 kizen objects stages list <pipeline>         # a pipeline's stages: name, status, chance-to-close, order
 kizen automations list                       # list automations (summary)
-kizen automations get <api_name>             # one automation incl. triggers + steps
+kizen automations get <api_name>             # triggers + steps by step key; --json adds each config block
 kizen automations show <api_name>            # step tree with synthesized step keys (handles for steps verbs)
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
 kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms
@@ -207,7 +207,7 @@ kizen records create <object> [--spec-file f.csv|f.json | < stdin]   # bulk crea
 kizen objects update <api_name> [--object-name X] [--description Y] [--quick-filtering/--no-quick-filtering]
 kizen categories update <object_api_name> <current_name> --name <new>
 kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [...]
-kizen automations update [--spec-file path | < stdin]
+kizen automations update [<api_name>] [--spec-file path | < stdin]
 kizen dashboards update <uuid|api_name> [--spec-file | < stdin]   # metadata + dashlets (diff by id)
 kizen toolbar-templates update <uuid|name> [--spec-file | < stdin]   # no spec re-saves plugin pages after a release
 kizen dashboards duplicate <uuid|api_name> [--name X] [--api-name Y]   # unpublished copy, source's sharing
@@ -349,7 +349,8 @@ kizen messages create <api> --template <name|uuid>          # UUID → step's em
 ```
 
 Step keys come from `kizen automations show` and re-synthesize after every
-apply — always re-run `show` before the next step operation. The post-apply
+apply. Each step write prints the keys it leaves; use those, or re-run `show`,
+for the next step operation. The post-apply
 output includes the before/after semantic diff as the audit trail. See
 `kizen docs show automation-step` for the full model.
 

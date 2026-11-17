@@ -2,8 +2,9 @@
 
 For surgically changing **one** step on an existing automation, without
 re-sending the whole `AutomationDef`. Step keys come from
-`kizen automations show <api>` and **re-synthesize after every apply** — re-run
-`show` before each step operation.
+`kizen automations show <api>` and **re-synthesize after every apply**. Each
+write prints the keys it leaves; use those, or re-run `show`, for the next step
+operation.
 
 **Consumed by:**
 - `kizen automations steps edit <api> <key> --spec-file <f>` — a **patch**.
@@ -87,8 +88,9 @@ kizen automations roundtrip <name> [--execute]   # translator fidelity check
 Consequences worth knowing:
 
 - **Keys re-synthesize after every apply** — they encode order + type, so an
-  insert or remove mid-graph renames every later step. Always re-run `show`
-  before the next step operation.
+  insert or remove mid-graph renames every later step. The write prints the
+  keys it leaves (`keys now:`); use those, or re-run `show`, before the next
+  step operation.
 - **`edit` is a merge patch, but config blocks replace wholesale.** Send a
   complete config block, not a partial one. One exception: a
   `stop_execution` block keeps the live `action` and `notify` it leaves

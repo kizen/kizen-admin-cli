@@ -84,6 +84,17 @@ called out explicitly under **Changed** or **Removed**.
   check in the browser after a write to `docs show verifying`. The
   merge-field namespaces are in `step-types concepts`, and the `step-types
   show` footer now reads "See also".
+- **`automations get` shows step keys and, with `--json`, each step's
+  settings. Writes print the keys steps end up with. `automations update`
+  accepts the api_name as an argument.** `get` leads each step row with the
+  key the `steps` verbs take, and `get --json` prints every trigger and step
+  in the shape `steps get` prints, config block included, in place of the
+  old summary. Kizen stores no step keys, so a read renames steps
+  `s<NN>_<type>`: `automations create|update` now print `step keys after the
+  write: wait → s00_delay` in the plan and after applying (`step_keys` with
+  `--json`), and `steps add|edit|remove` name the step's new key and list
+  every key when the write shifted any. `automations update <api_name>`
+  fills in a spec that leaves `api_name` out and refuses one that disagrees.
 
 ### Fixed
 

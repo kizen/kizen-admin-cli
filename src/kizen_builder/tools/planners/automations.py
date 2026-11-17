@@ -1055,7 +1055,8 @@ def _automation_preview(
     `--dry-run` output sees a change, not a value. ``plan_create_automation``
     has no live state to compare against and omits ``live_active``.
     ``current``, the live automation, tells a value kept live from one the
-    planner chose.
+    planner chose. ``step_keys`` maps each spec step key to the key a read
+    gives the step after the write.
     """
     active_display: Any = auto.active
     if live_active is not None and live_active != auto.active:
@@ -1070,6 +1071,8 @@ def _automation_preview(
         *_unlaid_rule_warnings(auto, payload, ctx),
     ]
     defaults = [*checked.defaults, *_planned_defaults(auto, payload, current)]
+    from kizen_builder.translate import planned_step_keys
+
     return {
         "env": env,
         "api_name": auto.api_name,
@@ -1081,6 +1084,7 @@ def _automation_preview(
         "step_count": len(auto.steps),
         **({"defaults": defaults} if defaults else {}),
         **({"warnings": warnings} if warnings else {}),
+        "step_keys": planned_step_keys(payload["steps"]),
     }
 
 

@@ -306,6 +306,35 @@ def test_apply_automation_update_puts_previewed_payload_verbatim():
 
 
 @respx.mock
+def test_apply_automation_create_reports_the_keys_steps_end_up_with():
+    steps = [
+        {"key": "check", "type": "condition", "order": 0},
+        {"key": "wait", "type": "delay", "order": 1},
+    ]
+    respx.post(f"{FAKE_BASE_URL}/api/automation2/automations").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "auto-uuid",
+                "steps": [
+                    {"id": "b", "step_type": "delay", "order": 1},
+                    {"id": "a", "step_type": "condition", "order": 0},
+                ],
+            },
+        )
+    )
+    plan = Plan.build(
+        env="testenv",
+        summary="t",
+        operations=[_automation_op(payload={"name": "x", "steps": steps})],
+    )
+
+    (result,) = plan_tools.apply_plan(plan).results
+
+    assert result.step_keys == {"check": "s00_condition", "wait": "s01_delay"}
+
+
+@respx.mock
 def test_apply_skip_ops_never_hit_the_api():
     plan = Plan.build(
         env="testenv",

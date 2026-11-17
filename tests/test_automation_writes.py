@@ -64,6 +64,7 @@ def live() -> Iterator[SimpleNamespace]:
         move = mock.post(f"{FAKE_BASE_URL}{FOLDERS_PATH}/move").respond(200)
         yield SimpleNamespace(
             raw=raw,
+            detail=detail,
             put=put,
             move=move,
             # The read every patch makes, then the PUT and its re-read. An
@@ -174,6 +175,60 @@ def test_steps_remove_yes_puts_once(live) -> None:
     body = request_json(live.put)
     assert body["last_revision"] == 2
     assert [s["key"] for s in body["steps"]] == ["s00_code_step"]
+
+
+def test_steps_add_dry_run_names_the_keys_after_the_write(live, tmp_path) -> None:
+    spec = tmp_path / "step.json"
+    spec.write_text(json.dumps({"step_type": "stop_execution"}))
+
+    result = _invoke(
+        "steps", "add", API_NAME, "--root", "--dry-run", "--spec-file", str(spec)
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "step key after the write: s00_stop_execution\n" in result.stdout
+    assert (
+        "keys after the write: s00_stop_execution, s01_code_step, s02_code_step\n"
+        in result.stdout
+    )
+
+
+def test_steps_edit_names_the_key_without_listing_unshifted_keys(
+    live, tmp_path
+) -> None:
+    spec = tmp_path / "patch.json"
+    spec.write_text(json.dumps({"user_description": "Edited"}))
+
+    result = _invoke(
+        "steps",
+        "edit",
+        API_NAME,
+        "s01_code_step",
+        "--dry-run",
+        "--spec-file",
+        str(spec),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "step key after the write: s01_code_step\n" in result.stdout
+    assert "keys after the write:" not in result.stdout
+
+
+def test_steps_remove_lists_the_keys_the_reread_gives(live) -> None:
+    survivor = {**live.raw["steps"][1], "order": 0, "parent_step_id": None}
+    live.detail.mock(
+        side_effect=lambda request: httpx.Response(
+            200,
+            json={**live.raw, "revision": 3, "steps": [survivor]}
+            if live.put.called
+            else live.raw,
+        )
+    )
+
+    result = _invoke("steps", "remove", API_NAME, "s00_code_step", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert "keys now: s00_code_step\n" in result.stdout
 
 
 def test_steps_remove_without_a_terminal_or_yes_exits_2(live) -> None:

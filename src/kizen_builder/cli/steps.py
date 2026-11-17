@@ -75,6 +75,16 @@ def _with_defaults(report: dict[str, Any], defaults: list[str]) -> dict[str, Any
     return {**report, "defaults": defaults} if defaults else report
 
 
+def _print_step_keys(result: dict[str, Any], subject: str | None, *, when: str) -> None:
+    """The patched step's key after the write, and every step's key when the
+    write shifts any of them (an insert or remove renumbers what follows)."""
+    step_keys = result.get("step_keys") or {}
+    if subject in step_keys:
+        console.print(f"step key {when}: {step_keys[subject]}")
+    if any(k != v for k, v in step_keys.items()):
+        console.print(f"keys {when}: {', '.join(step_keys.values())}")
+
+
 def _run_step_patch(
     api_name: str,
     mutate: Callable[[dict[str, Any], dict[str, Any], list[str]], Any],
@@ -82,6 +92,7 @@ def _run_step_patch(
     yes: bool,
     json_out: bool,
     stdin_consumed: bool = False,
+    subject: Callable[[Any], str] | None = None,
 ) -> None:
     """Preview → confirm → apply loop for step-level patches.
 
@@ -89,7 +100,8 @@ def _run_step_patch(
     live state (plans are ephemeral); last_revision makes a concurrent edit
     between preview and apply fail loudly instead of clobbering.
     ``mutate`` adds the spec check's warnings to its third argument; they go
-    beside the report, not in it.
+    beside the report, not in it. ``subject`` names the patched step's key in
+    the report, for the key it ends up with.
     """
 
     def patch(execute: bool) -> dict[str, Any]:
@@ -111,6 +123,7 @@ def _run_step_patch(
         return result
 
     preview = patch(execute=False)
+    subject_key = subject(preview["report"]) if subject else None
 
     if not json_out:
         console.print(
@@ -129,6 +142,8 @@ def _run_step_patch(
             console.print("[red]step graph INVALID — refusing to apply:[/red]")
             for p in preview["validation_problems"]:
                 console.print(f"  [red]-[/red] {p}")
+        else:
+            _print_step_keys(preview, subject_key, when="after the write")
     if preview["validation_problems"]:
         if json_out:
             typer.echo(json.dumps(preview, indent=2, default=list))
@@ -162,6 +177,7 @@ def _run_step_patch(
         f"[green]PUT ok[/green] — revision {result['revision_before']} → "
         f"{result['revision_after']}"
     )
+    _print_step_keys(result, subject_key, when="now")
     diff = result.get("diff") or []
     for callout in _detect_message_auto_versions(diff):
         console.print(f"[bold yellow]![/bold yellow] {callout}")
@@ -243,7 +259,9 @@ def steps_edit(
         report = step_tools.edit_step(payload, key, normalized)
         return _with_defaults(report, defaults)
 
-    _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
+    _run_step_patch(
+        api_name, mutate, dry_run, yes, json_out, from_stdin, subject=lambda _: key
+    )
 
 
 @steps_app.command(
@@ -317,7 +335,15 @@ def steps_add(
             report = step_tools.insert_step(payload, wire, parent_key, branch, adopt)
         return _with_defaults(report, defaults)
 
-    _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
+    _run_step_patch(
+        api_name,
+        mutate,
+        dry_run,
+        yes,
+        json_out,
+        from_stdin,
+        subject=lambda report: report["key"],
+    )
 
 
 @steps_app.command("remove")

@@ -266,11 +266,15 @@ def patch_steps(
     returns a report) → validate the graph → with ``execute``, PUT atomically
     (``last_revision`` guards against concurrent edits), re-GET, and report
     the before/after semantic diff as evidence of exactly what changed.
+    ``step_keys`` maps each step's key in the report to the key a read gives
+    it after the write: planned, then read from the re-GET once applied.
     """
     from kizen_builder.translate import (
         live_to_payload,
+        planned_step_keys,
         semantic_diff,
         validate_payload,
+        written_step_keys,
     )
 
     config = load_env_config()
@@ -287,6 +291,7 @@ def patch_steps(
             "report": report,
             "validation_problems": problems,
             "payload": payload,
+            "step_keys": planned_step_keys(payload["steps"]),
             "executed": False,
         }
         if problems or not execute:
@@ -301,6 +306,7 @@ def patch_steps(
         _reconcile_notify_member_message_links(client, after)
         result["executed"] = True
         result["revision_after"] = after.get("revision")
+        result["step_keys"] = written_step_keys(payload["steps"], after)
         result["diff"] = [
             {"path": p, "before": a, "after": b}
             for p, a, b in semantic_diff(before, after)

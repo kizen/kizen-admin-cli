@@ -100,6 +100,34 @@ def synthesize_step_keys(raw: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def planned_step_keys(steps: list[dict[str, Any]]) -> dict[str, str]:
+    """Each wire step's key → the key a read gives it after the write.
+
+    Kizen stores no step keys, so every read re-synthesizes them from order.
+    """
+    return synthesize_step_keys(
+        {
+            "steps": [
+                {"id": s["key"], "step_type": s["type"], "order": s.get("order")}
+                for s in steps
+            ]
+        }
+    )
+
+
+def written_step_keys(
+    steps: list[dict[str, Any]], raw: dict[str, Any]
+) -> dict[str, str]:
+    """Each sent wire step's key → its key in the server's response to the
+    write, paired by order. Empty when the response's step count differs."""
+    live = synthesize_step_keys(raw)
+    sent = sorted(steps, key=lambda s: s.get("order") or 0)
+    got = _sorted_steps(raw)
+    if len(sent) != len(got):
+        return {}
+    return {s["key"]: live[g["id"]] for s, g in zip(sent, got, strict=True)}
+
+
 def synthesize_trigger_keys(raw: dict[str, Any]) -> dict[str, str]:
     return {
         t["id"]: f"t{i}_{t['trigger_type']}"

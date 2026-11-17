@@ -28,6 +28,7 @@ from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.planners import forms as form_planners
 from kizen_builder.tools.planners import objects as object_planners
 from kizen_builder.tools.planners import records as record_planners
+from kizen_builder.translate import live_to_payload
 from tests.conftest import (
     FAKE_BASE_URL,
     FAKE_BUSINESS_ID,
@@ -382,6 +383,50 @@ def test_automations_get_shows_webhook_auth_type():
     assert "auth_type" not in rows[0]
     assert result.exit_code == 0, result.output
     assert "auth" in result.stdout and "basic_auth" in result.stdout
+
+
+def _get_branching(*args):
+    raw = load_fixture("automations/branching_test.raw.json")
+    with respx.mock:
+        mock_automation_lookup(raw)
+        result = runner.invoke(cli.app, ["automations", "get", raw["api_name"], *args])
+    assert result.exit_code == 0, result.output
+    return raw, result
+
+
+def test_automations_get_leads_step_rows_with_the_step_key():
+    raw, result = _get_branching()
+    step_ids = [s["id"] for s in raw["steps"]]
+    assert (
+        "s02_branch" in result.stdout and "s18_create_related_entity" in result.stdout
+    )
+    assert not any(i[:8] in result.stdout for i in step_ids)
+    assert raw["id"] in result.stdout
+
+
+def test_automations_get_json_carries_each_steps_config_block():
+    raw, result = _get_branching("--json")
+    data = json.loads(result.stdout)
+    assert list(data) == [
+        "api_name",
+        "name",
+        "id",
+        "revision",
+        "active",
+        "target_object",
+        "triggers",
+        "steps",
+    ]
+    assert data["id"] == raw["id"]
+    assert data["steps"] == live_to_payload(raw)["steps"]
+    assert all("key" not in t for t in data["triggers"])
+    (trigger,) = data["triggers"]
+    assert (
+        trigger["trigger_manual"]
+        == live_to_payload(raw)["triggers"][0]["trigger_manual"]
+    )
+    s12 = next(s for s in data["steps"] if s["key"] == "s12_search_records")
+    assert "action_search_records" in s12
 
 
 def test_records_list_csv_flattens_fields(monkeypatch):
@@ -1975,6 +2020,116 @@ def test_update_with_no_diff_skips_without_prompting(monkeypatch):
     )
     assert result.exit_code == 0, result.output
     assert "no changes" in result.output
+
+
+def _automation_plan(step_keys):
+    from kizen_builder.tools.plans import Plan, PlanOperation
+
+    return Plan.build(
+        env="testenv",
+        summary="test plan",
+        operations=[
+            PlanOperation(
+                action="create",
+                kind="automation",
+                key="x",
+                preview={"api_name": "x", "step_keys": step_keys},
+                payload={"name": "X"},
+            )
+        ],
+    )
+
+
+def test_automation_dry_run_prints_the_keys_a_read_will_give(monkeypatch):
+    keys = {"wait": "s00_delay", "s01_condition": "s01_condition"}
+    monkeypatch.setattr(
+        auto_planners, "plan_create_automation", lambda spec: _automation_plan(keys)
+    )
+    spec = json.dumps({"api_name": "x", "name": "X", "steps": []})
+
+    text = runner.invoke(cli.app, ["automations", "create", "--dry-run"], input=spec)
+    as_json = runner.invoke(
+        cli.app, ["automations", "create", "--dry-run", "--json"], input=spec
+    )
+
+    assert text.exit_code == as_json.exit_code == 0, text.output
+    assert "step keys after the write: wait → s00_delay\n" in text.stdout
+    assert "step_keys=" not in text.stdout
+    (op,) = json.loads(as_json.stdout)["operations"]
+    assert op["preview"]["step_keys"] == keys
+
+
+def test_automation_apply_prints_the_keys_the_server_gave(monkeypatch):
+    from kizen_builder.tools.plans import ApplyResult, OperationResult
+
+    monkeypatch.setattr(
+        auto_planners, "plan_create_automation", lambda spec: _automation_plan({})
+    )
+    monkeypatch.setattr(
+        plan_tools,
+        "apply_plan",
+        lambda plan: ApplyResult(
+            plan_id=plan.id,
+            env=plan.env,
+            results=[
+                OperationResult(
+                    key="x",
+                    kind="automation",
+                    action="create",
+                    status="ok",
+                    step_keys={"wait": "s00_delay", "still_open": "s01_condition"},
+                )
+            ],
+        ),
+    )
+    spec = json.dumps({"api_name": "x", "name": "X", "steps": []})
+
+    result = runner.invoke(cli.app, ["automations", "create", "--yes"], input=spec)
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "step keys after the write: wait → s00_delay, still_open → s01_condition"
+        in result.stdout
+    )
+
+
+@pytest.mark.parametrize(
+    "spec_api_name, expect",
+    [(None, "x"), ("x", "x")],
+    ids=["fills", "matches"],
+)
+def test_automations_update_takes_the_api_name(monkeypatch, spec_api_name, expect):
+    seen = {}
+
+    def fake_planner(spec):
+        seen["spec"] = spec
+        return _fake_plan(action="update")
+
+    monkeypatch.setattr(auto_planners, "plan_update_automation", fake_planner)
+    spec = {"name": "X", "type": "global", "steps": []}
+    if spec_api_name:
+        spec["api_name"] = spec_api_name
+    result = runner.invoke(
+        cli.app,
+        ["automations", "update", "x", "--dry-run"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["spec"]["api_name"] == expect
+
+
+def test_automations_update_refuses_an_api_name_the_spec_contradicts(monkeypatch):
+    monkeypatch.setattr(
+        auto_planners,
+        "plan_update_automation",
+        lambda spec: pytest.fail("planned a mismatched update"),
+    )
+    spec = json.dumps({"api_name": "y", "name": "X", "steps": []})
+    result = runner.invoke(
+        cli.app, ["automations", "update", "x", "--dry-run"], input=spec
+    )
+    assert result.exit_code == 2
+    assert "error: the spec's api_name 'y' doesn't match 'x'" in result.stderr
 
 
 def test_automations_update_from_stdin_requires_yes(monkeypatch):
