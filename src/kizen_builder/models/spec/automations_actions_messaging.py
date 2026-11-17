@@ -227,13 +227,6 @@ class ActionAssignTeamMemberConfig(BaseModel):
     employee_ids: list[str] = Field(
         default_factory=list, description="The pool for `round_robin_team_members`."
     )
-    field_ref: str | None = Field(
-        default=None,
-        description=(
-            "'object.field' for field_id, resolved at plan time; a bare name "
-            "is on the automation's object."
-        ),
-    )
     field_id: str | None = Field(
         default=None,
         description=(
@@ -246,7 +239,7 @@ class ActionAssignTeamMemberConfig(BaseModel):
     field_ref: str | None = Field(
         default=None,
         description=(
-            "'object.field' reference, resolved to `field_id` at apply time. "
+            "'object.field' reference, resolved to `field_id` at plan time. "
             "For `related_team_selector_field`, qualify it with the far "
             "object: a bare name resolves against the automation's own object."
         ),

@@ -92,7 +92,7 @@ def test_skeleton_and_variants_check_with_no_order_warning():
     activity["parent_key"] = "delay"
     activity["action_schedule_activity"]["activity_type"] = "follow_up"
     auto["steps"] += [wait, activity]
-    changed = step_catalog.variant_spec("field_updated", "minimal")
+    changed = step_catalog.variant_spec("field_updated", "any_change")
     changed["trigger_field_updated"]["field_ref"] = "deals.name"
     auto["triggers"].append(changed)
     checked = automation_check.check_automation(auto)
