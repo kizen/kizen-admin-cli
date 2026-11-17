@@ -19,53 +19,55 @@
 │ --help                                  Show this message and exit.                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ apply              Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).    │
-│ upgrade            Update this CLI in place.                                                     │
-│ init               Set up this directory as a Kizen environment folder.                          │
-│ docs               Read the documentation that ships with this CLI.                              │
-│ envs               Discover and inspect configured envs.                                         │
-│ objects            Read objects, custom and built-in; create, update, and delete custom objects. │
-│ dashboards         Read, create, and update dashboards and homepages.                            │
-│ layouts            Read and update record layouts for a custom object.                           │
-│ records            Read individual records from a custom object.                                 │
-│ filters            Look up valid --filter operators (no live env needed).                        │
-│ team               Look up team members and change their roles.                                  │
-│ roles              Read and manage roles.                                                        │
-│ permissions        Read and manage permission groups + the permissions catalog.                  │
-│ service-accounts   Read and manage integration service accounts (run-tools-as identities). See   │
-│                    `kizen docs show service-account`.                                            │
-│ automations        Read, create, update, and run automations.                                    │
-│ messages           Email templates and automation-scoped messages — the content                  │
-│                    notify_member_via_email steps reference (see `kizen docs show                 │
-│                    email-templates`). Kizen's builder UI 'select email' picker only recognizes a │
-│                    message as selected when it's seeded from a real template; that's what        │
-│                    `create` does.                                                                │
-│ fields             Create and update fields on custom objects.                                   │
-│ categories         Create and update field categories on custom objects.                         │
-│ filter-groups      Per-object saved filters (segments): /filter-groups.                          │
-│ quick-filters      Per-object quick-filter chips: /quick-filters.                                │
-│ columns            Per-object saved column layouts: /columns.                                    │
-│ toolbar-templates  Toolbar templates: named top-of-page toolbars. Nothing here applies one to    │
-│                    anyone.                                                                       │
-│ activities         Read and edit activity types (loggable definitions) and their fields, read    │
-│                    logged instances, and manage scheduled ones. An 'activity' here is the        │
-│                    type/template; logging an activity is done in the Kizen UI by users.          │
-│ forms              Create, read, update, and delete forms, their fields, and their visual page   │
-│                    layout (form_ui).                                                             │
-│ surveys            Create, read, update, and delete surveys, their fields, and their visual page │
-│                    layout (form_ui).                                                             │
-│ mcp-servers        Read, create, update, and delete MCP servers.                                 │
-│ smart-connectors   Build, inspect, and iterate on smart connectors. Read verbs                   │
-│                    (list/get/executions/scripts/events/metadata) are safe. The local SQL loop is │
-│                    pull → run → push: `pull` builds a working directory, `run` executes          │
-│                    connector.sql against embedded ClickHouse (needs the 'connectors' extra),     │
-│                    `push` writes the SQL back to the draft and can publish it live. Building one │
-│                    from scratch runs create → set-input → (SQL loop) → generate-sample → push    │
-│                    --publish → configure-flow → activate → start-flow.                           │
-│ code               Unit-test code_step scripts in the live sandbox via `POST                     │
-│                    /api/coderunner/run`. Runs your script in the same Lambda as a real           │
-│                    `code_step`; `kizen.api` calls in it use real credentials and can write live  │
-│                    data. Asks y/N first (`--yes` skips).                                         │
+│ apply               Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).   │
+│ upgrade             Update this CLI in place.                                                    │
+│ init                Set up this directory as a Kizen environment folder.                         │
+│ docs                Read the documentation that ships with this CLI.                             │
+│ envs                Discover and inspect configured envs.                                        │
+│ objects             Read objects, custom and built-in; create, update, and delete custom         │
+│                     objects.                                                                     │
+│ dashboards          Read, create, and update dashboards and homepages.                           │
+│ layouts             Read and update record layouts for a custom object.                          │
+│ records             Read individual records from a custom object.                                │
+│ filters             Look up valid --filter operators (no live env needed).                       │
+│ team                Look up team members and change their roles.                                 │
+│ roles               Read and manage roles.                                                       │
+│ permissions         Read and manage permission groups + the permissions catalog.                 │
+│ service-accounts    Read and manage integration service accounts (run-tools-as identities). See  │
+│                     `kizen docs show service-account`.                                           │
+│ business-variables  Read and write business variables (business-wide merge-field values).        │
+│ automations         Read, create, update, and run automations.                                   │
+│ messages            Email templates and automation-scoped messages — the content                 │
+│                     notify_member_via_email steps reference (see `kizen docs show                │
+│                     email-templates`). Kizen's builder UI 'select email' picker only recognizes  │
+│                     a message as selected when it's seeded from a real template; that's what     │
+│                     `create` does.                                                               │
+│ fields              Create and update fields on custom objects.                                  │
+│ categories          Create and update field categories on custom objects.                        │
+│ filter-groups       Per-object saved filters (segments): /filter-groups.                         │
+│ quick-filters       Per-object quick-filter chips: /quick-filters.                               │
+│ columns             Per-object saved column layouts: /columns.                                   │
+│ toolbar-templates   Toolbar templates: named top-of-page toolbars. Nothing here applies one to   │
+│                     anyone.                                                                      │
+│ activities          Read and edit activity types (loggable definitions) and their fields, read   │
+│                     logged instances, and manage scheduled ones. An 'activity' here is the       │
+│                     type/template; logging an activity is done in the Kizen UI by users.         │
+│ forms               Create, read, update, and delete forms, their fields, and their visual page  │
+│                     layout (form_ui).                                                            │
+│ surveys             Create, read, update, and delete surveys, their fields, and their visual     │
+│                     page layout (form_ui).                                                       │
+│ mcp-servers         Read, create, update, and delete MCP servers.                                │
+│ smart-connectors    Build, inspect, and iterate on smart connectors. Read verbs                  │
+│                     (list/get/executions/scripts/events/metadata) are safe. The local SQL loop   │
+│                     is pull → run → push: `pull` builds a working directory, `run` executes      │
+│                     connector.sql against embedded ClickHouse (needs the 'connectors' extra),    │
+│                     `push` writes the SQL back to the draft and can publish it live. Building    │
+│                     one from scratch runs create → set-input → (SQL loop) → generate-sample →    │
+│                     push --publish → configure-flow → activate → start-flow.                     │
+│ code                Unit-test code_step scripts in the live sandbox via `POST                    │
+│                     /api/coderunner/run`. Runs your script in the same Lambda as a real          │
+│                     `code_step`; `kizen.api` calls in it use real credentials and can write live │
+│                     data. Asks y/N first (`--yes` skips).                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  New here? Run `kizen docs show operating` before making changes — it covers the approval gate and  
@@ -1256,6 +1258,70 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`             
+                                                                                                    
+                                                                                                    
+ Usage: business-variables [OPTIONS] COMMAND [ARGS]...                                              
+                                                                                                    
+ Read and write business variables (business-wide merge-field values).                              
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ list    List every business variable with its value.                                             │
+│ set     Create a business variable, or change its value or name.                                 │
+│ delete  Delete one business variable. Merge fields that use it stop resolving.                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: business-variables delete [OPTIONS] {api_name}                                              
+                                                                                                    
+ Delete one business variable. Merge fields that use it stop resolving.                             
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    api_name      <str>  Variable api_name. [required]                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dry-run            Show the plan without applying.                                             │
+│ --yes      -y        Skip the y/N confirmation prompt.                                           │
+│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --help               Show this message and exit.                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show business-variables`                             
+                                                                                                    
+                                                                                                    
+ Usage: business-variables list [OPTIONS]                                                           
+                                                                                                    
+ List every business variable with its value.                                                       
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show business-variables`                             
+                                                                                                    
+                                                                                                    
+ Usage: business-variables set [OPTIONS] {api_name}                                                 
+                                                                                                    
+ Create a business variable, or change its value or name.                                           
+                                                                                                    
+ Creating needs --name and --value. Other variables are left as they are.                           
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    api_name      <str>  Variable api_name. [required]                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --value            <str>  New value (may be empty).                                              │
+│ --name             <str>  Display name. Required when creating.                                  │
+│ --dry-run                 Show the plan without applying.                                        │
+│ --yes      -y             Skip the y/N confirmation prompt.                                      │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --help                    Show this message and exit.                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Endpoint behavior and quirks: see `kizen docs show business-variables`                             
                                                                                                     
                                                                                                     
  Usage: categories [OPTIONS] COMMAND [ARGS]...                                                      
@@ -5076,6 +5142,18 @@
 
 
 ===== automations update =====
+
+
+===== business-variables =====
+
+
+===== business-variables delete =====
+
+
+===== business-variables list =====
+
+
+===== business-variables set =====
 
 
 ===== categories =====

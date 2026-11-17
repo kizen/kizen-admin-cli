@@ -34,6 +34,8 @@ automation steps).
   schemas (`ReadAutomationExecution` / `LightAutomationHistoryWithDescription`)
   rather than captured live. They back `test_runs.py`'s endpoint-path and
   field-mapping regression tests.
+- `business/variables.json` — the `business_variables` list from
+  `GET /api/business/{id}`, captured 2026-11-12, values sanitized.
 - `errors/html_404.html` — the HTML body the API returns on 404 (e.g. a wrong
   path such as the old trailing-slash execution-detail URL), used to test
   error extraction.

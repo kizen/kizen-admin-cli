@@ -28,6 +28,7 @@ the wire formats, endpoints, and confirmed quirks together.
 | Roles & permission groups | `permission-group` |
 | Team members and their roles | `team` |
 | Service accounts (run-tools-as identities) | `service-account` |
+| Business variables (`business_variable.*` merge fields) | `business-variables` |
 | Smart connectors (API + local dev loop) | `smart-connectors` |
 | A connector's flow spec (`configure-flow`) | `smart-connector-flow` |
 | Email templates & automation messages | `email-templates` |

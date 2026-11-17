@@ -131,6 +131,7 @@ src/kizen_builder/
     client.py                    #   the shared httpx client + auth headers + GET retry; paginate() follows DRF next links
     activities.py                #   activity-type (loggable definition) CRUD
     automations.py               #   automation CRUD (automation2 namespace)
+    business.py                  #   business record: its business_variables list (read + replace)
     coderunner.py                #   POST /api/coderunner/run — code_step sandbox runner
     custom_objects.py            #   custom-object / category / field CRUD
     dashboards.py                #   dashboard + dashlet CRUD, sharing settings
@@ -154,6 +155,7 @@ src/kizen_builder/
   tools/                         # Tool functions. What the CLI mostly calls.
     activities.py                #   list/get activity types + logged/scheduled reads
     automations.py               #   get/list/show/roundtrip/start, executions, step patching
+    business_variables.py        #   list business variables
     coderunner.py                #   run a code_step script standalone via /api/coderunner/run
     dashboards.py                #   list/detail, sharing helpers, config builders
     dashlet_templates.py         #   generate a ready-to-edit dashlet config by type
@@ -194,6 +196,7 @@ src/kizen_builder/
     planners/                    #   plan_* tools — produce Plans, never mutate
       activities.py              #     plan_create/update/delete activity types + fields
       automations.py             #     plan_create_automation, plan_update_automation
+      business_variables.py      #     plan_set/delete one business variable (whole-list PATCH)
       dashboards.py              #     plan_create_dashboard, plan_update_dashboard
       fields.py                  #     plan_create_field, plan_update_field
       forms.py                   #     plan_create/update/delete forms/surveys + fields
@@ -232,6 +235,7 @@ src/kizen_builder/
     team.py                      #   kizen team
     permissions.py               #   kizen roles + kizen permissions
     service_accounts.py          #   kizen service-accounts
+    business_variables.py        #   kizen business-variables
     automations.py               #   kizen automations — reads, start, diagnostics
     steps.py                     #   kizen automations steps
     messages.py                  #   kizen messages
@@ -435,6 +439,7 @@ The target comes from your shell, so it stays out of the repo.
 | …automations | `test_roundtrip_automations.py` | The same, for **every** wired step and trigger type rather than one representative payload. Two meta-tests reconcile the covered set against `_STEP_BUILDERS`/`_TRIGGER_BUILDERS`. |
 | …records | `test_roundtrip_records.py` | Create/update/upsert (both branches)/bulk-field-value/delete against a real object, including the bare-scalar `bulk-change-field-value` wire quirk and a delete-then-refetch 404. |
 | …filtering | `test_roundtrip_filtering.py` | The DSL resolved to a real search query against real records — that the *right records* come back, not just the shape — plus a filter-group round trip proving a read-back `config` is wire-shaped passthrough. |
+| …business variables | `test_roundtrip_business_variables.py` | Create, update and delete through the whole-list PATCH leave every other variable unchanged by id, and apply refuses a plan another write made stale. |
 | Fixture fidelity | `test_fixture_fidelity.py` | Whether the committed `tests/fixtures/*.json` files still match live shape, as a structural key-shape diff: fixture keys must exist live, extra live keys are fine. |
 
 Fixtures shared by more than one round-trip module (`drift_object`,

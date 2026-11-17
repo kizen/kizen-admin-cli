@@ -30,6 +30,7 @@ field Kizen rejected.
 | `permissions group-create\|group-update`, `roles …` | [permission-group.md](permission-group.md) | shaping-op list (`--settings-file`) |
 | `team search\|get\|update` | [team.md](team.md) | — |
 | `service-accounts …` (flag-driven) | [service-account.md](service-account.md) | — |
+| `business-variables list\|set\|delete` | [business-variables.md](business-variables.md) | — |
 | `smart-connectors` (all but `configure-flow`) | [smart-connectors.md](smart-connectors.md) | — |
 | `smart-connectors configure-flow` | [smart-connector-flow.md](smart-connector-flow.md) | execution variables + load steps |
 | `messages …`, `messages templates create\|update\|craft-config` (and email template ground truth) | [email-templates.md](email-templates.md) | `EmailTemplateDef` (templates) |

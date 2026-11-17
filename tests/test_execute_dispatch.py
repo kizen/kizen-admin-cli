@@ -516,6 +516,24 @@ ROWS = [
         "columns",
         served={"roles", "users", "permission_groups"},
     ),
+    # The GET is the stale-plan guard; the catch-all's body has no variables,
+    # so a payload holding only the op's own variable passes it.
+    *[
+        _row(
+            "business_variable",
+            action,
+            {"existing_uuid": E, "payload": {"business_variables": variables}},
+            [
+                ("GET", f"/api/business/{E}", None),
+                ("PATCH", f"/api/business/{E}", {"business_variables": variables}),
+            ],
+        )
+        for action, variables in (
+            ("create", [{"name": "K", "api_name": "k", "value_string": "v"}]),
+            ("update", [{"id": F, "name": "K", "api_name": "k", "value_string": "v"}]),
+            ("delete", []),
+        )
+    ],
 ]
 
 

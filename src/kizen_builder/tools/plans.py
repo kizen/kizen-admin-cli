@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from kizen_builder.api import activities as act_api
 from kizen_builder.api import automations as auto_api
+from kizen_builder.api import business as business_api
 from kizen_builder.api import custom_objects as co_api
 from kizen_builder.api import dashboards as dash_api
 from kizen_builder.api import files as files_api
@@ -115,6 +116,7 @@ Kind = Literal[
     "record_bulk_field_value",
     "record_import",
     "toolbar_template",
+    "business_variable",
 ]
 
 # Forms and surveys are structurally identical — one op-kind pair
@@ -1151,7 +1153,32 @@ def _execute(client: KizenClient, op: PlanOperation) -> Any:
             return tt_api.delete_toolbar_template(client, op.existing_uuid)
         return tt_api.update_toolbar_template(client, op.existing_uuid, op.payload)
 
+    if op.kind == "business_variable":
+        return _execute_business_variable(client, op)
+
     raise ValueError(f"unknown operation kind: {op.kind}")
+
+
+def _execute_business_variable(client: KizenClient, op: PlanOperation) -> Any:
+    """PATCH the business's whole variable list, after checking that no other
+    variable changed since planning: the list is a replace, so a stale one
+    would undo that change or delete a variable added in between."""
+    if op.existing_uuid is None:
+        raise PlanError(f"business_variable op '{op.key}' has no business id")
+    planned = op.payload["business_variables"]
+
+    def others(variables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return sorted(
+            (v for v in variables if v["api_name"] != op.key), key=lambda v: v["id"]
+        )
+
+    live = business_api.list_business_variables(client, op.existing_uuid)
+    if others(live) != others(planned):
+        raise PlanError(
+            "other business variables changed since this plan was built; plan it again"
+        )
+    saved = business_api.replace_business_variables(client, op.existing_uuid, planned)
+    return next((v for v in saved if v["api_name"] == op.key), {})
 
 
 def _patch_copy(
