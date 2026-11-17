@@ -75,15 +75,15 @@ called out explicitly under **Changed** or **Removed**.
 - **The automation spec page is now a short guide; per-step detail is in
   `kizen automations step-types show`.** `kizen docs show automation` opens
   with the build order and keeps the step graph, variables and what an update
-  keeps. The rules `--dry-run` enforces and the API wire detail are no longer
-  repeated there. The AI-reads-a-reply and knowledge-catalog examples moved
-  to `kizen docs show code-steps` and `kizen docs show mcp-server`.
-- **`docs show automation` and `docs show operating` are shorter and lead
-  with the rules.** Per-step notes now print with `step-types show <type>`,
-  worked examples moved to `docs show automation-patterns`, and environment
-  setup moved to `docs show environments`. The merge-field namespaces are in
-  `step-types concepts`, and what to check in the browser after a write is in
-  `docs show verifying`. The `step-types show` footer now reads "See also".
+  keeps; `kizen docs show operating` leads with the approval gate. Per-step
+  notes print with `step-types show <type>`, and the rules `--dry-run`
+  enforces and the API wire detail are no longer repeated. Worked examples
+  moved to `kizen docs show automation-patterns` (the AI-reads-a-reply and
+  knowledge-catalog ones to `docs show code-steps` and `docs show
+  mcp-server`), environment setup to `docs show environments`, and what to
+  check in the browser after a write to `docs show verifying`. The
+  merge-field namespaces are in `step-types concepts`, and the `step-types
+  show` footer now reads "See also".
 
 ### Fixed
 
