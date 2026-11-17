@@ -1377,8 +1377,11 @@ def test_a_math_operation_its_subtype_refuses_is_a_finding(subtype, operation, m
     step["action_math_operator"]["simple_builder_arguments"][1]["operation_type"] = (
         operation
     )
-    f = _only(_errors(_spec(step)), path="action_math_operator")
+    f = _only(
+        _errors(_spec(step)), path="action_math_operator.simple_builder_arguments"
+    )
     assert f.message.startswith(message)
+    assert f.message.endswith("(argument 1)")
 
 
 def test_a_math_argument_needs_its_type_and_operation():

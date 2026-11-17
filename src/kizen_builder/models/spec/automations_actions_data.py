@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from kizen_builder.models.spec._base import ApiName
 from kizen_builder.models.spec.automations_shared import (
@@ -392,13 +399,17 @@ class ActionMathOperatorConfig(BaseModel):
         default=None, description="The terms, in order."
     )
 
-    @model_validator(mode="after")
-    def _operation_fits_subtype(self) -> Self:
-        allowed = _OPERATIONS.get(self.subtype or "", ())
-        for arg in self.simple_builder_arguments or ():
+    @field_validator("simple_builder_arguments")
+    @classmethod
+    def _operation_fits_subtype(
+        cls, args: list[MathArgument] | None, info: ValidationInfo
+    ) -> list[MathArgument] | None:
+        subtype = info.data.get("subtype")
+        allowed = _OPERATIONS.get(subtype or "", ())
+        for i, arg in enumerate(args or ()):
             if allowed and arg.operation_type not in allowed:
                 raise ValueError(
-                    f"{self.subtype} takes operation_type "
-                    f"{' or '.join(allowed)}, not {arg.operation_type}"
+                    f"{subtype} takes operation_type {' or '.join(allowed)}, "
+                    f"not {arg.operation_type} (argument {i})"
                 )
-        return self
+        return args
