@@ -200,8 +200,8 @@ An automation on the object sets Channel: a `new_entity_created` trigger, a
 condition that Channel is blank, then `change_field_value` with the option's
 label. A submission leaves Channel blank only because the form doesn't offer
 it. The blank check keeps the step off requests that arrived another way and
-were created with a channel. Triggers and steps are in `kizen docs show
-automation`.
+were created with a channel. Each trigger and step is on `kizen automations
+step-types show <type>`.
 
 ```json
 { "name": "Default the channel", "type": "record_based",

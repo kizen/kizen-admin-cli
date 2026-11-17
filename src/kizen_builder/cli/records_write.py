@@ -519,8 +519,8 @@ def records_set_field(
     Wraps the bulk-change-field-value endpoint — a single request instead of
     N per-record PATCHes. Targets an explicit list of record UUIDs; filtering
     a large record set to build that list first is `records list --filter`'s
-    job (there's no server-side bulk-by-filter wired up here yet — see
-    `kizen docs show automation`).
+    job (there's no server-side bulk-by-filter wired up here yet; an automation
+    can act on every matching record: `kizen docs show automation-patterns`).
     """
     ids = list(record_id or [])
     if not ids:

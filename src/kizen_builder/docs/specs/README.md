@@ -18,6 +18,7 @@ field Kizen rejected.
 | `fields create` (bulk) | [field.md](field.md) | `FieldDef` list |
 | `records create\|update\|upsert\|import\|archive` (bulk), `records set-field` | [records.md](records.md) | CSV / JSON rows |
 | `automations create\|update\|diff\|roundtrip\|llm-models` | [automation.md](automation.md) | `AutomationDef` (triggers + step graph) |
+| — (worked multi-step automations) | [automation-patterns.md](automation-patterns.md) | — |
 | `automations steps edit\|add` | [automation-step.md](automation-step.md) | one step (patch / insert) |
 | `automations start\|runs …\|failures\|modification-history` | [automation-runtime.md](automation-runtime.md) | — |
 | `activities create`, `activities fields create` | [activity.md](activity.md) | `ActivityDef` / `ActivityFieldDef` |

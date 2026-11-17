@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import textwrap
 from typing import Any
 
 import typer
@@ -109,7 +110,7 @@ def _print_type(info: dict[str, Any]) -> None:
     echo(
         f"\nOne {kind} alone: kizen automations step-types show {name} "
         "--variant <name>\n"
-        f"Full schema: --json.  Run-time notes and patterns: {info['doc']}"
+        f"Full schema: --json.  See also: {info['doc']}"
     )
 
 
@@ -193,7 +194,7 @@ def types_concepts(
         typer.echo(json.dumps(step_catalog.CONCEPTS, indent=2))
         return
     for name, text in step_catalog.CONCEPTS.items():
-        typer.echo(f"{name}\n  {text}\n")
+        typer.echo(f"{name}\n{textwrap.indent(text, '  ')}\n")
 
 
 @types_app.command("skeleton", epilog=_EPILOG)

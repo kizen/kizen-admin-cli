@@ -148,7 +148,7 @@ class LlmDestinationConfig(BaseModel):
       `field`/`field_ref` are also accepted as the hop for this shape (the
       confirmed wire dialect repurposes `field` as the hop whenever
       `related_object_field` is present) but `relationship_field_ref` reads
-      clearer — see `kizen docs show automation`, "AI steps", for the
+      clearer — see `kizen automations step-types show call_llm` for the
       destinations a step can write.
     """
 

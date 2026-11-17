@@ -2521,7 +2521,7 @@ def _contact_creation_problem(
         f"step '{key}': Kizen can't create a Contact from create_related_entity "
         '("contact creation not supported"). Create it in a code_step with POST '
         '/records/client_client/add — see "Find or create a Contact by email" in '
-        "kizen docs show automation."
+        "kizen docs show automation-patterns."
     )
 
 
@@ -2824,7 +2824,7 @@ def _is_single_value_relationship(field: dict[str, Any]) -> bool:
 
 _KEYS_ARE_NOT_A_RUN = (
     "A complete selector only means the keys are there, not that a run "
-    "assigns anyone (see `kizen docs show automation`, assign_team_member)."
+    "assigns anyone (see `kizen automations step-types show assign_team_member`)."
 )
 
 

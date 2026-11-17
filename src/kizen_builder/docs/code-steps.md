@@ -277,8 +277,7 @@ the script finds no inbound email and outputs `""`, and nothing fails. A short
 
 **Bind the Contact's email, not its id.** On a Contacts automation, the
 Contact's id never reaches a script: the merge fields that would carry it
-arrive empty (see `kizen docs show automation`, "Merge-field namespace tokens
-by step type"). An input with `input_type: "field"` and `field_ref:
+arrive empty (see `kizen automations step-types concepts`, merge-fields). An input with `input_type: "field"` and `field_ref:
 "client_client.email"` arrives as the email, so the script looks the Contact up
 by it. Confirmed live 2026-10-30.
 

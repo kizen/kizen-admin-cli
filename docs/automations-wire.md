@@ -128,7 +128,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
 | `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` is read with no config block, and none is written. Confirmed live 2026-10-27 |
 | A loop's item variable read with `is_array_item_variable: true` and `source_array_variable: <array>` | echoed as read. The server sets both itself from the loop, so sending them is harmless and omitting them changes nothing. `diff` ignores both. Confirmed live 2026-10-27 |
-| Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see `kizen docs show automation`, "Extraction input" |
+| Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see `kizen automations step-types show file_content_extraction` |
 | `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
 
 `automation_variable_overrides` items carry a fixed key set on read, most null
@@ -193,7 +193,7 @@ strips volatile keys. Some survive it — `http_request` round-trips clean. A
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}`; the spec takes an api_name or UUID |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
 | `stage_updated` trigger | `from_stage`/`to_stage` (bare stage UUIDs, both required, null = any); the spec's stage name resolves; `stage_field` is ignored by Kizen and never sent |
-| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see `kizen docs show automation`, "Extraction input" |
+| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see `kizen automations step-types show file_content_extraction` |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string, or a list of them for checkboxes; a spec label resolves to it |
 | `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record`. Every target must be active, or Kizen 400s "Automation not found" for any record source; the CLI refuses it at plan time (`inactive_start_targets`) |
@@ -206,7 +206,7 @@ The `manual` trigger is prepended to every spec automatically if absent.
 ## Per-type wire behaviour
 
 What each type does on the wire that a spec author never sees. The author-facing
-half of each is in `kizen docs show automation`.
+half of each is on its card, `kizen automations step-types show <type>`.
 
 - **`email_received`.** Reads expand each selected inbox to `{id, email}`; the
   write takes bare UUIDs (`_trigger_email_received`). Confirmed live
@@ -308,7 +308,8 @@ returns, which the server silently ignores.
 `association_source` is `none`/`context_record`/`related_field`/
 `record_variable`/`variable_related_field` — **not** `relationship_field`/
 `automation_variable`, which 400 with *"… is not a valid choice"*. The
-rules for which source fits which object are in `kizen docs show automation`.
+rules for which source fits which object are on `kizen automations step-types
+show schedule_activity`.
 
 ### `schedule_activity.assigned_to`
 

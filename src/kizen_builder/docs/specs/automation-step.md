@@ -138,6 +138,5 @@ Consequences worth knowing:
 ## See also
 
 - `kizen automations step-types show <type>` — one step type's block.
-- `kizen docs show automation` — the graph rules and what steps do at run
-  time.
+- `kizen docs show automation` — the graph rules and what an update keeps.
 - `kizen docs show automation-runtime` — watching and controlling a run.

@@ -27,7 +27,7 @@ kizen automations step-types show <type>     # one type's config block: entries 
 kizen automations step-types show <type> --variant <name>   # just that entry as JSON, for a spec file or `steps add`
 kizen automations step-types skeleton [--object <api_name>] # a minimal automation spec to build on
 kizen automations step-types concepts        # ideas most steps share: who, when, variables, fields, value sources
-kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen docs show automation)
+kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen automations step-types show call_llm)
 kizen automations runs list <api_name>       # recent runs for an automation
 kizen automations runs view <exec_uuid>      # one run: summary + step-by-step trace (per-step status/duration)
 kizen automations runs view <exec_uuid> --no-steps   # summary only (status + record + start/finish)

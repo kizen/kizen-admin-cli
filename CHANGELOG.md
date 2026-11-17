@@ -73,12 +73,17 @@ called out explicitly under **Changed** or **Removed**.
   Before, it sent `overwrite`, which left the new record as the field's only
   link. A step with an `id` keeps its live value.
 - **The automation spec page is now a short guide; per-step detail is in
-  `kizen automations step-types show`.** `kizen docs show automation` keeps
-  the step graph, the multi-step patterns and what steps do at run time.
-  The rules `--dry-run` enforces and the API wire detail are no longer
+  `kizen automations step-types show`.** `kizen docs show automation` opens
+  with the build order and keeps the step graph, variables and what an update
+  keeps. The rules `--dry-run` enforces and the API wire detail are no longer
   repeated there. The AI-reads-a-reply and knowledge-catalog examples moved
-  to `kizen docs show code-steps` and `kizen docs show mcp-server`. The
-  `step-types show` footer now reads "Run-time notes and patterns".
+  to `kizen docs show code-steps` and `kizen docs show mcp-server`.
+- **`docs show automation` and `docs show operating` are shorter and lead
+  with the rules.** Per-step notes now print with `step-types show <type>`,
+  worked examples moved to `docs show automation-patterns`, and environment
+  setup moved to `docs show environments`. The merge-field namespaces are in
+  `step-types concepts`, and what to check in the browser after a write is in
+  `docs show verifying`. The `step-types show` footer now reads "See also".
 
 ### Fixed
 

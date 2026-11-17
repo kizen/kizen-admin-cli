@@ -362,6 +362,66 @@ def test_assign_team_member_variants_build_a_payload(patch_live_lookups):
         assert "field_ref" not in block
 
 
+def test_modify_related_entities_variant_builds_a_payload(patch_live_lookups):
+    for variant, block in _built_variants("modify_related_entities"):
+        assert block["fields_to_modify"], variant.name
+
+
+# Each per-type section the automation doc used to carry now lives on that
+# type's card. One key sentence per section proves it moved, not vanished.
+_MOVED_NOTES = [
+    ("webhook", "?business_id=<uuid>"),
+    ("on_or_around_date", "9 pm"),
+    ("schedule", "no time-zone field"),
+    ("email_received", "only client custom object"),
+    ("activity_logged", "Branching on what someone logged"),
+    ("scheduled_activity_overdue", "Branching on what someone logged"),
+    ("form_submitted", "does not exist"),
+    ("survey_submitted", "does not exist"),
+    ("stage_updated", "made by another automation"),
+    ("goal", "while the run waits"),
+    ("change_field_value", "no move-stage step"),
+    ("plugin_code_step", "preview install"),
+    ("create_related_entity", "context_entity_field_resolution"),
+    ("modify_related_entities", "hop chain"),
+    ("file_content_extraction", "single-valued"),
+    ("audio_transcription", "single-valued"),
+    ("call_llm", "is_advanced: true"),
+    ("call_llm", "MCP tools"),
+    ("notify_member_via_email", "A template"),
+    ("stop_execution", "pause_and_error"),
+    ("schedule_activity", "19:48"),
+    ("schedule_activity", "target_variable"),
+    ("schedule_activity", "context_record"),
+    ("assign_team_member", "writes only this record's `owner`"),
+    ("code_step", "secret"),
+]
+
+
+@pytest.mark.parametrize(("type_name", "sentence"), _MOVED_NOTES)
+def test_moved_section_is_on_its_card(type_name, sentence):
+    notes = "\n".join(step_catalog.describe(type_name).get("notes", []))
+    assert sentence in notes
+
+
+@pytest.mark.parametrize(
+    "type_name",
+    [
+        "call_llm",
+        "notify_member_via_email",
+        "notify_member_via_text",
+        "send_related_contact_email",
+        "send_related_contact_text",
+    ],
+)
+def test_text_steps_point_at_the_merge_field_table(type_name):
+    assert step_catalog._MERGE_FIELDS_NOTE in step_catalog.describe(type_name)["notes"]
+
+
+def test_merge_field_table_is_a_concept():
+    assert "entity_record.<field>" in step_catalog.CONCEPTS["merge-fields"]
+
+
 # --- CLI ------------------------------------------------------------------
 
 

@@ -190,7 +190,8 @@ def autos_llm_models(
     """List this business's enabled LLM models for call_llm/file_content_extraction/
     audio_transcription/condition llm_decision steps, with each provider's
     business_plugin_app_id. The CLI fills a step's business_plugin_app_id
-    from this list, so a spec needs only model_name — see automation.md.
+    from this list, so a spec needs only model_name — see `kizen automations
+    step-types show call_llm`.
     """
     fmt = out.resolve_format(output, json_out)
     with cli_errors():

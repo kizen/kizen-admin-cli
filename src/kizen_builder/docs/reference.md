@@ -15,6 +15,7 @@ the wire formats, endpoints, and confirmed quirks together.
 | Custom fields, relationship fields, options | `field` |
 | Records (CRUD, bulk, upsert, set-field) | `records` |
 | An automation's definition | `automation` |
+| Worked multi-step automations | `automation-patterns` |
 | One step of an existing automation | `automation-step` |
 | Starting / watching / controlling a run | `automation-runtime` |
 | The Python inside a `code_step` | `code-steps` |
