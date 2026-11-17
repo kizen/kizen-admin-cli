@@ -87,11 +87,35 @@ def test_skeleton_is_a_valid_automation(target):
     assert len(auto.steps) == 1
 
 
+def test_aliases_name_wired_types_only():
+    wired = set(ALL_TYPES)
+    assert not set(step_catalog.ALIASES) & wired
+    for alias, targets in step_catalog.ALIASES.items():
+        assert targets and set(targets) <= wired, alias
+
+
+@pytest.mark.parametrize(
+    ("given", "meant"),
+    [("wait", "delay"), ("field_changed", "field_updated"), ("delay", "delay")],
+)
+def test_resolve_takes_an_alias_with_one_target(given, meant):
+    assert step_catalog.resolve(given) == meant
+
+
+def test_alias_with_several_targets_lists_them():
+    with pytest.raises(step_catalog.UnknownType) as e:
+        step_catalog.resolve("send_email")
+    assert str(e.value) == (
+        "'send_email' isn't a type name. It could be:\n"
+        f"  notify_member_via_email: {STEP_PURPOSES['notify_member_via_email']}\n"
+        f"  send_related_contact_email: {STEP_PURPOSES['send_related_contact_email']}"
+    )
+
+
 @pytest.mark.parametrize(
     ("given", "meant"),
     [
         ("create_activity", "'schedule_activity'"),
-        ("send_email", "'notify_member_via_email' or 'send_related_contact_email'"),
         ("shedule_activity", "'schedule_activity'"),
         ("trigger_manual", "'manual'"),
     ],
@@ -199,7 +223,9 @@ def test_cli_json_carries_the_schema():
 
 
 def test_cli_unknown_type_and_variant_exit_2():
-    r = runner.invoke(cli.app, ["automations", "step-types", "show", "create_activity"])
+    r = runner.invoke(
+        cli.app, ["automations", "step-types", "show", "shedule_activity"]
+    )
     assert r.exit_code == 2
     assert "Did you mean 'schedule_activity'" in r.output
     r = runner.invoke(
@@ -219,6 +245,59 @@ def test_cli_list_json_rows():
     assert {r["kind"] for r in rows} == {"step", "trigger"}
     r = runner.invoke(cli.app, ["automations", "step-types", "list"])
     assert r.exit_code == 0 and "schedule_activity" in r.output
+    assert "action_schedule_activity" not in r.output
+    r = runner.invoke(cli.app, ["automations", "step-types", "list", "-o", "csv"])
+    assert r.output.splitlines()[0] == "type,kind,purpose,variants"
+
+
+def test_cli_show_alias_shows_its_type():
+    r = runner.invoke(cli.app, ["automations", "step-types", "show", "wait"])
+    assert r.exit_code == 0, r.output
+    first, second = r.stdout.splitlines()[:2]
+    assert first == "'wait' isn't a type name; showing delay."
+    assert second.startswith("delay (step):")
+
+
+@pytest.mark.parametrize("extra", [["--json"], ["--variant", "minimal"]])
+def test_cli_show_alias_note_goes_to_stderr_with_json(extra):
+    r = runner.invoke(cli.app, ["automations", "step-types", "show", "ai_step", *extra])
+    assert r.exit_code == 0, r.output
+    assert r.stderr.strip() == "'ai_step' isn't a type name; showing call_llm."
+    out = json.loads(r.stdout)
+    assert out.get("type", out.get("step_type")) == "call_llm"
+
+
+def test_cli_show_alias_with_several_targets_exits_2():
+    r = runner.invoke(cli.app, ["automations", "step-types", "show", "send_text"])
+    assert r.exit_code == 2
+    lines = r.stderr.splitlines()
+    assert lines[0] == "error: 'send_text' isn't a type name. It could be:"
+    assert [line.split(":")[0] for line in lines[1:]] == [
+        "  notify_member_via_text",
+        "  send_related_contact_text",
+    ]
+
+
+def test_trigger_cards_say_a_trigger_has_no_key():
+    note = "A trigger has no key; steps refer to triggers by position."
+    for name in step_catalog.TRIGGER_TYPES:
+        assert note in step_catalog.describe(name)["notes"], name
+    assert "notes" not in step_catalog.describe("delay")
+
+
+def test_condition_card_leads_with_llm_decision():
+    variants = step_catalog.describe("condition")["variants"]
+    assert [v["name"] for v in variants] == ["llm_decision", "minimal"]
+    block = variants[0]["spec"]["step_condition"]
+    assert block["type"] == "llm_decision"
+    assert set(block["llm_decision"]) == {"model_name", "prompt"}
+    assert variants[1]["spec"]["step_condition"] == {}
+
+
+def test_schedule_activity_has_a_round_robin_variant():
+    spec = step_catalog.variant_spec("schedule_activity", "round_robin")
+    assigned = spec["action_schedule_activity"]["assigned_to"]
+    assert assigned == {"assignment_type": "round_robin_all"}
 
 
 def test_cli_show_finds_a_trigger():

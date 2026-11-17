@@ -119,13 +119,12 @@ def types_list(output: str = OUTPUT_OPTION, json_out: bool = JSON_OPTION) -> Non
 
     def table() -> None:
         t = Table(title="Step and trigger types")
-        for column in ("type", "kind", "block", "purpose", "variants"):
+        for column in ("type", "kind", "purpose", "variants"):
             t.add_column(column)
         for r in rows:
             t.add_row(
                 r["type"],
                 r["kind"],
-                r["block"] or "",
                 r["purpose"],
                 ", ".join(r["variants"]),
             )
@@ -140,7 +139,6 @@ def types_list(output: str = OUTPUT_OPTION, json_out: bool = JSON_OPTION) -> Non
         csv_columns=[
             out.Column("type", "type"),
             out.Column("kind", "kind"),
-            out.Column("block", "block"),
             out.Column("purpose", "purpose"),
             out.Column("variants", lambda r: ", ".join(r["variants"])),
         ],
@@ -163,17 +161,21 @@ def types_show(
     ),
 ) -> None:
     """Show one step or trigger type: entries to start from, the keys each
-    choice needs, every field, and the values to look up first."""
+    choice needs, every field, and the values to look up first. A common
+    name such as `wait` or `ai_step` shows the type it stands for."""
     try:
-        if variant:
-            typer.echo(
-                json.dumps(step_catalog.variant_spec(type_name, variant), indent=2)
-            )
-            return
-        info = step_catalog.describe(type_name)
+        name = step_catalog.resolve(type_name)
+        info = (
+            step_catalog.variant_spec(name, variant)
+            if variant
+            else step_catalog.describe(name)
+        )
     except step_catalog.UnknownType as e:
         raise _unknown(e) from e
-    if json_out:
+    if name != type_name:
+        note = f"'{type_name}' isn't a type name; showing {name}."
+        typer.echo(note, err=bool(variant or json_out))
+    if variant or json_out:
         typer.echo(json.dumps(info, indent=2))
         return
     _print_type(info)

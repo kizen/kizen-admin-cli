@@ -41,9 +41,30 @@ STEP_TYPES: tuple[str, ...] = tuple(sorted({*_STEP_BUILDERS, *_CONFIGLESS_STEP_T
 TRIGGER_TYPES: tuple[str, ...] = tuple(sorted(_TRIGGER_BUILDERS))
 
 # Names agents reach for that aren't wired, and the wired types they mean.
+# `step-types show` takes a name with one target as that type.
+_EMAIL = ("notify_member_via_email", "send_related_contact_email")
+_TEXT = ("notify_member_via_text", "send_related_contact_text")
 ALIASES: dict[str, tuple[str, ...]] = {
+    "ai": ("call_llm",),
+    "ai_step": ("call_llm",),
+    "llm": ("call_llm",),
+    "set_field": ("change_field_value",),
+    "update_field": ("change_field_value",),
+    "update_record": ("change_field_value",),
+    "wait": ("delay",),
     "create_activity": ("schedule_activity",),
-    "send_email": ("notify_member_via_email", "send_related_contact_email"),
+    "archive_entity": ("archive_record",),
+    "merge": ("merge_branches",),
+    "ai_decision": ("condition",),
+    "llm_decision": ("condition",),
+    "send_email": _EMAIL,
+    "send_sms": _TEXT,
+    "send_text": _TEXT,
+    "send_text_message": _TEXT,
+    "send_team_member_text": ("notify_member_via_text",),
+    "field_change": ("field_updated",),
+    "field_changed": ("field_updated",),
+    "date_field": ("on_or_around_date",),
 }
 
 
@@ -259,6 +280,15 @@ _SCHEDULE_ACTIVITY = Guide(
                 "target_variable": "<uuid or string variable>",
             },
         ),
+        Variant(
+            "round_robin",
+            "Assigned to each team member in turn.",
+            {
+                "activity_type": "<activity api_name>",
+                "schedule": {"type": "immediately"},
+                "assigned_to": {"assignment_type": "round_robin_all"},
+            },
+        ),
     ),
     selectors=(
         Selector(
@@ -386,7 +416,35 @@ _CREATE_RELATED_ENTITY = Guide(
     concepts=("field", "variable", "merge-fields"),
 )
 
+# The llm_decision block is the call_llm keys, untyped in the model, so the
+# derived card can't show it.
+_CONDITION = Guide(
+    variants=(
+        Variant(
+            "llm_decision",
+            "An LLM answers a yes/no question about the record.",
+            {
+                "type": "llm_decision",
+                "llm_decision": {
+                    "model_name": "<model_name>",
+                    "prompt": "<a yes/no question; fields as {{ custom_objects.<field> }}>",
+                },
+            },
+        ),
+        Variant("minimal", "No required keys.", {}),
+    ),
+    lookups=(
+        Lookup(
+            "llm_decision.model_name",
+            "kizen automations llm-models",
+            "a model with a mark under decision",
+        ),
+    ),
+    concepts=("filter", "merge-fields"),
+)
+
 _STEP_GUIDES: dict[str, Guide] = {
+    "condition": _CONDITION,
     "create_related_entity": _CREATE_RELATED_ENTITY,
     "schedule_activity": _SCHEDULE_ACTIVITY,
 }
@@ -422,6 +480,7 @@ class _Kind:
     purposes: dict[str, str]
     guides: dict[str, Guide]
     known: dict[str, dict[str, KnownChoices]]
+    notes: tuple[str, ...] = ()
 
 
 _STEP = _Kind(
@@ -443,6 +502,7 @@ _TRIGGER = _Kind(
     TRIGGER_PURPOSES,
     _TRIGGER_GUIDES,
     KNOWN_ENUM_CHOICES_TRIGGERS,
+    notes=("A trigger has no key; steps refer to triggers by position.",),
 )
 # No step and trigger share a name; a test keeps it that way, so a name alone
 # finds its kind.
@@ -453,6 +513,10 @@ def _kind_of(type_name: str) -> _Kind:
     for kind in _KINDS:
         if type_name in kind.types:
             return kind
+    targets = ALIASES.get(type_name, ())
+    if len(targets) > 1:
+        lines = "\n".join(f"  {t}: {_kind_of(t).purposes[t]}" for t in targets)
+        raise UnknownType(f"'{type_name}' isn't a type name. It could be:\n{lines}")
     wired = [*STEP_TYPES, *TRIGGER_TYPES]
     close = difflib.get_close_matches(type_name, wired, n=3)
     meant = list(dict.fromkeys([*ALIASES.get(type_name, ()), *close]))
@@ -462,6 +526,17 @@ def _kind_of(type_name: str) -> _Kind:
         else "`kizen automations step-types list` lists every type."
     )
     raise UnknownType(f"'{type_name}' is not a wired step or trigger type. {hint}")
+
+
+def resolve(name: str) -> str:
+    """The wired type a name means: the name itself, or the one type an
+    alias stands for. Raises :class:`UnknownType` for anything else, an
+    alias with several types included."""
+    targets = ALIASES.get(name, ())
+    if len(targets) == 1:
+        return targets[0]
+    _kind_of(name)
+    return name
 
 
 def _block_model(kind: _Kind, type_name: str) -> type[BaseModel] | None:
@@ -666,6 +741,8 @@ def describe(type_name: str) -> dict[str, Any]:
         ]
         out["notes"] = list(guide.notes)
         out["concepts"] = {name: CONCEPTS[name] for name in guide.concepts}
+    if kind.notes:
+        out["notes"] = [*kind.notes, *out.get("notes", [])]
     if schema:
         out["schema"] = schema
     return out

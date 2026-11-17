@@ -1149,7 +1149,8 @@
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
 │ list      List every step and trigger type this CLI can write.                                   │
 │ show      Show one step or trigger type: entries to start from, the keys each                    │
-│           choice needs, every field, and the values to look up first.                            │
+│           choice needs, every field, and the values to look up first. A common                   │
+│           name such as `wait` or `ai_step` shows the type it stands for.                         │
 │ concepts  The ideas most step types share: who, when, variables, fields, value                   │
 │           sources, filters, merge fields.                                                        │
 │ skeleton  Print a minimal automation spec as JSON: name, api_name, type,                         │
@@ -1185,7 +1186,8 @@
  Usage: automations step-types show [OPTIONS] {TYPE}                                                
                                                                                                     
  Show one step or trigger type: entries to start from, the keys each choice needs, every field, and 
- the values to look up first.                                                                       
+ the values to look up first. A common name such as `wait` or `ai_step` shows the type it stands    
+ for.                                                                                               
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    TYPE      <str>  A step or trigger type, from `step-types list`. [required]                 │
