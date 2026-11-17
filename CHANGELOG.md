@@ -16,10 +16,11 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
-- **SmartConnector SQL parameters can be set.** `kizen smart-connectors
-  set-sql-params <connector> --param name=value` (repeatable) sets the values a
-  script reads from `meta.parameters`. Names you don't pass keep their value,
-  and the change applies to the next run with no publish.
+- **SmartConnector SQL parameters can be set and removed.** `kizen
+  smart-connectors set-sql-params <connector> --param name=value` sets the
+  values a script reads from `meta.parameters`, and `--unset name` removes one.
+  Both are repeatable. Names you don't pass keep their value, and the change
+  applies to the next run with no publish.
 
 ### Fixed
 

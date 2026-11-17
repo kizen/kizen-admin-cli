@@ -58,14 +58,15 @@ package's `__config.json` is built from.
 
 A connector-level name → value hash, e.g. `{"wtsc_parameter_1": "test value"}`.
 The script reads it as the table `meta.parameters` (`name String, value
-String`); the runner stringifies each value. `set-sql-params` writes it.
+String`); the runner stringifies each value. `set-sql-params` sets and
+removes entries.
 
 - **It lives on the connector, not the script**, so there's no draft or
   publish: `PATCH /api/smart-connectors/{connector}` with `{"sql_parameters":
   {...}}`, and the next run reads the new values.
 - **The PATCH replaces the whole hash.** `set-sql-params` reads the live
-  values and sends the merged hash, so names you don't pass keep their value.
-  Confirmed live 2026-11-17.
+  values and sends the merged hash, so names you don't pass keep their value
+  and `--unset` removes a name by leaving it out. Confirmed live 2026-11-17.
 - `start-connector-flow` also accepts `sql_parameters`, merged over the
   connector's for that one run only.
 - `pull` copies them into `__config.json`; re-`pull` after changing them to

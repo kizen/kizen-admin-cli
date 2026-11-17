@@ -756,9 +756,12 @@ def smart_connectors_configure_flow(
 def smart_connectors_set_sql_params(
     connector: str = typer.Argument(..., help="Connector UUID or api_name."),
     param: list[str] = typer.Option(
-        ...,
+        [],
         "--param",
         help="name=value to set. Repeatable. Names not given keep their value.",
+    ),
+    unset: list[str] = typer.Option(
+        [], "--unset", help="Name of a parameter to remove. Repeatable."
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show the change without applying."
@@ -768,8 +771,8 @@ def smart_connectors_set_sql_params(
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
-    """Set the connector's SQL parameters — the name/value pairs its script
-    reads from `meta.parameters`.
+    """Set or remove the connector's SQL parameters — the name/value pairs its
+    script reads from `meta.parameters`.
 
     Saved on the connector, not the script: no publish is needed, and the next
     run reads the new values.
@@ -780,17 +783,21 @@ def smart_connectors_set_sql_params(
         if not sep or not name:
             raise typer.BadParameter(f"--param must be name=value (got {item!r}).")
         params[name] = value
+    if not params and not unset:
+        raise typer.BadParameter("pass at least one --param or --unset.")
+    if both := sorted(set(params) & set(unset)):
+        raise typer.BadParameter(f"both set and unset: {', '.join(both)}.")
 
     with _connector_errors():
-        plan = sc_tools.plan_set_sql_params(connector, params)
+        plan = sc_tools.plan_set_sql_params(connector, params, unset)
     name = escape(plan["connector_api_name"] or connector)
 
     if not plan["changed"]:
         if json_out:
-            out.emit_json({**plan, "changed": False})
+            out.emit_json(plan)
         else:
             console.print(
-                f"[dim]{name} already has those SQL parameters.[/dim]", emoji=False
+                f"[dim]No change to {name}'s SQL parameters.[/dim]", emoji=False
             )
         return
 
@@ -805,11 +812,13 @@ def smart_connectors_set_sql_params(
             else:
                 continue
             target.print(f"  {escape(line)}", emoji=False)
+        for key in sorted(before.keys() - after.keys()):
+            target.print(f"  {escape(f'- {key}')}", emoji=False)
 
     if not _preview_and_confirm(
         plan,
         render=render,
-        action=f"set {len(params)} SQL parameter(s)",
+        action="change SQL parameters",
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,

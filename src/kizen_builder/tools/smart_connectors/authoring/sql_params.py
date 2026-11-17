@@ -11,11 +11,14 @@ from kizen_builder.config import load_env_config
 from kizen_builder.tools.smart_connectors.authoring._helpers import _connector_ref
 
 
-def plan_set_sql_params(connector: str, params: dict[str, str]) -> dict[str, Any]:
-    """Preview setting ``params`` on the connector, merged over what it has.
+def plan_set_sql_params(
+    connector: str, params: dict[str, str], unset: list[str] | None = None
+) -> dict[str, Any]:
+    """Preview setting ``params`` and removing ``unset`` on the connector.
 
     The PATCH replaces ``sql_parameters`` whole, so the plan carries the full
-    merged dict: names not given keep their live values.
+    resulting dict: names not given keep their live values. Unsetting a name
+    the connector doesn't have changes nothing.
     """
     config = load_env_config()
     with KizenClient(config) as client:
@@ -23,6 +26,8 @@ def plan_set_sql_params(connector: str, params: dict[str, str]) -> dict[str, Any
 
     current = detail.get("sql_parameters") or {}
     merged = {**current, **params}
+    for name in unset or []:
+        merged.pop(name, None)
     return {
         "env": config.name,
         "connector": _connector_ref(detail),

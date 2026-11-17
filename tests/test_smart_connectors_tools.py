@@ -591,7 +591,7 @@ def test_set_sql_params_skips_the_write_when_nothing_changes():
     result = _set_sql_params("--param", "wtsc_parameter_1=test value", "--yes")
 
     assert result.exit_code == 0, result.output
-    assert "already has those SQL parameters" in result.output
+    assert "No change to upload_counties's SQL parameters" in result.output
     assert not write.called
 
 
@@ -601,4 +601,44 @@ def test_set_sql_params_rejects_a_param_without_equals_before_any_call():
 
     assert result.exit_code == 2
     assert "name=value" in result.output
+    assert not respx.calls
+
+
+@respx.mock
+def test_set_sql_params_unset_removes_only_the_named_param():
+    detail = {
+        **DETAIL,
+        "sql_parameters": {"region": "west", "wtsc_parameter_1": "test value"},
+    }
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    write = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200,
+            json={"api_name": "upload_counties", "sql_parameters": {"region": "west"}},
+        )
+    )
+
+    dry = _set_sql_params("--unset", "wtsc_parameter_1", "--dry-run")
+    assert dry.exit_code == 0, dry.output
+    assert "- wtsc_parameter_1" in dry.output
+    assert not write.called
+
+    result = _set_sql_params("--unset", "wtsc_parameter_1", "--yes")
+    assert result.exit_code == 0, result.output
+    assert json.loads(write.calls.last.request.content) == {
+        "sql_parameters": {"region": "west"}
+    }
+
+
+@respx.mock
+def test_set_sql_params_needs_a_change_and_no_name_both_set_and_unset():
+    none = _set_sql_params("--dry-run")
+    assert none.exit_code == 2
+    assert "at least one --param or --unset" in none.output
+
+    both = _set_sql_params("--param", "region=west", "--unset", "region")
+    assert both.exit_code == 2
+    assert "both set and unset: region" in both.output
     assert not respx.calls
