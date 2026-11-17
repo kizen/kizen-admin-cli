@@ -6,6 +6,13 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+# An on_or_around_date trigger or schedule counts days with these offsets.
+DAYS_OFFSETS = ("days_before", "days_after")
+DAYS_OFFSET_MESSAGE = (
+    "date_offset_days must be at least 1 with days_before or days_after; "
+    "use on_day for the day itself"
+)
+
 
 class TeamMemberConfig(BaseModel):
     """Select a team member by type (used in assign/notify/schedule_activity steps).

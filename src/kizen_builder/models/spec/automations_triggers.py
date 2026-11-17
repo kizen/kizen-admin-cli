@@ -6,6 +6,11 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kizen_builder.models.spec.automations_shared import (
+    DAYS_OFFSET_MESSAGE,
+    DAYS_OFFSETS,
+)
+
 
 class TriggerFieldUpdatedConfig(BaseModel):
     """Config for `trigger_type: field_updated`."""
@@ -171,6 +176,14 @@ class TriggerOnOrAroundDateConfig(BaseModel):
                 "(time is HH:MM on a 12-hour clock, period am or pm); only "
                 "on_day_and_time takes the time from the field itself"
             )
+        return self
+
+    # 0 or a left-out count is a 400: "This field is required with
+    # days_before or days_after" (confirmed live 2026-11-17).
+    @model_validator(mode="after")
+    def _days_with_days_offset(self) -> Self:
+        if self.date_offset in DAYS_OFFSETS and not self.date_offset_days:
+            raise ValueError(DAYS_OFFSET_MESSAGE)
         return self
 
 

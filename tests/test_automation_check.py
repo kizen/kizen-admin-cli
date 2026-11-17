@@ -834,7 +834,12 @@ def test_an_entity_variable_takes_an_object_api_name(patch_live_lookups):
 
 
 def _on_date(**block):
-    on_date = {"field_ref": "deals.close_date", "date_offset": "days_after", **block}
+    on_date = {
+        "field_ref": "deals.close_date",
+        "date_offset": "days_after",
+        "date_offset_days": 1,
+        **block,
+    }
     return _activity(
         schedule={"type": "on_or_around_date", "on_or_around_date": on_date}
     )
@@ -870,7 +875,7 @@ def _date_trigger(**block):
     ids=["no-time", "no-period"],
 )
 def test_a_date_trigger_without_time_is_an_error(block, needs):
-    triggers = _date_trigger(date_offset="days_before", **block)
+    triggers = _date_trigger(date_offset="days_before", date_offset_days=1, **block)
     spec = _spec(_set_mrn("a"), triggers=triggers)
     f = _only(_errors(spec), path="triggers[0].trigger_on_or_around_date")
     assert f"needs {needs} (" in f.message
@@ -879,7 +884,12 @@ def test_a_date_trigger_without_time_is_an_error(block, needs):
 @pytest.mark.parametrize(
     "block",
     [
-        {"date_offset": "days_before", "time": "09:00", "period": "am"},
+        {
+            "date_offset": "days_before",
+            "date_offset_days": 1,
+            "time": "09:00",
+            "period": "am",
+        },
         {"date_offset": "on_day_and_time"},
     ],
     ids=["time", "on_day_and_time"],
@@ -970,3 +980,25 @@ def test_on_day_and_time_on_a_datetime_field_builds(patch_live_lookups):
     (op,) = plan_create_automation(spec).operations
     trigger = op.payload["triggers"][1]["trigger_on_or_around_date"]
     assert trigger["date_offset"] == "on_day_and_time"
+
+
+@pytest.mark.parametrize("days", [{}, {"date_offset_days": 0}], ids=["none", "zero"])
+def test_a_days_after_trigger_needs_a_day_count(days):
+    block = {"date_offset": "days_after", "time": "09:00", "period": "am", **days}
+    spec = _spec(_set_mrn("a"), triggers=_date_trigger(**block))
+    f = _only(_errors(spec), path="triggers[0].trigger_on_or_around_date")
+    assert f.message.startswith("date_offset_days must be at least 1 with days_before")
+
+
+def test_a_days_before_schedule_needs_a_day_count():
+    spec = _spec(
+        _on_date(date_offset="days_before", date_offset_days=None, time="9:00")
+    )
+    f = _only(_errors(spec), step="act")
+    assert f.path == "action_schedule_activity.schedule.on_or_around_date"
+    assert "use on_day for the day itself" in f.message
+
+
+def test_a_schedule_day_count_from_a_variable_needs_no_static_count():
+    on_date = {"date_offset_days": None, "time": "09:00"}
+    check_automation(_spec(_on_date(date_offset_type="variable", **on_date)))

@@ -6,7 +6,11 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kizen_builder.models.spec.automations_shared import TeamMemberConfig
+from kizen_builder.models.spec.automations_shared import (
+    DAYS_OFFSET_MESSAGE,
+    DAYS_OFFSETS,
+    TeamMemberConfig,
+)
 
 
 class ActionSendEmailConfig(BaseModel):
@@ -385,6 +389,18 @@ class ScheduleOnOrAroundDateConfig(BaseModel):
                 "that doesn't take it (from_field, from_variable, or "
                 "hours/minutes before/after with time_offset_value)"
             )
+        return self
+
+    # A left-out count is a 400: "This field is required when
+    # date_offset_type is static" (confirmed live 2026-11-17).
+    @model_validator(mode="after")
+    def _days_with_days_offset(self) -> Self:
+        if (
+            self.date_offset in DAYS_OFFSETS
+            and self.date_offset_days is None
+            and (self.model_extra or {}).get("date_offset_type") in (None, "static")
+        ):
+            raise ValueError(DAYS_OFFSET_MESSAGE)
         return self
 
 
