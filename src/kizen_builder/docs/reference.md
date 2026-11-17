@@ -35,6 +35,8 @@ the wire formats, endpoints, and confirmed quirks together.
 | Files: upload, reference, download | `files` |
 | Filters — one DSL, six surfaces | `filters` |
 | One build across surfaces, start to finish | `examples` |
+| Profiles, credentials, app-builder variables | `environments` |
+| Checking what a write looks like on screen | `verifying` |
 
 `kizen docs list` is the live version of this table. Command **syntax** is
 always `kizen <group> <cmd> --help`; how to *operate* an environment is

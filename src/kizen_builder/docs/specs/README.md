@@ -51,5 +51,9 @@ with fields: create the object, then `categories create`, then `fields create`.
 - [`../filters.md`](../filters.md) — the filter DSL and wire format, shared by
   six surfaces.
 - [`../code-steps.md`](../code-steps.md) — writing the Python in a `code_step`.
+- [`../environments.md`](../environments.md) — profiles, the credential store,
+  and the app-builder variables.
+- [`../verifying.md`](../verifying.md) — what to check in the browser after a
+  write.
 - [`../reference.md`](../reference.md) — the router, plus conventions that hold
   across every surface.
