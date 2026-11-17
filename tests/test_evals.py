@@ -845,6 +845,17 @@ def test_the_judge_schemas_are_closed():
     ]["enum"] == list(judge.FRICTION_CAUSES)
 
 
+def test_no_credentials_is_a_judge_error(monkeypatch, tmp_path):
+    pytest.importorskip("anthropic")
+    from evals import judge
+
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(judge.JudgeError, match="could not be made"):
+        judge.call_claude(judge.DEFAULT_MODEL, "s", "u", judge.OUTCOME_SCHEMA)
+
+
 # --- the oracle --------------------------------------------------------------
 
 

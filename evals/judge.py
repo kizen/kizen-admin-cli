@@ -161,8 +161,9 @@ def call_claude(
         raise JudgeError(f"could not reach the API: {e}") from e
     except anthropic.APIStatusError as e:
         raise JudgeError(f"the API answered {e.status_code}: {e.message}") from e
-    except anthropic.AnthropicError as e:  # no credentials, bad configuration
-        raise JudgeError(str(e)) from e
+    except (anthropic.AnthropicError, TypeError) as e:
+        # The SDK raises a bare TypeError when it finds no credentials.
+        raise JudgeError(f"the judge call could not be made: {e}") from e
     if message.stop_reason != "end_turn":
         raise JudgeError(f"the judge stopped early: {message.stop_reason}")
     text = next((b.text for b in message.content if b.type == "text"), "")
