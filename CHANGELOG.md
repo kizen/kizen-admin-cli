@@ -28,10 +28,11 @@ called out explicitly under **Changed** or **Removed**.
   spec file or `steps add`, and `--json` adds the block's JSON Schema.
   `step-types list` names every wired step and trigger type,
   `step-types skeleton` prints a minimal automation to build on, and
-  `step-types concepts` covers what most steps share. An unwired name such
-  as `create_activity` gets the wired type it most likely means. The
-  automation doc's wired-type tables are gone; `step-types list` replaces
-  them.
+  `step-types concepts` covers what most steps share. `step-types show`
+  accepts common names such as `wait` and `ai_step`, and lists the types a
+  name like `send_email` could mean; any other unwired name gets the wired
+  type it most likely means. The automation doc's wired-type tables are
+  gone; `step-types list` replaces them.
 
 ### Changed
 

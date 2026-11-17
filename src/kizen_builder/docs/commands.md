@@ -23,7 +23,7 @@ kizen automations steps get <api> <key>      # one step's wire JSON (starting po
 kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms
 kizen automations diff <api_name> --spec-file <path>  # preview what `update` from this spec would change — read-only
 kizen automations step-types list            # every step and trigger type the CLI can write (no env needed)
-kizen automations step-types show <type>     # one type's config block: entries to copy, what each choice needs, every field (--json adds the JSON Schema)
+kizen automations step-types show <type>     # one type's config block: entries to copy, what each choice needs, every field (--json adds the JSON Schema); common names like `wait`, `ai_step` work too
 kizen automations step-types show <type> --variant <name>   # just that entry as JSON, for a spec file or `steps add`
 kizen automations step-types skeleton [--object <api_name>] # a minimal automation spec to build on
 kizen automations step-types concepts        # ideas most steps share: who, when, variables, fields, value sources
