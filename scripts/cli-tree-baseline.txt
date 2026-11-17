@@ -71,7 +71,9 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  New here? Run `kizen docs show operating` before making changes — it covers the approval gate and  
- the rules for acting on live state. `kizen docs list` shows every available topic.                 
+ the rules for acting on live state. `kizen docs list` shows every available topic. Piped or        
+ captured, tables print as plain `| a | b |` rows and docs as raw markdown; KIZEN_OUTPUT=terminal   
+ or KIZEN_OUTPUT=agent picks either form anywhere.                                                  
                                                                                                     
                                                                                                     
  Usage: activities [OPTIONS] COMMAND [ARGS]...                                                      
@@ -1826,7 +1828,8 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --rendered    --raw      Force rich rendering, or the raw markdown file. Default: rendered in a  │
-│                          terminal, raw when piped or captured.                                   │
+│                          terminal, raw when piped or captured (KIZEN_OUTPUT=terminal|agent       │
+│                          overrides the default).                                                 │
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     

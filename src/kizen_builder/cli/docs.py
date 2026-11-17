@@ -34,7 +34,8 @@ def docs_show(
         None,
         "--rendered/--raw",
         help="Force rich rendering, or the raw markdown file. "
-        "Default: rendered in a terminal, raw when piped or captured.",
+        "Default: rendered in a terminal, raw when piped or captured "
+        "(KIZEN_OUTPUT=terminal|agent overrides the default).",
     ),
 ) -> None:
     """Print one documentation topic.
@@ -57,7 +58,7 @@ def docs_show(
 
     text = path.read_text()
     if rendered is None:
-        rendered = sys.stdout.isatty()
+        rendered = not out.for_agent()
     if not rendered:
         # Bypass Console so the output is byte-faithful and pipe-safe.
         sys.stdout.write(text)

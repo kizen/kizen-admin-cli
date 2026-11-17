@@ -1,8 +1,9 @@
 """Objects every command module needs: the root Typer app, its callback and
-the group that ends any command on one `error:` line, the two consoles, the
-shared output-format options, `cli_errors()`, `exit_spec_errors()`, the
-user-file readers (`read_text_file`, `read_json_file`, `parse_json`),
-`warn_renamed_flag()`, and `_short`.
+the group that ends any command on one `error:` line, the two consoles (which
+print tables as plain rows when piped), the shared output-format options,
+`cli_errors()`, `exit_spec_errors()`, the user-file readers
+(`read_text_file`, `read_json_file`, `parse_json`), `warn_renamed_flag()`,
+and `_short`.
 
 Nothing here imports a command module, so every other module in the
 package can import this one.
@@ -11,22 +12,26 @@ package can import this one.
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, NoReturn
 
 import typer
 from pydantic import ValidationError
-from rich.console import Console
+from rich.console import Console, RenderableType
 from rich.markup import escape
+from rich.table import Table
+from rich.text import Text
 from typer.core import TyperGroup
 
 from kizen_builder import __version__
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.config import ConfigError, set_profile_override
+from kizen_builder.output import for_agent
 
 
 class _RootGroup(TyperGroup):
@@ -73,12 +78,65 @@ app = typer.Typer(
     epilog=(
         "New here? Run `kizen docs show operating` before making changes — it "
         "covers the approval gate and the rules for acting on live state. "
-        "`kizen docs list` shows every available topic."
+        "`kizen docs list` shows every available topic. "
+        "Piped or captured, tables print as plain `| a | b |` rows and docs as "
+        "raw markdown; KIZEN_OUTPUT=terminal or KIZEN_OUTPUT=agent picks either "
+        "form anywhere."
     ),
     no_args_is_help=True,
 )
-console = Console(width=220)
-err_console = Console(stderr=True, width=220)
+
+
+class _Console(Console):
+    """A Console that prints a `Table` as plain rows when `for_agent()` says
+    its stream is read by a program.
+
+    The piped form is a `title:` line, a `| h1 | h2 |` header and one
+    `| c1 | c2 |` line per row: no borders, no padding, no wrapping, no
+    styles. Everything that isn't a table prints as usual.
+    """
+
+    def print(self, *objects: Any, **kwargs: Any) -> None:
+        if any(isinstance(o, Table) for o in objects) and for_agent(self.file):
+            objects = tuple(
+                Text(self._flat_table(o)) if isinstance(o, Table) else o
+                for o in objects
+            )
+            kwargs["soft_wrap"] = True
+            kwargs.pop("crop", None)
+        super().print(*objects, **kwargs)
+
+    def _flat_table(self, table: Table) -> str:
+        lines = []
+        if table.title:
+            lines.append(f"{self._plain(table.title)}:")
+        if table.show_header:
+            lines.append(_row(self._plain(c.header) for c in table.columns))
+        cells = [list(c.cells) for c in table.columns]
+        for i in range(table.row_count):
+            lines.append(_row(self._plain(col[i]) for col in cells))
+        return "\n".join(lines)
+
+    def _plain(self, cell: RenderableType) -> str:
+        """One cell as one line of plain text; a multi-line cell is joined
+        with `; `."""
+        if isinstance(cell, str):
+            text = self.render_str(cell).plain
+        elif isinstance(cell, Text):
+            text = cell.plain
+        else:
+            scratch = Console(width=self.width, color_system=None, file=io.StringIO())
+            scratch.print(cell)
+            text = scratch.file.getvalue()  # type: ignore[attr-defined]
+        return "; ".join(s for line in text.splitlines() if (s := line.strip()))
+
+
+def _row(cells: Iterable[str]) -> str:
+    return "| " + " | ".join(cells) + " |"
+
+
+console = _Console(width=220)
+err_console = _Console(stderr=True, width=220)
 
 # Shared output-format controls for read commands. `--output/-o` is
 # canonical; `--json` is kept as a documented back-compat alias (see
@@ -228,6 +286,7 @@ def _root(
 ) -> None:
     """Kizen Admin CLI — the active env is pinned to the directory by default."""
     set_profile_override(profile)
+    for_agent()  # a bad KIZEN_OUTPUT fails here, before any command runs
 
 
 def _short(text: Any, limit: int = 90) -> str:
