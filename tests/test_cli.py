@@ -2432,6 +2432,52 @@ def test_steps_bad_variable_prints_escaped_spec_errors(monkeypatch, argv, spec):
     assert "internal:" not in result.stderr
 
 
+_TO_MANY_RELATED = {
+    "action_create_related_entity": {
+        "target_custom_object": "encounters",
+        "new_entity_name": "Follow-up",
+        "new_entity_owner_type": "assign_from_context_record",
+        "context_entity_field": "encounters",
+    }
+}
+
+
+@pytest.mark.parametrize(
+    "argv, spec",
+    [
+        (
+            ["add", "a", "--root"],
+            {"key": "create", "step_type": "create_related_entity", **_TO_MANY_RELATED},
+        ),
+        (["edit", "a", "create"], _TO_MANY_RELATED),
+    ],
+    ids=["add", "edit"],
+)
+def test_steps_preview_names_a_planned_default(
+    monkeypatch, patch_live_lookups, argv, spec
+):
+    live_step = {"key": "create", "type": "create_related_entity"}
+    steps = [live_step] if "edit" in argv else []
+    payload = {"name": "a", "api_name": "a", "type": "record_based", "steps": steps}
+    raw = {"custom_object": {"name": "patients"}}
+
+    def patch_steps(_api, mutate, execute):
+        report = mutate(payload, raw)
+        return {"report": report, "payload": payload, "validation_problems": []}
+
+    monkeypatch.setattr(auto_tools, "patch_steps", patch_steps)
+    result = runner.invoke(
+        cli.app,
+        ["automations", "steps", *argv, "--dry-run", "--json"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["report"]["defaults"] == [
+        "step 'create' context_entity_field_resolution: 'add_only' "
+        "(context_entity_field is to-many)"
+    ]
+
+
 def test_fields_create_single_missing_flags_errors(monkeypatch):
     monkeypatch.setattr(field_planners, "plan_create_field", lambda **kw: _fake_plan())
     # No spec, no --api-name, stdin is a tty (no input) → clean usage error.
