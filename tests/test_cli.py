@@ -484,6 +484,35 @@ def test_automations_get_json_elides_long_strings_that_steps_get_prints_whole():
     assert json.loads(one.stdout)["action_code_step"]["script"] == script
 
 
+@pytest.mark.parametrize("verb", ["create", "update"])
+def test_automation_spec_with_a_get_json_stand_in_fails_the_dry_run(verb):
+    marker = "<4,812 chars elided; kizen automations steps get x s00_code_step>"
+    spec = {
+        "name": "X",
+        "api_name": "x",
+        "type": "global",
+        "steps": [
+            {
+                "key": "s00_code_step",
+                "step_type": "code_step",
+                "order": 0,
+                "action_code_step": {"script": marker, "inputs": [], "outputs": []},
+            }
+        ],
+    }
+
+    result = runner.invoke(
+        cli.app, ["automations", verb, "--dry-run"], input=json.dumps(spec)
+    )
+
+    assert result.exit_code == 1, result.output
+    assert (
+        "step 's00_code_step' action_code_step.script: this is the stand-in "
+        "`automations get --json` prints for a long value; fetch the full value "
+        "with `kizen automations steps get x s00_code_step`"
+    ) in plain(result.stderr)
+
+
 def test_records_list_csv_flattens_fields(monkeypatch):
     records = load_fixture("records/list_tax_lot.json")
     monkeypatch.setattr(record_tools, "search_records", lambda *a, **k: records)

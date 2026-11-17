@@ -34,6 +34,7 @@ from kizen_builder.cli._shared import (
 from kizen_builder.config import load_env_config
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
+from kizen_builder.tools.automation_check import ELIDED
 from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.plans import PlanError
 
@@ -218,13 +219,13 @@ def _elide(value: Any, full: str) -> Any:
     editor's layout), swapped for a marker naming the command `full` that
     prints it whole."""
     if isinstance(value, str) and len(value) > _ELIDE_OVER:
-        return f"<{len(value):,} chars elided; {full}>"
+        return ELIDED.format(n=len(value), full=full)
     if isinstance(value, list):
         return [_elide(v, full) for v in value]
     if isinstance(value, dict):
         return {
             k: (
-                f"<{len(json.dumps(v)):,} chars elided; {full}>"
+                ELIDED.format(n=len(json.dumps(v)), full=full)
                 if k == "view_model" and v
                 else _elide(v, full)
             )

@@ -77,7 +77,8 @@ def check_automation(spec: Any) -> CheckedSpec:
             for f in (_from_pydantic(err, spec) for err in e.errors())
             if f is not None
         )
-    errors.extend(_placeholders({k: v for k, v in spec.items() if k != "steps"}, ""))
+    top = {k: v for k, v in spec.items() if k != "steps"}
+    errors.extend([*_placeholders(top, ""), *_elided(top, "")])
     declared = declared_variables(steps)
     for i, step in enumerate(steps):
         step_errors, step_warnings = check_step(step, declared, index=i)
@@ -145,6 +146,7 @@ def check_step(
     errors = [
         *_unread_block_keys(index, step),
         *_placeholders(step, "", _type_hint(step.get("step_type")), step, index),
+        *_elided(step, "", step.get("key"), index),
         *_variable_errors(index, step, declared),
         *_entity_subtype_errors(index, step),
     ]
@@ -397,8 +399,49 @@ _PLACEHOLDER = re.compile(r"[\w.]*(?:<[^<>/@]+>[\w.]*)+")
 _REAL_NAMES = frozenset({"<business_root>"})
 
 
+# What `automations get --json` prints in place of a long value.
+ELIDED = "<{n:,} chars elided; {full}>"
+_ELIDED = re.compile(r"<[\d,]+ chars elided; ([^<>]+)>")
+
+
 def _is_placeholder(value: str) -> bool:
-    return value not in _REAL_NAMES and bool(_PLACEHOLDER.fullmatch(value))
+    return (
+        value not in _REAL_NAMES
+        and bool(_PLACEHOLDER.fullmatch(value))
+        and not _ELIDED.fullmatch(value)
+    )
+
+
+def _elided(
+    node: Any, path: str, step: str | None = None, index: int | None = None
+) -> list[Finding]:
+    """A value copied from `automations get --json` that still holds its
+    stand-in for a long string, which a write would send as the value."""
+    if isinstance(node, dict):
+        return [
+            f
+            for k, v in node.items()
+            for f in _elided(v, f"{path}.{k}" if path else str(k), step, index)
+        ]
+    if isinstance(node, list):
+        return [
+            f
+            for i, v in enumerate(node)
+            for f in _elided(v, f"{path}[{i}]", step, index)
+        ]
+    match = _ELIDED.fullmatch(node) if isinstance(node, str) else None
+    if match is None:
+        return []
+    return [
+        Finding(
+            "this is the stand-in `automations get --json` prints for a long "
+            f"value; fetch the full value with `{match[1]}` (or `kizen "
+            "automations show <api_name> --json`)",
+            path=path,
+            step=step,
+            index=index,
+        )
+    ]
 
 
 def _placeholders(

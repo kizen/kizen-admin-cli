@@ -32,6 +32,7 @@ from tests.conftest import (
     FAKE_BASE_URL,
     load_fixture,
     mock_automation_lookup,
+    plain,
     request_json,
 )
 
@@ -212,6 +213,39 @@ def test_steps_edit_names_the_key_without_listing_unshifted_keys(
     assert result.exit_code == 0, result.output
     assert "step key after the write: s01_code_step\n" in result.stdout
     assert "keys after the write:" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [("add", "--root"), ("edit", "s01_code_step")],
+    ids=["add", "edit"],
+)
+def test_steps_spec_with_a_get_json_stand_in_fails_the_dry_run(
+    live, tmp_path, args
+) -> None:
+    marker = (
+        f"<4,812 chars elided; kizen automations steps get {API_NAME} s01_code_step>"
+    )
+    spec = tmp_path / "step.json"
+    spec.write_text(
+        json.dumps(
+            {
+                "step_type": "code_step",
+                "action_code_step": {"script": marker, "inputs": [], "outputs": []},
+            }
+        )
+    )
+
+    result = _invoke(
+        "steps", args[0], API_NAME, *args[1:], "--dry-run", "--spec-file", str(spec)
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "action_code_step.script: this is the stand-in" in plain(result.stderr)
+    assert f"`kizen automations steps get {API_NAME} s01_code_step`" in plain(
+        result.stderr
+    )
+    assert not live.put.called
 
 
 def test_steps_remove_lists_the_keys_the_reread_gives(live) -> None:

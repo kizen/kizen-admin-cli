@@ -91,7 +91,8 @@ called out explicitly under **Changed** or **Removed**.
   trigger and step, then each one with its config block, in place of the
   old summary. Strings over 2,000 characters and filter-rule view_models
   print as `<N chars elided; kizen automations steps get <api> <key>>`, so
-  the read stays under 64,000 characters. Kizen stores no step keys, so a
+  the read stays under 64,000 characters; a spec or step patch that still
+  holds one fails its dry run. Kizen stores no step keys, so a
   read renames steps `s<NN>_<type>`: `automations create|update` now print
   `step keys after the write: wait → s00_delay` in the plan and after
   applying (`step_keys` with `--json`), and `steps add|edit|remove` name the
