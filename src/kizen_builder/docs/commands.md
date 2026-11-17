@@ -82,6 +82,8 @@ kizen service-accounts list [--search <text>]  # name, api_name, type, status, g
 kizen service-accounts get <name|api_name|uuid>      # one account's fields + permission groups
 kizen service-accounts history <name|api_name|uuid> [-n 25]  # history events (when, event, by)
 
+kizen business-variables list                # name, api_name, value, id
+
 kizen activities list [--object <api_name>] [--search <text>]  # activity types
 kizen activities get <api_name|uuid>         # one activity type: metadata, fields, visibility rules
 kizen activities fields list <activity>      # fields on an activity type
@@ -327,6 +329,10 @@ kizen permissions group-delete <name|uuid>
 kizen service-accounts create --name X [--group <name|uuid> ...]  # integration account; Kizen derives api_name; no groups = disabled
 kizen service-accounts update <ref> [--name Y] [--api-name y] [--group <name|uuid> ... | --clear-groups]  # --group REPLACES the set; rename keeps api_name
 kizen service-accounts delete <ref>                                # permanent archive; integration accounts only
+
+# business variables ({{ business_variable.<api_name> }} merge fields)
+kizen business-variables set <api_name> --value V [--name N]   # create (needs --name + --value) or change one
+kizen business-variables delete <api_name>
 
 # patch one automation step (GET → translate → mutate node → validate → atomic PUT)
 kizen automations steps edit <api> <key> [--spec-file path | < stdin]

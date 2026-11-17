@@ -14,6 +14,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ## [Unreleased]
 
+### Added
+
+- **`kizen business-variables list|set|delete`** reads and writes business
+  variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
+  `set` creates a variable or changes its value or name, and leaves the
+  others alone.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The

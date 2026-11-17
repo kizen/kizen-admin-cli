@@ -38,6 +38,7 @@ from kizen_builder.cli import filters  # noqa: F401
 from kizen_builder.cli import team  # noqa: F401
 from kizen_builder.cli import permissions  # noqa: F401
 from kizen_builder.cli import service_accounts  # noqa: F401
+from kizen_builder.cli import business_variables  # noqa: F401
 from kizen_builder.cli import automations  # noqa: F401
 from kizen_builder.cli import steps  # noqa: F401
 from kizen_builder.cli import messages  # noqa: F401
