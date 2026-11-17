@@ -135,7 +135,10 @@ class VariableSourceConfig(BaseModel):
     )
     field_ref: str | None = Field(
         default=None,
-        description="'object.field' reference, resolved to field UUID at apply time.",
+        description=(
+            "'object.field' reference, resolved to the source's `field` UUID at "
+            "apply time."
+        ),
     )
     source_subtype: str | None = Field(
         default=None,
@@ -152,7 +155,9 @@ class VariableSourceConfig(BaseModel):
             "Kizen stores comma when it's left out."
         ),
     )
-    field_id: str | None = None
+    field_id: str | None = Field(
+        default=None, description="The field's UUID, sent as `field`."
+    )
     value: Any = None
     variable: str | None = None
 

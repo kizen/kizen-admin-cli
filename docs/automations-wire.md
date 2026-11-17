@@ -197,7 +197,9 @@ strips volatile keys. Some survive it — `http_request` round-trips clean. A
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string, or a list of them for checkboxes; a spec label resolves to it |
 | `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record`. Every target must be active, or Kizen 400s "Automation not found" for any record source; the CLI refuses it at plan time (`inactive_start_targets`) |
-| `archive_record` | `relationship_field_ids` (entries accept `"object.field"` refs), `automation_variable_name` |
+| `archive_record` | `relationship_field_ids` (the spec's `relationship_fields`, `"object.field"` refs, resolve to it), `automation_variable_name`. `record_source` is `this_record`, `related_object_field` or `automation_variable`; `this_record` stores relationship fields sent beside it (confirmed live 2026-11-17) |
+| `send_related_contact_email` / `_text` | `send_to_contact_field` (bare UUID; a ref resolves, and a missing one is a plan-time error naming the Contacts relationship fields), `email` / `text` as `{"id": uuid}` |
+| variable sources (`initialize_variable`, `update_variable`, extraction `input_value_source`) | `field` (bare UUID); the CLI sends a `field_ref` or `field_id` as `field`. A source with `field_id` and no `field` is a 400, "field is required" (confirmed live 2026-11-17) |
 | `assign_team_member` | the `*_id` dialect: `role_id`, `employee_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum (`kizen automations step-types show assign_team_member`) |
 | `go_to_automation_step` | `step_key`, pointing at a synthesized key |
 
