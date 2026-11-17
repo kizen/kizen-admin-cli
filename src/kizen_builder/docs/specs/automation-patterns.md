@@ -24,8 +24,7 @@ records ran the loop twice, and the record ended linked to the second.
 Use this to link a record to the Contact with a given email, creating the
 Contact when there is none.
 
-This links a support request to the Contact with the request's email, and
-creates the Contact when there is none. The `support_requests` object and its
+The example uses a support request; the `support_requests` object and its
 fields are in `kizen docs show form`.
 
 - A filter value takes no merge fields, so the search compares the Contact's
