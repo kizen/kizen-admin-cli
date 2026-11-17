@@ -4265,6 +4265,12 @@ def _related_field_binding(
         )
     if not is_uuid(rf_id) and "." in rf_id:
         rf_id = ctx.field_uuid(*rf_id.split(".", 1))
+    elif not is_uuid(rf_id) and rf_id == item.get("related_field_ref"):
+        # A bare name: which object it is on depends on the hop.
+        raise PlanError(
+            f"{what} '{item['name']}': related_field_ref '{rf_id}' must be "
+            "`object.field` or a field UUID"
+        )
     return {"field": {"id": fld_id}, "related_field": {"id": rf_id}}
 
 
@@ -4283,7 +4289,7 @@ def _date_field_finding(
     on_day_and_time" (confirmed live 2026-11-17)."""
     if not block or block.get("date_offset") != "on_day_and_time":
         return None
-    field_id = _unwrap_id(block.get("field_id")) or block.get("field_id")
+    field_id = _unwrap_id(block.get("field_id"))
     if not auto.target_object or not isinstance(field_id, str):
         return None
     try:

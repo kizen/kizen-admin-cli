@@ -1113,3 +1113,17 @@ def test_steps_edit_catches_on_day_and_time_on_a_date_field(patch_live_lookups):
     (f,) = e.value.errors
     assert f.path == "action_schedule_activity.schedule.on_or_around_date"
     assert "'date_of_birth' is date" in f.message
+
+
+def test_a_bare_related_field_ref_is_refused(patch_live_lookups):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+    from kizen_builder.tools.plans import PlanError
+
+    dob = {
+        "name": "dob",
+        "input_type": "related_field",
+        "field_ref": "encounters.patient_rel",
+        "related_field_ref": "date_of_birth",
+    }
+    with pytest.raises(PlanError, match="must be `object.field` or a field UUID"):
+        plan_create_automation(_encounter_spec(_code([dob])))
