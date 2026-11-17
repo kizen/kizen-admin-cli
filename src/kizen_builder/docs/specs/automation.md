@@ -95,9 +95,10 @@ kizen automations create --spec-file auto.json --dry-run
 - For the **first** step inside a YES/NO branch under a `condition` (or `goal`),
   set **`parent_branch: "yes"`** (or `"no"`). Linear successors *inside* a branch
   leave `parent_branch` unset.
-- `order` (int ≥ 0) orders steps for display; a step that leaves it out
-  gets its position in `steps`. **Triggers need it too** when there is more
-  than one: two unordered triggers both send 0, and the dry-run refuses
+- `order` (int ≥ 0) orders steps for display, across the whole automation,
+  not per branch; leave it out and the CLI numbers by position in `steps`.
+  `step-types` entries leave it out. **Triggers need it too** when there is
+  more than one: two unordered triggers both send 0, and the dry-run refuses
   them. Sequential `0..N` on both `triggers` and `steps`, no gaps or
   duplicates.
 - Cycles are rejected; `go_to_automation_step.step_key` must reference a real key.

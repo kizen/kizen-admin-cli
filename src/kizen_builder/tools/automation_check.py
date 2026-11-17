@@ -278,17 +278,23 @@ def _unwired_types(spec: dict[str, Any]) -> list[Finding]:
             type_name = item.get(f"{kind}_type")
             if not isinstance(type_name, str) or type_name in wired:
                 continue
-            names = [*wired, *step_catalog.ALIASES] if kind == "step" else wired
-            meant = [
-                step_catalog.ALIASES.get(m, (m,))[0]
-                for m in difflib.get_close_matches(type_name, names, n=1)
-            ]
+            aliases = {
+                alias: targets
+                for alias, targets in step_catalog.ALIASES.items()
+                if set(targets) <= set(wired)
+            }
+            match = difflib.get_close_matches(type_name, [*wired, *aliases], n=1)
+            meant = list(aliases.get(match[0], match)) if match else []
             where: dict[str, Any] = (
                 {"step": item.get("key"), "index": i, "path": "step_type"}
                 if kind == "step"
                 else {"path": f"triggers[{i}].trigger_type"}
             )
             message = f"{type_name!r} is not a {kind} type this CLI wires"
+            if len(meant) > 1:
+                could_be = " or ".join(repr(m) for m in meant)
+                message += f"; it could be {could_be}"
+                meant = []
             if type_name == "update_pipeline_status":
                 message, meant = NO_MOVE_STAGE_STEP, ["change_field_value"]
             out.append(

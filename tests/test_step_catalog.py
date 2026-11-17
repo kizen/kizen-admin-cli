@@ -15,7 +15,7 @@ from kizen_builder.models.spec.automations_actions_messaging import (
     ActivityAssignmentType,
 )
 from kizen_builder.models.spec.automations_triggers import AutomationTriggerDef
-from kizen_builder.tools import step_catalog
+from kizen_builder.tools import automation_check, step_catalog
 from kizen_builder.tools.planners.automations import (
     _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
@@ -62,7 +62,7 @@ def test_every_type_describes(name):
             assert spec["step_type"] == name and spec["parent_key"] is None
         else:
             assert spec["trigger_type"] == name
-        assert spec["order"] == 0
+        assert "order" not in spec
 
 
 def _variants():
@@ -73,16 +73,39 @@ def _variants():
     ]
 
 
+def _with_orders(spec):
+    return automation_check._with_defaults(spec)[0]
+
+
+def test_skeleton_and_variants_check_with_no_order_warning():
+    """Entries carry no `order`; the planner numbers them by position, so
+    pasting several in a row doesn't trip the order check."""
+    auto = step_catalog.skeleton("deals")
+    auto["name"] = "Probe"
+    auto["steps"][0]["action_change_field_value"] = {
+        "field_ref": "deals.name",
+        "specific_field_value": "x",
+    }
+    wait = step_catalog.variant_spec("delay", "minimal")
+    activity = step_catalog.variant_spec("schedule_activity", "immediately")
+    activity["parent_key"] = "delay"
+    activity["action_schedule_activity"]["activity_type"] = "follow_up"
+    auto["steps"] += [wait, activity]
+    checked = automation_check.check_automation(auto)
+    assert [s.order for s in checked.auto.steps] == [0, 1, 2]
+    assert not [w for w in checked.warnings if "order" in w.message]
+
+
 @pytest.mark.parametrize(("name", "variant"), _variants())
 def test_every_variant_is_a_valid_entry(name, variant):
     spec = step_catalog.variant_spec(name, variant)
     model = AutomationStepDef if "step_type" in spec else AutomationTriggerDef
-    model.model_validate(spec)
+    model.model_validate({"order": 0, **spec})  # the planner numbers steps
 
 
 @pytest.mark.parametrize("target", [None, "deals"])
 def test_skeleton_is_a_valid_automation(target):
-    auto = AutomationDef.model_validate(step_catalog.skeleton(target))
+    auto = AutomationDef.model_validate(_with_orders(step_catalog.skeleton(target)))
     assert auto.target_object == (target or "my_object")
     assert [t.trigger_type for t in auto.triggers] == ["manual"]
     assert len(auto.steps) == 1
@@ -197,12 +220,14 @@ def test_schedule_activity_variants_build_a_payload(patch_live_lookups):
         for placeholder, value in fills.items():
             text = text.replace(placeholder, value)
         auto = AutomationDef.model_validate(
-            {
-                "name": "t",
-                "api_name": "t",
-                "target_object": "patients",
-                "steps": [json.loads(text)],
-            }
+            _with_orders(
+                {
+                    "name": "t",
+                    "api_name": "t",
+                    "target_object": "patients",
+                    "steps": [json.loads(text)],
+                }
+            )
         )
         block = _build_automation_payload(auto, LiveContext())["steps"][0][
             "action_schedule_activity"
@@ -343,7 +368,7 @@ def test_cli_skeleton_is_json():
         cli.app, ["automations", "step-types", "skeleton", "--object", "deals"]
     )
     assert r.exit_code == 0, r.output
-    AutomationDef.model_validate(json.loads(r.output))
+    AutomationDef.model_validate(_with_orders(json.loads(r.output)))
 
 
 def test_there_is_no_trigger_types_command():

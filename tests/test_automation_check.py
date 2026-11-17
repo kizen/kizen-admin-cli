@@ -176,12 +176,39 @@ def test_an_unwired_type_is_said_once_with_the_wired_list():
     step = _only(errors, step="mail")
     assert step.path == "step_type"
     assert "schedule_activity" in step.allowed
-    assert step.suggestion == "notify_member_via_email"
+    assert step.message.endswith(
+        "it could be 'notify_member_via_email' or 'send_related_contact_email'"
+    )
+    assert step.suggestion is None
     assert step.hint == "kizen automations step-types list"
     trigger = _only(errors, path="triggers[0].trigger_type")
     assert trigger.suggestion == "manual"
     # Pydantic's own "unknown step_type" line would repeat it.
     assert not any("unknown step_type" in e.message for e in errors)
+
+
+@pytest.mark.parametrize(
+    ("section", "given", "meant"),
+    [
+        ("steps", "wait", "delay"),
+        ("triggers", "field_changed", "field_updated"),
+        ("triggers", "date_field", "on_or_around_date"),
+    ],
+)
+def test_an_alias_suggests_its_type_for_steps_and_triggers(section, given, meant):
+    if section == "steps":
+        spec = _spec({"key": "s", "step_type": given})
+        f = _only(_errors(spec), step="s")
+    else:
+        spec = _spec(_activity(), triggers=[{"trigger_type": given}])
+        f = _only(_errors(spec), path="triggers[0].trigger_type")
+    assert f.suggestion == meant
+
+
+def test_a_trigger_typo_is_not_offered_a_step_alias():
+    spec = _spec(_activity(), triggers=[{"trigger_type": "wait"}])
+    f = _only(_errors(spec), path="triggers[0].trigger_type")
+    assert f.suggestion != "delay"
 
 
 def test_a_move_stage_step_points_at_change_field_value():
@@ -284,7 +311,8 @@ def test_three_independent_problems_print_together_with_no_live_call():
     lines = [ln for ln in result.stderr.splitlines() if ln.startswith("spec error")]
     assert lines == [
         "spec error: step 'mail' step_type: 'send_emial' is not a step type this "
-        "CLI wires (did you mean 'notify_member_via_email'?)",
+        "CLI wires; it could be 'notify_member_via_email' or "
+        "'send_related_contact_email'",
         "spec error: objct: unknown key (did you mean 'target_object'?)",
         "spec error: step 'act' action_schedule_activity.target_variable: variable "
         "'activity_id' is not declared by an initialize_variable step",

@@ -31,8 +31,9 @@ called out explicitly under **Changed** or **Removed**.
   `step-types concepts` covers what most steps share. `step-types show`
   accepts common names such as `wait` and `ai_step`, and lists the types a
   name like `send_email` could mean; any other unwired name gets the wired
-  type it most likely means. The automation doc's wired-type tables are
-  gone; `step-types list` replaces them.
+  type it most likely means. Card entries leave out `order`, which the CLI
+  numbers by position. The automation doc's wired-type tables are gone;
+  `step-types list` replaces them.
 
 ### Changed
 

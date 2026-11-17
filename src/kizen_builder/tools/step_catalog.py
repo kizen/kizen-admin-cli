@@ -464,11 +464,11 @@ def _step_block_field(type_name: str) -> str | None:
 
 
 def _step_entry(type_name: str) -> dict[str, Any]:
-    return {"key": type_name, "parent_key": None, "step_type": type_name, "order": 0}
+    return {"key": type_name, "parent_key": None, "step_type": type_name}
 
 
 def _trigger_entry(type_name: str) -> dict[str, Any]:
-    return {"trigger_type": type_name, "order": 0}
+    return {"trigger_type": type_name}
 
 
 @dataclass(frozen=True)
