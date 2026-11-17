@@ -229,7 +229,20 @@ def test_a_block_key_the_planner_drops_is_an_error():
     f = _only(_errors(_spec(step)))
     assert f.path == "action_change_field_value.fieldd"
     assert "would be dropped" in f.message
-    assert f.suggestion == "field"
+    assert f.suggestion == "field_ref"
+
+
+def test_a_block_key_suggestion_comes_from_the_steps_own_block():
+    # The builder also reads modify_related_entities' `value_type`, which
+    # difflib would pick for `value`.
+    step = {
+        "key": "set",
+        "step_type": "change_field_value",
+        "action_change_field_value": {"field_ref": "deals.amount", "value": "1"},
+    }
+    f = _only(_errors(_spec(step)))
+    assert (f.got, f.suggestion) == ("value", "specific_field_value")
+    assert "value_type" in f.allowed
 
 
 def test_a_non_object_spec_is_one_error():

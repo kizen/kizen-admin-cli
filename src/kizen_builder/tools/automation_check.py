@@ -182,11 +182,25 @@ def _where(spec: dict[str, Any], loc: tuple[Any, ...]) -> tuple[dict[str, Any], 
 _QUOTED = re.compile(r"'([^']*)'")
 
 # Keys agents write that difflib can't place.
-_MEANT = {"object": "target_object", "trigger_type": "type"}
+_MEANT = {
+    "object": "target_object",
+    "trigger_type": "type",
+    "value": "specific_field_value",
+}
 _VARIABLES_HINT = (
     "unknown key; declare each variable with an initialize_variable step at "
     "the front of `steps`"
 )
+
+
+def _suggest_key(key: str, allowed: list[str]) -> str | None:
+    """The key in ``allowed`` that ``key`` most likely meant. Typos of a
+    common wrong name (`objct`) resolve through `_MEANT`."""
+    meant = [
+        _MEANT.get(m, m)
+        for m in difflib.get_close_matches(key, [*allowed, *_MEANT], n=1)
+    ]
+    return meant[0] if meant and meant[0] in allowed else None
 
 
 def _from_pydantic(err: Any, spec: dict[str, Any]) -> Finding | None:
@@ -216,13 +230,7 @@ def _from_pydantic(err: Any, spec: dict[str, Any]) -> Finding | None:
             where["hint"] = "kizen automations step-types show initialize_variable"
         else:
             message = "unknown key"
-            # Typos of a common wrong name (`objct`) resolve through it.
-            meant = [
-                _MEANT.get(m, m)
-                for m in difflib.get_close_matches(key, [*allowed, *_MEANT], n=1)
-            ]
-            if meant and meant[0] in allowed:
-                extra["suggestion"] = meant[0]
+            extra["suggestion"] = _suggest_key(key, allowed)
     elif isinstance(got, (str, int, float, bool)):
         extra = {"got": got}
     return Finding(message, path=path, **where, **extra)
@@ -309,6 +317,9 @@ def _unread_block_keys(index: int | None, step: dict[str, Any]) -> list[Finding]
     if honoured is None or not isinstance(block, dict):
         return []
     allowed = sorted(honoured)
+    # The builder also reads keys of other steps' dialects (`value_type`);
+    # suggest only the ones this step's block documents.
+    own = [k for k in _keys_at(("steps", block_field)) if k in honoured] or allowed
     return [
         Finding(
             "unknown key; the planner doesn't read it, so it would be dropped",
@@ -317,7 +328,7 @@ def _unread_block_keys(index: int | None, step: dict[str, Any]) -> list[Finding]
             index=index,
             got=key,
             allowed=allowed,
-            suggestion=next(iter(difflib.get_close_matches(key, allowed, n=1)), None),
+            suggestion=_suggest_key(key, own),
             hint=_type_hint(step_type),
         )
         for key in sorted(set(block) - honoured)
