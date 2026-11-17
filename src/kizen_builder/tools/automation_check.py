@@ -202,6 +202,9 @@ _VARIABLES_HINT = (
 )
 
 
+_BLOCK_FIELDS = frozenset(_block_field_for(t) for t in _STEP_BUILDERS)
+
+
 def _suggest_key(key: str, allowed: list[str]) -> str | None:
     """The key in ``allowed`` that ``key`` most likely meant. Typos of a
     common wrong name (`objct`) resolve through `_MEANT`."""
@@ -240,6 +243,12 @@ def _from_pydantic(err: Any, spec: dict[str, Any]) -> Finding | None:
         else:
             message = "unknown key"
             extra["suggestion"] = _suggest_key(key, allowed)
+            if extra["suggestion"] in _BLOCK_FIELDS and loc[0] == "steps":
+                # Another type's block (`action_delay` → `action_code_step`);
+                # the step's own block is what was meant.
+                step_type = spec["steps"][loc[1]].get("step_type")
+                if step_type in _STEP_BUILDERS:
+                    extra["suggestion"] = _block_field_for(step_type)
     elif isinstance(got, (str, int, float, bool)):
         extra = {"got": got}
     return Finding(message, path=path, **where, **extra)

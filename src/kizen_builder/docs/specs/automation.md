@@ -858,8 +858,8 @@ Creates one record on another object and links it to the triggering record.
   `variable_field_resolution` and `context_entity_field_resolution`
   (default `overwrite`), `existing_record_found_action` (default
   `error_do_not_create`) and `archived_record_found_action` (default
-  `overwrite`). Any other key is a plan error on `automations create`/`update`,
-  `steps add` and `steps edit`.
+  `overwrite`). Any other key is a `spec error:` on `automations
+  create`/`update`, `steps add` and `steps edit`.
 - **Field values can't be set at creation.** The step has no key for them:
   `field_values` used to be forwarded, and Kizen accepted it and stored
   nothing (confirmed live 2026-10-05). Create the record empty, then set its
@@ -1691,7 +1691,7 @@ Why a translator is mandatory rather than nice-to-have:
   in a step or trigger config block that the type's builder doesn't read
   fails `create`/`update`/`steps add`/`steps edit` before the plan renders,
   even under `--dry-run --json`, naming the key and every key that block does
-  read (`plan error:` from `create`/`update`, `error:` from `steps`). One
+  read (`spec error:`; a trigger block's is a `plan error:`). One
   limit: keys *inside* nested items (`change_field_value.actions[]`,
   `code_step.inputs`/`outputs`, `plugin_code_step.inputs`/`outputs`,
   `schedule_activity.schedule`) aren't checked.

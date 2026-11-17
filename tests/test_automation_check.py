@@ -238,6 +238,16 @@ def test_an_unknown_key_gets_the_nearest_key():
     assert (f.path, f.suggestion) == ("parnet_key", "parent_key")
 
 
+def test_a_misnamed_block_suggests_the_steps_own_block():
+    step = {"key": "wait", "step_type": "delay", "action_delay": {"minutes": 1}}
+    f = _only(_errors(_spec(step)), step="wait")
+    assert (f.path, f.suggestion) == ("action_delay", "step_delay")
+
+    step = {**_activity(), "step_typ": "x"}
+    f = _only(_errors(_spec(step)), path="step_typ")
+    assert f.suggestion == "step_type"
+
+
 def test_variables_at_the_top_points_at_initialize_variable():
     f = _only(_errors(_spec(_activity(), variables=[{"name": "x"}])))
     assert "initialize_variable step" in f.message
@@ -680,5 +690,11 @@ def test_steps_add_reports_warnings_and_still_validates(monkeypatch):
     spec = _activity(assigned_to={"employee_id": "x"})
     result = _steps(monkeypatch, ["add", "auto", "--root", "--json"], spec)
     assert result.exit_code == 0, result.output
-    (warning,) = json.loads(result.stdout)["report"]["warnings"]
+    out = json.loads(result.stdout)
+    (warning,) = out["warnings"]
     assert "set it to 'team_member'" in warning
+    assert "warnings" not in out["report"]
+
+    result = _steps(monkeypatch, ["add", "auto", "--root"], spec)
+    assert result.exit_code == 0, result.output
+    assert "warning: " in result.stderr and "team_member" in result.stderr
