@@ -19,7 +19,7 @@ import kizen_builder.cli as cli
 from kizen_builder.tools import smart_connectors as sct
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors import pull as sc_pull
-from tests.conftest import FAKE_BASE_URL
+from tests.conftest import FAKE_BASE_URL, plain
 
 BASE = f"{FAKE_BASE_URL}/api/smart-connectors"
 
@@ -600,7 +600,7 @@ def test_set_sql_params_rejects_a_param_without_equals_before_any_call():
     result = _set_sql_params("--param", "sql_param_1", "--dry-run")
 
     assert result.exit_code == 2
-    assert "name=value" in result.output
+    assert "name=value" in plain(result.output)
     assert not respx.calls
 
 
@@ -640,11 +640,11 @@ def test_set_sql_params_unset_removes_only_the_named_param():
 def test_set_sql_params_needs_a_change_and_no_name_both_set_and_unset():
     none = _set_sql_params("--dry-run")
     assert none.exit_code == 2
-    assert "at least one --param or --unset" in none.output
+    assert "at least one --param or --unset" in plain(none.output)
 
     both = _set_sql_params("--param", "sql_param_2=west", "--unset", "sql_param_2")
     assert both.exit_code == 2
-    assert "both set and unset: sql_param_2" in both.output
+    assert "both set and unset: sql_param_2" in plain(both.output)
     assert not respx.calls
 
 
