@@ -699,7 +699,7 @@ at a time of day. This one fires three days before each deal's close date, at
 |---|---|---|
 | `field_ref` | `"object.field"`, or a bare field name on `target_object` (sent as `field_id`) | required |
 | `date_offset` | `on_day`, `on_day_and_time`, `days_before`, `days_after` | required |
-| `date_offset_days` | 0 or more | `0` |
+| `date_offset_days` | 1 or more with `days_before`/`days_after` | `0` |
 | `time` | `hh:mm` on a 12-hour clock: `09:00`, `05:00` | required unless `on_day_and_time` |
 | `period` | `am` or `pm` | required unless `on_day_and_time` |
 | `every_year` | bool | `false` |
@@ -711,6 +711,14 @@ at a time of day. This one fires three days before each deal's close date, at
 - `time` without `period` is a 400 ("This field is required."), and so is a
   trigger with neither; the dry-run refuses both. `on_day_and_time` takes
   the time from the field and needs neither. Confirmed live 2026-11-16.
+- `on_day_and_time` needs a datetime field. On a date field the server 400s
+  with "Field must be datetime when date_offset is on_day_and_time"; use
+  `on_day` with `time` and `period` there. A goal's trigger and
+  schedule_activity's `on_or_around_date` have the same rule.
+- `days_before` or `days_after` with `date_offset_days` 0 or left out is a
+  400: "This field is required with days_before or days_after". Use `on_day`
+  for the day itself. The dry-run refuses both of these. Confirmed live
+  2026-11-17.
 
 Confirmed live 2026-10-30: four configs saved and read back as sent, with the
 defaults above filled in. A date trigger fires only on its date, so no run of
@@ -1037,9 +1045,11 @@ live field metadata when the destination field is named via
 **Multiple destinations in one step** require `is_advanced: true` — without
 it the server 400s with `"Multiple destinations are not allowed for
 non-advanced LLM call actions"` even if every destination is otherwise
-valid. Confirmed live: with `is_advanced: true`, one `call_llm` step can
-write to a field on `target_object` *and* a field on a related object (two
-different objects) in the same call.
+valid. `file_content_extraction` and `audio_transcription` have the same
+rule (confirmed live 2026-11-17), and the dry-run refuses it on all three.
+Confirmed live: with `is_advanced: true`, one `call_llm` step can write to a
+field on `target_object` *and* a field on a related object (two different
+objects) in the same call.
 
 **`model_name` + `business_plugin_app_id`** — run `kizen automations
 llm-models` for the live catalog (wraps `GET
@@ -1531,6 +1541,10 @@ Confirmed live 2026-10-30, in this order.
   belong to, as an api_name (`"patients"`) or UUID. The CLI sends the UUID;
   the server 400s on an api_name or a missing one. Confirmed live
   2026-11-16.
+- **A `static` source needs `source_subtype`**: its value's type, such as
+  `string`, `number`, `boolean` or `datetime`. Without it the server 400s
+  with "source_subtype should be one of [...]", and the dry-run refuses it.
+  Confirmed live 2026-11-17.
 - **Unknown keys in `variable`** are a spec error, because the server drops
   them silently (`isArray` saved a scalar). Confirmed live 2026-10-14.
 - **String, UUID and entity arrays** are a variable with `is_array: true`,
@@ -1947,6 +1961,9 @@ Follow Up for the deal's owner two working days after the run:
   one; the server 400s without it and the dry-run refuses it.
   `on_day_and_time` takes the time from the field and ignores `time_offset`.
   Confirmed live 2026-11-16.
+- `on_day_and_time` needs a datetime field, and `days_before`/`days_after`
+  need `date_offset_days`; the server 400s on either, and the dry-run
+  refuses both. Confirmed live 2026-11-17.
 - `{"field_id": "<start date field uuid>", "date_offset": "days_after",
   "date_offset_days": 1, "time_offset": "specific_time", "time": "10:00"}` on a
   record starting 2026-11-16 was due 2026-11-17 at 10:00 in the business's

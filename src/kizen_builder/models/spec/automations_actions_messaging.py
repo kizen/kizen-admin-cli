@@ -343,8 +343,9 @@ class ScheduleOnOrAroundDateConfig(BaseModel):
         default=None,
         description=(
             "A date or datetime field on the record, as `<object>.<field>` "
-            "or a bare field api_name. Resolved to `field_id` at apply time. "
-            "Set this, `field_id` or `variable`."
+            "or a bare field api_name; on_day_and_time needs a datetime one. "
+            "Resolved to `field_id` at apply time. Set this, `field_id` or "
+            "`variable`."
         ),
     )
     field_id: str | dict[str, Any] | None = Field(

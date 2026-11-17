@@ -147,7 +147,10 @@ class TriggerOnOrAroundDateConfig(BaseModel):
     )
     date_offset: str | None = Field(
         default=None,
-        description="DateOffsetEnum value (e.g. 'on_day_and_time', 'days_before', 'days_after').",
+        description=(
+            "DateOffsetEnum value (e.g. 'on_day_and_time', 'days_before', "
+            "'days_after'). on_day_and_time needs a datetime field."
+        ),
     )
     time: str | None = Field(default=None, description="Time of day in HH:MM format.")
     period: Literal["am", "pm", "AM", "PM"] | None = Field(
@@ -157,7 +160,9 @@ class TriggerOnOrAroundDateConfig(BaseModel):
             "sending, since the live API rejects uppercase 'AM'/'PM'."
         ),
     )
-    date_offset_days: int | None = Field(default=None, ge=0)
+    date_offset_days: int | None = Field(
+        default=None, ge=0, description="1 or more with days_before or days_after."
+    )
     # Live data sometimes has null instead of a bool here.
     skip_non_working_days: bool | None = None
     every_year: bool = False

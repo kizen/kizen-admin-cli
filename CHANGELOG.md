@@ -79,6 +79,14 @@ called out explicitly under **Changed** or **Removed**.
   schedule's `on_or_around_date` needs `time` unless `time_offset` is not
   `specific_time` or `date_offset` is `on_day_and_time`; a trigger needs
   `time` and `period` unless it's `on_day_and_time`. Each was a 400 before.
+- **Four more automation specs the server rejects fail the dry-run.** Each
+  was a 400 before:
+  - a `static` variable source with no `source_subtype`;
+  - `date_offset: on_day_and_time` on a date field, not a datetime one, in
+    an `on_or_around_date` trigger, a goal's trigger or a schedule;
+  - `days_before` or `days_after` with `date_offset_days` 0 or left out;
+  - two or more `destinations` on `call_llm`, `file_content_extraction` or
+    `audio_transcription` without `is_advanced: true`.
 
 ## [0.7.0] — 2026-11-16
 
