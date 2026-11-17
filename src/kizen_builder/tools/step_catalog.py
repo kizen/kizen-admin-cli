@@ -2133,9 +2133,13 @@ def lookup_command(type_name: str, path: str) -> str | None:
 
 def _has(node: dict[str, Any], key: str) -> bool:
     """Whether a block carries ``key``, under that name or the one a live
-    read gives it (`employee_id` reads back as `employee`)."""
+    read gives it (`employee_id` reads back as `employee`). A plural key
+    also matches its write spelling (`relationship_fields` is sent as
+    `relationship_field_ids`, which `steps get` returns)."""
     base = re.sub(r"_(id|ref)(s?)$", r"\2", key)
     names = {key, base, f"{base}_id", f"{base}_ref"}
+    if base.endswith("s"):
+        names |= {f"{base[:-1]}_ids", f"{base[:-1]}_refs"}
     return any(node.get(k) not in (None, [], "") for k in names)
 
 

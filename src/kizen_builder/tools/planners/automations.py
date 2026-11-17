@@ -4064,26 +4064,26 @@ def _send_to_contact_field(
     """The recipient's relationship field as a UUID. Without it the server
     500s, so a missing one names the candidates instead."""
     ref = block.get("send_to_contact_field")
-    if ref is None:
-        candidates = (
-            [
-                f["api_name"]
-                for f in ctx.object_data(auto.target_object)["fields"]
-                if "client_client"
-                in (
-                    f.get("relation_target"),
-                    (f.get("relation") or {}).get("related_object_object_name"),
-                )
-            ]
-            if auto.target_object
-            else []
+    if ref is not None:
+        return _resolve_field(ref, auto, ctx)
+    if not auto.target_object:
+        # A live read (translate has no target object): keep what it stored
+        # rather than block show and the steps verbs on the automation.
+        return None
+    candidates = [
+        f["api_name"]
+        for f in ctx.object_data(auto.target_object)["fields"]
+        if "client_client"
+        in (
+            f.get("relation_target"),
+            (f.get("relation") or {}).get("related_object_object_name"),
         )
-        raise PlanError(
-            "send_to_contact_field is required: the relationship field that "
-            f"points at the contact. Candidates on {auto.target_object}: "
-            f"{', '.join(candidates) or 'none'}."
-        )
-    return _resolve_field(ref, auto, ctx)
+    ]
+    raise PlanError(
+        "send_to_contact_field is required: the relationship field that "
+        f"points at the contact. Candidates on {auto.target_object}: "
+        f"{', '.join(candidates) or 'none'}."
+    )
 
 
 @honours("send_to_contact_field", "send_from_owner", "email", "cc_team_member")
