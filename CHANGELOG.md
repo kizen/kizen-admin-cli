@@ -37,10 +37,11 @@ called out explicitly under **Changed** or **Removed**.
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
 - **`field_ref` in a team-member block (notify, assign, cc, and
-  schedule_activity's assignee) now resolves to the field's UUID; it was
-  dropped before.** The server answered with *"field_id is required"*.
-  `schedule.on_or_around_date` takes `field_ref` too. A `field_id` beside it
-  still wins.
+  schedule_activity's assignee) now resolves to the field's UUID.** In the
+  notify and cc selectors and schedule_activity's assignee it was dropped
+  before, and the server answered with *"field_id is required"*;
+  `assign_team_member` refused it at plan time. `schedule.on_or_around_date`
+  takes `field_ref` too. A `field_id` beside it still wins.
 
 ## [0.7.0] — 2026-11-16
 

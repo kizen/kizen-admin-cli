@@ -178,7 +178,15 @@ class ActionAssignTeamMemberConfig(BaseModel):
             "The team-selector field the owner is copied from. Required for "
             "`team_selector_field` (a field on the automation's own object) and "
             "`related_team_selector_field` (a field on the object "
-            "`related_field_id` points to)."
+            "`related_field_id` points to). Or set `field_ref` instead."
+        ),
+    )
+    field_ref: str | None = Field(
+        default=None,
+        description=(
+            "'object.field' reference, resolved to `field_id` at apply time. "
+            "For `related_team_selector_field`, qualify it with the far "
+            "object: a bare name resolves against the automation's own object."
         ),
     )
     related_field_id: str | None = Field(
