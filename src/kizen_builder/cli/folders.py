@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
-
 import typer
 from rich.table import Table
 
+from kizen_builder import output as out
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import cli_errors, console
 from kizen_builder.cli.automations import autos_app
@@ -28,7 +27,7 @@ def folders_list(
     with cli_errors():
         folders = auto_tools.list_folders()
     if json_out:
-        typer.echo(json.dumps(folders, indent=2, default=list))
+        out.emit_json(folders)
         return
     if not folders:
         console.print("[dim]no folders[/dim]")

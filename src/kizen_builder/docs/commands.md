@@ -184,6 +184,10 @@ is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. The
 preview goes to stderr and only the JSON to stdout, so don't merge `2>&1` into
 a JSON parse.
 
+Piped JSON is indented by one space and leaves out keys whose value is `null`,
+`""`, `[]` or `{}` (jq reads a missing key as `null`). `--raw`, plans and
+`steps get` keep every key.
+
 ```
 # create
 kizen objects create --name Y [--api-name X] [--object-type standard|pipeline] [--pipeline] [...]   # api_name is derived from --name

@@ -123,7 +123,7 @@ def autos_get(
         result = auto_tools.get_automation(api_name)
 
     if raw_out:
-        typer.echo(json.dumps(result["raw"], indent=2))
+        out.emit_json(result["raw"], keep_empty=True)
         return
 
     def table() -> None:
@@ -282,7 +282,7 @@ def autos_roundtrip(
             result = auto_tools.roundtrip_automation(api_name, execute=True)
 
     if json_out:
-        typer.echo(json.dumps(result, indent=2))
+        out.emit_json(result)
     else:
         console.print(
             f"[bold]{result['api_name']}[/bold]  "
@@ -290,7 +290,7 @@ def autos_roundtrip(
             f"{result['n_triggers']} triggers, {result['n_steps']} steps)[/dim]"
         )
         if show_payload:
-            typer.echo(json.dumps(result["payload"], indent=2))
+            out.emit_json(result["payload"])
         if result["validation_problems"]:
             console.print("[red]structural validation FAILED:[/red]")
             for p in result["validation_problems"]:
@@ -371,7 +371,7 @@ def autos_diff(
 
     print_warnings(result)
     if json_out:
-        typer.echo(json.dumps(result, indent=2))
+        out.emit_json(result)
         return
 
     console.print(
@@ -482,7 +482,7 @@ def autos_show(
 
     print_warnings(result)
     if json_out:
-        typer.echo(json.dumps(result, indent=2))
+        out.emit_json(result, keep_empty=True)
         return
     console.print(
         f"[dim]rev {result['revision']}, "
@@ -537,7 +537,7 @@ def _print_start_result(result: dict[str, Any]) -> None:
     else:
         console.print("[yellow]started — no execution ID in response[/yellow]")
         console.print(
-            json.dumps(result.get("raw"), indent=2),
+            out.dumps_json(result.get("raw")),
             markup=False,
             emoji=False,
             soft_wrap=True,
@@ -738,7 +738,7 @@ def autos_start(
                 api_name, record_id, variables=variables or None
             )
         if json_out:
-            typer.echo(json.dumps(result, indent=2))
+            out.emit_json(result)
             return
         _print_start_result(result)
         return
@@ -760,7 +760,7 @@ def autos_start(
         result = {**result, "steps": auto_tools.get_execution_history(execution_id)}
 
     if json_out:
-        typer.echo(json.dumps(result, indent=2))
+        out.emit_json(result)
     else:
         _print_start_result(result)
         if execution_id:
@@ -801,7 +801,7 @@ def autos_modification_history(
             search=search or None,
         )
     if json_out:
-        typer.echo(json.dumps(results, indent=2, default=str))
+        out.emit_json(results)
         return
     table = Table(title=f"Modification history — {api_name}")
     table.add_column("when")
@@ -831,9 +831,9 @@ def autos_failures(
     with cli_errors(LookupError):
         results = auto_tools.get_failures_history(api_name)
     if json_out:
-        typer.echo(json.dumps(results, indent=2, default=str))
+        out.emit_json(results)
         return
     if not results:
         console.print("[dim]no recorded failures[/dim]")
         return
-    typer.echo(json.dumps(results, indent=2, default=str))
+    out.emit_json(results)

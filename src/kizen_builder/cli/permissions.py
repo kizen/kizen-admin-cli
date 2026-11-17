@@ -4,7 +4,6 @@ access-level grid.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
@@ -141,7 +140,7 @@ def perms_groups(
     """List permission groups (raw)."""
     with cli_errors():
         items = perm_tools.list_permission_groups(search=search)
-    typer.echo(json.dumps(items, indent=2))
+    out.emit_json(items)
 
 
 _LEVEL_STYLE = {"none": "dim", "view": "cyan", "edit": "yellow", "remove": "green"}
@@ -196,7 +195,7 @@ def perms_group(
     group_id = _resolve_group_id(group)
     if raw_out:
         with cli_errors():
-            typer.echo(json.dumps(perm_tools.get_permission_group(group_id), indent=2))
+            out.emit_json(perm_tools.get_permission_group(group_id), keep_empty=True)
         return
 
     fmt = out.resolve_format(output, json_out)
@@ -281,7 +280,7 @@ def perms_meta() -> None:
     """Show the permissions catalog / meta-data (raw)."""
     with cli_errors():
         result = perm_tools.get_meta_data()
-    typer.echo(json.dumps(result, indent=2))
+    out.emit_json(result)
 
 
 # --- role mutations --------------------------------------------------------

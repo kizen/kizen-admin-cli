@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from kizen_builder import output as out
 from kizen_builder.api import activities as act_api
 from kizen_builder.api import automations as auto_api
 from kizen_builder.api import business as business_api
@@ -1403,7 +1404,7 @@ def _execute_saved_view(client: KizenClient, op: PlanOperation, base: str) -> An
 
 
 def plan_to_json(plan: Plan) -> str:
-    return plan.model_dump_json(indent=2)
+    return out.dumps_json(plan.model_dump(mode="json"), keep_empty=True)
 
 
 def plan_from_json(text: str) -> Plan:
@@ -1411,4 +1412,4 @@ def plan_from_json(text: str) -> Plan:
 
 
 def result_to_json(result: ApplyResult) -> str:
-    return result.model_dump_json(indent=2)
+    return out.dumps_json(result.model_dump(mode="json"))

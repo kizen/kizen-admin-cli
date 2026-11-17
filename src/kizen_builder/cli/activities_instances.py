@@ -6,8 +6,6 @@ by users. Scheduled instances can be read, created, changed and deleted.
 
 from __future__ import annotations
 
-import json
-
 import typer
 from rich.table import Table
 
@@ -72,7 +70,7 @@ def act_logged_get(
             t.add_row(
                 f.get("display_name") or f.get("api_name") or "",
                 f.get("field_type") or "",
-                json.dumps(val) if isinstance(val, (dict, list)) else str(val),
+                out.inline_json(val) if isinstance(val, (dict, list)) else str(val),
             )
         console.print(t)
 
@@ -85,7 +83,7 @@ def act_logged_get(
             out.Column("api_name", "api_name"),
             out.Column("display_name", "display_name"),
             out.Column("field_type", "field_type"),
-            out.Column("value", lambda f: json.dumps(f.get("value"))),
+            out.Column("value", lambda f: out.inline_json(f.get("value"))),
         ],
     )
 
@@ -224,9 +222,7 @@ def act_scheduled_get(
 
     def table() -> None:
         console.print(f"[bold]scheduled activity[/bold] [dim]{result.get('id')}[/dim]")
-        console.print_json(
-            json.dumps({k: v for k, v in result.items() if k != "env"}, default=str)
-        )
+        out.emit_json({k: v for k, v in result.items() if k != "env"})
 
     out.render(
         fmt,

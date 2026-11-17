@@ -73,7 +73,7 @@ def columns_get(
         )
 
     def table() -> None:
-        console.print_json(data=item)
+        out.emit_json(item)
 
     out.render(fmt, json_data=item, table=table)
 

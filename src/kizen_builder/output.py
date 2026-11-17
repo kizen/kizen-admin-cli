@@ -4,7 +4,8 @@ Every read command emits one of three formats:
 
 * ``table`` — rich tables to stdout, for humans at the terminal (default);
   piped, the same rows without borders or padding.
-* ``json`` — pretty JSON, for agents and API-style consumers.
+* ``json`` — JSON: indented by one space and without empty values when
+  piped, by two at a terminal.
 * ``csv``  — ANSI-free CSV to stdout, for spreadsheets and piping;
   the workhorse format for ``records list`` and automation executions.
 
@@ -149,9 +150,53 @@ def _write_csv(rows: Sequence[dict[str, Any]], columns: Sequence[Column]) -> str
     return buf.getvalue()
 
 
-def emit_json(data: Any) -> None:
-    """Print pretty JSON to stdout (``default=str`` for stray non-JSON types)."""
-    typer.echo(json.dumps(data, indent=2, default=str))
+def _json_default(value: Any) -> Any:
+    if isinstance(value, (set, frozenset)):
+        return sorted(value, key=str)
+    return str(value)
+
+
+def _is_empty(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, (str, dict, list, tuple, set, frozenset)):
+        return not value
+    return False
+
+
+def _without_empties(value: Any) -> Any:
+    """``value`` with every ``null``, ``""``, ``[]`` and ``{}`` dict entry
+    dropped, at any depth. List items stay, so positions keep their meaning."""
+    if isinstance(value, dict):
+        kept = {k: _without_empties(v) for k, v in value.items()}
+        return {k: v for k, v in kept.items() if not _is_empty(v)}
+    if isinstance(value, (list, tuple)):
+        return [_without_empties(v) for v in value]
+    return value
+
+
+def dumps_json(data: Any, *, keep_empty: bool = False) -> str:
+    """The CLI's one JSON formatter. At a terminal: two-space indent, every
+    key. Piped (:func:`for_agent`): one-space indent, and keys whose value is
+    empty are dropped unless ``keep_empty``. Pass ``keep_empty`` for output
+    that is read to be edited or sent back: ``--raw``, wire payloads, plans.
+    """
+    piped = for_agent()
+    if piped and not keep_empty:
+        data = _without_empties(data)
+    return json.dumps(
+        data, indent=1 if piped else 2, default=_json_default, ensure_ascii=False
+    )
+
+
+def emit_json(data: Any, *, keep_empty: bool = False) -> None:
+    """Print :func:`dumps_json` to stdout."""
+    typer.echo(dumps_json(data, keep_empty=keep_empty))
+
+
+def inline_json(value: Any) -> str:
+    """One value as single-line JSON, for a table cell or a one-line note."""
+    return json.dumps(value, default=str)
 
 
 def emit_csv(rows: Sequence[dict[str, Any]], columns: Sequence[Column]) -> None:
@@ -168,17 +213,18 @@ def render(
     table: Callable[[], None],
     csv_rows: Sequence[dict[str, Any]] | None = None,
     csv_columns: Sequence[Column] | None = None,
+    keep_empty: bool = False,
 ) -> None:
     """Dispatch one command's output to the selected format.
 
-    ``json_data`` is emitted verbatim for JSON. ``table`` is the command's
+    ``json_data`` is emitted through :func:`emit_json`, with ``keep_empty``. ``table`` is the command's
     existing rich-rendering closure, run only for table format. CSV needs
     ``csv_rows`` + ``csv_columns``; a command with no meaningful CSV shape
     (e.g. a free-form detail blob) may omit them, in which case CSV falls
     back to JSON with a note on stderr.
     """
     if fmt is OutputFormat.JSON:
-        emit_json(json_data)
+        emit_json(json_data, keep_empty=keep_empty)
     elif fmt is OutputFormat.CSV:
         if csv_columns is None:
             # No tabular shape defined — degrade to JSON rather than error.
@@ -187,7 +233,7 @@ def render(
             err_console.print(
                 "[yellow]note:[/yellow] this command has no CSV form; emitting JSON."
             )
-            emit_json(json_data)
+            emit_json(json_data, keep_empty=keep_empty)
         else:
             emit_csv(csv_rows or [], csv_columns)
     else:

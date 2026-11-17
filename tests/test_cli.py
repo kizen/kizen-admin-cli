@@ -308,6 +308,7 @@ def test_objects_get_csv_shows_full_option_uuids(monkeypatch):
 
 
 def test_objects_get_json_options_unchanged(monkeypatch):
+    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     fake = _fake_object_with_options()
     monkeypatch.setattr(obj_tools, "get_object", lambda api_name: fake)
     result = runner.invoke(cli.app, ["objects", "get", "encounters", "--json"])
@@ -397,6 +398,7 @@ def test_records_list_csv_flattens_fields(monkeypatch):
 
 
 def test_json_flag_and_output_json_are_equivalent(monkeypatch):
+    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     records = load_fixture("records/list_tax_lot.json")
     monkeypatch.setattr(record_tools, "search_records", lambda *a, **k: records)
     a = runner.invoke(cli.app, ["records", "list", "tax_lot", "--json"])
@@ -912,6 +914,7 @@ def test_start_wait_json_output_is_valid_json_only(monkeypatch):
     """--json --wait: stdout is exactly one JSON blob — no interleaved
     streaming text — carrying status/timed_out/polls alongside start's
     existing keys."""
+    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     monkeypatch.setattr(
         auto_tools, "start_automation", lambda *a, **k: dict(_START_RESULT)
     )
@@ -944,6 +947,7 @@ def test_start_wait_json_output_is_valid_json_only(monkeypatch):
 def test_start_show_logs_implies_wait_and_adds_steps_to_json(monkeypatch):
     """--show-logs alone (no --wait) still waits, and --json --show-logs
     adds the full step history under "steps"."""
+    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     history = [
         {
             "id": "row-1",
@@ -3187,6 +3191,7 @@ def test_perms_group_renders_resolution_warnings_on_stderr(monkeypatch):
     """`describe_group`'s name resolution is best-effort and reports what it
     couldn't resolve. Those warnings go to stderr so stdout stays pure result
     data in every format; `--json` also carries them in the payload."""
+    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     view = {
         "id": "g1",
         "name": "Sample Group",

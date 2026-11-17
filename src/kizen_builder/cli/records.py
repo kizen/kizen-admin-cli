@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
@@ -86,11 +85,11 @@ def records_get(
                         if url:
                             t.add_row(key, f"{name}  [link={url}]{url}[/link]")
                         else:
-                            t.add_row(key, json.dumps(item))
+                            t.add_row(key, out.inline_json(item))
                     else:
                         t.add_row(key, str(item))
             elif isinstance(value, dict):
-                t.add_row(key, json.dumps(value))
+                t.add_row(key, out.inline_json(value))
             elif value is None:
                 t.add_row(key, "[dim]null[/dim]")
             else:

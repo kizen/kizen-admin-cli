@@ -4,12 +4,12 @@ flips (activate/deactivate/move), and duplicate/delete.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
 import typer
 
+from kizen_builder import output as out
 from kizen_builder.cli._mutations import (
     _confirm_or_abort,
     _read_spec,
@@ -127,14 +127,14 @@ def _run_field_patch(
 
     if dry_run:
         if json_out:
-            typer.echo(json.dumps(preview, indent=2, default=list))
+            out.emit_json(preview)
         else:
             console.print("[green]validated[/green] — dry run, nothing applied")
         return
 
     if preview["no_op"]:
         if json_out:
-            typer.echo(json.dumps(preview, indent=2, default=list))
+            out.emit_json(preview)
         return
 
     _confirm_or_abort(
@@ -147,7 +147,7 @@ def _run_field_patch(
         result = call(True)
 
     if json_out:
-        typer.echo(json.dumps(result, indent=2, default=list))
+        out.emit_json(result)
         return
     before, after = _before_after(result)
     console.print(f"[green]done[/green] — {result['field']}: {before} → {after}")

@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
@@ -64,7 +63,7 @@ def _require_run_uuid(execution_id: str) -> None:
 def _history_error_str(e: dict[str, Any]) -> str:
     error = e.get("error")
     if isinstance(error, (dict, list)):
-        return json.dumps(error)
+        return out.inline_json(error)
     return str(error) if error else ""
 
 
@@ -334,11 +333,9 @@ def _run_execution_action(
     with cli_errors(LookupError):
         result = call()
     if json_out:
-        typer.echo(json.dumps(result, indent=2, default=str))
+        out.emit_json(result)
     elif "result" in result:
-        console.print(
-            f"[green]ok[/green] — {json.dumps(result['result'], indent=2, default=str)}"
-        )
+        console.print(f"[green]ok[/green] — {out.dumps_json(result['result'])}")
     else:
         console.print(
             f"[green]ok[/green] — {execution_id}: "

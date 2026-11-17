@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import typer
 from rich.console import Console
 from rich.markup import escape
@@ -151,7 +149,7 @@ def smart_connectors_send_webhook(
             f"webhook (writes records), status {plan['status']}, batched every "
             f"{plan['cadence']}s"
         )
-        target.print(f"  body: {json.dumps(plan['body'])[:200]}")
+        target.print(f"  body: {out.inline_json(plan['body'])[:200]}")
         for blocker in plan["blockers"]:
             target.print(f"[yellow]![/yellow] {blocker}")
 

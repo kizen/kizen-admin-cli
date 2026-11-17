@@ -100,7 +100,10 @@ it prints a `Table` as a `title:` line and `| a | b |` rows of plain text, with
 no borders, padding or wrapping, so no `Table(` call site chooses a form of its
 own. Everything
 else that prints differently when piped, like `docs show`, asks
-`for_agent()` too.
+`for_agent()` too. That includes JSON: every command prints it through
+`output.emit_json` / `dumps_json`, which indent by one space and drop empty
+values when piped. Output that is edited or sent back (`--raw`, plans,
+`steps get`, `layouts get`) passes `keep_empty=True` and keeps every key.
 
 `_RootGroup` is the root app's `cls=`. It ends any command that raises
 `ConfigError` or `KizenAPIError` on one `error:` line with exit 1, so a command

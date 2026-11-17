@@ -4,7 +4,6 @@ object-resolution helpers the rest of the activity surface shares.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
@@ -211,7 +210,7 @@ def activities_get(
                     console.print(f"{n}. {escape(text)}", emoji=False)
                 else:
                     console.print(f"{n}.")
-                    console.print_json(json.dumps(rule))
+                    out.emit_json(rule)
         else:
             console.print("[dim]no visibility rules[/dim]")
 
@@ -229,6 +228,7 @@ def activities_get(
             out.Column("is_hidden", "is_hidden"),
             out.Column("id", "id"),
         ],
+        keep_empty=True,
     )
 
 

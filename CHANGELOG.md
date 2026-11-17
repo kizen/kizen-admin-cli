@@ -45,6 +45,14 @@ called out explicitly under **Changed** or **Removed**.
   A terminal looks the same as before. `KIZEN_OUTPUT=terminal` gives the
   terminal form anywhere; `KIZEN_OUTPUT=agent` gives the piped form, for
   tables and for `docs show`.
+- **Piped JSON is smaller: one-space indent and no empty values, except
+  `--raw` and plan files, which keep every key.** Keys whose value is
+  `null`, `""`, `[]` or `{}` are left out; jq reads a missing key as `null`.
+  `automations show --json`, `steps get`, `layouts get`, `activities get`,
+  `dashboards dashlet-config`, `messages templates craft-config`,
+  `smart-connectors suggest-variables --spec` and dry-run plans keep every
+  key too, since their output is edited or sent back. A terminal still gets
+  two-space indent and every key; `KIZEN_OUTPUT` picks either form anywhere.
 
 ### Fixed
 
