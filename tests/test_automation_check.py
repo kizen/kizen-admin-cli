@@ -1002,3 +1002,32 @@ def test_a_days_before_schedule_needs_a_day_count():
 def test_a_schedule_day_count_from_a_variable_needs_no_static_count():
     on_date = {"date_offset_days": None, "time": "09:00"}
     check_automation(_spec(_on_date(date_offset_type="variable", **on_date)))
+
+
+_TWO_DESTINATIONS = [{"field_ref": "deals.summary"}, {"field_ref": "deals.notes"}]
+
+
+def _llm(step_type, **block):
+    return {
+        "key": "llm",
+        "step_type": step_type,
+        f"action_{step_type}": {
+            "model_name": "kizen/lite",
+            "prompt": "Summarize the deal.",
+            "destinations": _TWO_DESTINATIONS,
+            **block,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "step_type", ["call_llm", "file_content_extraction", "audio_transcription"]
+)
+def test_two_llm_destinations_need_is_advanced(step_type):
+    f = _only(_errors(_spec(_llm(step_type))), step="llm")
+    assert f.path == f"action_{step_type}"
+    assert f.message == "more than one destination needs is_advanced: true"
+
+
+def test_two_llm_destinations_with_is_advanced_pass():
+    check_automation(_spec(_llm("call_llm", is_advanced=True)))
