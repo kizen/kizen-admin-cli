@@ -196,8 +196,8 @@ class LlmDestinationConfig(BaseModel):
     options: list[str] = Field(
         default_factory=list,
         description=(
-            "Option UUIDs for a choice-type destination field. Auto-populated "
-            "from field metadata when omitted and field_ref names a choice field."
+            "Option UUIDs for a choice-type destination field; the CLI fills "
+            "them from the field's options when omitted."
         ),
     )
     is_required: bool = False
