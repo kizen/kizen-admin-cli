@@ -1,0 +1,33 @@
+id = "t16_deal_won_onboarding"
+tier = 3
+surface = "pipeline"
+title = "Parallel lanes that create and modify related records, then rejoin"
+prompt = """
+Create an automation on the `eval_deals` pipeline named "{p} Won Onboarding" with api_name `{p}_won_onboarding`.
+
+It runs when a deal moves into the stage "Closed Won". It then does two things in parallel (two lanes of a parallel branch):
+
+- Lane A: create a related record on the `eval_tickets` object named "Onboarding: {{ entity_record.name }}", owned by the same owner as the deal, and linked to the deal through the deal's `onboarding_ticket` relationship field. Then, in a second step, set that new ticket's `priority` to "Urgent".
+- Lane B: on the account the deal is related to through its `account` relationship field (an `eval_accounts` record), set `flagged` to checked.
+
+After both lanes finish they rejoin (use a merge), and the deal's `next_step` field is set to "Kick off onboarding".
+"""
+
+[covers]
+triggers = ["stage_updated"]
+steps = ["branch", "create_related_entity", "modify_related_entities", "merge_branches", "change_field_value"]
+features = ["parallel", "merge", "related_records"]
+
+[[expect]]
+api_name = "{p}_won_onboarding"
+type = "record_based"
+target_object = "eval_deals"
+active = false
+triggers = ["stage_updated"]
+steps = { branch = 1, create_related_entity = 1, modify_related_entities = 2, merge_branches = 1, change_field_value = 1 }
+checks = [
+  { kind = "lanes", min = 2, has = ["create_related_entity", "modify_related_entities", "modify_related_entities"] },
+  { kind = "order", first = "create_related_entity", then = "modify_related_entities" },
+  { kind = "merged", of = "branch" },
+  { kind = "order", first = "merge_branches", then = "change_field_value" },
+]

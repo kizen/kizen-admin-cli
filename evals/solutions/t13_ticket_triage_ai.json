@@ -1,0 +1,94 @@
+[
+  {
+    "name": "{p} Ticket Triage",
+    "api_name": "{p}_ticket_triage",
+    "type": "record_based",
+    "target_object": "eval_tickets",
+    "triggers": [
+      {
+        "trigger_type": "manual",
+        "order": 0,
+        "trigger_manual": {}
+      }
+    ],
+    "steps": [
+      {
+        "key": "extract",
+        "parent_key": null,
+        "step_type": "file_content_extraction",
+        "order": 0,
+        "action_file_content_extraction": {
+          "model_name": "kizen/lite",
+          "prompt": "Summarize this attachment in two sentences.",
+          "input_field_ref": "eval_tickets.attachment",
+          "destinations": [
+            {
+              "field_ref": "eval_tickets.summary"
+            }
+          ]
+        }
+      },
+      {
+        "key": "urgent",
+        "parent_key": "extract",
+        "step_type": "condition",
+        "order": 1,
+        "is_branch_group_initiator": true,
+        "step_condition": {
+          "type": "llm_decision",
+          "llm_decision": {
+            "model_name": "kizen/lite",
+            "prompt": "Is this ticket about an urgent problem? Subject: {{ custom_objects.subject }}",
+            "merge_field_validation": "default_to_unknown"
+          }
+        }
+      },
+      {
+        "key": "set_urgent",
+        "parent_key": "urgent",
+        "parent_branch": "yes",
+        "step_type": "change_field_value",
+        "order": 2,
+        "action_change_field_value": {
+          "field_ref": "eval_tickets.priority",
+          "specific_field_value": "Urgent"
+        }
+      },
+      {
+        "key": "classify",
+        "parent_key": "urgent",
+        "parent_branch": "no",
+        "step_type": "call_llm",
+        "order": 3,
+        "action_call_llm": {
+          "model_name": "kizen/lite",
+          "merge_field_validation": "default_to_unknown",
+          "prompt": "Classify this ticket as Billing, Technical or Other. Answer with the category only. Message: {{ custom_objects.message }}",
+          "destinations": [
+            {
+              "field_ref": "eval_tickets.ticket_category"
+            }
+          ]
+        }
+      },
+      {
+        "key": "rejoin",
+        "parent_key": "urgent",
+        "step_type": "merge_branches",
+        "order": 4
+      },
+      {
+        "key": "tell_owner",
+        "parent_key": "rejoin",
+        "step_type": "notify_member_via_text",
+        "order": 5,
+        "action_notify_member_via_text": {
+          "team_member": {
+            "type": "owner"
+          },
+          "content": "Triage finished"
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,28 @@
+id = "t21_remove_and_activate"
+tier = 2
+surface = "contacts"
+title = "Remove a step from an existing automation and activate it"
+prompt = """
+An automation `{p}_nurture` already exists on Contacts and is inactive. It waits 1 day and then sets the contact's `eval_lifecycle` to "Engaged".
+
+Change it in place, without deleting and recreating it: remove the 1-day wait, so the field change is the only step and keeps its identity. Then activate the automation.
+"""
+
+[covers]
+triggers = ["manual"]
+steps = ["change_field_value"]
+features = ["step_edit", "activate"]
+
+[[setup]]
+spec = "nurture.json"
+
+[[expect]]
+api_name = "{p}_nurture"
+type = "record_based"
+target_object = "client_client"
+active = true
+steps = { change_field_value = 1 }
+checks = [
+  { kind = "absent", step = "delay" },
+  { kind = "kept_ids", except = ["delay"] },
+]

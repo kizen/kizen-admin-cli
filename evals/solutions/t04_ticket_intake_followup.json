@@ -1,0 +1,17 @@
+[
+  { "name": "{p} Intake Follow Up", "api_name": "{p}_intake_follow_up",
+    "type": "record_based", "target_object": "eval_tickets",
+    "triggers": [ { "trigger_type": "form_submitted", "order": 0,
+                    "trigger_form_submitted": { "form_name": "Eval Ticket Intake" } } ],
+    "steps": [
+      { "key": "follow_up", "parent_key": null, "step_type": "schedule_activity", "order": 0,
+        "action_schedule_activity": {
+          "activity_type": "eval_follow_up",
+          "schedule": { "type": "with_delay",
+                        "with_delay": { "delay_type": "day", "delay_value_type": "static",
+                                        "delay_value": 1 } },
+          "assigned_to": { "assignment_type": "owner" },
+          "note": "New ticket from the intake form: {{ custom_objects.subject }}",
+          "html_note": "<p>New ticket from the intake form: {{ custom_objects.subject }}</p>" } }
+    ] }
+]

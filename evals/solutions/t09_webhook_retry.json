@@ -1,0 +1,43 @@
+[
+  { "name": "{p} Webhook Retry", "api_name": "{p}_webhook_retry",
+    "type": "record_based", "target_object": "eval_accounts",
+    "triggers": [ { "trigger_type": "webhook", "order": 0,
+                    "trigger_webhook": { "name": "{p}_retry", "auth_type": "none" } } ],
+    "steps": [
+      { "key": "v_attempts", "parent_key": null, "step_type": "initialize_variable", "order": 0,
+        "action_initialize_variable": { "sources": [],
+          "variable": { "name": "attempts", "data_type": "number" } } },
+      { "key": "v_status", "parent_key": "v_attempts", "step_type": "initialize_variable",
+        "order": 1,
+        "action_initialize_variable": { "sources": [],
+          "variable": { "name": "last_status", "data_type": "string" } } },
+      { "key": "wait", "parent_key": "v_status", "step_type": "delay", "order": 2,
+        "step_delay": { "hours": 1 } },
+      { "key": "bump", "parent_key": "wait", "step_type": "math_operator", "order": 3,
+        "action_math_operator": { "type": "simple_builder", "subtype": "addition",
+          "variable": "attempts",
+          "simple_builder_arguments": [
+            { "argument_type": "variable", "operation_type": "regular",
+              "variable": { "name": "attempts" } },
+            { "argument_type": "constant", "operation_type": "regular", "constant": 1 } ] } },
+      { "key": "exhausted", "parent_key": "bump", "step_type": "condition", "order": 4,
+        "step_condition": { "type": "custom_filter",
+          "filter_config": { "and": true, "query": [
+            { "id": "query-0", "and": true, "filters": [
+              { "type": "variable", "subtype": "automation_variable",
+                "lhs_variable_name": "attempts", "condition": ">=",
+                "rhs_value": "3", "rhs_value_type": "static" } ] } ],
+            "invalid": false } } },
+      { "key": "fail", "parent_key": "exhausted", "parent_branch": "yes",
+        "step_type": "stop_execution", "order": 5,
+        "action_stop_execution": { "action": "stop_and_fail" } },
+      { "key": "mark", "parent_key": "exhausted", "parent_branch": "no",
+        "step_type": "update_variable", "order": 6,
+        "action_update_variable": {
+          "variable": { "name": "last_status", "data_type": "string" },
+          "sources": [ { "source_type": "static", "source_subtype": "string",
+                         "value": "retrying" } ] } },
+      { "key": "again", "parent_key": "mark", "step_type": "go_to_automation_step", "order": 7,
+        "action_go_to_automation_step": { "step_key": "wait" } }
+    ] }
+]

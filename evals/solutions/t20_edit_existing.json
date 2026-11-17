@@ -1,0 +1,48 @@
+[
+  {
+    "name": "{p} Nurture",
+    "api_name": "{p}_nurture",
+    "type": "record_based",
+    "target_object": "client_client",
+    "triggers": [
+      {
+        "trigger_type": "manual",
+        "order": 0,
+        "trigger_manual": {}
+      }
+    ],
+    "steps": [
+      {
+        "key": "wait",
+        "parent_key": null,
+        "step_type": "delay",
+        "order": 0,
+        "step_delay": {
+          "days": 3
+        }
+      },
+      {
+        "key": "tell_owner",
+        "parent_key": "wait",
+        "step_type": "notify_member_via_text",
+        "order": 1,
+        "action_notify_member_via_text": {
+          "team_member": {
+            "type": "owner"
+          },
+          "content": "Nurture: {{ entity_record.first_name }} is ready"
+        }
+      },
+      {
+        "key": "engage",
+        "parent_key": "tell_owner",
+        "order": 2,
+        "step_type": "change_field_value",
+        "action_change_field_value": {
+          "field_ref": "client_client.eval_lifecycle",
+          "specific_field_value": "Engaged"
+        }
+      }
+    ]
+  }
+]

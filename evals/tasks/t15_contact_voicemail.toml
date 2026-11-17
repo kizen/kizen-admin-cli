@@ -1,0 +1,26 @@
+id = "t15_contact_voicemail"
+tier = 3
+surface = "contacts"
+title = "Transcribe an audio file with a model the environment supports"
+requires = ["transcription_model"]
+prompt = """
+Create an automation on Contacts named "{p} Voicemail Transcript" with api_name `{p}_voicemail_transcript`. It is started manually.
+
+It has one step: an audio transcription step that transcribes the file in the contact's `eval_voicemail` field with the prompt "Transcribe this voicemail." and writes the transcript to the contact's `eval_voicemail_transcript` field. Use any model that supports audio transcription in this environment.
+"""
+
+[covers]
+triggers = ["manual"]
+steps = ["audio_transcription"]
+features = ["ai"]
+
+[[expect]]
+api_name = "{p}_voicemail_transcript"
+type = "record_based"
+target_object = "client_client"
+active = false
+triggers = ["manual"]
+steps = { audio_transcription = 1 }
+checks = [
+  { kind = "block", step = "audio_transcription", match = { model_name = "*", destinations = "*" } },
+]

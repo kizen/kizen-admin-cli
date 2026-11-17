@@ -1,0 +1,47 @@
+[
+  {
+    "name": "{p} Renewal Emails",
+    "api_name": "{p}_renewal_emails",
+    "type": "record_based",
+    "target_object": "eval_accounts",
+    "triggers": [
+      {
+        "trigger_type": "on_or_around_date",
+        "order": 0,
+        "trigger_on_or_around_date": {
+          "field_ref": "eval_accounts.renewal_date",
+          "date_offset": "days_before",
+          "date_offset_days": 30,
+          "time": "08:00",
+          "period": "am"
+        }
+      }
+    ],
+    "steps": [
+      {
+        "key": "tell_owner",
+        "parent_key": null,
+        "step_type": "notify_member_via_email",
+        "order": 0,
+        "action_notify_member_via_email": {
+          "team_member": {
+            "type": "owner"
+          },
+          "email_template_id": "<message_1>"
+        }
+      },
+      {
+        "key": "tell_contact",
+        "parent_key": "tell_owner",
+        "step_type": "send_related_contact_email",
+        "order": 1,
+        "action_send_related_contact_email": {
+          "send_to_contact_field": "<eval_accounts.primary_contact>",
+          "email": {
+            "id": "<message_2>"
+          }
+        }
+      }
+    ]
+  }
+]

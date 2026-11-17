@@ -1,0 +1,12 @@
+{
+  "name": "{p} Account Review",
+  "api_name": "{p}_account_review",
+  "type": "record_based",
+  "target_object": "eval_accounts",
+  "triggers": [ { "trigger_type": "manual", "order": 0, "trigger_manual": {} } ],
+  "steps": [
+    { "key": "note", "parent_key": null, "step_type": "change_field_value", "order": 0,
+      "action_change_field_value": { "field_ref": "eval_accounts.health_notes",
+        "specific_field_value": "Reviewed by the weekly sweep." } }
+  ]
+}

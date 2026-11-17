@@ -1,0 +1,33 @@
+id = "t20_edit_existing"
+tier = 2
+surface = "contacts"
+title = "Edit and insert steps in an existing automation"
+prompt = """
+An automation `{p}_nurture` already exists on Contacts. It waits 1 day and then sets the contact's `eval_lifecycle` to "Engaged".
+
+Change it in place. Do not delete and recreate it, and do not replace its existing steps with new ones: the two steps it has now must keep their identity, so their run history stays attached.
+
+1. Change the wait from 1 day to 3 days.
+2. Insert a new step between the wait and the field change: a text message to the contact's owner saying "Nurture: {{ entity_record.first_name }} is ready".
+"""
+
+[covers]
+triggers = ["manual"]
+steps = ["delay", "notify_member_via_text", "change_field_value"]
+features = ["step_edit"]
+
+[[setup]]
+spec = "nurture.json"
+
+[[expect]]
+api_name = "{p}_nurture"
+type = "record_based"
+target_object = "client_client"
+active = false
+steps = { delay = 1, notify_member_via_text = 1, change_field_value = 1 }
+checks = [
+  { kind = "block", step = "delay", match = { days = 3 } },
+  { kind = "order", first = "delay", then = "notify_member_via_text" },
+  { kind = "order", first = "notify_member_via_text", then = "change_field_value" },
+  { kind = "kept_ids" },
+]

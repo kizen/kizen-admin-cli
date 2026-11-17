@@ -1,0 +1,39 @@
+id = "t13_ticket_triage_ai"
+tier = 3
+surface = "custom_object"
+title = "File extraction, an AI decision, and branches that rejoin"
+prompt = """
+Create an automation on the `eval_tickets` object named "{p} Ticket Triage" with api_name `{p}_ticket_triage`. It is started manually. Use the `kizen/lite` model for every AI step.
+
+Steps, in order:
+
+1. A file content extraction step that reads the ticket's `attachment` file field with the prompt "Summarize this attachment in two sentences." and writes the result to the ticket's `summary` field.
+2. An AI decision (a condition decided by the model, not by a filter) with the prompt:
+   "Is this ticket about an urgent problem? Subject: {{ custom_objects.subject }}"
+   - If yes: set the ticket's `priority` to "Urgent".
+   - If no: an AI step with the prompt "Classify this ticket as Billing, Technical or Other. Answer with the category only. Message: {{ custom_objects.message }}" that writes its answer to the ticket's `ticket_category` field.
+3. The two branches rejoin (use a merge, do not duplicate the next step), and then a text message is sent to the ticket's owner saying "Triage finished".
+
+For both prompts, a blank merge field should default to "Unknown" rather than fail the step.
+"""
+
+[covers]
+triggers = ["manual"]
+steps = ["file_content_extraction", "condition", "change_field_value", "call_llm", "merge_branches", "notify_member_via_text"]
+features = ["branching", "merge", "ai"]
+
+[[expect]]
+api_name = "{p}_ticket_triage"
+type = "record_based"
+target_object = "eval_tickets"
+active = false
+triggers = ["manual"]
+steps = { file_content_extraction = 1, condition = 1, change_field_value = 1, call_llm = 1, merge_branches = 1, notify_member_via_text = 1 }
+checks = [
+  { kind = "block", step = "file_content_extraction", match = { model_name = "kizen/lite", destinations = "*" } },
+  { kind = "block", step = "condition", match = { type = "llm_decision", llm_decision = { model_name = "kizen/lite", merge_field_validation = "default_to_unknown" } } },
+  { kind = "branch", of = "condition", yes = ["change_field_value"], no = ["call_llm"] },
+  { kind = "block", step = "call_llm", match = { model_name = "kizen/lite", merge_field_validation = "default_to_unknown" } },
+  { kind = "merged", of = "condition" },
+  { kind = "order", first = "merge_branches", then = "notify_member_via_text" },
+]

@@ -1,0 +1,26 @@
+id = "t03_account_tier_assign"
+tier = 1
+surface = "custom_object"
+title = "Reassign an account a day after its tier changes"
+prompt = """
+Create an automation on the `eval_accounts` object named "{p} Tier Reassign" with api_name `{p}_tier_reassign`.
+
+When an account's `tier` field changes (any value to any value, but not when the record is first created), wait 1 day, then assign the account to a team member, rotating round-robin across all team members.
+"""
+
+[covers]
+triggers = ["field_updated"]
+steps = ["delay", "assign_team_member"]
+
+[[expect]]
+api_name = "{p}_tier_reassign"
+type = "record_based"
+target_object = "eval_accounts"
+active = false
+triggers = ["field_updated"]
+steps = { delay = 1, assign_team_member = 1 }
+checks = [
+  { kind = "block", step = "delay", match = { days = 1 } },
+  { kind = "block", step = "assign_team_member", match = { type = "round_robin_all" } },
+  { kind = "order", first = "delay", then = "assign_team_member" },
+]

@@ -1,0 +1,36 @@
+id = "t12_ticket_find_contact"
+tier = 3
+surface = "custom_object"
+title = "Search, loop over the result, and fall back to a code step"
+files = ["create_contact.py"]
+prompt = """
+Create an automation on the `eval_tickets` object named "{p} Find Contact" with api_name `{p}_find_contact`.
+
+It runs when a new ticket is created (creation only), and links the ticket to the Contact whose email matches the ticket's `customer_email`, creating that Contact when there is none:
+
+1. Search Contacts for records whose `email` equals the ticket's `customer_email`.
+2. Loop over the contacts found. Inside the loop, set the ticket's `customer` relationship field to the contact the loop is on.
+3. After the loop, check whether the ticket's `customer` field is still blank.
+   - If it is blank: run a code step with the Python script in `create_contact.py` (in this folder), unchanged. The script reads one input named `customer_email`, bound to the ticket's `customer_email` field, and writes one output named `customer`, bound to the ticket's `customer` field.
+   - If it is not blank: do nothing.
+"""
+
+[covers]
+triggers = ["new_entity_created"]
+steps = ["initialize_variable", "search_records", "loop", "next_or_finish", "change_field_value", "condition", "code_step"]
+features = ["loop", "branching", "variables", "code"]
+
+[[expect]]
+api_name = "{p}_find_contact"
+type = "record_based"
+target_object = "eval_tickets"
+active = false
+triggers = ["new_entity_created"]
+steps = { initialize_variable = 3, search_records = 1, loop = 1, next_or_finish = 1, change_field_value = 1, condition = 1, code_step = 1 }
+checks = [
+  { kind = "block", step = "search_records", match = { custom_object = "client_client", filter_type = "custom_filter" } },
+  { kind = "loop_body", has = ["change_field_value"] },
+  { kind = "order", first = "next_or_finish", then = "condition" },
+  { kind = "branch", of = "condition", yes = ["code_step"] },
+  { kind = "block", step = "code_step", match = { script = "*", inputs = [{ name = "customer_email" }], outputs = [{ name = "customer" }] } },
+]

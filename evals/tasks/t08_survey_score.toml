@@ -1,0 +1,25 @@
+id = "t08_survey_score"
+tier = 2
+surface = "contacts"
+title = "Survey trigger with a numeric condition"
+prompt = """
+Create an automation on Contacts named "{p} Survey Score" with api_name `{p}_survey_score`.
+
+It runs when the survey "Eval Contact Survey" is submitted. If the contact's `eval_lead_score` is 50 or more, set the contact's `eval_lifecycle` to "Engaged". Otherwise do nothing.
+"""
+
+[covers]
+triggers = ["survey_submitted"]
+steps = ["condition", "change_field_value"]
+features = ["branching"]
+
+[[expect]]
+api_name = "{p}_survey_score"
+type = "record_based"
+target_object = "client_client"
+active = false
+triggers = ["survey_submitted"]
+steps = { condition = 1, change_field_value = 1 }
+checks = [
+  { kind = "branch", of = "condition", yes = ["change_field_value"] },
+]

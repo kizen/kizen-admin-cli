@@ -1,0 +1,33 @@
+id = "t11_weekly_account_sweep"
+tier = 2
+surface = "global"
+title = "Scheduled global automation that starts another on each match"
+prompt = """
+An automation `{p}_account_review` already exists on the `eval_accounts` object and is active.
+
+Create a global automation (one with no target object) named "{p} Weekly Sweep" with api_name `{p}_weekly_sweep`.
+
+It runs every Monday at 13:00 UTC. Each run searches the `eval_accounts` object for every account whose `flagged` checkbox is checked, and starts `{p}_account_review` on each account found.
+"""
+
+[covers]
+triggers = ["schedule"]
+steps = ["initialize_variable", "search_records", "start_automation"]
+features = ["variables", "global", "multi_automation"]
+
+[[setup]]
+spec = "account_review.json"
+activate = true
+
+[[expect]]
+api_name = "{p}_weekly_sweep"
+type = "global"
+active = false
+triggers = ["schedule"]
+steps = { initialize_variable = 1, search_records = 1, start_automation = 1 }
+checks = [
+  { kind = "trigger_block", trigger = "schedule", match = { rrule = "*" } },
+  { kind = "block", step = "search_records", match = { filter_type = "custom_filter", custom_object = "eval_accounts" } },
+  { kind = "block", step = "start_automation", match = { record_source = "automation_variable" } },
+  { kind = "order", first = "search_records", then = "start_automation" },
+]

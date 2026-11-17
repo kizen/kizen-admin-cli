@@ -1,0 +1,26 @@
+id = "t02_won_deal_text"
+tier = 1
+surface = "pipeline"
+title = "Text the owner when a deal is won"
+prompt = """
+Create an automation on the `eval_deals` pipeline named "{p} Won Deal Text" with api_name `{p}_won_deal_text`.
+
+When a deal moves into the stage "Closed Won" from any other stage, send a text message to the deal's owner (the team member who owns the record) that says:
+
+Deal won: {{ entity_record.name }}
+"""
+
+[covers]
+triggers = ["stage_updated"]
+steps = ["notify_member_via_text"]
+
+[[expect]]
+api_name = "{p}_won_deal_text"
+type = "record_based"
+target_object = "eval_deals"
+active = false
+triggers = ["stage_updated"]
+steps = { notify_member_via_text = 1 }
+checks = [
+  { kind = "trigger_block", trigger = "stage_updated", match = { to_stage = "*" } },
+]

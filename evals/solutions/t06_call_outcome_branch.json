@@ -1,0 +1,24 @@
+[
+  { "name": "{p} Call Outcome", "api_name": "{p}_call_outcome",
+    "type": "record_based", "target_object": "eval_deals",
+    "triggers": [ { "trigger_type": "activity_logged", "order": 0,
+                    "trigger_activity_logged": { "activity_type": "eval_call" } } ],
+    "steps": [
+      { "key": "no_conversation", "parent_key": null, "step_type": "condition", "order": 0,
+        "step_condition": { "type": "custom_filter", "filter_config": { "all": [
+          { "field": "call_outcome", "op": "is_any_of",
+            "value": ["Left Voicemail", "No Answer"] } ] } } },
+      { "key": "follow_up", "parent_key": "no_conversation", "parent_branch": "yes",
+        "step_type": "schedule_activity", "order": 1,
+        "action_schedule_activity": {
+          "activity_type": "eval_follow_up",
+          "schedule": { "type": "with_delay",
+                        "with_delay": { "delay_type": "day", "delay_value_type": "static",
+                                        "delay_value": 2 } },
+          "assigned_to": { "assignment_type": "owner" } } },
+      { "key": "recap", "parent_key": "no_conversation", "parent_branch": "no",
+        "step_type": "change_field_value", "order": 2,
+        "action_change_field_value": { "field_ref": "eval_deals.next_step",
+          "specific_field_value": "Send recap" } }
+    ] }
+]

@@ -1,0 +1,19 @@
+[
+  { "name": "{p} Overdue Follow Up", "api_name": "{p}_overdue_follow_up",
+    "type": "record_based", "target_object": "eval_tickets",
+    "triggers": [ { "trigger_type": "scheduled_activity_overdue", "order": 0,
+                    "trigger_scheduled_activity_overdue": { "activity": "eval_follow_up" } } ],
+    "steps": [
+      { "key": "wait_for_priority", "parent_key": null, "step_type": "goal", "order": 0,
+        "step_goal": { "wait_type": "delay", "delay_type": "days", "delay_amount": 2,
+          "triggers": [ { "trigger_type": "field_updated", "order": 0,
+                          "trigger_field_updated": { "field_ref": "eval_tickets.priority" } } ] } },
+      { "key": "done", "parent_key": "wait_for_priority", "parent_branch": "yes",
+        "step_type": "stop_execution", "order": 1,
+        "action_stop_execution": { "action": "stop_and_complete" } },
+      { "key": "escalate", "parent_key": "wait_for_priority", "parent_branch": "no",
+        "step_type": "change_field_value", "order": 2,
+        "action_change_field_value": { "field_ref": "eval_tickets.escalated",
+          "specific_field_value": true } }
+    ] }
+]

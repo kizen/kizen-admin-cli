@@ -109,7 +109,9 @@ sort = "Cover"
 target-version = "py312"
 # Verbatim vendored product source (see its own PROVENANCE.md) — not ours to
 # reformat or lint, and doing so would make future upstream diffs noisy.
-extend-exclude = ["src/kizen_builder/vendor"]
+# evals/assets holds code_step scripts: they run in Kizen's sandbox, whose
+# injected globals (`inputs`, `outputs`, `kizen`) ruff reads as undefined.
+extend-exclude = ["src/kizen_builder/vendor", "evals/assets"]
 # Without this, the exclusion only applies while ruff is *discovering* files.
 # A path passed explicitly is still processed — which is exactly what an
 # editor's format-on-save and a pre-commit hook both do, one changed file at a

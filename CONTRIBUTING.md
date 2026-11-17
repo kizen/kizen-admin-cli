@@ -88,6 +88,17 @@ documentation.
 Tests marked `live` need a real environment; `conftest` skips them
 unconditionally, so they record an expectation rather than running.
 
+### Agent-usability evals
+
+`evals/` measures how an agent with no prior knowledge fares with the CLI:
+tool calls, rejected commands, plan and API errors, docs read, per task. It
+needs a disposable business and launches agent sessions, so nothing runs it
+automatically. [`evals/README.md`](evals/README.md) has the procedure.
+
+`tests/test_evals.py` is its offline half and runs in the default suite. It
+fails when a trigger or step type is wired with no eval task covering it, and
+when a task's reference solution no longer plans.
+
 ### Doc examples tied to fixtures
 
 A JSON example in a shipped doc can be tied to a committed fixture, so the

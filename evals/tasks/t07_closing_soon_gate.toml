@@ -1,0 +1,30 @@
+id = "t07_closing_soon_gate"
+tier = 2
+surface = "pipeline"
+title = "Date trigger with a gate that cancels small deals"
+prompt = """
+Create an automation on the `eval_deals` pipeline named "{p} Closing Soon" with api_name `{p}_closing_soon`.
+
+It runs 3 days before each deal's `close_date`, at 9:00 am. Then:
+
+- If the deal's `amount` is 50000 or more: send a text message to the deal's owner saying "Closing soon: {{ entity_record.name }}".
+- Otherwise: stop the run and mark it as Cancelled.
+"""
+
+[covers]
+triggers = ["on_or_around_date"]
+steps = ["condition", "notify_member_via_text", "stop_execution"]
+features = ["branching"]
+
+[[expect]]
+api_name = "{p}_closing_soon"
+type = "record_based"
+target_object = "eval_deals"
+active = false
+triggers = ["on_or_around_date"]
+steps = { condition = 1, notify_member_via_text = 1, stop_execution = 1 }
+checks = [
+  { kind = "trigger_block", trigger = "on_or_around_date", match = { date_offset = "days_before", date_offset_days = 3 } },
+  { kind = "branch", of = "condition", yes = ["notify_member_via_text"], no = ["stop_execution"] },
+  { kind = "block", step = "stop_execution", match = { action = "stop_and_cancel" } },
+]

@@ -1,0 +1,33 @@
+[
+  {
+    "name": "{p} Voicemail Transcript",
+    "api_name": "{p}_voicemail_transcript",
+    "type": "record_based",
+    "target_object": "client_client",
+    "triggers": [
+      {
+        "trigger_type": "manual",
+        "order": 0,
+        "trigger_manual": {}
+      }
+    ],
+    "steps": [
+      {
+        "key": "transcribe",
+        "parent_key": null,
+        "step_type": "audio_transcription",
+        "order": 0,
+        "action_audio_transcription": {
+          "model_name": "<transcription_model>",
+          "prompt": "Transcribe this voicemail.",
+          "input_field_ref": "client_client.eval_voicemail",
+          "destinations": [
+            {
+              "field_ref": "client_client.eval_voicemail_transcript"
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

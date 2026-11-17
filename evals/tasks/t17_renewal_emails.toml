@@ -1,0 +1,30 @@
+id = "t17_renewal_emails"
+tier = 3
+surface = "custom_object"
+title = "Two email steps, each needing its own message resource"
+prompt = """
+Create an automation on the `eval_accounts` object named "{p} Renewal Emails" with api_name `{p}_renewal_emails`.
+
+It runs 30 days before each account's `renewal_date`, at 8:00 am. Steps, in order:
+
+1. Email the account's owner, using the email template named "Eval Notice".
+2. Email the contact in the account's `primary_contact` relationship field, also using the "Eval Notice" template.
+"""
+
+[covers]
+triggers = ["on_or_around_date"]
+steps = ["notify_member_via_email", "send_related_contact_email"]
+features = ["email", "multi_command"]
+
+[[expect]]
+api_name = "{p}_renewal_emails"
+type = "record_based"
+target_object = "eval_accounts"
+active = false
+triggers = ["on_or_around_date"]
+steps = { notify_member_via_email = 1, send_related_contact_email = 1 }
+checks = [
+  { kind = "trigger_block", trigger = "on_or_around_date", match = { date_offset = "days_before", date_offset_days = 30 } },
+  { kind = "block", step = "send_related_contact_email", match = { send_to_contact_field = "*", email = "*" } },
+  { kind = "order", first = "notify_member_via_email", then = "send_related_contact_email" },
+]

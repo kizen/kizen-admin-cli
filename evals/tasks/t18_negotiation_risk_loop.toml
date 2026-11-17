@@ -1,0 +1,26 @@
+id = "t18_negotiation_risk_loop"
+tier = 3
+surface = "global"
+title = "Global automation that loops over a search and edits each record"
+prompt = """
+Create a global automation (one with no target object) named "{p} Negotiation Risk" with api_name `{p}_negotiation_risk`. It is started manually.
+
+Each run searches the `eval_deals` pipeline for every deal whose stage is "Negotiation", then loops over the deals found. Inside the loop, it sets the `risk` field of the deal the loop is on to "High".
+"""
+
+[covers]
+triggers = ["manual"]
+steps = ["initialize_variable", "search_records", "loop", "next_or_finish", "modify_related_entities"]
+features = ["loop", "variables", "global", "related_records"]
+
+[[expect]]
+api_name = "{p}_negotiation_risk"
+type = "global"
+active = false
+triggers = ["manual"]
+steps = { initialize_variable = 2, search_records = 1, loop = 1, next_or_finish = 1, modify_related_entities = 1 }
+checks = [
+  { kind = "block", step = "search_records", match = { custom_object = "eval_deals", filter_type = "custom_filter" } },
+  { kind = "loop_body", has = ["modify_related_entities"] },
+  { kind = "block", step = "modify_related_entities", match = { record_source = "automation_variable" } },
+]

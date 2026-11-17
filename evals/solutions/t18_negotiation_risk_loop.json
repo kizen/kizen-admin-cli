@@ -1,0 +1,105 @@
+[
+  {
+    "name": "{p} Negotiation Risk",
+    "api_name": "{p}_negotiation_risk",
+    "type": "global",
+    "triggers": [
+      {
+        "trigger_type": "manual",
+        "order": 0,
+        "trigger_manual": {}
+      }
+    ],
+    "steps": [
+      {
+        "key": "deals",
+        "parent_key": null,
+        "step_type": "initialize_variable",
+        "order": 0,
+        "action_initialize_variable": {
+          "sources": [],
+          "variable": {
+            "name": "deals",
+            "data_type": "entity",
+            "is_array": true,
+            "data_subtype": "<eval_deals>"
+          },
+          "array_aggregation_mode": "add_all"
+        }
+      },
+      {
+        "key": "deal",
+        "parent_key": "deals",
+        "step_type": "initialize_variable",
+        "order": 1,
+        "action_initialize_variable": {
+          "sources": [],
+          "variable": {
+            "name": "deals_item",
+            "data_type": "entity",
+            "data_subtype": "<eval_deals>"
+          }
+        }
+      },
+      {
+        "key": "find",
+        "parent_key": "deal",
+        "step_type": "search_records",
+        "order": 2,
+        "action_search_records": {
+          "custom_object": "eval_deals",
+          "filter_type": "custom_filter",
+          "filter_config": {
+            "all": [
+              {
+                "field": "stage",
+                "op": "=",
+                "value": "Negotiation"
+              }
+            ]
+          },
+          "destination_variable": "deals",
+          "destination_variable_resolution": "overwrite"
+        }
+      },
+      {
+        "key": "each",
+        "parent_key": "find",
+        "step_type": "loop",
+        "order": 3,
+        "description": "For each item in 'deals'",
+        "step_loop": {
+          "array_variable": "deals",
+          "item_variable": "deals_item"
+        }
+      },
+      {
+        "key": "raise_risk",
+        "parent_key": "each",
+        "step_type": "modify_related_entities",
+        "order": 4,
+        "action_modify_related_entities": {
+          "object_to_modify": "eval_deals",
+          "record_source": "automation_variable",
+          "record_source_variables": [
+            "deals_item"
+          ],
+          "automation_target_relationship_fields": [],
+          "fields_to_modify": [
+            {
+              "field_to_modify": "eval_deals.risk",
+              "value_type": "specific_value",
+              "specific_field_value": "High"
+            }
+          ]
+        }
+      },
+      {
+        "key": "next",
+        "parent_key": "each",
+        "step_type": "next_or_finish",
+        "order": 5
+      }
+    ]
+  }
+]
