@@ -118,6 +118,9 @@ called out explicitly under **Changed** or **Removed**.
   - `days_before` or `days_after` with `date_offset_days` 0 or left out;
   - two or more `destinations` on `call_llm`, `file_content_extraction` or
     `audio_transcription` without `is_advanced: true`.
+- **The dry run now rejects invalid `source_subtype`, `array_separator`,
+  `value_type`, goal `delay_type` and `change_type` values, and `step-types
+  show` lists the valid ones.** These used to fail only at apply.
 
   `automations steps add` and `steps edit` run the same checks.
 

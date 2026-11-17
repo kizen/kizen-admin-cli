@@ -115,9 +115,10 @@ CLI-created one reads back as "Loop" and "Initialize Variable", so set
   root-chain `initialize_variable` with `sources: []` (confirmed live
   2026-09-28).
 - A static array value is a `static` source with `source_subtype`
-  (`string`/`uuid`), a list `value` and `array_separator`. Give `value` as a
-  list: a single string such as `"a\nb"` loses its separator on read-back, and
-  `diff` then shows a change (confirmed live 2026-09-29).
+  (`string`/`uuid`), a list `value` and `array_separator` (`comma` or
+  `newline`). Give `value` as a list: a single string such as `"a\nb"` loses
+  its separator on read-back, and `diff` then shows a change (confirmed live
+  2026-09-29).
 - **`value_resolution` on `update_variable`** says how the sources combine
   with an array's current value. Confirmed live 2026-10-14, from `[a]` with
   `deduplicate_array: false`:

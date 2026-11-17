@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Literal, Self, Union
+from typing import Annotated, Any, Literal, Self, Union, get_args
 
 from pydantic import (
     BaseModel,
@@ -12,8 +12,11 @@ from pydantic import (
     Discriminator,
     Field,
     Tag,
+    ValidationInfo,
+    field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 # An on_or_around_date trigger or schedule counts days with these offsets.
 DAYS_OFFSETS = ("days_before", "days_after")
@@ -91,6 +94,34 @@ class AutomationVariableConfig(BaseModel):
     source_array_variable: Any = None
 
 
+# The write schema has `source_subtype` as a free string, but the server
+# checks it per `source_type`. These are the lists its 400s give (confirmed
+# live 2026-11-17). A field_value source's 400 lists nothing, and a
+# trigger_time source takes any value, so neither is checked here.
+SOURCE_SUBTYPES: dict[str, tuple[str, ...]] = {
+    "static": get_args(AutomationVariableDataType),
+    "logged_activity_trigger": (
+        "logged_by",
+        "logged_at",
+        "due_datetime",
+        "activity_field_value",
+        "record_association",
+        "logged_activity_id",
+        "scheduled_activity_id",
+        "activity_object_id",
+    ),
+    "activity_past_due_trigger": (
+        "scheduled_at",
+        "assignee",
+        "assignee_role",
+        "due_datetime",
+        "record_association",
+        "scheduled_activity_id",
+        "activity_object_id",
+    ),
+}
+
+
 class VariableSourceConfig(BaseModel):
     """Source for a variable value (field, literal, another variable, etc.)."""
 
@@ -109,14 +140,33 @@ class VariableSourceConfig(BaseModel):
     source_subtype: str | None = Field(
         default=None,
         description=(
-            "Required on a static source: its value's type, such as string, "
-            "number, boolean or datetime. A field_value source from a related "
-            "record takes primary_related_object_field."
+            "Required on a static source, where it's the value's type. The "
+            "values each source_type takes are in the step-type card's notes."
+        ),
+    )
+    # Choices: `GET /api/docs/schema`, 2026-11-17 (`ArraySeparatorEnum`).
+    array_separator: Literal["comma", "newline"] | None = Field(
+        default=None,
+        description=(
+            "A static source with a list value: how its items are split. "
+            "Kizen stores comma when it's left out."
         ),
     )
     field_id: str | None = None
     value: Any = None
     variable: str | None = None
+
+    @field_validator("source_subtype")
+    @classmethod
+    def _known_subtype(cls, value: str | None, info: ValidationInfo) -> str | None:
+        allowed = SOURCE_SUBTYPES.get(info.data.get("source_type", ""))
+        if value is None or allowed is None or value in allowed:
+            return value
+        raise PydanticCustomError(
+            "literal_error",
+            "Input should be {expected}",
+            {"expected": ", ".join(repr(v) for v in allowed)},
+        )
 
     # The server 400s a static source without one: "source_subtype should
     # be one of [...]" (seen live 2026-11-17).

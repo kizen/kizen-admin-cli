@@ -257,7 +257,8 @@ def _from_pydantic(err: Any, spec: dict[str, Any]) -> Finding | None:
     extra: dict[str, Any] = {}
     if kind in ("literal_error", "enum"):
         allowed = _QUOTED.findall(str((err.get("ctx") or {}).get("expected", "")))
-        message = f"{got!r} is not one of: {', '.join(allowed)}"
+        shown = ", ".join(a or '""' for a in allowed)
+        message = f"{got!r} is not one of: {shown}"
         extra = {"got": got, "allowed": allowed}
         close = difflib.get_close_matches(str(got), allowed, n=1)
         if close:

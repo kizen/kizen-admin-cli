@@ -919,6 +919,128 @@ def test_a_static_source_with_source_subtype_passes():
     check_automation(_spec(_static_var(source_subtype="string")))
 
 
+def _goal(**block):
+    return {
+        "key": "wait",
+        "step_type": "goal",
+        "step_goal": {"wait_type": "delay", "delay_amount": 2, **block},
+    }
+
+
+def _change(**block):
+    return {
+        "key": "set",
+        "step_type": "change_field_value",
+        "action_change_field_value": {"field_ref": "deals.name", **block},
+    }
+
+
+def _modify(**item):
+    return {
+        "key": "copy",
+        "step_type": "modify_related_entities",
+        "action_modify_related_entities": {
+            "object_to_modify": "line_items",
+            "automation_target_relationship_fields": ["deals.line_items"],
+            "fields_to_modify": [{"field_to_modify": "line_items.name", **item}],
+        },
+    }
+
+
+_STATIC_SUBTYPES = [
+    "string",
+    "number",
+    "boolean",
+    "date",
+    "datetime",
+    "phone_number",
+    "email",
+    "uuid",
+    "employee",
+    "entity",
+]
+
+
+# The values agents guessed in the docs eval, each a 400 at apply.
+@pytest.mark.parametrize(
+    "step, path, got, allowed",
+    [
+        (
+            _goal(delay_type="day"),
+            "step_goal.delay_type",
+            "day",
+            ["minutes", "hours", "days", ""],
+        ),
+        (
+            _change(change_type="static", specific_field_value="x"),
+            "action_change_field_value.change_type",
+            "static",
+            [
+                "specific_value",
+                "related_object_field",
+                "this_record_field",
+                "variable",
+                "entity_variable_field",
+                "blank",
+            ],
+        ),
+        (
+            _modify(value_type="specific_field_value", specific_field_value="x"),
+            "action_modify_related_entities.fields_to_modify.0.value_type",
+            "specific_field_value",
+            [
+                "specific_value",
+                "context_entity_value",
+                "variable",
+                "entity_variable_field",
+                "blank",
+            ],
+        ),
+        (
+            _static_var(source_subtype="string", array_separator=","),
+            "action_initialize_variable.sources.0.array_separator",
+            ",",
+            ["comma", "newline"],
+        ),
+        (
+            _static_var(source_subtype="text"),
+            "action_initialize_variable.sources.0.source_subtype",
+            "text",
+            _STATIC_SUBTYPES,
+        ),
+    ],
+    ids=["goal_delay_type", "change_type", "value_type", "array_separator", "subtype"],
+)
+def test_a_guessed_enum_value_names_the_step_path_and_valid_values(
+    step, path, got, allowed
+):
+    f = _only(_errors(_spec(step)), step=step["key"])
+    assert (f.path, f.got, f.allowed) == (path, got, allowed)
+
+
+def test_source_subtype_is_checked_against_its_source_type():
+    def source(source_type, subtype):
+        return _static_var(source_type=source_type, source_subtype=subtype)
+
+    # An activity trigger's subtypes aren't a static source's.
+    f = _only(_errors(_spec(source("logged_activity_trigger", "string"))))
+    assert "logged_by" in f.allowed
+    check_automation(_spec(source("logged_activity_trigger", "logged_by")))
+    check_automation(_spec(source("activity_past_due_trigger", "assignee")))
+    # The server gives no list for these, so anything passes the check.
+    check_automation(_spec(source("field_value", "this_record_field")))
+    check_automation(_spec(source("trigger_time", "anything")))
+
+
+def test_a_read_goal_with_a_blank_delay_type_passes():
+    check_automation(_spec(_goal(wait_type="never", delay_type="")))
+
+
+def test_a_blank_choice_prints_as_empty_quotes():
+    f = _only(_errors(_spec(_goal(delay_type="day"))))
+    assert f.message == "'day' is not one of: minutes, hours, days, \"\""
+
+
 def _patients_spec(*steps, **top):
     return {**_spec(*steps, **top), "target_object": "patients"}
 

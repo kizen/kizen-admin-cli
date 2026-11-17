@@ -436,6 +436,7 @@ rule.
 | An `entity` variable needs `data_subtype`; the server 400s on a missing one or an api_name, so the CLI sends the UUID | `_entity_subtype_errors`, `_step_initialize_variable` | 2026-11-16 |
 | Unknown keys in `variable` are dropped silently by the server (`isArray` saved a scalar) | `AutomationVariableConfig` (`extra="forbid"`) | 2026-10-14 |
 | A `static` source needs `source_subtype`; without it the server 400s "source_subtype should be one of [...]" | `VariableSourceConfig._static_has_subtype` | 2026-11-17 |
+| A `static`, `logged_activity_trigger` or `activity_past_due_trigger` source's `source_subtype` is one of that type's list; the write schema has it as a free string, and the server 400s with the list | `SOURCE_SUBTYPES`, `VariableSourceConfig._known_subtype` | 2026-11-17 |
 | `value_resolution` on a scalar variable 400s ("Value resolution is supported for array variables only."); on `initialize_variable` it's dropped; any other value is refused | `_scalar_value_resolution_problem`, `_step_initialize_variable` | 2026-10-14 |
 | A `stop_execution` without `action` gets `stop_and_complete`; on update a matched step keeps its live `action`/`notify`, and a live `null` becomes `stop_and_complete` | `_build_step_payload` (`_STOP_EXECUTION_DEFAULT_ACTION`), `_carry_omitted_step_keys` | 2026-10-30 |
 | An option field's label resolves to its UUID; an unknown label is refused. Kizen answers a label with a 500, or saves an automation it can't read | `_option_labels_to_ids` | 2026-10-30 |

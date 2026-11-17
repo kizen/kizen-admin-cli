@@ -357,6 +357,37 @@ def test_modify_related_entities_context_entity_field_dotted_ref_resolves(
     assert field_update["value_type"] == "context_entity_value"
 
 
+def test_fields_to_modify_items_reach_the_builder_as_given(patch_live_lookups):
+    """The typed items keep the keys they were given, nulls included: a
+    `value_type: null` still sends `value_type`, and an item with neither key
+    still sends `change_type`, as before the items were typed."""
+    item = {"field_to_modify": "encounters.attending_provider"}
+    spec = {
+        "api_name": "mre_as_given",
+        "name": "MRE As Given",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "modify",
+                "step_type": "modify_related_entities",
+                "order": 0,
+                "parent_key": None,
+                "action_modify_related_entities": {
+                    "object_to_modify": "encounters",
+                    "automation_target_relationship_fields": ["patients.encounters"],
+                    "fields_to_modify": [{**item, "value_type": None}, item],
+                },
+            }
+        ],
+    }
+    block = _build(spec)["steps"][0]["action_modify_related_entities"]
+    null_given, neither = block["fields_to_modify"]
+    assert null_given["value_type"] == "specific_value"
+    assert "change_type" not in null_given
+    assert neither["change_type"] == "specific_value"
+    assert "value_type" not in neither
+
+
 def test_modify_related_entities_record_source_from_a_variable(patch_live_lookups):
     """Without `record_source`, the server defaults to `related_object_field`
     and 400s for want of a hop (confirmed live 2026-10-06)."""

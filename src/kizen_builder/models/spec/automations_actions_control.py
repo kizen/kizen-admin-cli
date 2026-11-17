@@ -79,7 +79,15 @@ class StepGoalConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     wait_type: str = Field(description="One of: never, delay, specific_datetime.")
-    delay_type: str | None = None
+    # Choices: `GET /api/docs/schema`, 2026-11-17 (`DurationUnitEnum`). A read
+    # of a goal that doesn't wait on a delay carries "", and saves back as it is.
+    delay_type: Literal["minutes", "hours", "days", ""] | None = Field(
+        default=None,
+        description=(
+            "Unit of `delay_amount`, plural (`day` is a 400); a read carries "
+            '"" when the goal waits on no delay.'
+        ),
+    )
     delay_amount: int | None = Field(default=None, ge=0)
     specific_datetime: str | None = Field(
         default=None, description="ISO 8601 datetime string."
