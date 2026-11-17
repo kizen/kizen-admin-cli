@@ -306,7 +306,11 @@ its own 400:
   configuring each load step."
 
 `activate` warns about both in its preview, and about a connector with no
-published script. **Deactivating and reactivating needs nothing re-done.**
+published script. Switching on from `inactive` or `setup`, it also counts the
+queued live executions (`status=queued&include_dry_run=false`) and warns that
+they resume once the connector is active. The UI's "Active?" toggle runs the
+same query and shows the same warning. Read in the react-app source
+2026-11-17. **Deactivating and reactivating needs nothing re-done.**
 `inactive` → `operational` goes straight through with nothing else changed.
 
 ### Flow edits have no draft; SQL edits apply on publish

@@ -190,6 +190,17 @@ def list_executions(
     return client.paginate(f"{_BASE}/{connector}/executions", params or None)
 
 
+def count_executions(
+    client: KizenClient, connector: str, *, status: str, include_dry_run: bool
+) -> int:
+    """How many executions match, read from the list's ``count`` (one row fetched)."""
+    page = client.get(
+        f"{_BASE}/{connector}/executions",
+        params={"status": status, "include_dry_run": include_dry_run, "page_size": 1},
+    )
+    return int(page.get("count") or 0)
+
+
 def get_execution(
     client: KizenClient, connector: str, execution_id: str
 ) -> dict[str, Any]:

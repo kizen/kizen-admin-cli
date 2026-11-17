@@ -24,6 +24,13 @@ called out explicitly under **Changed** or **Removed**.
   operational connector also sets it inactive. Run `smart-connectors activate`
   afterwards.
 
+### Changed
+
+- **`smart-connectors activate` warns about queued live executions.** When it
+  switches an inactive connector on, the preview shows how many live
+  executions are pending. They resume once the connector is active. This
+  matches the warning on the UI's "Active?" toggle.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The

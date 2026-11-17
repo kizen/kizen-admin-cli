@@ -1180,8 +1180,14 @@ def test_plan_set_status_reports_the_gaps_that_make_a_live_run_pointless():
     respx.get(f"{BASE}/order_import").mock(
         return_value=httpx.Response(200, json=detail)
     )
+    respx.get(f"{BASE}/order_import/executions").mock(
+        return_value=httpx.Response(
+            200, json={"count": 0, "next": None, "previous": None, "results": []}
+        )
+    )
     plan = sct.plan_set_status("order_import", "operational")
     assert plan["changed"] is True
+    assert plan["queued_live_runs"] == 0
     assert plan["has_live_script"] is False
     assert plan["load_steps"] == 0
     assert plan["execution_variables"] == 0
@@ -1209,15 +1215,46 @@ def test_activate_preview_warns_about_every_missing_prerequisite():
     respx.get(f"{BASE}/order_import").mock(
         return_value=httpx.Response(200, json=detail)
     )
+    # The same query the UI's "Active?" toggle runs before switching on.
+    queued = respx.get(
+        f"{BASE}/order_import/executions",
+        params={"status": "queued", "include_dry_run": "false", "page_size": "1"},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "count": 3,
+                "next": f"{BASE}/order_import/executions?page=2",
+                "previous": None,
+                "results": [{"id": "exec-1", "status": "queued", "dry_run": False}],
+            },
+        )
+    )
 
     result = CliRunner().invoke(
         cli.app, ["smart-connectors", "activate", "order_import", "--dry-run"]
     )
 
     assert result.exit_code == 0, result.output
+    assert queued.called
     assert "no execution variables" in result.output
     assert "no load steps" in result.output
     assert "no published script" in result.output
+    assert "3 live executions are pending" in result.output
+
+
+@respx.mock
+def test_activate_skips_the_queued_check_for_a_need_attention_connector():
+    # The UI's toggle already shows need_attention as on, so it doesn't check.
+    detail = {**DETAIL, "status": "need_attention"}
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+
+    plan = sct.plan_set_status("order_import", "operational")
+
+    assert plan["queued_live_runs"] == 0
+    assert len(respx.calls) == 1
 
 
 @respx.mock

@@ -223,6 +223,14 @@ def _set_status(
                     "[yellow]![/yellow] no published script — publish one with "
                     "`push --publish` or runs will have nothing to execute"
                 )
+            if plan["queued_live_runs"]:
+                target.print(
+                    f"[yellow]![/yellow] {plan['queued_live_runs']} live executions "
+                    "are pending. Once active, the connector resumes processing "
+                    f"them. See `smart-connectors executions list {name} "
+                    "--status queued`.",
+                    emoji=False,
+                )
 
     if not _preview_and_confirm(
         plan,
@@ -265,7 +273,8 @@ def smart_connectors_activate(
     status, but a live run of a connector that isn't `operational` sits in
     `queued` indefinitely with no error — which is why this is its own command.
     The server refuses to activate without execution variables and fully
-    configured load steps.
+    configured load steps. Like the UI's toggle, the preview warns when live
+    executions are queued, since they resume once the connector is active.
     """
     if status == "inactive":
         warn_renamed_flag("--status inactive", "smart-connectors deactivate")

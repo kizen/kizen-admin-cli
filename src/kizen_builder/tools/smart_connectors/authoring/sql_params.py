@@ -9,11 +9,9 @@ from kizen_builder.api import smart_connectors as sc_api
 from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.smart_connectors.authoring._helpers import _connector_ref
-
-# The UI's Secrets and SQL Parameters modal sets a connector in one of these
-# statuses to inactive in the same PATCH, after asking. The server doesn't
-# require it. react-app SecretsAndParameters.tsx and helpers.ts, read 2026-11-17.
-_ACTIVE_STATUSES = ("operational", "need_attention")
+from kizen_builder.tools.smart_connectors.authoring.status import (
+    ACTIVE_CONNECTOR_STATUSES,
+)
 
 
 def plan_set_sql_params(
@@ -24,7 +22,8 @@ def plan_set_sql_params(
     The PATCH replaces ``sql_parameters`` whole, so the plan carries the full
     resulting dict: names not given keep their live values. Unsetting a name
     the connector doesn't have changes nothing. Like the UI, a change to an
-    active connector also sets it inactive.
+    active connector also sets it inactive. The server doesn't require that
+    (react-app SecretsAndParameters.tsx, read 2026-11-17).
     """
     config = load_env_config()
     with KizenClient(config) as client:
@@ -42,7 +41,7 @@ def plan_set_sql_params(
         "to_params": merged,
         "changed": merged != current,
         "status": detail.get("status"),
-        "deactivates": detail.get("status") in _ACTIVE_STATUSES,
+        "deactivates": detail.get("status") in ACTIVE_CONNECTOR_STATUSES,
     }
 
 
