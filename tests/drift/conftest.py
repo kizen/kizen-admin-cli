@@ -99,17 +99,18 @@ def drift_config(drift_profile: str):
     from kizen_builder import profiles
     from kizen_builder.config import ConfigError, load_env_config
 
-    try:
-        explicit = load_env_config(drift_profile)
-    except ConfigError as exc:
-        pytest.skip(f"profile {drift_profile!r} is not usable: {exc}\n\n{_SETUP_HELP}")
-
     real_find_pin = profiles.find_pin
     prev_profile = os.environ.get("KIZEN_PROFILE")
     profiles.find_pin = lambda start=None: None  # type: ignore[assignment]
-    os.environ["KIZEN_PROFILE"] = drift_profile
-    config_mod.set_profile_override(None)
     try:
+        try:
+            explicit = load_env_config(drift_profile)
+        except ConfigError as exc:
+            pytest.skip(
+                f"profile {drift_profile!r} is not usable: {exc}\n\n{_SETUP_HELP}"
+            )
+        os.environ["KIZEN_PROFILE"] = drift_profile
+        config_mod.set_profile_override(None)
         # Identity checksum: the ambient resolution the planners will use must
         # land on the same business as the profile we were told to target.
         ambient = load_env_config()

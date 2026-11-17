@@ -1,0 +1,20 @@
+[
+  {
+    "id": "7f8d3ebd-235b-4f10-bb20-d85946ffc334",
+    "name": "Firm Short Name",
+    "api_name": "firm_short_name",
+    "value_string": "Example Firm"
+  },
+  {
+    "id": "7f49ef13-9565-40ce-b946-df58e8edb385",
+    "name": "Facebook Review Link",
+    "api_name": "facebook_review_link",
+    "value_string": "http://facebook.com"
+  },
+  {
+    "id": "9b92cba5-111f-440d-a729-61cff498ee7b",
+    "name": "MA Survey Link",
+    "api_name": "ma_survey_link",
+    "value_string": "http://google.com"
+  }
+]

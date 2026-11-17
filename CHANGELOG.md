@@ -16,6 +16,10 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **`kizen business-variables list|set|delete`** reads and writes business
+  variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
+  `set` creates a variable or changes its value or name, and leaves the
+  others alone.
 - **SmartConnector SQL parameters can be set and removed.** `kizen
   smart-connectors set-sql-params <connector> --param name=value` sets the
   values a script reads from `meta.parameters`, and `--unset name` removes one.
