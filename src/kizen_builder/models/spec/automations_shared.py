@@ -238,7 +238,11 @@ class _CodeBinding(BaseModel):
 class _FieldSource(_CodeBinding):
     field_ref: str | None = Field(
         default=None,
-        description="'object.field' reference, resolved to field UUID at apply time.",
+        description=(
+            "'object.field', resolved at apply time; for related_field, the "
+            "relationship to hop, which must be single-value (Kizen 400s a "
+            "to-many hop)."
+        ),
     )
     field_id: str | None = Field(default=None, description="Direct UUID fallback.")
     field: str | dict[str, Any] | None = Field(
