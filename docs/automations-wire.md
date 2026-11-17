@@ -520,6 +520,6 @@ needs them. Each keeps its date here.
   team-selector field other than the far object's `owner` is unconfirmed (as
   of 2026-08-13).
 - **Merge-field spans.** The planner, like Kizen's builder, wraps each token
-  in a `kzn-merge-field` span; a bare token is inert text. The span's
-  attributes are in `kizen docs show email-templates` (confirmed live
-  2026-08-26).
+  in a `kzn-merge-field` span; a bare token is inert text. A token the spec
+  already wrapped is sent as written. The span's attributes are in `kizen
+  docs show email-templates` (confirmed live 2026-08-26).

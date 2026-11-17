@@ -91,6 +91,11 @@ called out explicitly under **Changed** or **Removed**.
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+
+- **Pre-wrapped merge-field spans are no longer escaped and wrapped again.**
+  A token already in a `kzn-merge-field` span is sent as written, in message
+  text, AI prompts and webhook headers.
+
 - **`field_ref` in a team-member block (notify, assign, cc, and
   schedule_activity's assignee) now resolves to the field's UUID.** In the
   notify and cc selectors and schedule_activity's assignee it was dropped
