@@ -94,10 +94,11 @@ user-file readers `read_text_file` / `read_json_file` / `parse_json`) and
 `_mutations.py` (`_run_mutation` and the plan/result renderers). `_shared.py`
 imports no command module, so everything else in the package can import it.
 
-The two consoles are a `Console` subclass. When `output.for_agent()` says the
-stream isn't a terminal (or `KIZEN_OUTPUT=agent`), it prints a `Table` as a
-`title:` line and `| a | b |` rows of plain text, with no borders, padding or
-wrapping, so no `Table(` call site chooses a form of its own. Everything
+The two consoles are instances of `_Console`, a `Console` subclass. When
+`output.for_agent()` says the stream isn't a terminal (or `KIZEN_OUTPUT=agent`),
+it prints a `Table` as a `title:` line and `| a | b |` rows of plain text, with
+no borders, padding or wrapping, so no `Table(` call site chooses a form of its
+own. Everything
 else that prints differently when piped, like `docs show`, asks
 `for_agent()` too.
 
