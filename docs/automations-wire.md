@@ -122,7 +122,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | Step/trigger orders with gaps or nulls | sequential 0..N |
 | `change_field_value.fields_to_clear` (expanded field objects) | bare field UUIDs |
 | `start_automation.automation_variable_overrides` — flat list, every ref expanded (`target_automation`, `variable_to_override`, plus a `value_source`-specific ref) | grouped by target automation id: `[{automation_id, variable_overrides: [...]}]`, and the unwrapping is non-uniform — `context_entity_field` → bare UUID, `variable_to_override`/`automation_variable` → bare **name**, `specific_value` → passthrough (already a bare scalar on read), `blank` → no key at all |
-| `is_branch_group_initiator` on every step | echoed as read, default `false`, and always `true` on a loop (`kizen docs show automation`, "Loops"). Dropped, every merge step 400s: "Merge step's parent (…) must be a branch group initiator step." Confirmed live 2026-09-28 |
+| `is_branch_group_initiator` on every step | echoed as read, default `false`, and always `true` on a loop (`_build_step_payload` sends it). Dropped, every merge step 400s: "Merge step's parent (…) must be a branch group initiator step." Confirmed live 2026-09-28 |
 | `continue_with_branch`, present only when set | echoed when non-null. A condition or goal with `should_skip_execution: true` 400s without it. Confirmed live 2026-09-28 |
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
@@ -176,7 +176,7 @@ inconsistent:
 
   The server has no nesting limit (6 deep saves) and no limit on body lanes.
   The CLI adds two rules of its own, from Kizen's builder: at most three
-  levels, and no loop over the same array as a loop around it (`kizen docs show automation`, "Loops").
+  levels, and no loop over the same array as a loop around it (`translate._builder_loop_problems`).
 
 ## Unlisted step types
 
