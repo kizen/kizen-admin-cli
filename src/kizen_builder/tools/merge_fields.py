@@ -45,9 +45,10 @@ from collections.abc import Callable
 MERGE_FIELD_RE = re.compile(r"\{\{\s*([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)\s*\}\}")
 
 # A token already wrapped in the span (as the builder UI writes it, or as
-# a spec author copied it from a read). `render` keeps it as written.
+# a spec author copied it from a read). `render` keeps it as written, but
+# only with the attributes Kizen writes; any other span is escaped.
 _WRAPPED_RE = re.compile(
-    r'<span class="kzn-merge-field"(?:\s+[a-z-]+="[^"<>]*")*\s*>\s*'
+    r'<span class="kzn-merge-field"(?:\s+data-merge-field-[a-z-]+="[^"<>]*")*\s*>\s*'
     r"\{\{\s*[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+\s*\}\}\s*</span>"
 )
 _RENDER_RE = re.compile(f"{_WRAPPED_RE.pattern}|{MERGE_FIELD_RE.pattern}")

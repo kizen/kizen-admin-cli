@@ -228,6 +228,12 @@ def test_render_keeps_a_pre_wrapped_span_and_wraps_a_bare_token():
     )
 
 
-def test_render_escapes_a_span_that_holds_no_token():
-    out = render('<span class="kzn-merge-field">plain</span>')
-    assert out.startswith("&lt;span")
+@pytest.mark.parametrize(
+    "span",
+    [
+        '<span class="kzn-merge-field">plain</span>',
+        '<span class="kzn-merge-field" onclick="x()">{{ contact.first_name }}</span>',
+    ],
+)
+def test_render_escapes_a_span_it_would_not_write(span):
+    assert render(span).startswith("&lt;span")
