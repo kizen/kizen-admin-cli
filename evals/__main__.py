@@ -10,7 +10,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from evals import report, runner, seed, tasks
+from evals import oracle, report, runner, seed, tasks
 from evals.runner import Config, HarnessError
 
 
@@ -23,6 +23,9 @@ def _config(args: argparse.Namespace, out: Path | None = None) -> Config:
     cfg.model = getattr(args, "model", None)
     cfg.timeout = getattr(args, "timeout", cfg.timeout)
     cfg.keep = getattr(args, "keep", False)
+    cfg.judge = getattr(args, "judge", False)
+    if getattr(args, "judge_model", None):
+        cfg.judge_model = args.judge_model
     return cfg
 
 
@@ -100,7 +103,7 @@ def cmd_score(args: argparse.Namespace) -> int:
     print(json.dumps(result, indent=2))
     if args.cleanup:
         print("deleted: " + ", ".join(runner.cleanup(run_dir, cfg)))
-    return 0 if result["passed"] else 1
+    return 0 if report.is_correct(result) else 1
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -110,19 +113,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not selected:
         raise HarnessError("no task matches")
     if not args.no_preflight:
-        capabilities = seed.require_world(cfg)
-        for t in list(selected):
-            lacking = [r for r in t.requires if not capabilities.get(r)]
-            if lacking:
-                print(f"skipping {t.id}: this business lacks {', '.join(lacking)}")
-                selected.remove(t)
+        selected = _preflight(cfg, selected)
     jobs = [(t, trial) for t in selected for trial in range(1, args.trials + 1)]
     print(f"{len(jobs)} run(s) → {out}")
 
     def one(job: tuple[tasks.Task, int]) -> dict:
         task, trial = job
         result = runner.run_one(task, cfg, trial)
-        mark = "PASS" if result.get("passed") else "FAIL"
+        mark = "PASS" if report.is_correct(result) else "FAIL"
         print(
             f"{mark} {task.id} #{trial}: {result.get('cli_calls', '-')} cli calls, "
             f"{result.get('cli_failed', '-')} failed, {result.get('invalid_commands', '-')} invalid, "
@@ -141,10 +139,80 @@ def _write_report(out: Path, results: list[dict]) -> int:
     text = report.render(summary)
     failed = report.failures(results)
     if failed:
-        text += "\nFailed runs:\n\n" + failed + "\n"
+        text += "\nRuns that weren't correct:\n\n" + failed + "\n"
+    notes = report.friction_notes(results)
+    if notes:
+        text += "\nFriction notes, costliest first:\n\n" + notes + "\n"
     (out / "report.md").write_text(text)
     print("\n" + text)
-    return 0 if all(r.get("passed") for r in results) else 1
+    return 0 if all(report.is_correct(r) for r in results) else 1
+
+
+def cmd_oracle(args: argparse.Namespace) -> int:
+    out = Path(args.out or f"evals/results/oracle-{time.strftime('%Y%m%d-%H%M%S')}")
+    cfg = _config(args, out)
+    selected = _preflight(cfg, tasks.select(tasks.load_tasks(), args.tasks))
+    results = []
+    for task in selected:
+        result = oracle.run_oracle(task, cfg)
+        results.append(result)
+        print(("ok   " if report.is_correct(result) else "FAIL ") + task.id)
+        for problem in result.get("problems") or []:
+            print(f"       {problem}")
+        unpassed = (result.get("outcome_failed") or []) + (
+            result.get("outcome_unclear") or []
+        )
+        for criterion in unpassed:
+            print(f"       judge did not pass: {criterion}")
+        for error in result.get("judge_errors") or []:
+            print(f"       judge error: {error}")
+    bad = sum(1 for r in results if not report.is_correct(r))
+    print(
+        f"\n{len(results) - bad}/{len(results)} reference solutions built and graded correct"
+    )
+    return 1 if bad else 0
+
+
+def cmd_judge(args: argparse.Namespace) -> int:
+    target = Path(args.target).resolve()
+    if (target / "run.json").is_file():
+        run_dirs = [target]
+    else:
+        run_dirs = sorted(p.parent for p in target.glob("*/*/result.json"))
+    if not run_dirs:
+        raise HarnessError(f"no scored run under {target}")
+    cfg = _config(args)
+    cfg.judge = True
+    by_id = {t.id: t for t in tasks.load_tasks()}
+    for run_dir in run_dirs:
+        result = json.loads((run_dir / "result.json").read_text())
+        if not (run_dir / "legend.json").is_file():
+            meta = json.loads((run_dir / "run.json").read_text())
+            cfg.profile = cfg.profile or meta.get("profile")
+            (run_dir / "legend.json").write_text(json.dumps(runner.world_legend(cfg)))
+        result.update(runner.rejudge(run_dir, cfg, by_id[result["task"]]))
+        result["correct"] = runner._correct(result)
+        (run_dir / "result.json").write_text(json.dumps(result, indent=2))
+        mark = "ok   " if result["correct"] else "FAIL "
+        print(f"{mark}{result['task']} #{result.get('trial')}")
+    if len(run_dirs) > 1:
+        _write_report(target, report.load_results(target))
+    return 0
+
+
+def _preflight(cfg: Config, selected: list[tasks.Task]) -> list[tasks.Task]:
+    """The selected tasks this business can run, after checking the eval world."""
+    if not selected:
+        raise HarnessError("no task matches")
+    capabilities = seed.require_world(cfg)
+    kept = []
+    for t in selected:
+        lacking = [r for r in t.requires if not capabilities.get(r)]
+        if lacking:
+            print(f"skipping {t.id}: this business lacks {', '.join(lacking)}")
+        else:
+            kept.append(t)
+    return kept
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -202,8 +270,29 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--out", default=f"evals/results/manual-{time.strftime('%Y%m%d-%H%M%S')}"
     )
+
+    def judge_flags(p: argparse.ArgumentParser, switch: bool = True) -> None:
+        if switch:
+            p.add_argument(
+                "--judge",
+                action="store_true",
+                help="Also grade each run against its rubric with an LLM judge.",
+            )
+        p.add_argument("--judge-model", help="Judge model (default: claude-opus-5-5).")
+
+    p = add(
+        "oracle", cmd_oracle, "Build every reference solution and grade it: no agent."
+    )
+    p.add_argument("tasks", nargs="*", help="Task id prefixes or tierN. Default: all.")
+    p.add_argument("--out", help="Results directory.")
+    p.add_argument("--keep", action="store_true", help="Don't delete the automations.")
+    judge_flags(p)
+    p = add("judge", cmd_judge, "Judge, or re-judge, runs that are already scored.")
+    p.add_argument("target", help="One run directory, or a results directory.")
+    judge_flags(p, switch=False)
     p = add("score", cmd_score, "Score a prepared run after its session ends.")
     p.add_argument("run_dir")
+    judge_flags(p)
     p.add_argument(
         "--cleanup",
         action="store_true",
@@ -227,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--no-preflight", action="store_true", help="Skip the eval-world check."
     )
+    judge_flags(p)
     p = add(
         "report",
         cmd_report,

@@ -1,0 +1,45 @@
+id = "t26_deal_account_brief"
+tier = 3
+surface = "pipeline"
+title = "A related record's field in a variable, and an AI step with two destinations"
+prompt = """
+Create an automation on the `eval_deals` pipeline named "{p} Account Brief" with api_name `{p}_account_brief`. It is started manually.
+
+It uses one string variable, `account_industry`, which starts each run holding the `industry` of the account the deal is related to through its `account` relationship field.
+
+It then has one AI step using the `kizen/lite` model. Its prompt is "Write a two-sentence brief on this deal.", followed by three labelled values filled in when the step runs: the deal's name, the value of the variable `account_industry`, and the deal's `call_notes`. A blank value should default to "Unknown".
+
+The step writes its answer to two places: the deal's own `ai_brief` field, and the `health_notes` field of the account the deal is related to through `account`.
+"""
+
+[covers]
+triggers = ["manual"]
+steps = ["initialize_variable", "call_llm"]
+features = ["variables", "ai", "related_records"]
+
+[[expect]]
+api_name = "{p}_account_brief"
+type = "record_based"
+target_object = "eval_deals"
+active = false
+triggers = ["manual"]
+steps = { initialize_variable = 1, call_llm = 1 }
+checks = [
+  { kind = "block", step = "initialize_variable", match = { sources = [{ source_subtype = "primary_related_object_field" }] } },
+  { kind = "block", step = "call_llm", match = { model_name = "kizen/lite", is_advanced = true, merge_field_validation = "default_to_unknown" } },
+  { kind = "mentions", step = "call_llm", text = "automation_variable.account_industry" },
+  { kind = "mentions", step = "call_llm", text = "custom_objects.call_notes" },
+  { kind = "order", first = "initialize_variable", then = "call_llm" },
+]
+
+[[rubric]]
+id = "variable"
+text = '''The variable account_industry is filled from the field industry of the account reached through the deal's account relationship field.'''
+
+[[rubric]]
+id = "prompt"
+text = '''The AI step uses kizen/lite. Its prompt begins "Write a two-sentence brief on this deal." and includes merge fields that resolve to the deal's name, the variable account_industry and the deal's call_notes. A blank value defaults to "Unknown".'''
+
+[[rubric]]
+id = "two_destinations"
+text = '''The AI step writes to the deal's ai_brief field and to the health_notes field of the account reached through account.'''

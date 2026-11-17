@@ -1,0 +1,98 @@
+[
+  {
+    "name": "{p} Stalled Proposal",
+    "api_name": "{p}_stalled_proposal",
+    "type": "record_based",
+    "target_object": "eval_deals",
+    "triggers": [
+      {
+        "trigger_type": "stage_updated",
+        "order": 0,
+        "trigger_stage_updated": {
+          "from_stage": "Qualifying",
+          "to_stage": "Proposal"
+        }
+      }
+    ],
+    "steps": [
+      {
+        "key": "today",
+        "parent_key": null,
+        "step_type": "initialize_variable",
+        "order": 0,
+        "action_initialize_variable": {
+          "sources": [
+            {
+              "source_type": "trigger_time"
+            }
+          ],
+          "variable": {
+            "name": "today",
+            "data_type": "date"
+          }
+        }
+      },
+      {
+        "key": "stamp",
+        "parent_key": "today",
+        "step_type": "change_field_value",
+        "order": 1,
+        "action_change_field_value": {
+          "field_ref": "eval_deals.proposal_sent",
+          "change_type": "variable",
+          "variable": "today"
+        }
+      },
+      {
+        "key": "wait",
+        "parent_key": "stamp",
+        "step_type": "delay",
+        "order": 2,
+        "step_delay": {
+          "days": 7
+        }
+      },
+      {
+        "key": "still_proposal",
+        "parent_key": "wait",
+        "step_type": "condition",
+        "order": 3,
+        "step_condition": {
+          "type": "custom_filter",
+          "filter_config": {
+            "all": [
+              {
+                "field": "stage",
+                "op": "=",
+                "value": "Proposal"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "key": "lose",
+        "parent_key": "still_proposal",
+        "parent_branch": "yes",
+        "step_type": "change_field_value",
+        "order": 4,
+        "action_change_field_value": {
+          "field_ref": "stage",
+          "specific_field_value": "Closed Lost"
+        }
+      },
+      {
+        "key": "archive_ticket",
+        "parent_key": "lose",
+        "step_type": "archive_record",
+        "order": 5,
+        "action_archive_record": {
+          "record_source": "related_object_field",
+          "relationship_field_ids": [
+            "eval_deals.onboarding_ticket"
+          ]
+        }
+      }
+    ]
+  }
+]

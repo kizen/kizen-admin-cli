@@ -27,3 +27,19 @@ checks = [
   { kind = "block", step = "condition", match = { type = "custom_filter" } },
   { kind = "branch", of = "condition", yes = ["schedule_activity"], no = ["change_field_value"] },
 ]
+
+[[rubric]]
+id = "trigger_eval_call"
+text = '''The trigger is an "Eval Call" activity being logged.'''
+
+[[rubric]]
+id = "condition_values"
+text = '''The condition tests the field call_outcome for exactly the two options "Left Voicemail" and "No Answer".'''
+
+[[rubric]]
+id = "yes_branch"
+text = '''The yes branch schedules an "Eval Follow Up" activity due in 2 days, assigned to the record's owner.'''
+
+[[rubric]]
+id = "no_branch"
+text = '''The no branch sets the field next_step to "Send recap".'''

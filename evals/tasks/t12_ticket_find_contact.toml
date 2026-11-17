@@ -34,3 +34,19 @@ checks = [
   { kind = "branch", of = "condition", yes = ["code_step"] },
   { kind = "block", step = "code_step", match = { script = "*", inputs = [{ name = "customer_email" }], outputs = [{ name = "customer" }] } },
 ]
+
+[[rubric]]
+id = "search"
+text = '''The search looks in Contacts for records whose email equals the ticket's customer_email, compared through a variable that holds that field's value.'''
+
+[[rubric]]
+id = "loop_links"
+text = '''The loop runs over the search result, and inside it the field customer is set to the contact the loop is on.'''
+
+[[rubric]]
+id = "blank_check"
+text = '''After the loop, the condition tests whether the field customer is blank.'''
+
+[[rubric]]
+id = "code_step"
+text = '''The yes branch runs a code step whose script is the provided create_contact.py, unchanged, with the input customer_email bound to the field customer_email and the output customer bound to the field customer.'''

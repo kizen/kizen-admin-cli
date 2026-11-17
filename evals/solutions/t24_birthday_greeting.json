@@ -1,0 +1,35 @@
+[
+  {
+    "name": "{p} Birthday Greeting",
+    "api_name": "{p}_birthday_greeting",
+    "type": "record_based",
+    "target_object": "client_client",
+    "triggers": [
+      {
+        "trigger_type": "on_or_around_date",
+        "order": 0,
+        "trigger_on_or_around_date": {
+          "field_ref": "client_client.birthday",
+          "date_offset": "on_day",
+          "time": "08:00",
+          "period": "am",
+          "every_year": true
+        }
+      }
+    ],
+    "steps": [
+      {
+        "key": "tell_owner",
+        "parent_key": null,
+        "step_type": "notify_member_via_text",
+        "order": 0,
+        "action_notify_member_via_text": {
+          "team_member": {
+            "type": "owner"
+          },
+          "content": "Birthday today: {{ entity_record.first_name }}"
+        }
+      }
+    ]
+  }
+]

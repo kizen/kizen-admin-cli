@@ -5,9 +5,7 @@ title = "Schedule a follow-up when a form is submitted"
 prompt = """
 Create an automation on the `eval_tickets` object named "{p} Intake Follow Up" with api_name `{p}_intake_follow_up`.
 
-When the form "Eval Ticket Intake" is submitted, schedule an "Eval Follow Up" activity due 1 day later, assigned to the ticket's owner, with the note:
-
-New ticket from the intake form: {{ custom_objects.subject }}
+When the form "Eval Ticket Intake" is submitted, schedule an "Eval Follow Up" activity due 1 day later, assigned to the ticket's owner, with a note that reads "New ticket from the intake form: " followed by the ticket's subject (filled in from the record).
 """
 
 [covers]
@@ -23,4 +21,21 @@ triggers = ["form_submitted"]
 steps = { schedule_activity = 1 }
 checks = [
   { kind = "block", step = "schedule_activity", match = { schedule = { type = "with_delay" } } },
+  { kind = "mentions", step = "schedule_activity", text = "custom_objects.subject" },
 ]
+
+[[rubric]]
+id = "form_is_intake"
+text = '''The trigger is the submission of the form "Eval Ticket Intake".'''
+
+[[rubric]]
+id = "activity_and_timing"
+text = '''The step schedules an "Eval Follow Up" activity due 1 day after the step runs.'''
+
+[[rubric]]
+id = "assigned_to_owner"
+text = '''The activity is assigned to the record's owner.'''
+
+[[rubric]]
+id = "note_content"
+text = '''The note reads "New ticket from the intake form: " followed by a merge field that resolves to the ticket's subject.'''

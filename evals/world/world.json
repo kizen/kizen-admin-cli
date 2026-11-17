@@ -3,55 +3,185 @@
     {
       "api_name": "client_client",
       "builtin": true,
-      "category": { "api_name": "eval_fields", "name": "Eval Fields" },
+      "category": {
+        "api_name": "eval_fields",
+        "name": "Eval Fields"
+      },
       "fields": [
-        { "name": "Eval Lifecycle", "api_name": "eval_lifecycle", "field_type": "dropdown",
-          "options": ["New", "Engaged", "Customer", "Dormant"] },
-        { "name": "Eval Lead Score", "api_name": "eval_lead_score", "field_type": "integer" },
-        { "name": "Eval Reply Summary", "api_name": "eval_reply_summary", "field_type": "longtext" },
-        { "name": "Eval Voicemail", "api_name": "eval_voicemail", "field_type": "files" },
-        { "name": "Eval Voicemail Transcript", "api_name": "eval_voicemail_transcript",
-          "field_type": "longtext" }
+        {
+          "name": "Eval Lifecycle",
+          "api_name": "eval_lifecycle",
+          "field_type": "dropdown",
+          "options": [
+            "New",
+            "Engaged",
+            "Customer",
+            "Dormant"
+          ]
+        },
+        {
+          "name": "Eval Lead Score",
+          "api_name": "eval_lead_score",
+          "field_type": "integer"
+        },
+        {
+          "name": "Eval Reply Summary",
+          "api_name": "eval_reply_summary",
+          "field_type": "longtext"
+        },
+        {
+          "name": "Eval Voicemail",
+          "api_name": "eval_voicemail",
+          "field_type": "files"
+        },
+        {
+          "name": "Eval Voicemail Transcript",
+          "api_name": "eval_voicemail_transcript",
+          "field_type": "longtext"
+        }
       ]
     },
     {
       "api_name": "eval_accounts",
       "name": "Eval Accounts",
       "entity_name": "Eval Account",
-      "category": { "api_name": "account_details", "name": "Account Details" },
+      "category": {
+        "api_name": "account_details",
+        "name": "Account Details"
+      },
       "fields": [
-        { "name": "Industry", "api_name": "industry", "field_type": "dropdown",
-          "options": ["Banking", "Healthcare", "Retail", "Software"] },
-        { "name": "Tier", "api_name": "tier", "field_type": "dropdown",
-          "options": ["Standard", "Premium", "Enterprise"] },
-        { "name": "Seats", "api_name": "seats", "field_type": "integer" },
-        { "name": "Renewal Date", "api_name": "renewal_date", "field_type": "date" },
-        { "name": "Flagged", "api_name": "flagged", "field_type": "checkbox" },
-        { "name": "Health Notes", "api_name": "health_notes", "field_type": "longtext" },
-        { "name": "Primary Contact", "api_name": "primary_contact", "field_type": "relationship",
-          "relation": { "target_object": "client_client", "relation_type": "many_to_one",
-                        "related_name": "Eval Accounts" } }
+        {
+          "name": "Industry",
+          "api_name": "industry",
+          "field_type": "dropdown",
+          "options": [
+            "Banking",
+            "Healthcare",
+            "Retail",
+            "Software"
+          ]
+        },
+        {
+          "name": "Tier",
+          "api_name": "tier",
+          "field_type": "dropdown",
+          "options": [
+            "Standard",
+            "Premium",
+            "Enterprise"
+          ]
+        },
+        {
+          "name": "Seats",
+          "api_name": "seats",
+          "field_type": "integer"
+        },
+        {
+          "name": "Renewal Date",
+          "api_name": "renewal_date",
+          "field_type": "date"
+        },
+        {
+          "name": "Flagged",
+          "api_name": "flagged",
+          "field_type": "checkbox"
+        },
+        {
+          "name": "Health Notes",
+          "api_name": "health_notes",
+          "field_type": "longtext"
+        },
+        {
+          "name": "Primary Contact",
+          "api_name": "primary_contact",
+          "field_type": "relationship",
+          "relation": {
+            "target_object": "client_client",
+            "relation_type": "many_to_one",
+            "related_name": "Eval Accounts"
+          }
+        },
+        {
+          "name": "Account Manager",
+          "api_name": "account_manager",
+          "field_type": "team_selector"
+        },
+        {
+          "name": "Contract",
+          "api_name": "contract",
+          "field_type": "files"
+        }
       ]
     },
     {
       "api_name": "eval_tickets",
       "name": "Eval Tickets",
       "entity_name": "Eval Ticket",
-      "category": { "api_name": "ticket_details", "name": "Ticket Details" },
+      "category": {
+        "api_name": "ticket_details",
+        "name": "Ticket Details"
+      },
       "fields": [
-        { "name": "Subject", "api_name": "subject", "field_type": "text" },
-        { "name": "Message", "api_name": "message", "field_type": "longtext" },
-        { "name": "Customer Email", "api_name": "customer_email", "field_type": "email" },
-        { "name": "Customer", "api_name": "customer", "field_type": "relationship",
-          "relation": { "target_object": "client_client", "relation_type": "many_to_one",
-                        "related_name": "Eval Tickets" } },
-        { "name": "Priority", "api_name": "priority", "field_type": "dropdown",
-          "options": ["Low", "Normal", "Urgent"] },
-        { "name": "Ticket Category", "api_name": "ticket_category", "field_type": "dropdown",
-          "options": ["Billing", "Technical", "Other"] },
-        { "name": "Attachment", "api_name": "attachment", "field_type": "files" },
-        { "name": "Summary", "api_name": "summary", "field_type": "longtext" },
-        { "name": "Escalated", "api_name": "escalated", "field_type": "checkbox" }
+        {
+          "name": "Subject",
+          "api_name": "subject",
+          "field_type": "text"
+        },
+        {
+          "name": "Message",
+          "api_name": "message",
+          "field_type": "longtext"
+        },
+        {
+          "name": "Customer Email",
+          "api_name": "customer_email",
+          "field_type": "email"
+        },
+        {
+          "name": "Customer",
+          "api_name": "customer",
+          "field_type": "relationship",
+          "relation": {
+            "target_object": "client_client",
+            "relation_type": "many_to_one",
+            "related_name": "Eval Tickets"
+          }
+        },
+        {
+          "name": "Priority",
+          "api_name": "priority",
+          "field_type": "dropdown",
+          "options": [
+            "Low",
+            "Normal",
+            "Urgent"
+          ]
+        },
+        {
+          "name": "Ticket Category",
+          "api_name": "ticket_category",
+          "field_type": "dropdown",
+          "options": [
+            "Billing",
+            "Technical",
+            "Other"
+          ]
+        },
+        {
+          "name": "Attachment",
+          "api_name": "attachment",
+          "field_type": "files"
+        },
+        {
+          "name": "Summary",
+          "api_name": "summary",
+          "field_type": "longtext"
+        },
+        {
+          "name": "Escalated",
+          "api_name": "escalated",
+          "field_type": "checkbox"
+        }
       ]
     },
     {
@@ -60,28 +190,107 @@
       "entity_name": "Eval Deal",
       "pipeline": true,
       "stages": [
-        { "name": "Qualifying", "status": "open", "pct": 10 },
-        { "name": "Proposal", "status": "open", "pct": 40 },
-        { "name": "Negotiation", "status": "open", "pct": 70 },
-        { "name": "Closed Won", "status": "won", "pct": 100 },
-        { "name": "Closed Lost", "status": "lost", "pct": 0 }
+        {
+          "name": "Qualifying",
+          "status": "open",
+          "pct": 10
+        },
+        {
+          "name": "Proposal",
+          "status": "open",
+          "pct": 40
+        },
+        {
+          "name": "Negotiation",
+          "status": "open",
+          "pct": 70
+        },
+        {
+          "name": "Closed Won",
+          "status": "won",
+          "pct": 100
+        },
+        {
+          "name": "Closed Lost",
+          "status": "lost",
+          "pct": 0
+        }
       ],
-      "category": { "api_name": "deal_details", "name": "Deal Details" },
+      "category": {
+        "api_name": "deal_details",
+        "name": "Deal Details"
+      },
       "fields": [
-        { "name": "Amount", "api_name": "amount", "field_type": "money" },
-        { "name": "Close Date", "api_name": "close_date", "field_type": "date" },
-        { "name": "Account", "api_name": "account", "field_type": "relationship",
-          "relation": { "target_object": "eval_accounts", "relation_type": "many_to_one",
-                        "related_name": "Eval Deals" } },
-        { "name": "Risk", "api_name": "risk", "field_type": "dropdown",
-          "options": ["Low", "Medium", "High"] },
-        { "name": "Next Step", "api_name": "next_step", "field_type": "text" },
-        { "name": "Call Outcome", "api_name": "call_outcome", "field_type": "dropdown",
-          "options": ["Connected", "Left Voicemail", "No Answer"] },
-        { "name": "Call Notes", "api_name": "call_notes", "field_type": "longtext" },
-        { "name": "Onboarding Ticket", "api_name": "onboarding_ticket", "field_type": "relationship",
-          "relation": { "target_object": "eval_tickets", "relation_type": "one_to_one",
-                        "related_name": "Onboarding Deal" } }
+        {
+          "name": "Amount",
+          "api_name": "amount",
+          "field_type": "money"
+        },
+        {
+          "name": "Close Date",
+          "api_name": "close_date",
+          "field_type": "date"
+        },
+        {
+          "name": "Account",
+          "api_name": "account",
+          "field_type": "relationship",
+          "relation": {
+            "target_object": "eval_accounts",
+            "relation_type": "many_to_one",
+            "related_name": "Eval Deals"
+          }
+        },
+        {
+          "name": "Risk",
+          "api_name": "risk",
+          "field_type": "dropdown",
+          "options": [
+            "Low",
+            "Medium",
+            "High"
+          ]
+        },
+        {
+          "name": "Next Step",
+          "api_name": "next_step",
+          "field_type": "text"
+        },
+        {
+          "name": "Call Outcome",
+          "api_name": "call_outcome",
+          "field_type": "dropdown",
+          "options": [
+            "Connected",
+            "Left Voicemail",
+            "No Answer"
+          ]
+        },
+        {
+          "name": "Call Notes",
+          "api_name": "call_notes",
+          "field_type": "longtext"
+        },
+        {
+          "name": "Onboarding Ticket",
+          "api_name": "onboarding_ticket",
+          "field_type": "relationship",
+          "relation": {
+            "target_object": "eval_tickets",
+            "relation_type": "one_to_one",
+            "related_name": "Onboarding Deal"
+          }
+        },
+        {
+          "name": "AI Brief",
+          "api_name": "ai_brief",
+          "field_type": "longtext"
+        },
+        {
+          "name": "Proposal Sent",
+          "api_name": "proposal_sent",
+          "field_type": "date"
+        }
       ]
     }
   ],
@@ -90,19 +299,33 @@
       "name": "Eval Call",
       "api_name": "eval_call",
       "association_mode": "selected_objects_associated",
-      "selected_object_ids": ["<eval_deals>"],
+      "selected_object_ids": [
+        "<eval_deals>"
+      ],
       "fields": [
-        { "name": "Outcome", "field_type": "activity_custom_field", "order": 0,
-          "custom_object_field": "<eval_deals.call_outcome>" },
-        { "name": "Call Notes", "field_type": "activity_custom_field", "order": 1,
-          "custom_object_field": "<eval_deals.call_notes>" }
+        {
+          "name": "Outcome",
+          "field_type": "activity_custom_field",
+          "order": 0,
+          "custom_object_field": "<eval_deals.call_outcome>"
+        },
+        {
+          "name": "Call Notes",
+          "field_type": "activity_custom_field",
+          "order": 1,
+          "custom_object_field": "<eval_deals.call_notes>"
+        }
       ]
     },
     {
       "name": "Eval Follow Up",
       "api_name": "eval_follow_up",
       "association_mode": "selected_objects_associated",
-      "selected_object_ids": ["<eval_deals>", "<eval_tickets>", "<eval_accounts>"]
+      "selected_object_ids": [
+        "<eval_deals>",
+        "<eval_tickets>",
+        "<eval_accounts>"
+      ]
     }
   ],
   "forms": [
@@ -111,12 +334,24 @@
       "api_name": "eval_ticket_intake",
       "related_object": "eval_tickets",
       "fields": [
-        { "name": "Your email", "api_name": "customer_email",
-          "custom_object_field": "customer_email", "required": true },
-        { "name": "Subject", "api_name": "subject",
-          "custom_object_field": "subject", "required": true },
-        { "name": "How can we help?", "api_name": "message",
-          "custom_object_field": "message", "required": true }
+        {
+          "name": "Your email",
+          "api_name": "customer_email",
+          "custom_object_field": "customer_email",
+          "required": true
+        },
+        {
+          "name": "Subject",
+          "api_name": "subject",
+          "custom_object_field": "subject",
+          "required": true
+        },
+        {
+          "name": "How can we help?",
+          "api_name": "message",
+          "custom_object_field": "message",
+          "required": true
+        }
       ]
     }
   ],
@@ -126,8 +361,12 @@
       "api_name": "eval_contact_survey",
       "related_object": "client_client",
       "fields": [
-        { "name": "Your email", "api_name": "email", "custom_object_field": "email",
-          "required": true }
+        {
+          "name": "Your email",
+          "api_name": "email",
+          "custom_object_field": "email",
+          "required": true
+        }
       ]
     }
   ],
@@ -136,9 +375,27 @@
       "name": "Eval Notice",
       "subject": "A note about {{ entity_record.name }}",
       "sections": [
-        { "rows": [ { "layout": "1 Column", "cells": [ { "blocks": [
-          { "kind": "text", "paragraphs": [ { "text": "This is the eval world's notice template." } ] }
-        ] } ] } ] }
+        {
+          "rows": [
+            {
+              "layout": "1 Column",
+              "cells": [
+                {
+                  "blocks": [
+                    {
+                      "kind": "text",
+                      "paragraphs": [
+                        {
+                          "text": "This is the eval world's notice template."
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
       ]
     }
   ]

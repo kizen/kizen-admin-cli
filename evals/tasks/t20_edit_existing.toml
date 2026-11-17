@@ -8,7 +8,7 @@ An automation `{p}_nurture` already exists on Contacts. It waits 1 day and then 
 Change it in place. Do not delete and recreate it, and do not replace its existing steps with new ones: the two steps it has now must keep their identity, so their run history stays attached.
 
 1. Change the wait from 1 day to 3 days.
-2. Insert a new step between the wait and the field change: a text message to the contact's owner saying "Nurture: {{ entity_record.first_name }} is ready".
+2. Insert a new step between the wait and the field change: a text message to the contact's owner saying "Nurture: ", then the contact's first name (filled in from the record), then " is ready".
 """
 
 [covers]
@@ -30,4 +30,17 @@ checks = [
   { kind = "order", first = "delay", then = "notify_member_via_text" },
   { kind = "order", first = "notify_member_via_text", then = "change_field_value" },
   { kind = "kept_ids" },
+  { kind = "mentions", step = "notify_member_via_text", text = "entity_record.first_name" },
 ]
+
+[[rubric]]
+id = "wait_three_days"
+text = '''The wait is now exactly 3 days.'''
+
+[[rubric]]
+id = "text_step"
+text = '''Between the wait and the field change there is a text to the record's owner reading "Nurture: ", then a merge field that resolves to the contact's first name, then " is ready".'''
+
+[[rubric]]
+id = "field_change_intact"
+text = '''The last step still sets eval_lifecycle to "Engaged".'''

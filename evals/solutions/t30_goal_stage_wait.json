@@ -1,0 +1,60 @@
+[
+  {
+    "name": "{p} Won Follow Up",
+    "api_name": "{p}_won_follow_up",
+    "type": "record_based",
+    "target_object": "eval_deals",
+    "triggers": [
+      {
+        "trigger_type": "activity_logged",
+        "order": 0,
+        "trigger_activity_logged": {
+          "activity_type": "eval_call"
+        }
+      }
+    ],
+    "steps": [
+      {
+        "key": "wait_for_win",
+        "parent_key": null,
+        "step_type": "goal",
+        "order": 0,
+        "step_goal": {
+          "wait_type": "never",
+          "triggers": [
+            {
+              "trigger_type": "stage_updated",
+              "order": 0,
+              "trigger_stage_updated": {
+                "to_stage": "Closed Won"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "key": "follow_up",
+        "parent_key": "wait_for_win",
+        "parent_branch": "yes",
+        "step_type": "schedule_activity",
+        "order": 1,
+        "action_schedule_activity": {
+          "activity_type": "eval_follow_up",
+          "schedule": {
+            "type": "on_or_around_date",
+            "on_or_around_date": {
+              "field_id": "<eval_deals.close_date>",
+              "date_offset": "days_after",
+              "date_offset_days": 1,
+              "time_offset": "specific_time",
+              "time": "10:00"
+            }
+          },
+          "assigned_to": {
+            "assignment_type": "round_robin_all"
+          }
+        }
+      }
+    ]
+  }
+]

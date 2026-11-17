@@ -1,0 +1,43 @@
+[
+  {
+    "name": "{p} Enterprise Upgrade",
+    "api_name": "{p}_enterprise_upgrade",
+    "type": "record_based",
+    "target_object": "eval_accounts",
+    "triggers": [
+      {
+        "trigger_type": "field_updated",
+        "order": 0,
+        "trigger_field_updated": {
+          "field_ref": "eval_accounts.tier",
+          "fire_on_create": false,
+          "from_match_mode": "any_including_blank",
+          "to_match_mode": "specific_value",
+          "to_value": { "id": "<eval_accounts.tier.Enterprise>" }
+        }
+      }
+    ],
+    "steps": [
+      {
+        "key": "flag",
+        "parent_key": null,
+        "step_type": "change_field_value",
+        "order": 0,
+        "action_change_field_value": {
+          "field_ref": "eval_accounts.flagged",
+          "specific_field_value": true
+        }
+      },
+      {
+        "key": "assign",
+        "parent_key": "flag",
+        "step_type": "assign_team_member",
+        "order": 1,
+        "action_assign_team_member": {
+          "type": "team_selector_field",
+          "field_id": "<eval_accounts.account_manager>"
+        }
+      }
+    ]
+  }
+]

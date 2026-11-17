@@ -27,3 +27,19 @@ checks = [
   { kind = "block", step = "goal", match = { wait_type = "delay", delay_amount = 2, triggers = [{ trigger_type = "field_updated" }] } },
   { kind = "branch", of = "goal", yes = ["stop_execution"], no = ["change_field_value"] },
 ]
+
+[[rubric]]
+id = "trigger"
+text = '''The trigger is a scheduled "Eval Follow Up" activity becoming overdue.'''
+
+[[rubric]]
+id = "goal"
+text = '''The goal waits for the field priority to be updated, for at most 2 days.'''
+
+[[rubric]]
+id = "met"
+text = '''When the goal is met, the run stops and is marked Successfully Completed.'''
+
+[[rubric]]
+id = "not_met"
+text = '''When the time runs out, the field escalated is set to checked.'''

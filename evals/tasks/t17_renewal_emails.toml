@@ -28,3 +28,15 @@ checks = [
   { kind = "block", step = "send_related_contact_email", match = { send_to_contact_field = "*", email = "*" } },
   { kind = "order", first = "notify_member_via_email", then = "send_related_contact_email" },
 ]
+
+[[rubric]]
+id = "date_trigger"
+text = '''The trigger is 30 days before the field renewal_date, at 8:00 in the morning.'''
+
+[[rubric]]
+id = "owner_email"
+text = '''The first step emails the record's owner with a message built from the template "Eval Notice".'''
+
+[[rubric]]
+id = "contact_email"
+text = '''The second step emails the contact in the field primary_contact with a message built from the template "Eval Notice".'''

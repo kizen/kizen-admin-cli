@@ -7,7 +7,7 @@ Create an automation on the `eval_deals` pipeline named "{p} Closing Soon" with 
 
 It runs 3 days before each deal's `close_date`, at 9:00 am. Then:
 
-- If the deal's `amount` is 50000 or more: send a text message to the deal's owner saying "Closing soon: {{ entity_record.name }}".
+- If the deal's `amount` is 50000 or more: send a text message to the deal's owner saying "Closing soon: " followed by the deal's name (filled in from the record).
 - Otherwise: stop the run and mark it as Cancelled.
 """
 
@@ -27,4 +27,21 @@ checks = [
   { kind = "trigger_block", trigger = "on_or_around_date", match = { date_offset = "days_before", date_offset_days = 3 } },
   { kind = "branch", of = "condition", yes = ["notify_member_via_text"], no = ["stop_execution"] },
   { kind = "block", step = "stop_execution", match = { action = "stop_and_cancel" } },
+  { kind = "mentions", step = "notify_member_via_text", text = "entity_record.name" },
 ]
+
+[[rubric]]
+id = "date_trigger"
+text = '''The trigger is 3 days before the field close_date, at 9:00 in the morning.'''
+
+[[rubric]]
+id = "condition_amount"
+text = '''The condition tests the field amount for 50000 or more.'''
+
+[[rubric]]
+id = "yes_text"
+text = '''The yes branch texts the record's owner "Closing soon: " followed by a merge field that resolves to the deal's name.'''
+
+[[rubric]]
+id = "no_cancels"
+text = '''The no branch stops the run and marks it Cancelled.'''

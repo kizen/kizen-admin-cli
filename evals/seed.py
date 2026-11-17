@@ -56,7 +56,8 @@ def _apply(
 
 
 def _fill_tokens(spec: Any, cfg: Config) -> Any:
-    """Replace `<object>` and `<object.field>` tokens with this business's UUIDs."""
+    """Replace `<object>`, `<object.field>` and `<object.field.Option>` tokens
+    with this business's UUIDs."""
     text = json.dumps(spec)
     for api in {o["api_name"] for o in tasks.load_world()["objects"]}:
         if f"<{api}" not in text:
@@ -65,7 +66,22 @@ def _fill_tokens(spec: Any, cfg: Config) -> Any:
         text = text.replace(f"<{api}>", obj["id"])
         for f in obj["fields"]:
             text = text.replace(f"<{api}.{f['api_name']}>", f["id"])
+            for option in f.get("options") or []:
+                text = text.replace(
+                    f"<{api}.{f['api_name']}.{option['name']}>", option["id"]
+                )
     return json.loads(text)
+
+
+def transcription_model(cfg: Config) -> str | None:
+    """A model this business can transcribe audio with, if it has one."""
+    models = kizen(cfg, "automations", "llm-models", "--json")
+    if models.returncode != 0:
+        return None
+    for m in _rows(models.stdout):
+        if _supports_transcription(m):
+            return m.get("model_name") or m.get("model_value")
+    return None
 
 
 def seed(cfg: Config, dry_run: bool = False, say: Say = print) -> None:
@@ -163,10 +179,8 @@ def doctor(cfg: Config) -> dict[str, Any]:
         proc = kizen(cfg, *command, "--json")
         return proc.returncode == 0 and needle in proc.stdout
 
-    models = kizen(cfg, "automations", "llm-models", "--json")
     capabilities = {
-        "transcription_model": models.returncode == 0
-        and any(_supports_transcription(m) for m in _rows(models.stdout)),
+        "transcription_model": transcription_model(cfg) is not None,
         "mcp_readonly": probe('"readonly"', "mcp-servers", "list"),
     }
     return {"missing": missing, "capabilities": capabilities}

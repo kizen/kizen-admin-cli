@@ -15,6 +15,7 @@ SETUP_DIR = ROOT / "setup"
 ASSETS_DIR = ROOT / "assets"
 WORLD_FILE = ROOT / "world" / "world.json"
 PREAMBLE_FILE = ROOT / "preamble.md"
+RUBRIC_FILE = ROOT / "rubric.toml"
 
 #: The token a task, setup spec or solution writes where the run's prefix goes.
 PREFIX_TOKEN = "{p}"
@@ -42,6 +43,7 @@ class Task:
     files: tuple[str, ...] = ()
     setup: tuple[dict[str, Any], ...] = ()
     expect: tuple[dict[str, Any], ...] = field(default=())
+    rubric: tuple[dict[str, str], ...] = ()
 
 
 def fill(value: Any, prefix: str) -> Any:
@@ -78,6 +80,7 @@ def load_tasks() -> list[Task]:
                 files=tuple(data.get("files", ())),
                 setup=tuple(data.get("setup", ())),
                 expect=tuple(data["expect"]),
+                rubric=tuple(data.get("rubric", ())),
             )
         )
     return tasks
@@ -102,6 +105,12 @@ def load_solution(task: Task, prefix: str) -> list[dict[str, Any]]:
     """The reference specs for a task, one per `[[expect]]`, in the same order."""
     data = json.loads((SOLUTIONS_DIR / f"{task.id}.json").read_text())
     return fill(data, prefix)
+
+
+def shared_rubric() -> dict[str, list[dict[str, str]]]:
+    """The criteria every run is judged on: `outcome` and `process` lists."""
+    data = tomllib.loads(RUBRIC_FILE.read_text())
+    return {"outcome": data.get("outcome", []), "process": data.get("process", [])}
 
 
 def load_world() -> dict[str, Any]:

@@ -24,3 +24,15 @@ checks = [
   { kind = "block", step = "archive_record", match = { record_source = "this_record" } },
   { kind = "order", first = "delay", then = "archive_record" },
 ]
+
+[[rubric]]
+id = "stage_closed_lost"
+text = '''The trigger fires on a move into the stage "Closed Lost".'''
+
+[[rubric]]
+id = "waits_thirty_days"
+text = '''The wait is exactly 30 days.'''
+
+[[rubric]]
+id = "archives_this_deal"
+text = '''The archive step archives the triggering deal itself, not a related record.'''

@@ -1,0 +1,58 @@
+[
+  {
+    "name": "{p} Account Brief",
+    "api_name": "{p}_account_brief",
+    "type": "record_based",
+    "target_object": "eval_deals",
+    "triggers": [
+      {
+        "trigger_type": "manual",
+        "order": 0,
+        "trigger_manual": {}
+      }
+    ],
+    "steps": [
+      {
+        "key": "industry",
+        "parent_key": null,
+        "step_type": "initialize_variable",
+        "order": 0,
+        "action_initialize_variable": {
+          "sources": [
+            {
+              "source_type": "field_value",
+              "source_subtype": "primary_related_object_field",
+              "relationship_field": "<eval_deals.account>",
+              "field": "<eval_accounts.industry>"
+            }
+          ],
+          "variable": {
+            "name": "account_industry",
+            "data_type": "string"
+          }
+        }
+      },
+      {
+        "key": "brief",
+        "parent_key": "industry",
+        "step_type": "call_llm",
+        "order": 1,
+        "action_call_llm": {
+          "model_name": "kizen/lite",
+          "is_advanced": true,
+          "merge_field_validation": "default_to_unknown",
+          "prompt": "Write a two-sentence brief on this deal.\nDeal: {{ custom_objects.name }}\nAccount industry: {{ automation_variable.account_industry }}\nLatest call notes: {{ custom_objects.call_notes }}",
+          "destinations": [
+            {
+              "field_ref": "eval_deals.ai_brief"
+            },
+            {
+              "related_object_field": "eval_accounts.health_notes",
+              "relationship_field_ref": "eval_deals.account"
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

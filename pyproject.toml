@@ -47,6 +47,10 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+# The LLM judge in evals/ (evals/README.md). Not needed by the CLI or its tests.
+evals = [
+    "anthropic>=2.0",
+]
 # Smart-connector local execution. Heavy native deps (embedded ClickHouse via
 # chdb) that only `kizen smart-connectors run`/`add-input` need — kept out of
 # the core install so the rest of the CLI stays lightweight. Install with

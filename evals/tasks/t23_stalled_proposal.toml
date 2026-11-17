@@ -1,0 +1,56 @@
+id = "t23_stalled_proposal"
+tier = 2
+surface = "pipeline"
+title = "Stage-to-stage trigger, today's date, a stage check, a stage move"
+prompt = """
+Create an automation on the `eval_deals` pipeline named "{p} Stalled Proposal" with api_name `{p}_stalled_proposal`.
+
+It runs when a deal moves from the stage "Qualifying" to the stage "Proposal". Steps, in order:
+
+1. Set the deal's `proposal_sent` date field to the date the run started (today's date, not a fixed date).
+2. Wait 7 days.
+3. Check whether the deal is still in the stage "Proposal".
+   - If it is: move the deal to the stage "Closed Lost", and then archive the ticket held in the deal's `onboarding_ticket` relationship field (archive that related ticket, not the deal).
+   - If it is not: do nothing.
+"""
+
+[covers]
+triggers = ["stage_updated"]
+steps = ["initialize_variable", "change_field_value", "delay", "condition", "archive_record"]
+features = ["branching", "variables", "related_records", "stage_move"]
+
+[[expect]]
+api_name = "{p}_stalled_proposal"
+type = "record_based"
+target_object = "eval_deals"
+active = false
+triggers = ["stage_updated"]
+steps = { initialize_variable = 1, change_field_value = 2, delay = 1, condition = 1, archive_record = 1 }
+checks = [
+  { kind = "trigger_block", trigger = "stage_updated", match = { from_stage = "*", to_stage = "*" } },
+  { kind = "block", step = "initialize_variable", match = { sources = [{ source_type = "trigger_time" }] } },
+  { kind = "block", step = "delay", match = { days = 7 } },
+  { kind = "order", first = "delay", then = "condition" },
+  { kind = "branch", of = "condition", yes = ["change_field_value", "archive_record"] },
+  { kind = "block", step = "archive_record", match = { record_source = "related_object_field" } },
+]
+
+[[rubric]]
+id = "trigger"
+text = '''The trigger fires on a move from the stage "Qualifying" to the stage "Proposal".'''
+
+[[rubric]]
+id = "stamps_today"
+text = '''The field proposal_sent is set from a variable that holds the run's start date, not from a fixed date.'''
+
+[[rubric]]
+id = "waits_seven_days"
+text = '''The wait is exactly 7 days.'''
+
+[[rubric]]
+id = "checks_stage"
+text = '''The condition tests whether the stage is "Proposal".'''
+
+[[rubric]]
+id = "yes_branch"
+text = '''The yes branch moves the deal to the stage "Closed Lost" and then archives the related ticket reached through the field onboarding_ticket, not the deal.'''

@@ -1,0 +1,42 @@
+id = "t22_enterprise_upgrade"
+tier = 2
+surface = "custom_object"
+title = "Field trigger on one specific value, and an owner copied from a field"
+prompt = """
+Create an automation on the `eval_accounts` object named "{p} Enterprise Upgrade" with api_name `{p}_enterprise_upgrade`.
+
+It runs only when an account's `tier` field changes to "Enterprise" (from any other value, blank included), and not when the record is first created. Steps, in order:
+
+1. Set the account's `flagged` checkbox to checked.
+2. Assign the account to the team member held in the account's own `account_manager` field.
+"""
+
+[covers]
+triggers = ["field_updated"]
+steps = ["change_field_value", "assign_team_member"]
+features = ["option_lookup"]
+
+[[expect]]
+api_name = "{p}_enterprise_upgrade"
+type = "record_based"
+target_object = "eval_accounts"
+active = false
+triggers = ["field_updated"]
+steps = { change_field_value = 1, assign_team_member = 1 }
+checks = [
+  { kind = "trigger_block", trigger = "field_updated", match = { to_match_mode = "specific_value", to_value = "*", fire_on_create = false } },
+  { kind = "block", step = "assign_team_member", match = { type = "team_selector_field" } },
+  { kind = "order", first = "change_field_value", then = "assign_team_member" },
+]
+
+[[rubric]]
+id = "trigger"
+text = '''The trigger watches the field tier and fires only when it becomes the option "Enterprise", from any earlier value including blank, and not on record creation.'''
+
+[[rubric]]
+id = "flags"
+text = '''The first step sets flagged to checked.'''
+
+[[rubric]]
+id = "assigns_from_field"
+text = '''The second step assigns the record to the team member in the record's own account_manager field.'''

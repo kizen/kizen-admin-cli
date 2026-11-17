@@ -121,10 +121,12 @@ def _fill_tokens(spec: Any) -> Any:
         text = text.replace(f"<{api}>", obj["id"])
         for f in obj["fields"]:
             text = text.replace(f"<{api}.{f['api_name']}>", f["id"])
+            for o in f.get("options") or []:
+                text = text.replace(f"<{api}.{f['api_name']}.{o['name']}>", o["id"])
     text = text.replace("<transcription_model>", "kizen/transcribe")
     for token in ("<message_1>", "<message_2>"):
         text = text.replace(token, _uuid(token))
-    assert not re.search(r'"<[a-z0-9_.]+>"', text), "unfilled token"
+    assert not re.search(r'"<[A-Za-z0-9_. ]+>"', text), "unfilled token"
     return json.loads(text)
 
 
@@ -468,21 +470,32 @@ def raw(spec):
               "parent_condition": s.get("parent_branch") or "",
               **{{k: v for k, v in s.items() if k.startswith(("step_", "action_")) and k != "step_type"}}}}
              for s in spec.get("steps", [])]
+    for s in steps:  # a read gives a go-to's target as a step, not a key
+        if s["step_type"] == "go_to_automation_step":
+            s["action_go_to_automation_step"] = {{"step": {{"id": s["action_go_to_automation_step"]["step_key"]}}}}
     return {{"id": spec["api_name"], "api_name": spec["api_name"], "type": spec.get("type", "record_based"),
             "custom_object": {{"name": spec.get("target_object")}}, "active": bool(spec.get("active")),
             "triggers": spec.get("triggers", []), "steps": steps}}
 if args == ["--version"]:
     print("kizen 0.0-fake")
-elif args[:2] == ["automations", "create"]:
+elif args[:2] in (["automations", "create"], ["automations", "update"]):
     spec = json.load(sys.stdin)
     if not dry:
-        db[spec["api_name"]] = raw(spec); save()
+        was = db.get(spec["api_name"], {{}})
+        db[spec["api_name"]] = {{**raw(spec), "active": was.get("active", False)}}; save()
+elif args[:2] == ["objects", "get"]:
+    print(json.dumps(json.loads(pathlib.Path({objects!r}).read_text())[args[2]]))
+elif args[:2] == ["automations", "llm-models"]:
+    print(json.dumps([{{"model_name": "kizen/transcribe", "usage": {{"audio": {{"transcription": True}}}}}}]))
+elif args[:2] == ["messages", "create"]:
+    n = len(db.setdefault("_messages", [])); db["_messages"].append(args[2]); save()
+    print(json.dumps({{"results": [{{"server_uuid": f"00000000-0000-4000-8000-{{n:012d}}"}}]}}))
 elif args[:2] == ["automations", "get"]:
     if args[2] not in db:
         sys.exit(f"error: no automation with api_name '{{args[2]}}'")
     print(json.dumps(db[args[2]]))
 elif args[:2] == ["automations", "list"]:
-    print(json.dumps(list(db.values())))
+    print(json.dumps([v for k, v in db.items() if k != "_messages"]))
 elif args[:2] == ["automations", "delete"]:
     db.pop(args[2], None); save()
 elif args[:2] == ["automations", "activate"]:
@@ -521,7 +534,11 @@ def harness(tmp_path):
     from evals.runner import Config
 
     fake = tmp_path / "fake_kizen.py"
-    fake.write_text(_FAKE_KIZEN.format(store=str(tmp_path / "store.json")))
+    objects = tmp_path / "objects.json"
+    objects.write_text(json.dumps(OBJECTS))
+    fake.write_text(
+        _FAKE_KIZEN.format(store=str(tmp_path / "store.json"), objects=str(objects))
+    )
     cfg = Config(
         out=tmp_path / "out", profile="evalprofile", kizen=[sys.executable, str(fake)]
     )
@@ -606,3 +623,237 @@ def test_run_one_reports_a_harness_failure_as_a_failed_run(harness):
     result = runner.run_one(TASKS[0], cfg)
     assert result["passed"] is False
     assert "agent command not found" in result["harness_error"]
+
+
+# --- rubrics and the judge ---------------------------------------------------
+
+
+def test_every_task_has_a_rubric_of_distinct_checkable_criteria():
+    shared = tasks.shared_rubric()
+    assert shared["outcome"] and shared["process"]
+    shared_ids = {c["id"] for group in shared.values() for c in group}
+    for task in TASKS:
+        ids = [c["id"] for c in task.rubric]
+        assert len(ids) >= 2, task.id
+        assert len(set(ids)) == len(ids) and not set(ids) & shared_ids, task.id
+        for c in task.rubric:
+            assert c["text"].endswith((".", '."')), (task.id, c["id"])
+            assert "{{" not in c["text"], (
+                "a criterion describes a merge field, never spells one"
+            )
+
+
+def test_prompts_never_spell_a_merge_field():
+    for task in TASKS:
+        assert "{{" not in task.prompt, task.id
+
+
+def _legend() -> dict[str, str]:
+    from evals import judge
+
+    return judge.legend_from_objects(list(OBJECTS.values()))
+
+
+def test_legend_names_fields_options_and_stages():
+    legend = _legend()
+    deals = OBJECTS["eval_deals"]
+    assert legend[deals["id"]] == "object eval_deals"
+    assert (
+        legend[_uuid("eval_deals.stage.Closed Won")] == "eval_deals stage 'Closed Won'"
+    )
+    assert legend[_uuid("eval_deals.risk")] == "field eval_deals.risk (dropdown)"
+    assert legend[_uuid("eval_deals.risk.High")] == "option 'High' of eval_deals.risk"
+
+
+def test_outcome_prompt_holds_the_end_state_and_not_the_answer_key():
+    from evals import judge
+
+    task = next(t for t in TASKS if t.id == "t12_ticket_find_contact")
+    raw = {
+        "api_name": f"{PREFIX}_find_contact",
+        "steps": [{"id": "a", "stats": {"n": 1}}],
+    }
+    prompt = judge.outcome_prompt(
+        task, PREFIX, {raw["api_name"]: raw, "gone": None}, _legend()
+    )
+    for c in [*tasks.shared_rubric()["outcome"], *task.rubric]:
+        assert f"`{c['id']}`" in prompt
+    assert "create_contact.py" in prompt and "kizen.api.post" in prompt
+    assert '"stats"' not in prompt and "not found" in prompt
+    assert "object eval_tickets" in prompt
+    # Nothing from the reference solution, and nothing the agent said.
+    assert "found_contacts_item" not in prompt and "TOOL CALL" not in prompt
+
+
+def test_process_prompt_holds_the_call_log_and_a_clipped_transcript():
+    from evals import judge
+
+    events = [
+        {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "Reading the docs."},
+            {"type": "tool_use", "name": "Bash", "input": {"command": "kizen docs show automation"}}]}},
+        {"type": "user", "message": {"content": [
+            {"type": "tool_result", "content": [{"type": "text", "text": "x" * 9000}]}]}},
+    ]  # fmt: skip
+    calls = [_call("automations make", 2, "No such command 'make'.")]
+    prompt = judge.process_prompt(TASKS[0], PREFIX, events, calls)
+    assert "AGENT: Reading the docs." in prompt
+    assert "TOOL CALL Bash" in prompt and "characters cut" in prompt
+    assert '"outcome": "usage"' in prompt and "No such command" in prompt
+    assert all(f"`{c['id']}`" in prompt for c in tasks.shared_rubric()["process"])
+
+
+def _fake_judge(
+    verdict: str = "pass", fail: set[str] | None = None, error_on: str = ""
+):
+    """A judge that gives every criterion in the prompt one verdict."""
+    from evals import judge
+
+    seen: list[str] = []
+
+    def call(model, system, user, schema):
+        section = "process" if "friction" in schema["properties"] else "outcome"
+        seen.append(section)
+        if section == error_on:
+            raise judge.JudgeError("the API answered 529: overloaded")
+        ids = re.findall(r"^- `([a-z_0-9]+)`:", user, re.M)
+        answer: dict[str, Any] = {
+            "criteria": [
+                {
+                    "id": i,
+                    "verdict": "fail" if i in (fail or ()) else verdict,
+                    "evidence": "e",
+                }
+                for i in ids
+            ]
+        }
+        if section == "process":
+            answer["friction"] = [
+                {
+                    "cause": "docs_hard_to_find",
+                    "what_happened": "x",
+                    "cli_calls_wasted": 3,
+                },
+                {"cause": "agent_mistake", "what_happened": "y", "cli_calls_wasted": 2},
+            ]
+        return answer, {"model": model, "input_tokens": 1000, "output_tokens": 100}
+
+    call.seen = seen  # type: ignore[attr-defined]
+    return call
+
+
+def _scored_run(harness, task_id: str, **judge_kwargs):
+    from evals import runner
+
+    cfg, agent, tmp_path = harness
+    cfg.judge, cfg.judge_call = True, _fake_judge(**judge_kwargs)
+    task = next(t for t in TASKS if t.id == task_id)
+    run_dir = runner.prepare(task, cfg)
+    agent(task, _solution_file(tmp_path, task, run_dir))
+    runner.launch(run_dir, cfg)
+    return runner.score(run_dir, cfg), run_dir, cfg
+
+
+def test_a_judged_run_is_correct_only_when_checks_and_rubric_both_pass(harness):
+    result, run_dir, _ = _scored_run(harness, "t07_closing_soon_gate")
+    assert (result["passed"], result["judged_correct"], result["correct"]) == (
+        True,
+        True,
+        True,
+    )
+    assert result["process_clean"] is True
+    assert result["friction_calls"] == 3  # the agent's own mistake isn't the tool's
+    assert result["judge_tokens"] == 2200
+    judged = json.loads((run_dir / "judge.json").read_text())
+    assert [v["id"] for v in judged["outcome"]][:2] == [
+        "named_as_asked",
+        "nothing_extra",
+    ]
+    assert (run_dir / "judge.outcome.prompt.md").is_file()
+
+
+def test_a_failed_criterion_makes_a_passing_build_incorrect(harness):
+    from evals import report
+
+    result, _, cfg = _scored_run(
+        harness, "t07_closing_soon_gate", fail={"condition_amount"}
+    )
+    assert (result["passed"], result["judged_correct"], result["correct"]) == (
+        True,
+        False,
+        False,
+    )
+    assert result["outcome_failed"] == ["condition_amount"]
+    results = report.load_results(cfg.out)
+    summary = report.summarize(results)
+    row = summary["tasks"]["t07_closing_soon_gate"]
+    assert (row["correct"], row["passed"]) == (0, 1)
+    assert "judge: failed condition_amount" in report.failures(results)
+    assert summary["friction"]["docs_hard_to_find"] == {
+        "times": 1,
+        "cli_calls_wasted": 3,
+    }
+    assert "docs_hard_to_find" in report.render(summary)
+    assert report.friction_notes(results).startswith(
+        "- t07_closing_soon_gate (docs_hard_to_find"
+    )
+
+
+def test_cannot_tell_is_not_a_pass(harness):
+    result, _, _ = _scored_run(harness, "t01_contact_lifecycle", verdict="cannot_tell")
+    assert result["judged_correct"] is False
+    assert (
+        "sets_lifecycle_new" in result["outcome_unclear"]
+        and not result["outcome_failed"]
+    )
+
+
+def test_a_judge_failure_is_an_error_not_a_verdict(harness):
+    from evals import report
+
+    result, _, cfg = _scored_run(harness, "t01_contact_lifecycle", error_on="outcome")
+    assert result["judged_correct"] is None and result["correct"] is None
+    assert result["judge_errors"] == ["outcome: the API answered 529: overloaded"]
+    assert result["process_clean"] is True  # the other call still counted
+    summary = report.summarize(report.load_results(cfg.out))
+    assert (
+        summary["overall"]["judge_errors"] == 1 and summary["overall"]["correct"] == 0
+    )
+    assert "The judge failed on 1 run(s)" in report.render(summary)
+
+
+def test_a_criterion_the_judge_skipped_is_unclear():
+    from evals import judge
+
+    criteria = [{"id": "a", "text": "A."}, {"id": "b", "text": "B."}]
+    answer = {"criteria": [{"id": "a", "verdict": "pass", "evidence": "x"},
+                           {"id": "zzz", "verdict": "pass", "evidence": "x"}]}  # fmt: skip
+    assert [v["verdict"] for v in judge._verdicts(answer, criteria)] == [
+        "pass",
+        "cannot_tell",
+    ]
+
+
+def test_the_judge_schemas_are_closed():
+    from evals import judge
+
+    for schema in (judge.OUTCOME_SCHEMA, judge.PROCESS_SCHEMA):
+        assert schema["additionalProperties"] is False
+        assert set(schema["required"]) == set(schema["properties"])
+    assert judge.PROCESS_SCHEMA["properties"]["friction"]["items"]["properties"][
+        "cause"
+    ]["enum"] == list(judge.FRICTION_CAUSES)
+
+
+# --- the oracle --------------------------------------------------------------
+
+
+@pytest.mark.parametrize("task", TASKS, ids=lambda t: t.id)
+def test_the_oracle_builds_and_passes_every_reference_solution(harness, task):
+    from evals import oracle, runner
+
+    cfg, _, _ = harness
+    cfg.judge, cfg.judge_call = True, _fake_judge()
+    result = oracle.run_oracle(task, cfg)
+    assert result["problems"] == [] and result["correct"] is True
+    assert runner.kizen(cfg, "automations", "list", "--json").stdout.strip() == "[]"

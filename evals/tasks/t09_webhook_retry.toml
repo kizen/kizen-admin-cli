@@ -37,3 +37,27 @@ checks = [
   { kind = "block", step = "stop_execution", match = { action = "stop_and_fail" } },
   { kind = "goto", target = "delay" },
 ]
+
+[[rubric]]
+id = "webhook"
+text = '''The webhook trigger is named with the run's prefix followed by "_retry" and requires no authentication.'''
+
+[[rubric]]
+id = "variables"
+text = '''There is a number variable attempts and a text variable last_status.'''
+
+[[rubric]]
+id = "math"
+text = '''The math step adds 1 to attempts and stores the result in attempts.'''
+
+[[rubric]]
+id = "condition"
+text = '''The condition tests the variable attempts for 3 or more.'''
+
+[[rubric]]
+id = "yes_fails"
+text = '''The yes branch stops the run and marks it Failed.'''
+
+[[rubric]]
+id = "no_loops_back"
+text = '''The no branch sets last_status to "retrying" and then jumps back to the 1-hour wait.'''

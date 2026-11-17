@@ -31,3 +31,15 @@ checks = [
   { kind = "block", step = "start_automation", match = { record_source = "automation_variable" } },
   { kind = "order", first = "search_records", then = "start_automation" },
 ]
+
+[[rubric]]
+id = "schedule"
+text = '''The schedule is weekly, on Mondays, at 13:00 UTC.'''
+
+[[rubric]]
+id = "search"
+text = '''The search looks in eval_accounts for records whose flagged checkbox is checked, and writes them to a list variable.'''
+
+[[rubric]]
+id = "starts_review"
+text = '''The start step starts the automation whose api_name is the run's prefix followed by "_account_review", once on each record in that list variable.'''

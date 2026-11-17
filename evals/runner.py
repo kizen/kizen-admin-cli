@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from evals import graph, metrics, shim, tasks
+from evals import judge as judging
 from evals.tasks import Task
 
 #: The default agent: a headless Claude Code session with no user settings, no
@@ -50,6 +51,9 @@ class Config:
     model: str | None = None
     timeout: int = 1800
     keep: bool = False
+    judge: bool = False
+    judge_model: str = judging.DEFAULT_MODEL
+    judge_call: judging.Caller = judging.call_claude
 
 
 class HarnessError(RuntimeError):
@@ -89,6 +93,23 @@ def read_raw(cfg: Config, api_name: str) -> dict[str, Any] | None:
             return None
         raise HarnessError(f"reading {api_name} failed: {proc.stderr.strip()[-600:]}")
     return json.loads(proc.stdout)
+
+
+_legends: dict[str | None, dict[str, str]] = {}
+
+
+def world_legend(cfg: Config) -> dict[str, str]:
+    """UUID → meaning for the eval world in this business, read once per profile."""
+    if cfg.profile not in _legends:
+        objects = []
+        for spec in tasks.load_world()["objects"]:
+            out = _must(
+                kizen(cfg, "objects", "get", spec["api_name"], "--json"),
+                f"objects get {spec['api_name']}",
+            )
+            objects.append(json.loads(out))
+        _legends[cfg.profile] = judging.legend_from_objects(objects)
+    return _legends[cfg.profile]
 
 
 def prepare(task: Task, cfg: Config, trial: int = 1) -> Path:
@@ -187,9 +208,16 @@ def launch(run_dir: Path, cfg: Config) -> None:
 
 
 def score(
-    run_dir: Path, cfg: Config, tasks_by_id: dict[str, Task] | None = None
+    run_dir: Path,
+    cfg: Config,
+    tasks_by_id: dict[str, Task] | None = None,
+    compare_ids: bool = True,
 ) -> dict[str, Any]:
-    """Read back what the session built, check it, and write result.json."""
+    """Read back what the session built, check it, judge it, and write result.json.
+
+    `compare_ids=False` skips the `kept_ids` checks, for a build that replaced
+    the setup automation's steps on purpose (the oracle).
+    """
     meta = json.loads((run_dir / "run.json").read_text())
     by_id = tasks_by_id or {t.id: t for t in tasks.load_tasks()}
     task = by_id[meta["task"]]
@@ -207,7 +235,7 @@ def score(
         before_file = run_dir / "setup" / f"{name}.raw.json"
         before = (
             graph.from_raw(json.loads(before_file.read_text()))
-            if before_file.is_file()
+            if before_file.is_file() and compare_ids
             else None
         )
         problems += [
@@ -227,8 +255,30 @@ def score(
         "wall_seconds": meta.get("wall_seconds"),
         **metrics.run_metrics(run_dir),
     }
+    if cfg.judge:
+        legend_file = run_dir / "legend.json"
+        if not legend_file.is_file():
+            legend_file.write_text(json.dumps(world_legend(cfg)))
+        result.update(rejudge(run_dir, cfg, task))
+    result["correct"] = _correct(result)
     (run_dir / "result.json").write_text(json.dumps(result, indent=2))
     return result
+
+
+def _correct(result: dict[str, Any]) -> bool | None:
+    """Passed the checks and, when judged, the outcome rubric. None when the judge failed."""
+    if "judged_correct" not in result:
+        return bool(result["passed"])
+    if result["judged_correct"] is None:
+        return None if result["passed"] else False
+    return bool(result["passed"] and result["judged_correct"])
+
+
+def rejudge(run_dir: Path, cfg: Config, task: Task) -> dict[str, Any]:
+    """Judge a scored run from what is already on disk, and return its summary fields."""
+    legend = json.loads((run_dir / "legend.json").read_text())
+    judged = judging.judge_run(run_dir, task, legend, cfg.judge_model, cfg.judge_call)
+    return judging.summarize(judged)
 
 
 def cleanup(run_dir: Path, cfg: Config) -> list[str]:

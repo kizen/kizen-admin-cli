@@ -1,0 +1,47 @@
+[
+  {
+    "name": "{p} Contract Terms",
+    "api_name": "{p}_contract_terms",
+    "type": "record_based",
+    "target_object": "eval_deals",
+    "triggers": [
+      {
+        "trigger_type": "manual",
+        "order": 0,
+        "trigger_manual": {}
+      }
+    ],
+    "steps": [
+      {
+        "key": "extract",
+        "parent_key": null,
+        "step_type": "file_content_extraction",
+        "order": 0,
+        "action_file_content_extraction": {
+          "model_name": "kizen/lite",
+          "prompt": "Summarize the key commercial terms of this contract in three bullet points.",
+          "input_value_source": {
+            "type": "related_object_field",
+            "relationship_field": "eval_deals.account",
+            "field": "eval_accounts.contract"
+          },
+          "destinations": [
+            {
+              "field_ref": "eval_deals.ai_brief"
+            }
+          ]
+        }
+      },
+      {
+        "key": "next_step",
+        "parent_key": "extract",
+        "step_type": "change_field_value",
+        "order": 1,
+        "action_change_field_value": {
+          "field_ref": "eval_deals.next_step",
+          "specific_field_value": "Review contract summary"
+        }
+      }
+    ]
+  }
+]

@@ -11,9 +11,8 @@ It runs when an email is received from the contact, in any connected inbox. It u
 Steps, in order:
 
 1. A code step running the Python script in `read_email.py` (in this folder), unchanged. It has one input named `contact_email`, bound to the contact's `email` field, and one output named `email_body`, which writes the variable `email_body`.
-2. An AI step using the `kizen/lite` model with the prompt:
-   "Summarize this customer's email reply in one sentence. Reply: {{ automation_variable.email_body }}"
-   A blank merge field should default to "Unknown". It writes its answer to the variable `reply_summary`.
+2. An AI step using the `kizen/lite` model whose prompt is "Summarize this customer's email reply in one sentence. Reply: " followed by the value of the variable `email_body`, filled in when the step runs.
+   A blank value should default to "Unknown". It writes its answer to the variable `reply_summary`.
 3. Set the contact's `eval_reply_summary` field to the value of the variable `reply_summary`.
 """
 
@@ -34,4 +33,21 @@ checks = [
   { kind = "block", step = "call_llm", match = { model_name = "kizen/lite", destinations = [{ variable = "reply_summary" }] } },
   { kind = "order", first = "code_step", then = "call_llm" },
   { kind = "order", first = "call_llm", then = "change_field_value" },
+  { kind = "mentions", step = "call_llm", text = "automation_variable.email_body" },
 ]
+
+[[rubric]]
+id = "trigger"
+text = '''The trigger is an email received from the contact in any connected inbox.'''
+
+[[rubric]]
+id = "code_step"
+text = '''The code step's script is the provided read_email.py, unchanged, with the input contact_email bound to the field email and the output email_body writing the variable email_body.'''
+
+[[rubric]]
+id = "ai_step"
+text = '''The AI step uses kizen/lite, its prompt includes a merge field that resolves to the variable email_body, a blank value defaults to "Unknown", and it writes to the variable reply_summary.'''
+
+[[rubric]]
+id = "saves_summary"
+text = '''The last step sets the field eval_reply_summary from the variable reply_summary, not from fixed text.'''

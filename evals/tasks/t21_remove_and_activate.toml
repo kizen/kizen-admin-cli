@@ -26,3 +26,11 @@ checks = [
   { kind = "absent", step = "delay" },
   { kind = "kept_ids", except = ["delay"] },
 ]
+
+[[rubric]]
+id = "only_step"
+text = '''The automation's only step sets eval_lifecycle to "Engaged".'''
+
+[[rubric]]
+id = "active"
+text = '''The automation is active.'''

@@ -24,3 +24,11 @@ steps = { audio_transcription = 1 }
 checks = [
   { kind = "block", step = "audio_transcription", match = { model_name = "*", destinations = "*" } },
 ]
+
+[[rubric]]
+id = "reads_voicemail"
+text = '''The transcription step reads the field eval_voicemail with the prompt "Transcribe this voicemail.".'''
+
+[[rubric]]
+id = "writes_transcript"
+text = '''It writes to the field eval_voicemail_transcript.'''

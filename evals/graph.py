@@ -9,6 +9,7 @@ and steps exist, how they hang off each other, and scalar config values.
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
@@ -218,6 +219,12 @@ def _check(g: Graph, c: dict[str, Any], before: Graph | None) -> str | None:
         ):
             return None
         return f"no {c['trigger']} trigger whose config holds {c['match']}"
+    if kind == "mentions":
+        # The step's config holds this text somewhere: a merge-field token in
+        # a message, prompt or note, whatever key it sits under.
+        if any(c["text"] in json.dumps(s.block) for s in g.of_type(c["step"])):
+            return None
+        return f"no {c['step']} step whose config mentions {c['text']!r}"
     if kind == "absent":
         if g.of_type(c["step"]):
             return f"a {c['step']} step is still there"

@@ -22,3 +22,11 @@ steps = { change_field_value = 1 }
 checks = [
   { kind = "trigger_block", trigger = "new_entity_created", match = { action = "create_only" } },
 ]
+
+[[rubric]]
+id = "fires_on_create_only"
+text = '''The trigger fires when a contact is created, and not on later updates.'''
+
+[[rubric]]
+id = "sets_lifecycle_new"
+text = '''The one action step sets the Contacts field eval_lifecycle to the option "New".'''

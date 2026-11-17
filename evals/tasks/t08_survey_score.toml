@@ -23,3 +23,15 @@ steps = { condition = 1, change_field_value = 1 }
 checks = [
   { kind = "branch", of = "condition", yes = ["change_field_value"] },
 ]
+
+[[rubric]]
+id = "survey_trigger"
+text = '''The trigger is the submission of the survey "Eval Contact Survey".'''
+
+[[rubric]]
+id = "condition_score"
+text = '''The condition tests the field eval_lead_score for 50 or more.'''
+
+[[rubric]]
+id = "yes_engaged"
+text = '''The yes branch sets eval_lifecycle to "Engaged", and the no branch has no step.'''

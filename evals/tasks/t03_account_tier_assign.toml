@@ -24,3 +24,15 @@ checks = [
   { kind = "block", step = "assign_team_member", match = { type = "round_robin_all" } },
   { kind = "order", first = "delay", then = "assign_team_member" },
 ]
+
+[[rubric]]
+id = "trigger_on_tier"
+text = '''The trigger watches the field tier, for any change, and does not fire on record creation.'''
+
+[[rubric]]
+id = "waits_one_day"
+text = '''The wait is exactly 1 day.'''
+
+[[rubric]]
+id = "round_robin_all"
+text = '''The assignment rotates round-robin across all team members.'''
