@@ -1,0 +1,23 @@
+# t28_tier_sweep: A list variable drives a search, and another list is appended to
+
+Tier 3 · global
+
+Covers triggers: manual  
+Covers steps: initialize_variable, search_records, loop, next_or_finish, modify_related_entities, update_variable
+
+## Prompt
+
+Create a global automation (one with no target object) named "{p} Tier Sweep" with api_name `{p}_tier_sweep`. It is started manually.
+
+It uses two list-of-text variables: `target_tiers`, which starts each run holding the two values "Premium" and "Enterprise", and `sweep_log`, which starts empty.
+
+Each run searches the `eval_accounts` object for every account whose `tier` is any of the values held in the variable `target_tiers` (compare the field to the variable, not to fixed values). It then loops over the accounts found, and inside the loop sets `flagged` to checked on the account the loop is on.
+
+After the loop finishes, it adds the text "sweep complete" to `sweep_log`, keeping whatever the list already holds instead of replacing it.
+
+## Rubric
+
+- **variables**: target_tiers is a list-of-text variable that starts with exactly "Premium" and "Enterprise", and sweep_log is a list-of-text variable that starts empty.
+- **search**: The search looks in eval_accounts for records whose tier is any of the values in the variable target_tiers, comparing the field to the variable and not to fixed options.
+- **loop**: The loop runs over the search result, and inside it flagged is set to checked on the account the loop is on.
+- **appends**: After the loop, "sweep complete" is added to sweep_log in a mode that keeps the list's existing values.

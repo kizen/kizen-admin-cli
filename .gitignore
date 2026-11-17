@@ -31,6 +31,3 @@ htmlcov/
 *.swp
 .DS_Store
 .claude/
-
-# Eval run output (evals/README.md)
-evals/results/

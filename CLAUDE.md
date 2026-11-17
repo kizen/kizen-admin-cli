@@ -40,7 +40,7 @@ Consult these in order. Grepping `src/` for any of them wastes time.
 | **How the tool is meant to be operated** | `src/kizen_builder/docs/operating.md` |
 | **Where the code lives, how to extend it, how to test it** | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 | **Why the code is shaped the way it is** | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| **How an agent new to the CLI fares with it** — the eval tasks and harness | [`evals/README.md`](evals/README.md) |
+| **How an agent new to the CLI fares with it** — eval prompts and rubrics | [`evals/README.md`](evals/README.md) |
 
 Everything under `src/kizen_builder/docs/` ships in the wheel; `kizen docs show`
 reads those exact files, so edit them where they live. `docs/` at the repo root
