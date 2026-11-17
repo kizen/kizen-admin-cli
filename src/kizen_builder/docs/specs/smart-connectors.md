@@ -58,19 +58,25 @@ package's `__config.json` is built from.
 
 A connector-level name → value hash, e.g. `{"wtsc_parameter_1": "test value"}`.
 The script reads it as the table `meta.parameters` (`name String, value
-String`); the runner stringifies each value. `set-sql-params` sets and
-removes entries.
+String`). The runner stringifies each value. `set-sql-params` sets and removes
+entries.
 
-- **It lives on the connector, not the script**, so there's no draft or
-  publish: `PATCH /api/smart-connectors/{connector}` with `{"sql_parameters":
-  {...}}`, and the next run reads the new values.
-- **The PATCH replaces the whole hash.** `set-sql-params` reads the live
-  values and sends the merged hash, so names you don't pass keep their value
-  and `--unset` removes a name by leaving it out. Confirmed live 2026-11-17.
-- `start-connector-flow` also accepts `sql_parameters`, merged over the
-  connector's for that one run only.
-- `pull` copies them into `__config.json`; re-`pull` after changing them to
-  run locally with the new values.
+- **It lives on the connector, not the script.** There's no draft or publish.
+  `PATCH /api/smart-connectors/{connector}` with `{"sql_parameters": {...}}`
+  saves it, and the next run reads the new values.
+- **The PATCH replaces the whole hash.** `set-sql-params` reads the live values
+  and sends the merged hash. Names you don't pass keep their value. `--unset`
+  removes a name by leaving it out. Confirmed live 2026-11-17.
+- **The UI deactivates an active connector on save.** The Secrets and SQL
+  Parameters modal asks first, then sends `status: "inactive"` in the same
+  PATCH when the connector is `operational` or `need_attention`. The server
+  doesn't require it. `set-sql-params` does the same and shows it in the
+  preview. Run `activate` afterwards. Read in the react-app source 2026-11-17.
+- The UI trims names and values, and `set-sql-params` does too.
+- `start-connector-flow` also accepts `sql_parameters`. They apply to that one
+  run only, merged over the connector's.
+- `pull` copies them into `__config.json`. Re-`pull` after changing them to run
+  locally with the new values.
 
 ## The local dev loop
 

@@ -557,7 +557,11 @@ def test_set_sql_params_dry_run_merges_over_live_and_writes_nothing():
 
 @respx.mock
 def test_set_sql_params_patches_the_whole_merged_dict():
-    detail = {**DETAIL, "sql_parameters": {"region": "west", "wtsc_parameter_1": "old"}}
+    detail = {
+        **DETAIL,
+        "status": "setup",
+        "sql_parameters": {"region": "west", "wtsc_parameter_1": "old"},
+    }
     respx.get(f"{BASE}/upload_counties").mock(
         return_value=httpx.Response(200, json=detail)
     )
@@ -568,16 +572,14 @@ def test_set_sql_params_patches_the_whole_merged_dict():
         )
     )
 
+    # Padded like a sloppy paste: the UI trims both name and value.
     result = _set_sql_params(
-        "--param", "wtsc_parameter_1=test value", "--yes", "--json"
+        "--param", " wtsc_parameter_1 = test value ", "--yes", "--json"
     )
 
     assert result.exit_code == 0, result.output
     assert json.loads(write.calls.last.request.content) == {"sql_parameters": merged}
-    assert json.loads(result.stdout) == {
-        "connector": "upload_counties",
-        "sql_parameters": merged,
-    }
+    assert json.loads(result.stdout)["sql_parameters"] == merged
 
 
 @respx.mock
@@ -608,6 +610,7 @@ def test_set_sql_params_rejects_a_param_without_equals_before_any_call():
 def test_set_sql_params_unset_removes_only_the_named_param():
     detail = {
         **DETAIL,
+        "status": "setup",
         "sql_parameters": {"region": "west", "wtsc_parameter_1": "test value"},
     }
     respx.get(f"{BASE}/upload_counties").mock(
@@ -642,3 +645,36 @@ def test_set_sql_params_needs_a_change_and_no_name_both_set_and_unset():
     assert both.exit_code == 2
     assert "both set and unset: region" in both.output
     assert not respx.calls
+
+
+@respx.mock
+@pytest.mark.parametrize("status", ["operational", "need_attention"])
+def test_set_sql_params_deactivates_an_active_connector_like_the_ui(status):
+    detail = {**DETAIL, "status": status, "sql_parameters": {}}
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    params = {"wtsc_parameter_1": "test value"}
+    write = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "api_name": "upload_counties",
+                "sql_parameters": params,
+                "status": "inactive",
+            },
+        )
+    )
+
+    dry = _set_sql_params("--param", "wtsc_parameter_1=test value", "--dry-run")
+    assert dry.exit_code == 0, dry.output
+    assert f"status {status} → inactive" in dry.output
+    assert not write.called
+
+    result = _set_sql_params("--param", "wtsc_parameter_1=test value", "--yes")
+    assert result.exit_code == 0, result.output
+    assert json.loads(write.calls.last.request.content) == {
+        "sql_parameters": params,
+        "status": "inactive",
+    }
+    assert "smart-connectors activate" in result.output

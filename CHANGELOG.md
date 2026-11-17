@@ -20,7 +20,9 @@ called out explicitly under **Changed** or **Removed**.
   smart-connectors set-sql-params <connector> --param name=value` sets the
   values a script reads from `meta.parameters`, and `--unset name` removes one.
   Both are repeatable. Names you don't pass keep their value, and the change
-  applies to the next run with no publish.
+  applies to the next run with no publish. Like the UI, a change to an
+  operational connector also sets it inactive. Run `smart-connectors activate`
+  afterwards.
 
 ### Fixed
 
