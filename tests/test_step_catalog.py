@@ -15,6 +15,7 @@ from kizen_builder.models.spec import AutomationDef, AutomationStepDef
 from kizen_builder.models.spec.automations_actions_messaging import (
     ActivityAssignmentType,
 )
+from kizen_builder.models.spec.automations_shared import SOURCE_SUBTYPES
 from kizen_builder.models.spec.automations_triggers import AutomationTriggerDef
 from kizen_builder.tools import automation_check, step_catalog
 from kizen_builder.tools.planners.automations import (
@@ -243,6 +244,49 @@ def test_condition_lists_the_filter_keys_and_ops():
     assert "filter_config.all[].variable" in fields
 
 
+@pytest.mark.parametrize(
+    "type_name, path, choices",
+    [
+        ("initialize_variable", "sources[].array_separator", ["comma", "newline"]),
+        (
+            "change_field_value",
+            "change_type",
+            [
+                "specific_value",
+                "related_object_field",
+                "this_record_field",
+                "variable",
+                "entity_variable_field",
+                "blank",
+            ],
+        ),
+        ("goal", "delay_type", ["minutes", "hours", "days", ""]),
+        (
+            "modify_related_entities",
+            "fields_to_modify[].value_type",
+            [
+                "specific_value",
+                "context_entity_value",
+                "variable",
+                "entity_variable_field",
+                "blank",
+            ],
+        ),
+    ],
+)
+def test_typed_enum_fields_list_their_choices(type_name, path, choices):
+    fields = {f["path"]: f for f in step_catalog.describe(type_name)["fields"]}
+    assert fields[path]["choices"] == choices
+
+
+@pytest.mark.parametrize("type_name", ["initialize_variable", "update_variable"])
+def test_source_subtypes_per_source_type_are_on_the_card(type_name):
+    notes = "\n".join(step_catalog.describe(type_name)["notes"])
+    for source_type, subtypes in SOURCE_SUBTYPES.items():
+        assert f"`{source_type}`: {', '.join(subtypes)}." in notes
+    assert "`primary_related_object_field`" in notes
+
+
 def test_schedule_activity_variants_build_a_payload(patch_live_lookups):
     """The blocks the CLI hands out go through the real builder once their
     placeholders name things the fixture env has."""
@@ -436,6 +480,12 @@ def test_cli_show_prints_steps_choices_and_lookups():
     assert "schedule.with_delay.time_offset: pick one" in r.output
     assert "specific_time    with time" in r.output
     assert "kizen activities list" in r.output
+
+
+def test_cli_show_prints_a_blank_choice_as_empty_quotes():
+    r = runner.invoke(cli.app, ["automations", "step-types", "show", "goal"])
+    assert r.exit_code == 0, r.output
+    assert 'minutes | hours | days | ""' in r.output
 
 
 def test_cli_variant_is_pipeable_json():
