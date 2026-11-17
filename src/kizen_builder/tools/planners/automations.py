@@ -1182,7 +1182,14 @@ def _build_automation_payload(
             )
         )
     ]
-    payload["steps"] = _build_step_payloads(auto, ctx, warnings)
+    try:
+        payload["steps"] = _build_step_payloads(auto, ctx, warnings)
+    except SpecProblems as e:
+        raise SpecProblems(findings + e.errors, e.warnings) from e
+    except PlanError as e:
+        if findings:
+            raise SpecProblems([*findings, Finding(str(e))], warnings) from e
+        raise
 
     from kizen_builder.translate import validate_payload
 
@@ -4285,7 +4292,7 @@ def _date_field_finding(
         return None  # can't read the object: leave it to the server
     if not field or field.get("field_type") == "datetime":
         return None
-    name = field.get("api_name")
+    name = field.get("api_name") or field.get("name")
     return Finding(
         f"on_day_and_time needs a datetime field; '{name}' is "
         f"{field.get('field_type')}. Use {fix}, or a datetime field.",

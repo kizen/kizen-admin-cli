@@ -982,6 +982,30 @@ def test_on_day_and_time_on_a_datetime_field_builds(patch_live_lookups):
     assert trigger["date_offset"] == "on_day_and_time"
 
 
+def test_on_day_and_time_findings_on_trigger_and_step_come_together(
+    patch_live_lookups, monkeypatch
+):
+    from kizen_builder.tools.planners.automations import LiveContext
+
+    by_id = LiveContext.field_by_id
+
+    def live_shape(self, object_ref, field_id):
+        # The /fields endpoint names a field by `name`, not `api_name`.
+        field = by_id(self, object_ref, field_id)
+        return field and {**field, "name": field["api_name"], "api_name": None}
+
+    monkeypatch.setattr(LiveContext, "field_by_id", live_shape)
+    spec = _patients_spec(
+        _patient_date_activity("date_of_birth"),
+        triggers=_patient_date_trigger("date_of_birth"),
+    )
+    paths = [(f.path, f.got) for f in _plan_problems(spec)]
+    assert paths == [
+        ("triggers[0].trigger_on_or_around_date", "date_of_birth"),
+        ("action_schedule_activity.schedule.on_or_around_date", "date_of_birth"),
+    ]
+
+
 @pytest.mark.parametrize("days", [{}, {"date_offset_days": 0}], ids=["none", "zero"])
 def test_a_days_after_trigger_needs_a_day_count(days):
     block = {"date_offset": "days_after", "time": "09:00", "period": "am", **days}
