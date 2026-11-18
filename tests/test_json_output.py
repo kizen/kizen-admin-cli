@@ -25,7 +25,7 @@ from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.plans import ApplyResult, OperationResult, Plan, PlanOperation
-from tests.conftest import load_fixture, mock_automation_lookup
+from tests.conftest import load_fixture, mock_automation_lookup, plain
 
 runner = CliRunner()
 
@@ -431,6 +431,6 @@ def test_every_mutation_verb_passes_full_through():
 def test_mutation_json_help_says_where_the_whole_body_is(argv, terminal_output):
     result = runner.invoke(cli.app, argv, env={"COLUMNS": "200"})
     assert result.exit_code == 0
-    text = " ".join(result.stdout.split())
+    text = plain(result.stdout)
     assert "--full" in text
     assert "top-level values" in text
