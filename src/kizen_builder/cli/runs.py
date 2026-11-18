@@ -26,6 +26,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    limit_option,
 )
 from kizen_builder.cli.automations import autos_app
 from kizen_builder.tools import automations as auto_tools
@@ -214,9 +215,7 @@ def runs_view(
 @runs_app.command("list")
 def runs_list(
     api_name: str = typer.Argument(..., help="Automation api_name."),
-    limit: int = typer.Option(
-        25, "--limit", "-n", help="Max runs to return (0 for all)."
-    ),
+    limit: int = limit_option(25, "runs"),
     output: str = OUTPUT_OPTION,
     json_out: bool = JSON_OPTION,
 ) -> None:
@@ -226,8 +225,6 @@ def runs_list(
     for auditing runs in a spreadsheet. Use `kizen automations runs view
     <id>` for one run's summary and step-by-step trace.
     """
-    if limit < 0:
-        raise typer.BadParameter("--limit must be >= 0 (0 for all).")
     fmt = out.resolve_format(output, json_out)
     with cli_errors(LookupError):
         results = auto_tools.list_executions(api_name, limit=limit or None)

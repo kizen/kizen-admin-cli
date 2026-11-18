@@ -102,6 +102,16 @@ Page-number paginated events in the record-timeline shape (`created`,
 …). An account created through the API has no events, even after renames and
 group changes.
 
+Paging (not confirmed live 2026-11-18):
+
+- The envelope is `{count, next, previous, results, errors}`; `count` is the
+  total number of events.
+- `page_size` is capped at 1000.
+- A `page_size` that is `0`, negative or missing gives 100.
+
+`service-accounts history` follows `next` until it has `-n` events or none
+remain; `-n 0` follows it to the end.
+
 ## Run-tools-as
 
 `GET /api/automation2/automations/run-tools-as-options` lists the accounts a

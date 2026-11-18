@@ -22,6 +22,7 @@ from kizen_builder.tools import objects as obj_tools
 from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools import plans as plan_tools
 from kizen_builder.tools import records as record_tools
+from kizen_builder.tools import service_accounts as sa_tools
 from kizen_builder.tools import team as team_tools
 from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.planners import fields as field_planners
@@ -538,6 +539,78 @@ def test_runs_list_limit_reaches_the_tool(monkeypatch, argv, expected):
     )
     assert result.exit_code == 0, result.output
     assert captured["limit"] == expected
+
+
+# The commands that share `limit_option` with `runs list`: the tool module and
+# function each one calls, its argv up to the flags, and its default `-n`.
+_LIMIT_COMMANDS = {
+    "records list": (
+        record_tools,
+        "search_records",
+        ["records", "list", "tax_lot"],
+        100,
+    ),
+    "team search": (team_tools, "search_team", ["team", "search", "ann"], 10),
+    "service-accounts history": (
+        sa_tools,
+        "list_service_account_history",
+        ["service-accounts", "history", "example_bot"],
+        25,
+    ),
+}
+
+
+@pytest.mark.parametrize("command", list(_LIMIT_COMMANDS))
+def test_negative_limit_is_usage_error(monkeypatch, command):
+    module, func, argv, _ = _LIMIT_COMMANDS[command]
+    calls = []
+    monkeypatch.setattr(module, func, lambda *a, **k: calls.append(k) or [])
+    result = runner.invoke(cli.app, [*argv, "-n", "-1"])
+    assert result.exit_code == 2
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("command", "flag", "expected"),
+    [
+        (command, flag, expected)
+        for command, (*_, default) in _LIMIT_COMMANDS.items()
+        for flag, expected in (
+            (["-n", "0"], None),
+            ([], default),
+            (["-n", "150"], 150),
+        )
+    ],
+)
+def test_limit_reaches_the_tool(monkeypatch, command, flag, expected):
+    module, func, argv, _ = _LIMIT_COMMANDS[command]
+    captured = {}
+
+    def fake(*args, **kwargs):
+        captured["limit"] = kwargs["limit"]
+        return []
+
+    monkeypatch.setattr(module, func, fake)
+    result = runner.invoke(cli.app, [*argv, *flag, "--json"])
+    assert result.exit_code == 0, result.output
+    assert captured["limit"] == expected
+
+
+@pytest.mark.parametrize(
+    ("argv", "noun", "default"),
+    [
+        (["automations", "runs", "list"], "runs", 25),
+        (["records", "list"], "records", 100),
+        (["team", "search"], "results", 10),
+        (["service-accounts", "history"], "events", 25),
+    ],
+)
+def test_limit_help_says_zero_means_all(argv, noun, default):
+    result = runner.invoke(cli.app, [*argv, "--help"])
+    assert result.exit_code == 0, result.output
+    help_text = " ".join(plain(result.stdout).split())
+    assert f"Max {noun} to return (0 for all)." in help_text
+    assert f"[default: {default}]" in help_text
 
 
 def test_retired_run_verbs_are_gone(monkeypatch):

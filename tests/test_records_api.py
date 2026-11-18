@@ -159,6 +159,33 @@ def test_tools_layer_truncates_and_forwards_limit(monkeypatch):
     assert seen["limit"] == 3
 
 
+@respx.mock
+def test_tools_layer_limit_none_pages_at_500_and_returns_every_row(monkeypatch):
+    """limit=None (the CLI's `-n 0`) reads every page and slices nothing."""
+    from kizen_builder.tools import records as record_tools
+
+    seen: dict = {}
+    real_search = record_tools.records_api.search_records
+
+    def spy(*args, **kwargs):
+        seen["limit"] = kwargs.get("limit", "unset")
+        return real_search(*args, **kwargs)
+
+    monkeypatch.setattr(record_tools.records_api, "search_records", spy)
+    pages = [
+        _page([{"id": f"a{i}"} for i in range(500)], next_url="x", count=700),
+        _page([{"id": f"b{i}"} for i in range(200)], next_url=None, count=700),
+    ]
+    route = respx.post(SEARCH_URL).mock(
+        side_effect=[httpx.Response(200, json=p) for p in pages]
+    )
+    out = record_tools.search_records("tax_lot", limit=None)
+    assert len(out) == 700
+    assert seen["limit"] is None
+    assert route.call_count == 2
+    assert route.calls[0].request.url.params["page_size"] == "500"
+
+
 def test_tools_layer_forwards_field_names_with_name_added(monkeypatch):
     """A caller's ``field_names`` reaches the API layer, `name` auto-added."""
     from kizen_builder.tools import objects as obj_tools
