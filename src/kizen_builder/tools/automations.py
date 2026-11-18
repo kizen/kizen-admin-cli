@@ -452,7 +452,11 @@ def check_step_spec(step: dict[str, Any], payload: dict[str, Any]) -> list[str]:
     )
     from kizen_builder.tools.findings import SpecProblems
 
-    errors, warnings = check_step(step, declared_variables(payload["steps"]))
+    errors, warnings = check_step(
+        step,
+        declared_variables(payload["steps"]),
+        is_global=payload.get("type") == "global",
+    )
     errors += block_rule_errors(step)
     if errors:
         raise SpecProblems(errors, warnings)

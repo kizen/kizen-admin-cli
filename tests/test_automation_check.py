@@ -416,6 +416,78 @@ def test_variable_references_inside_lists_are_followed():
     assert f.path == "action_code_step.outputs[0].variable_name"
 
 
+def _update_var(name, **block):
+    return {
+        "key": f"set_{name}",
+        "step_type": "update_variable",
+        "action_update_variable": {
+            "variable": {"name": name, "data_type": "string"},
+            "sources": [],
+            **block,
+        },
+    }
+
+
+def test_an_array_variable_step_needs_an_aggregation_mode():
+    spec = _spec(_var("tags", is_array=True), _update_var("tags"))
+    errors = _errors(spec)
+    for key, step_type in (
+        ("init_tags", "initialize_variable"),
+        ("set_tags", "update_variable"),
+    ):
+        f = _only(errors, step=key)
+        assert f.path == f"action_{step_type}.array_aggregation_mode"
+        assert f.allowed == ["add_first_non_blank", "add_all"]
+        assert (
+            f.message
+            == f"variable 'tags' is an array, so {step_type} needs array_aggregation_mode"
+        )
+
+    init = _var("tags", is_array=True)
+    init["action_initialize_variable"]["array_aggregation_mode"] = "add_all"
+    check_automation(_spec(init, _update_var("tags", array_aggregation_mode="add_all")))
+    check_automation(_spec(_var("tag"), _update_var("tag")))
+
+
+def test_a_field_change_in_a_global_automation_is_an_error():
+    change = {
+        "key": "flag",
+        "step_type": "change_field_value",
+        "action_change_field_value": {
+            "field_ref": "flagged",
+            "specific_field_value": True,
+        },
+    }
+    spec = _spec(change, type="global", target_object=None)
+    f = _only(_errors(spec), step="flag")
+    assert f.path == "step_type"
+    assert "modify_related_entities" in f.message
+    assert f.hint == "kizen automations step-types show modify_related_entities"
+
+    assert not [e for e in _errors_or_none(_spec(change)) if e.step == "flag"]
+
+
+def _errors_or_none(spec):
+    try:
+        check_automation(spec)
+    except SpecProblems as e:
+        return e.errors
+    return []
+
+
+def test_steps_add_refuses_a_field_change_in_a_global_automation():
+    from kizen_builder.tools.automations import check_step_spec
+
+    change = {
+        "step_type": "change_field_value",
+        "action_change_field_value": {"field_ref": "flagged"},
+    }
+    with pytest.raises(SpecProblems) as exc:
+        check_step_spec(change, {"type": "global", "steps": []})
+    assert "global automation has none" in exc.value.errors[0].message
+    assert check_step_spec(change, {"type": "record_based", "steps": []}) == []
+
+
 def test_a_placeholder_says_replace_it_and_names_the_lookup():
     spec = _spec(_activity(activity_type="<activity api_name>"))
     spec["name"] = "<automation name>"

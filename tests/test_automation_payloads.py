@@ -4452,6 +4452,7 @@ def test_preview_warns_about_rules_saved_without_the_editor_layout(
             "order": 0,
             "action_initialize_variable": {
                 "sources": [],
+                "array_aggregation_mode": "add_all",
                 "variable": {
                     "name": "found",
                     "data_type": "entity",
