@@ -341,3 +341,56 @@ def test_paginate_stops_on_an_unrecognized_body_keeping_what_it_has(client):
     )
     assert client.paginate("/api/things") == [{"id": 1}]
     assert route.call_count == 2
+
+
+@respx.mock
+def test_paginate_limit_stops_after_the_page_that_reaches_it(client):
+    route = respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 1}, {"id": 2}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=2&page_size=2",
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 3}, {"id": 4}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=3&page_size=2",
+                },
+            ),
+            httpx.Response(200, json={"results": [{"id": 5}], "next": None}),
+        ]
+    )
+    items = client.paginate("/api/things", params={"page_size": 2}, limit=3)
+    # The page that reaches the limit is kept whole; callers slice.
+    assert items == [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_paginate_limit_none_walks_to_the_end(client):
+    route = respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "results": [{"id": 1}],
+                    "next": f"{FAKE_BASE_URL}/api/things?page=2",
+                },
+            ),
+            httpx.Response(200, json={"results": [{"id": 2}], "next": None}),
+        ]
+    )
+    assert client.paginate("/api/things", limit=None) == [{"id": 1}, {"id": 2}]
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_paginate_null_results_reads_as_empty(client):
+    respx.get(f"{FAKE_BASE_URL}/api/things").mock(
+        return_value=httpx.Response(200, json={"results": None, "next": None})
+    )
+    assert client.paginate("/api/things") == []

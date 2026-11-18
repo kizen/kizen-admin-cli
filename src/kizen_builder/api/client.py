@@ -107,14 +107,23 @@ class KizenClient:
         return resp.content, resp.headers
 
     def paginate(
-        self, path: str, params: dict[str, Any] | None = None
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Follow DRF ``next`` links, returning the flat list of result dicts.
 
         ``params`` is applied to the first request only; the ``next`` URL
         already carries the query string forward, so we splice it into the
         path. A bare-list response is returned as is; any other shape stops
-        the walk and keeps what was read so far.
+        the walk and keeps what was read so far. A ``null`` ``results`` reads
+        as an empty page.
+
+        ``limit`` stops the walk after the page that brings the total to at
+        least ``limit``. The last page is kept whole, so the result can
+        overshoot; callers slice it. ``None`` walks to the end.
         """
         items: list[dict[str, Any]] = []
         nxt: str | None = path
@@ -123,9 +132,11 @@ class KizenClient:
             resp = self.get(nxt, params=params if first else None)
             first = False
             if isinstance(resp, dict) and "results" in resp:
-                items.extend(resp["results"])
+                items.extend(resp["results"] or [])
                 following = resp.get("next")
-                if following:
+                if limit is not None and len(items) >= limit:
+                    nxt = None
+                elif following:
                     parts = urlsplit(following)
                     nxt = parts.path + (f"?{parts.query}" if parts.query else "")
                 else:

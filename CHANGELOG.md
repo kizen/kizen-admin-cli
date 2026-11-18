@@ -23,6 +23,8 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`team search --limit` returns more than 100 members.** It used to stop
+  silently at 100.
 - **`automations runs list --limit` returns more than 100 runs.** It used to
   stop silently at 100. It now pages until it has `--limit` runs, and `-n 0`
   returns every run. A negative `--limit` is now an error instead of returning

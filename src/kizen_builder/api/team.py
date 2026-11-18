@@ -10,16 +10,21 @@ from kizen_builder.api.client import KizenClient
 def search_team(
     client: KizenClient,
     name: str,
-    limit: int = 25,
+    limit: int | None = 25,
 ) -> list[dict[str, Any]]:
-    """GET /api/team/typeahead?search=<name> — fast text search over team members."""
-    result = client.get(
+    """GET /api/team/typeahead?search=<name> — fast text search over team members.
+
+    Follows ``next`` until ``limit`` matches are in hand or none remain.
+    ``None`` returns every match. Pass ``None``, not ``0``, for "all": ``0``
+    would send ``page_size=0`` and return ``[]``.
+    """
+    page_size = 100 if limit is None else min(limit, 100)
+    rows = client.paginate(
         "/api/team/typeahead",
-        params={"search": name, "page_size": min(limit, 100)},
+        {"search": name, "page_size": page_size},
+        limit=limit,
     )
-    if isinstance(result, list):
-        return result[:limit]
-    return list(result.get("results", []))[:limit]
+    return rows if limit is None else rows[:limit]
 
 
 def list_team(client: KizenClient) -> list[dict[str, Any]]:

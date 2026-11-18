@@ -11,8 +11,9 @@ from kizen_builder.config import load_env_config
 from kizen_builder.utils import is_uuid
 
 
-def search_team(name: str, limit: int = 25) -> list[dict[str, Any]]:
-    """Search team members by name or email, returning up to ``limit`` results."""
+def search_team(name: str, limit: int | None = 25) -> list[dict[str, Any]]:
+    """Search team members by name or email, returning up to ``limit`` results
+    (``None`` for every match)."""
     config = load_env_config()
     with KizenClient(config) as client:
         raw = team_api.search_team(client, name, limit=limit)
