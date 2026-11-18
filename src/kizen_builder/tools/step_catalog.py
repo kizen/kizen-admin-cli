@@ -1242,6 +1242,9 @@ _PLUGIN_CODE_STEP = Guide(
             "(confirmed live 2026-10-14).",
             "What a step receives through a `business_plugin_config` input "
             "isn't confirmed live.",
+            "A non-null `preview_user_id` on a plugin that isn't a business "
+            'app is a 400, "Previews are only available for business apps" '
+            "(confirmed live 2026-11-11).",
         ),
     ),
     concepts=("field", "variable"),

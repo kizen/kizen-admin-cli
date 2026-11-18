@@ -146,7 +146,8 @@ mention it never turns a running automation off), `folder`,
 `skip_non_working_days` and webhook auth; and on a step or trigger whose `id`
 matches, its descriptions, skip and failure settings, and per-type settings a
 Kizen PUT would reset, such as an LLM step's `merge_field_validation` and MCP
-server, a stop's `action`, and a `schedule_activity`'s `target_variable`.
+server, a stop's `action`, a plugin step's `preview_user_id`, and a
+`schedule_activity`'s `target_variable`.
 `--dry-run` names them as `keeps_live=[<key>, …]`. An explicit value always
 wins, `""` and `false` included; `description: ""` gets the type's default
 text.
