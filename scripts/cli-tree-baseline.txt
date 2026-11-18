@@ -1334,6 +1334,7 @@
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1368,6 +1369,7 @@
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -5099,6 +5101,7 @@
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
 │ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -5116,6 +5119,7 @@
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -5147,6 +5151,7 @@
 │ --search          <str>  Filter by name (server-side search).                                    │
 │ --output  -o      <str>  Output format: table (default), json, or csv.                           │
 │ --json                   Alias for --output json.                                                │
+│ --full                   With --json, keep the whole server response in `raw`.                   │
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -5171,6 +5176,7 @@
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
 │ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     

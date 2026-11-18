@@ -12,6 +12,7 @@ from rich.tree import Tree
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
     OUTPUT_OPTION,
     app,
@@ -39,6 +40,7 @@ def toolbar_templates_list(
     ),
     output: str = OUTPUT_OPTION,
     json_out: bool = JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """List toolbar templates: name, owner, top-level entries, updated, id."""
     fmt = out.resolve_format(output, json_out)
@@ -142,6 +144,7 @@ def toolbar_templates_create(
     dry_run: bool = DRY_RUN_OPTION,
     yes: bool = YES_OPTION,
     json_out: bool = JSON_PLAN_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create a toolbar template from a spec.
 
@@ -155,6 +158,7 @@ def toolbar_templates_create(
         yes=yes,
         json_out=json_out,
         stdin_consumed=from_stdin,
+        full=full,
     )
 
 
@@ -170,6 +174,7 @@ def toolbar_templates_update(
     dry_run: bool = DRY_RUN_OPTION,
     yes: bool = YES_OPTION,
     json_out: bool = JSON_PLAN_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update a toolbar template. Keys the spec leaves out keep their value.
 
@@ -185,6 +190,7 @@ def toolbar_templates_update(
         yes=yes,
         json_out=json_out,
         stdin_consumed=from_stdin,
+        full=full,
     )
 
 
@@ -194,6 +200,7 @@ def toolbar_templates_delete(
     dry_run: bool = DRY_RUN_OPTION,
     yes: bool = YES_OPTION,
     json_out: bool = JSON_PLAN_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete a toolbar template."""
     _run_mutation(
@@ -201,4 +208,5 @@ def toolbar_templates_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
