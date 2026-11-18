@@ -509,6 +509,37 @@ def test_runs_list_csv_uses_untruncated_ids(monkeypatch):
     assert execs[0]["execution_id"] in result.stdout
 
 
+def test_runs_list_negative_limit_is_usage_error(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        auto_tools, "list_executions", lambda *a, **k: calls.append(k) or []
+    )
+    result = runner.invoke(
+        cli.app, ["automations", "runs", "list", "record_test", "-n", "-1"]
+    )
+    assert result.exit_code == 2
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [(["-n", "0"], None), ([], 25), (["-n", "150"], 150)],
+)
+def test_runs_list_limit_reaches_the_tool(monkeypatch, argv, expected):
+    captured = {}
+
+    def fake(api_name, *, limit):
+        captured["limit"] = limit
+        return []
+
+    monkeypatch.setattr(auto_tools, "list_executions", fake)
+    result = runner.invoke(
+        cli.app, ["automations", "runs", "list", "record_test", *argv, "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["limit"] == expected
+
+
 def test_retired_run_verbs_are_gone(monkeypatch):
     """The old execution(s) verbs and the show/history split no longer exist —
     runs are `list` + `view` now."""

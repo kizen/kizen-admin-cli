@@ -922,8 +922,11 @@ def start_and_wait(
     }
 
 
-def list_executions(api_name: str, limit: int = 25) -> list[dict[str, Any]]:
-    """Return recent executions for an automation, looked up by api_name."""
+def list_executions(api_name: str, limit: int | None = 25) -> list[dict[str, Any]]:
+    """Return recent executions for an automation, looked up by api_name.
+
+    `limit=None` returns every run.
+    """
     config = load_env_config()
     with KizenClient(config) as client:
         listing = auto_api.list_automations(client)

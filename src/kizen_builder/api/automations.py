@@ -337,19 +337,41 @@ def get_failures_history(
     return items
 
 
+_EXECUTIONS_PAGE_MAX = 100  # server cap on `size`, confirmed live 2026-11-18
+
+
 def list_executions(
     client: KizenClient,
     automation_id: str,
-    limit: int = 25,
+    limit: int | None = 25,
 ) -> list[dict[str, Any]]:
-    """GET /api/automation2/automation-execution filtered by automation_id."""
-    result = client.get(
-        "/api/automation2/automation-execution",
-        params={"automation_id": automation_id, "size": min(limit, 100)},
-    )
-    if isinstance(result, list):
-        return result
-    return result.get("results", [])
+    """GET /api/automation2/automation-execution filtered by automation_id.
+
+    Walks the cursor: each response carries `next_cursor`, sent back as
+    `cursor=` until it is null (no DRF `next` key, so `client.paginate`
+    doesn't apply). `limit=None` returns every run; otherwise up to `limit`,
+    newest first. See docs/specs/automation-runtime.md § Watching a run.
+    """
+    items: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while limit is None or len(items) < limit:
+        want = _EXECUTIONS_PAGE_MAX if limit is None else limit - len(items)
+        params: dict[str, Any] = {
+            "automation_id": automation_id,
+            "size": min(want, _EXECUTIONS_PAGE_MAX),
+        }
+        if cursor:
+            params["cursor"] = cursor
+        resp = client.get("/api/automation2/automation-execution", params=params)
+        if isinstance(resp, list):  # keep the bare-list tolerance
+            items.extend(resp)
+            break
+        page = resp.get("results") or []
+        items.extend(page)
+        cursor = resp.get("next_cursor")
+        if not page or not cursor:
+            break
+    return items if limit is None else items[:limit]
 
 
 def list_automations(client: KizenClient) -> list[dict[str, Any]]:

@@ -22,7 +22,8 @@ import httpx
 import pytest
 import respx
 
-from kizen_builder.api.client import KizenAPIError
+from kizen_builder.api import automations as auto_api
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools.automations import (
     get_execution,
@@ -144,6 +145,109 @@ def test_list_executions_maps_start_time_not_created():
     assert row["started_at"] == "2026-03-18T10:29:31.364611-05:00"
     assert row["finished_at"] == "2026-03-18T10:30:03.444480-05:00"
     assert row["record_id"] == "51612b78-723e-451b-aede-f8037d2523d4"
+
+
+AUTO_UUID = "b1c2d3e4-0000-4000-8000-000000000002"
+
+
+@pytest.fixture
+def client(env_config):
+    with KizenClient(env_config) as c:
+        yield c
+
+
+def _exec_page(ids: list[str], next_cursor: str | None) -> httpx.Response:
+    """One cursor-paginated execution list page, in the live envelope shape."""
+    return httpx.Response(
+        200,
+        json={
+            "count": len(ids),
+            "links": {"previous": None, "next": None},
+            "prev_cursor": None,
+            "next_cursor": next_cursor,
+            "results": [{"id": i} for i in ids],
+        },
+    )
+
+
+@respx.mock
+def test_list_executions_walks_the_cursor(client):
+    route = respx.get(EXEC_BASE).mock(
+        side_effect=[
+            _exec_page(["a", "b"], "c1"),
+            _exec_page(["c", "d"], "c2"),
+            _exec_page(["e"], None),
+        ]
+    )
+    rows = auto_api.list_executions(client, AUTO_UUID, limit=10)
+    assert [r["id"] for r in rows] == ["a", "b", "c", "d", "e"]
+    params = [dict(c.request.url.params) for c in route.calls]
+    assert "cursor" not in params[0]
+    assert params[1]["cursor"] == "c1"
+    assert params[2]["cursor"] == "c2"
+    assert all(p["automation_id"] == AUTO_UUID for p in params)
+
+
+@respx.mock
+def test_list_executions_stops_at_the_limit(client):
+    route = respx.get(EXEC_BASE).mock(
+        side_effect=[
+            _exec_page(["a", "b"], "c1"),
+            _exec_page(["c"], "c2"),
+            _exec_page(["never"], None),
+        ]
+    )
+    rows = auto_api.list_executions(client, AUTO_UUID, limit=3)
+    assert [r["id"] for r in rows] == ["a", "b", "c"]
+    assert route.call_count == 2
+    assert route.calls[0].request.url.params["size"] == "3"
+    assert route.calls[1].request.url.params["size"] == "1"
+
+
+@respx.mock
+def test_list_executions_trims_an_oversized_page(client):
+    """A server that ignores `size` must not push the result past `limit`."""
+    respx.get(EXEC_BASE).mock(return_value=_exec_page(["a", "b", "c", "d"], "c1"))
+    rows = auto_api.list_executions(client, AUTO_UUID, limit=2)
+    assert [r["id"] for r in rows] == ["a", "b"]
+
+
+@respx.mock
+def test_list_executions_caps_page_size_at_100(client):
+    route = respx.get(EXEC_BASE).mock(return_value=_exec_page(["a", "b"], None))
+    rows = auto_api.list_executions(client, AUTO_UUID, limit=500)
+    assert len(rows) == 2
+    assert route.call_count == 1
+    assert route.calls[0].request.url.params["size"] == "100"
+
+
+@respx.mock
+def test_list_executions_none_walks_to_the_end(client):
+    route = respx.get(EXEC_BASE).mock(
+        side_effect=[
+            _exec_page(["a"], "c1"),
+            _exec_page(["b"], "c2"),
+            _exec_page(["c"], None),
+        ]
+    )
+    rows = auto_api.list_executions(client, AUTO_UUID, limit=None)
+    assert [r["id"] for r in rows] == ["a", "b", "c"]
+    assert route.call_count == 3
+    assert all(c.request.url.params["size"] == "100" for c in route.calls)
+
+
+@respx.mock
+def test_list_executions_stops_on_an_empty_page(client):
+    route = respx.get(EXEC_BASE).mock(
+        side_effect=[
+            _exec_page(["a"], "c1"),
+            _exec_page([], "c2"),
+            _exec_page(["never"], None),
+        ]
+    )
+    rows = auto_api.list_executions(client, AUTO_UUID, limit=None)
+    assert [r["id"] for r in rows] == ["a"]
+    assert route.call_count == 2
 
 
 @respx.mock
