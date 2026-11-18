@@ -25,6 +25,7 @@ from kizen_builder.tools.planners.automations import (
     LiveContext,
     _build_automation_payload,
 )
+from tests.conftest import plain
 
 runner = CliRunner()
 
@@ -326,8 +327,8 @@ def test_cli_concepts():
 
 def test_automations_help_points_at_step_types():
     r = runner.invoke(cli.app, ["automations", "--help"])
-    assert "step-types show <type>" in " ".join(r.output.split())
+    assert "step-types show <type>" in plain(r.output)
     for args in (["create"], ["update"], ["steps", "add"]):
         r = runner.invoke(cli.app, ["automations", *args, "--help"])
-        flat = " ".join(r.output.replace("│", " ").split())
+        flat = plain(r.output.replace("│", " "))
         assert "kizen automations step-types show" in flat, args
