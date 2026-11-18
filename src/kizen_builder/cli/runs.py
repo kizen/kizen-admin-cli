@@ -215,7 +215,7 @@ def runs_view(
 def runs_list(
     api_name: str = typer.Argument(..., help="Automation api_name."),
     limit: int = typer.Option(
-        25, "--limit", "-n", help="Max runs to return (max 100)."
+        25, "--limit", "-n", help="Max runs to return (0 for all)."
     ),
     output: str = OUTPUT_OPTION,
     json_out: bool = JSON_OPTION,
@@ -226,9 +226,11 @@ def runs_list(
     for auditing runs in a spreadsheet. Use `kizen automations runs view
     <id>` for one run's summary and step-by-step trace.
     """
+    if limit < 0:
+        raise typer.BadParameter("--limit must be >= 0 (0 for all).")
     fmt = out.resolve_format(output, json_out)
     with cli_errors(LookupError):
-        results = auto_tools.list_executions(api_name, limit=limit)
+        results = auto_tools.list_executions(api_name, limit=limit or None)
 
     def table() -> None:
         # Show ids in full (not truncated): the execution_id is the argument

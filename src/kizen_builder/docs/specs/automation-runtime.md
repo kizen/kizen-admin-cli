@@ -65,7 +65,16 @@ GET /api/automation2/automation-execution/<execution-id>
 GET /api/automation2/automation-execution/<execution-id>/history
 ```
 
-`size` maxes at 100. CLI: `kizen automations runs list <api_name>`, and
+The list is cursor-paginated: the response is `{count, links: {previous,
+next}, prev_cursor, next_cursor, results}`, and `cursor=<next_cursor>` (with
+the same filters and `size`) fetches the next page; `next_cursor` is null on
+the last one. There is no DRF `next` key. `size` is capped at 100; a missing
+or invalid `size` gives 25, and `page_size` is ignored. `count` is the length
+of the current page, not a total. Results come newest first. `runs list
+--limit N` walks the cursor until it has N runs, and `--limit 0` fetches
+every run. Confirmed live 2026-11-18.
+
+CLI: `kizen automations runs list <api_name>`, and
 `runs view <exec_uuid>` (`--no-steps` for the summary half only, `--wait` to
 block until the run finishes). `runs logs <exec_uuid>` prints each step's
 `detailed_log` — see below.
