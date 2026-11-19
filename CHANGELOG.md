@@ -20,6 +20,11 @@ called out explicitly under **Changed** or **Removed**.
   variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
+- **MCP server specs can pick upstream server tools.** `upstreams` takes each
+  upstream's `api_name` and `include_all: true` or `tool_names`; the CLI maps
+  them to ids and refuses unknown ones. `kizen mcp-servers upstreams` lists
+  upstream servers and their tools. Creating and authorizing upstreams stays
+  in Kizen.
 
 - `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
   template from a spec of objects, plugin pages, links and categories. Plugin
@@ -77,6 +82,9 @@ called out explicitly under **Changed** or **Removed**.
   before, and the server answered with *"field_id is required"*;
   `assign_team_member` refused it at plan time. `schedule.on_or_around_date`
   takes `field_ref` too. A `field_id` beside it still wins.
+- **`kizen mcp-servers get --raw` output works as an `update` spec again.**
+  Since Kizen's 2026-11-10 release it failed with `upstreams: Extra inputs are
+  not permitted`.
 
 ## [0.7.0] — 2026-11-16
 
