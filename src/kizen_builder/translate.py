@@ -148,7 +148,9 @@ def live_to_payload(raw: dict[str, Any]) -> dict[str, Any]:
     ]
     # Carries variables/throttles, injects variable ids into
     # initialize_variable steps, stamps last_revision.
-    return _merge_server_state(payload, raw)
+    payload = _merge_server_state(payload, raw)
+    resolve_exit_loop_targets(payload["steps"])
+    return payload
 
 
 # Step-level read keys that share the config blocks' prefixes.
@@ -464,8 +466,8 @@ def _loop_problems(steps: list[dict[str, Any]]) -> list[str]:
     plus two from Kizen's builder that the API doesn't enforce: nesting depth
     and one array at two levels. The body hangs off the loop, its one
     `next_or_finish` child closes it, and what follows the loop hangs off the
-    `next_or_finish`. A graph with no loop or `next_or_finish` passes
-    untouched."""
+    `next_or_finish`. An `exit_loop` carries its block and sits in the body of
+    the loop it ends. A graph with none of these steps passes untouched."""
     problems: list[str] = []
     by_key = {s.get("key"): s for s in steps}
     declared: dict[str, dict[str, Any]] = {}
@@ -510,7 +512,62 @@ def _loop_problems(steps: list[dict[str, Any]]) -> list[str]:
                     "a loop; it must hang directly off the loop it closes (server "
                     "400s otherwise)"
                 )
+        elif step_type == "exit_loop":
+            problems.extend(_exit_loop_problems(s, by_key))
     return problems
+
+
+_EXIT_LOOP_BLOCK_FIELD = _block_field_for("exit_loop")
+
+
+def exit_loop_problems(
+    steps: list[dict[str, Any]], live_steps: list[dict[str, Any]] | None = None
+) -> list[str]:
+    """The exit_loop rules alone, for `update`: the target it keeps from live
+    is added after the spec was validated. A target still holding a live
+    step's id names that step."""
+    by_key = {s.get("key"): s for s in steps}
+    live = {s["id"]: s for s in live_steps or [] if s.get("id")}
+    return [
+        problem
+        for s in steps
+        if s.get("type") == "exit_loop"
+        for problem in _exit_loop_problems(s, by_key, live)
+    ]
+
+
+def _exit_loop_problems(
+    step: dict[str, Any],
+    by_key: dict[Any, dict[str, Any]],
+    live: dict[str, dict[str, Any]] | None = None,
+) -> list[str]:
+    key = step.get("key")
+    block = step.get(_EXIT_LOOP_BLOCK_FIELD)
+    if not isinstance(block, dict):
+        return [
+            f"exit_loop step '{key}' has no {_EXIT_LOOP_BLOCK_FIELD} block; Kizen "
+            "requires one, {} at least (server 400s otherwise)"
+        ]
+    around = enclosing_loops(step, by_key)
+    if not around:
+        return [
+            f"exit_loop step '{key}' is not inside a loop body (server 400s otherwise)"
+        ]
+    target = block.get("step")
+    if target is None or any(target in (o.get("key"), o.get("id")) for o in around):
+        return []
+    keys = ", ".join(str(o.get("key")) for o in around)
+    if live and target in live:
+        return [
+            f"exit_loop step '{key}' keeps its live target, loop "
+            f"'{live[target].get('description')}' ({target}), which the spec "
+            "has no step for by id; set action_exit_loop.loop_to_exit "
+            f"(loops around it: {keys})"
+        ]
+    return [
+        f"exit_loop step '{key}' exits '{target}', which is not a loop around it "
+        f"(loops around it: {keys})"
+    ]
 
 
 def _loop_variable_problems(
@@ -600,6 +657,43 @@ def enclosing_loops(
             loops.append(parent)
         cur = parent
     return loops
+
+
+def resolve_exit_loop_targets(steps: list[dict[str, Any]]) -> None:
+    """Point each exit_loop's `action_exit_loop.step` at its loop's key, in
+    place. Kizen resolves a key on write but reads the target back as the
+    loop's id, and a PUT that echoes the id 400s (confirmed live 2026-11-11).
+    A new step (no `id`) with no target gets the innermost loop around it, as
+    Kizen's builder writes; an existing one with a null target keeps it."""
+    by_key = {s.get("key"): s for s in steps}
+    key_by_id = {s["id"]: s.get("key") for s in steps if s.get("id")}
+    for s in steps:
+        block = s.get(_EXIT_LOOP_BLOCK_FIELD)
+        if s.get("type") != "exit_loop" or not isinstance(block, dict):
+            continue
+        target = block.get("step")
+        if target in key_by_id:
+            block["step"] = key_by_id[target]
+        elif target is None and not s.get("id"):
+            around = enclosing_loops(s, by_key)
+            if around:
+                block["step"] = around[0].get("key")
+
+
+def exit_loop_dead_end_warnings(steps: list[dict[str, Any]]) -> list[str]:
+    """One warning per exit_loop with steps hung under it: Kizen saves them,
+    but a run never reaches them (confirmed live 2026-11-11)."""
+    warnings = []
+    for s in steps:
+        if s.get("type") != "exit_loop":
+            continue
+        kids = [c.get("key") for c in steps if c.get("parent_key") == s.get("key")]
+        if kids:
+            warnings.append(
+                f"steps after exit_loop step '{s.get('key')}' never run: "
+                + ", ".join(str(k) for k in kids)
+            )
+    return warnings
 
 
 # ---------------------------------------------------------------------------
@@ -760,6 +854,7 @@ _DEFAULT_DESCRIPTIONS = {
     "branch": "Branch",
     "condition": "Condition",
     "delay": "Delay",
+    "exit_loop": "Exit Loop",
     "initialize_variable": "Initialize Variable",
     "loop": "Loop",
     "manual": "Manual",
@@ -970,6 +1065,12 @@ def _normalize_wire_steps(
                     resolved["trigger_key"], resolved["trigger_key"]
                 )
             norm[_GO_TO_BLOCK_FIELD] = resolved
+        exit_loop = norm.get(_EXIT_LOOP_BLOCK_FIELD)
+        if isinstance(exit_loop, dict) and exit_loop.get("step") is not None:
+            norm[_EXIT_LOOP_BLOCK_FIELD] = {
+                **exit_loop,
+                "step": step_key_labels.get(exit_loop["step"], exit_loop["step"]),
+            }
         for step_type in ("initialize_variable", "update_variable"):
             field = _block_field_for(step_type)
             if isinstance(norm.get(field), dict):

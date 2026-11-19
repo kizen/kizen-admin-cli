@@ -371,7 +371,10 @@ def test_where_used_table(objects_from_fixtures):
     assert text.startswith("1 records with a value")
     assert "Used by" in text
     assert "Lead follow-up with merge {{ entity" in text
-    assert "Route leads by owner conditions: condition - 3, condition - 1" in text
+    assert (
+        "| automations | Route leads by owner | conditions: condition - 3, "
+        "condition - 1 |" in text
+    )
 
 
 @respx.mock
@@ -533,9 +536,15 @@ def test_roles_where_used_table(roles_and_groups):
     assert result.exit_code == 0, result.output
     text = _plain(result.stdout)
     assert text.startswith("1 team members")
-    assert "all triggers steps: assign_team_member - 30; use types: direct" in text
-    assert "Team Homepage dashlets: [default]" in text
-    assert "My Records asset type: filter_group; use types: admin" in text
+    assert (
+        "| automations | all triggers | steps: assign_team_member - 30; "
+        "use types: direct |" in text
+    )
+    assert "| homepages | Team Homepage | dashlets: [default] |" in text
+    assert (
+        "| sharing settings | My Records | asset type: filter_group; "
+        "use types: admin |" in text
+    )
 
 
 @respx.mock
@@ -604,8 +613,8 @@ def test_group_where_used_table(roles_and_groups):
     assert result.exit_code == 0, result.output
     text = _plain(result.stdout)
     assert text.startswith("1 team members")
-    assert "service accounts Workflow Service" in text
-    assert "roles Admin" in text
+    assert "| service accounts | Workflow Service |" in text
+    assert "| roles | Admin |" in text
 
 
 @respx.mock

@@ -17,7 +17,7 @@ from kizen_builder.cli._shared import (
     err_console,
     exit_spec_errors,
 )
-from kizen_builder.cli.automations import autos_app
+from kizen_builder.cli.automations import autos_app, print_warnings
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
 from kizen_builder.tools.plans import PlanError
@@ -88,6 +88,7 @@ def _run_step_patch(
             exit_spec_errors(e)
 
     preview = patch(execute=False)
+    print_warnings(preview)
 
     if not json_out:
         console.print(
@@ -212,7 +213,11 @@ def steps_edit(
 
 @steps_app.command(
     "add",
-    epilog="Step spec shape (one AutomationDef step): see `kizen docs show automation-step`",
+    epilog=(
+        "Step spec shape (one AutomationDef step): see `kizen docs show "
+        "automation-step`. A step to start from: `kizen automations step-types "
+        "show <type> --variant <name>`."
+    ),
 )
 def steps_add(
     api_name: str = typer.Argument(..., help="Automation api_name."),
