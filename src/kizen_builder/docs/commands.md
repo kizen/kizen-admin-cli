@@ -13,17 +13,18 @@ each entity — `kizen docs list` for the surface topics.
 
 ```
 kizen envs list                              # show env this directory resolves to
+kizen docs show <topic>                      # rendered in a terminal, raw when piped (--rendered/--raw or KIZEN_OUTPUT force either)
 kizen objects list                           # list objects, custom and built-in (e.g. Contacts)
 kizen objects get <api_name>                 # one object incl. categories, fields, option UUIDs; full stage detail for pipelines
 kizen objects stages list <pipeline>         # a pipeline's stages: name, status, chance-to-close, order
 kizen automations list                       # list automations (summary)
-kizen automations get <api_name>             # triggers + steps by step key; --json: outline, then each config block, strings over 2,000 chars (and, past 20,000 chars in all, whole blocks then steps) as "<N chars elided; kizen automations steps get <api> <key>>"
+kizen automations get <api_name>             # triggers + steps by step key; --json adds config blocks; long strings, and blocks past 20k chars, elide to a `steps get` pointer
 kizen automations show <api_name>            # step tree with synthesized step keys (handles for steps verbs)
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
 kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms
 kizen automations diff <api_name> --spec-file <path>  # preview what `update` from this spec would change — read-only
 kizen automations step-types list            # every step and trigger type the CLI can write (no env needed)
-kizen automations step-types show <type>     # one type's config block: entries to copy, what each choice needs, every field (--json adds the JSON Schema); common names like `wait`, `ai_step` work too
+kizen automations step-types show <type>     # one type's config block: entries to copy, what each choice needs, every field (--json adds the JSON Schema); `wait`, `ai_step` work too
 kizen automations step-types show <type> --variant <name>   # just that entry as JSON, for a spec file or `steps add`
 kizen automations step-types skeleton [--object <api_name>] # a minimal automation spec to build on
 kizen automations step-types concepts        # ideas most steps share: who, when, variables, fields, value sources
@@ -37,9 +38,10 @@ kizen automations modification-history <api_name>    # who changed this automati
 kizen automations failures <api_name>                # recent step-failure history
 kizen dashboards list                        # list dashboards + homepages (mine)
 kizen dashboards get <uuid|api_name>         # one dashboard + dashlet summary (--raw for full config)
-kizen mcp-servers list                       # MCP servers: api_name, tool count, enabled, default
+kizen mcp-servers list                       # MCP servers: api_name, tool count, upstreams, enabled, default
 kizen mcp-servers get <uuid|api_name>        # one server: endpoint_url + its tools (--raw is a valid update spec)
 kizen mcp-servers tools                      # the tool catalogue — valid tool_names
+kizen mcp-servers upstreams                  # upstream servers (status, auth) and their tools — valid upstreams tool_names
 kizen mcp-servers history <uuid|api_name>    # who changed a server, when, which keys
 kizen layouts list <object_api_name>         # record layouts on a custom object
 kizen layouts get <object_api_name> [--name] # one layout's block/column structure
@@ -80,7 +82,7 @@ kizen toolbar-templates get <uuid|name> [--json|--raw]  # entry tree; --json is 
 kizen roles list                             # list roles (name, user count, # perm groups, default flag)
 kizen roles get <name|uuid>                  # one role: default flag, app permissions, attached groups + level counts
 kizen permissions groups                     # list permission groups (raw)
-kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --field-permissions adds per-field rows; --raw for wire JSON
+kizen permissions group <name|uuid>          # one group as a sectioned permission map; --field-permissions adds per-field rows; --raw for wire JSON
 kizen permissions meta                        # the permissions catalog (sections, capabilities, defaults)
 
 kizen service-accounts list [--search <text>]  # name, api_name, type, status, groups, key count + preview (never a key)
@@ -197,8 +199,8 @@ kizen fields create <object_api_name> [--spec-file path | < stdin]              
 kizen automations create [--spec-file path | < stdin]
 kizen dashboards create [--spec-file path | < stdin]            # dashboard/homepage + dashlets
 kizen toolbar-templates create [--spec-file path | < stdin]     # private to you unless sharing_settings says otherwise
-kizen dashboards dashlet-config --type <t> [--object o] [--field f] [--filter '<json>'|--filter-file f] [--full]   # print one dashlet config (no write)
-kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools + sharing (kizen docs show mcp-server)
+kizen dashboards dashlet-config --type <t> [--object o] [--field f] [--filter '<json>'|--filter-file f] [--full]   # print one dashlet config
+kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools, upstream tools + sharing (kizen docs show mcp-server)
 kizen layouts update <object_api_name> [--spec-file | < stdin]  # PUT-replace a record layout
 kizen records create <object> --field api_name=value [...]      # one record (values resolved vs schema)
 kizen records create <object> [--spec-file f.csv|f.json | < stdin]   # bulk create from CSV/JSON
@@ -272,19 +274,19 @@ kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
 # submissions, subscribers, page-view, and upload endpoints are NOT covered yet — later slice
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)
-kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # build a local workdir (connector.sql + __config.json + data/)
+kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # local workdir: connector.sql + __config.json + data/
 kizen smart-connectors run [--dir path] [--skip-sql]       # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
 kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
-# `run`/`add-input` need the 'connectors' extra; `run`'s error prints the install line (see smart-connectors). `push` previews a SQL diff and confirms
+# `run`/`add-input` need the 'connectors' extra (`run`'s error prints the install line). `push` previews a SQL diff and confirms
 # (mutation gate) before writing; only --publish makes a live change. See kizen docs show smart-connectors.
 
 # smart connectors — building one from scratch, in order. Spec: kizen docs show smart-connector-flow
 kizen smart-connectors create <name> --object <api_name> [--type spreadsheet|webhook|schedule|activity|...]
                               [--cadence secs] [--activity-object <activity type>] [--sql-version 4.1.x]
-kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--template-sql]  # upload the reference file + generate the SQL template
+kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--template-sql]  # upload the reference file, generate the SQL template
 # → iterate on the SQL with pull → run → push
-kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; reports its tables; publish is blocked until this succeeds
+kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; publish is blocked until this succeeds
 kizen smart-connectors push --publish [--dir path]               # sample, then publish; refreshes the output columns configure-flow checks
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
@@ -332,7 +334,7 @@ kizen permissions group-create --name X [--base default|clone] [--source-group <
 kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
 kizen permissions group-delete <name|uuid>
 kizen service-accounts create --name X [--group <name|uuid> ...]  # integration account; Kizen derives api_name; no groups = disabled
-kizen service-accounts update <ref> [--name Y] [--api-name y] [--group <name|uuid> ... | --clear-groups]  # --group REPLACES the set; rename keeps api_name
+kizen service-accounts update <ref> [--name Y] [--api-name y] [--group <name|uuid> ... | --clear-groups]  # --group REPLACES the set
 kizen service-accounts delete <ref>                                # permanent archive; integration accounts only
 
 # business variables ({{ business_variable.<api_name> }} merge fields)

@@ -73,7 +73,9 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  New here? Run `kizen docs show operating` before making changes — it covers the approval gate and  
- the rules for acting on live state. `kizen docs list` shows every available topic.                 
+ the rules for acting on live state. `kizen docs list` shows every available topic. Piped or        
+ captured, tables print as plain `| a | b |` rows and docs as raw markdown; KIZEN_OUTPUT=terminal   
+ or KIZEN_OUTPUT=agent picks either form anywhere.                                                  
                                                                                                     
                                                                                                     
  Usage: activities [OPTIONS] COMMAND [ARGS]...                                                      
@@ -1911,14 +1913,19 @@
  live state. `commands` maps the command surface. `reference` covers API                            
  quirks and wire formats. Everything else is a spec-file shape.                                     
                                                                                                     
+ Piped or captured output is the raw markdown file, byte for byte, so it                            
+ greps cleanly.                                                                                     
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    topic      <str>  Topic name, e.g. operating, commands, reference, automation. See `kizen   │
 │                        docs list`.                                                               │
 │                        [required]                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --raw           Print the raw markdown instead of rendering it.                                  │
-│ --help          Show this message and exit.                                                      │
+│ --rendered    --raw      Force rich rendering, or the raw markdown file. Default: rendered in a  │
+│                          terminal, raw when piped or captured (KIZEN_OUTPUT=terminal|agent       │
+│                          overrides the default).                                                 │
+│ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: envs [OPTIONS] COMMAND [ARGS]...                                                            
@@ -2617,13 +2624,14 @@
 │ --help          Show this message and exit.                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
-│ list     List the MCP servers in the configured env.                                             │
-│ get      Show one MCP server, its endpoint URL and its tools.                                    │
-│ tools    List the tools a server can serve — the valid `tool_names`.                             │
-│ history  Show a server's change history, newest first.                                           │
-│ create   Create an MCP server from a JSON MCPServerDef.                                          │
-│ update   Update an MCP server from a JSON MCPServerDef.                                          │
-│ delete   Delete an MCP server. Kizen deletes it outright, with its history.                      │
+│ list       List the MCP servers in the configured env.                                           │
+│ get        Show one MCP server, its endpoint URL, its tools and its upstreams.                   │
+│ tools      List the tools a server can serve — the valid `tool_names`.                           │
+│ upstreams  List upstream MCP servers and their tools — the valid `upstreams` tool names.         │
+│ history    Show a server's change history, newest first.                                         │
+│ create     Create an MCP server from a JSON MCPServerDef.                                        │
+│ update     Update an MCP server from a JSON MCPServerDef.                                        │
+│ delete     Delete an MCP server. Kizen deletes it outright, with its history.                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: mcp-servers create [OPTIONS]                                                                
@@ -2631,9 +2639,9 @@
  Create an MCP server from a JSON MCPServerDef.                                                     
                                                                                                     
  `name` and `api_name` are required. Tool names are checked against                                 
- `kizen mcp-servers tools`. With no `sharing_settings`, it starts as the                            
- UI's New MCP Server dialog does: no access for all team members and no                             
- role or team member grants.                                                                        
+ `kizen mcp-servers tools`, and `upstreams` against the upstream servers.                           
+ With no `sharing_settings`, it starts as the UI's New MCP Server dialog                            
+ does: no access for all team members and no role or team member grants.                            
                                                                                                     
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --spec-file          <str>  Path to a JSON MCPServerDef. Default: read from stdin.               │
@@ -2665,7 +2673,7 @@
                                                                                                     
  Usage: mcp-servers get [OPTIONS] {server}                                                          
                                                                                                     
- Show one MCP server, its endpoint URL and its tools.                                               
+ Show one MCP server, its endpoint URL, its tools and its upstreams.                                
                                                                                                     
  The endpoint URL is what an MCP client connects to; the CLI never calls it.                        
                                                                                                     
@@ -2716,6 +2724,8 @@
                                                                                                     
  List the tools a server can serve — the valid `tool_names`.                                        
                                                                                                     
+ Upstream server tools: `kizen mcp-servers upstreams`.                                              
+                                                                                                    
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --output  -o      <str>  Output format: table (default), json, or csv.                           │
 │ --json                   Alias for --output json.                                                │
@@ -2729,8 +2739,9 @@
                                                                                                     
  Update an MCP server from a JSON MCPServerDef.                                                     
                                                                                                     
- Only the keys the spec sets are compared. `get --raw` output works as a                            
- spec: its read-only keys are ignored. A Kizen-managed server takes only                            
+ Only the keys the spec sets are compared; omitting `upstreams` keeps them.                         
+ `get --raw` output works as a spec: its read-only keys are ignored. A                              
+ Kizen-managed server takes only                                                                    
  `{"is_default_for_business": true}`, which makes it the default again.                             
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
@@ -2742,6 +2753,21 @@
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
 │ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
 │ --help                      Show this message and exit.                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ See `kizen docs show mcp-server`                                                                   
+                                                                                                    
+                                                                                                    
+ Usage: mcp-servers upstreams [OPTIONS]                                                             
+                                                                                                    
+ List upstream MCP servers and their tools — the valid `upstreams` tool names.                      
+                                                                                                    
+ Create and authorize them in Kizen (Data › MCP Servers › Upstream Servers).                        
+                                                                                                    
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output  -o      <str>  Output format: table (default), json, or csv.                           │
+│ --json                   Alias for --output json.                                                │
+│ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  See `kizen docs show mcp-server`                                                                   
@@ -5483,6 +5509,9 @@
 
 
 ===== mcp-servers update =====
+
+
+===== mcp-servers upstreams =====
 
 
 ===== messages =====

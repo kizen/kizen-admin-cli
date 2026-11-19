@@ -18,7 +18,7 @@ from kizen_builder.cli._shared import (
     exit_spec_errors,
     exit_spec_problems,
 )
-from kizen_builder.cli.automations import autos_app
+from kizen_builder.cli.automations import autos_app, print_warnings
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
 from kizen_builder.tools.findings import SpecProblems
@@ -124,6 +124,7 @@ def _run_step_patch(
 
     preview = patch(execute=False)
     subject_key = subject(preview["report"]) if subject else None
+    print_warnings(preview)
 
     if not json_out:
         console.print(

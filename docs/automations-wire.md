@@ -102,7 +102,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
 | `value_html` on an `update_variable` source | `''` |
-| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
+| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ## Read→write transforms
 
@@ -127,6 +127,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
 | `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` is read with no config block, and none is written. Confirmed live 2026-10-27 |
+| `action_exit_loop.step` read as the target loop's **id** | the loop's step **key**. A PUT that echoes the id 400s ("Exit Loop step references a loop that does not exist."). A null `step` is echoed as null, and it ends the innermost loop. Confirmed live 2026-11-11 |
 | A loop's item variable read with `is_array_item_variable: true` and `source_array_variable: <array>` | echoed as read. The server sets both itself from the loop, so sending them is harmless and omitting them changes nothing. `diff` ignores both. Confirmed live 2026-10-27 |
 | Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see `kizen automations step-types show file_content_extraction` |
 | `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
@@ -172,7 +173,10 @@ inconsistent:
     by an `initialize_variable` step;
   - its item variable is declared by an `initialize_variable` step as a single
     variable of the array's type (and, for records, the same object), and no
-    two loops share one.
+    two loops share one;
+  - an `exit_loop` sits inside a loop body, its `action_exit_loop.step` names
+    a loop around it or is null, and it carries an `action_exit_loop` block,
+    `{}` at least (confirmed live 2026-11-11).
 
   The server has no nesting limit (6 deep saves) and no limit on body lanes.
   The CLI adds two rules of its own, from Kizen's builder: at most three
@@ -271,7 +275,10 @@ half of each is on its card, `kizen automations step-types show <type>`.
   from `update`. Confirmed live 2026-10-27.
 - **`update_variable.value_resolution`.** A PUT that omits it keeps the stored
   value on a step whose `id` is carried; only an explicit `null` resets it,
-  and the planner drops nulls. Confirmed live 2026-10-14.
+  and the planner drops nulls. Confirmed live 2026-10-14. A POST without it
+  stores `null`, which replaces like `overwrite` (re-confirmed 2026-11-11).
+  `update` sends a matched step's live value itself, so `diff` shows no
+  change.
 - **`schedule_activity.target_variable`.** A read expands it to `{id, name,
   data_type, …}`, and `steps get` prints the name again. A step that binds no
   variable reads `target_variable: null` with `overwrite`. A PUT that leaves
@@ -281,7 +288,8 @@ half of each is on its card, `kizen automations step-types show <type>`.
   2026-10-30.
 - **Kept settings.** A Kizen PUT without the settings `update` keeps resets
   each to its default, except `stop_execution`'s, which Kizen keeps when the
-  block is empty (confirmed live 2026-10-30).
+  block is empty, and `value_resolution` (confirmed live 2026-10-30 and
+  2026-11-11).
 
 ## Fields that break the bare-scalar convention
 
@@ -440,6 +448,7 @@ rule.
 | A `static` source needs `source_subtype`; without it the server 400s "source_subtype should be one of [...]" | `VariableSourceConfig._static_has_subtype` | 2026-11-17 |
 | A `static`, `logged_activity_trigger` or `activity_past_due_trigger` source's `source_subtype` is one of that type's list; the write schema has it as a free string, and the server 400s with the list | `SOURCE_SUBTYPES`, `VariableSourceConfig._known_subtype` | 2026-11-17 |
 | `value_resolution` on a scalar variable 400s ("Value resolution is supported for array variables only."); on `initialize_variable` it's dropped; any other value is refused | `_scalar_value_resolution_problem`, `_step_initialize_variable` | 2026-10-14 |
+| A new array `update_variable` without `value_resolution` gets `add_only`, the builder's default for a new step since 2026-11-10; a matched step keeps its live value | `_build_step_payload` (`_ARRAY_UPDATE_DEFAULT_RESOLUTION`), `_KEPT_BLOCK_KEYS` | 2026-11-11 |
 | A `stop_execution` without `action` gets `stop_and_complete`; on update a matched step keeps its live `action`/`notify`, and a live `null` becomes `stop_and_complete` | `_build_step_payload` (`_STOP_EXECUTION_DEFAULT_ACTION`), `_carry_omitted_step_keys` | 2026-10-30 |
 | An option field's label resolves to its UUID; an unknown label is refused. Kizen answers a label with a 500, or saves an automation it can't read | `_option_labels_to_ids` | 2026-10-30 |
 | A condition needs at least one rule (empty `query`, a group with no `filters`, `in_group` with no `group_ids`); the UI shows an error on an empty one | `_condition_rules_problem` | reported 2026-09-29 |
@@ -477,9 +486,10 @@ rule.
 | A matched step keeps its live `error_notification_severity_level` | `_KEPT_STEP_KEYS` | 2026-09-28 |
 | `step_loop` takes variable names (their ids are a 400); a loop always goes out as `is_branch_group_initiator: true`, because the server stores true even when false is sent; an item variable needs no sources, though the server accepts one | `_step_loop`, `_loop_problems`, `_loop_variable_problems` | 2026-10-27 |
 | Loops nest at most three levels, over a different array from every loop around them (Kizen's builder rule; the API accepts six levels and a repeated array) | `_builder_loop_problems` | 2026-10-27 |
+| An `exit_loop` sits in a loop body and targets a loop around it; `loop_to_exit` goes out as the loop's key, a matched step's read-back id is turned back into the key, and an update whose target loop has no spec step by `id` is refused; steps hung under one warn | `exit_loop_problems`, `resolve_exit_loop_targets`, `exit_loop_dead_end_warnings` | 2026-11-11 |
 | `diff` ignores `is_array_item_variable` and `source_array_variable`, which the server adds to an item variable, and reads a null key in a variable definition as absent | `_DERIVED_VARIABLE_KEYS` | 2026-10-27 |
 | `show`, `diff`, `roundtrip`, `activate` and `deactivate` warn, not refuse, about an inactive `start_automation` target, because Kizen also refuses a PUT of an automation whose target was deactivated later | `inactive_start_targets` | 2026-10-30 |
-| What an update keeps: `active`, `folder`, `skip_non_working_days` (a PUT without it turns a live `true` off), webhook auth; on a step whose `id` matches, `description`, `user_description`, `should_skip_execution`, `continue_with_branch` (with a kept skip), `action_on_failure`, `error_notification_severity_level`; on a trigger, `description`, `user_description`, `should_skip_execution`; per type, `schedule_activity` `target_variable`/`variable_field_resolution`, LLM `merge_field_validation`/`is_advanced` (a condition's `llm_decision.merge_field_validation`), `call_llm`'s MCP pair, `max_sequential_turns`, `tool_failure_policy`, a stop's `action`/`notify`, `create_related_entity`'s resolution, and a `field_updated` trigger's match modes | `_KEPT_STEP_KEYS`, `_KEPT_TRIGGER_KEYS`, `_KEPT_BLOCK_KEYS`, `_carry_omitted_step_keys`, `_kept_match_modes`, `_carry_webhook_auth` | 2026-10-30 |
+| What an update keeps: `active`, `folder`, `skip_non_working_days` (a PUT without it turns a live `true` off), webhook auth; on a step whose `id` matches, `description`, `user_description`, `should_skip_execution`, `continue_with_branch` (with a kept skip), `action_on_failure`, `error_notification_severity_level`; on a trigger, `description`, `user_description`, `should_skip_execution`; per type, `schedule_activity` `target_variable`/`variable_field_resolution`, LLM `merge_field_validation`/`is_advanced` (a condition's `llm_decision.merge_field_validation`), `call_llm`'s MCP pair, `max_sequential_turns`, `tool_failure_policy`, a stop's `action`/`notify`, `update_variable`'s `value_resolution`, an `exit_loop`'s target, `create_related_entity`'s resolution, and a `field_updated` trigger's match modes | `_KEPT_STEP_KEYS`, `_KEPT_TRIGGER_KEYS`, `_KEPT_BLOCK_KEYS`, `_carry_omitted_step_keys`, `_kept_match_modes`, `_carry_webhook_auth` | 2026-10-30 |
 | A step or trigger without `id` gets a fresh one, orphaning its run history | `_carry_omitted_step_keys` (kept only by `id`) | 2026-08-10 |
 
 ## Facts the author guide no longer states

@@ -74,7 +74,7 @@ def apply_cmd(
         )
 
     preview_target = err_console if json_out else console
-    _render_plan(plan, preview_target)
+    _render_plan(plan, preview_target, brief=yes)
     preview_target.print(
         f"Writing to profile '{config.name}' (business_id {config.business_id})."
     )
