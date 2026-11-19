@@ -44,7 +44,8 @@ kizen automations steps edit flag_big_north_accounts flag --spec-file step.json 
 ## `steps add` — insert one step
 
 The spec is a **single step** (`step_type` + its config block; `field_ref`
-welcome). **Placement comes from the flags, not the spec:**
+welcome). `kizen automations step-types show <type> --variant <name>` prints
+one to start from. **Placement comes from the flags, not the spec:**
 
 - `--parent <key>` — attach under that step (or `--root` to become the new first step).
 - `--branch yes|no` — required when the parent is a `condition`/`goal`.

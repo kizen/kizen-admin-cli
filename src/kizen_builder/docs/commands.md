@@ -13,6 +13,7 @@ each entity — `kizen docs list` for the surface topics.
 
 ```
 kizen envs list                              # show env this directory resolves to
+kizen docs show <topic>                      # rendered in a terminal; raw markdown when piped (--rendered/--raw or KIZEN_OUTPUT force either)
 kizen objects list                           # list objects, custom and built-in (e.g. Contacts)
 kizen objects get <api_name>                 # one object incl. categories, fields, option UUIDs; full stage detail for pipelines
 kizen objects stages list <pipeline>         # a pipeline's stages: name, status, chance-to-close, order
@@ -22,6 +23,11 @@ kizen automations show <api_name>            # step tree with synthesized step k
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
 kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms
 kizen automations diff <api_name> --spec-file <path>  # preview what `update` from this spec would change — read-only
+kizen automations step-types list            # every step and trigger type the CLI can write (no env needed)
+kizen automations step-types show <type>     # one type's config block: entries to copy, what each choice needs, every field (--json adds the JSON Schema); common names like `wait`, `ai_step` work too
+kizen automations step-types show <type> --variant <name>   # just that entry as JSON, for a spec file or `steps add`
+kizen automations step-types skeleton [--object <api_name>] # a minimal automation spec to build on
+kizen automations step-types concepts        # ideas most steps share: who, when, variables, fields, value sources
 kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen docs show automation)
 kizen automations runs list <api_name>       # recent runs for an automation
 kizen automations runs view <exec_uuid>      # one run: summary + step-by-step trace (per-step status/duration)
@@ -32,9 +38,10 @@ kizen automations modification-history <api_name>    # who changed this automati
 kizen automations failures <api_name>                # recent step-failure history
 kizen dashboards list                        # list dashboards + homepages (mine)
 kizen dashboards get <uuid|api_name>         # one dashboard + dashlet summary (--raw for full config)
-kizen mcp-servers list                       # MCP servers: api_name, tool count, enabled, default
+kizen mcp-servers list                       # MCP servers: api_name, tool count, upstreams, enabled, default
 kizen mcp-servers get <uuid|api_name>        # one server: endpoint_url + its tools (--raw is a valid update spec)
 kizen mcp-servers tools                      # the tool catalogue — valid tool_names
+kizen mcp-servers upstreams                  # upstream servers (status, auth) and their tools — valid upstreams tool_names
 kizen mcp-servers history <uuid|api_name>    # who changed a server, when, which keys
 kizen layouts list <object_api_name>         # record layouts on a custom object
 kizen layouts get <object_api_name> [--name] # one layout's block/column structure
@@ -193,7 +200,7 @@ kizen automations create [--spec-file path | < stdin]
 kizen dashboards create [--spec-file path | < stdin]            # dashboard/homepage + dashlets
 kizen toolbar-templates create [--spec-file path | < stdin]     # private to you unless sharing_settings says otherwise
 kizen dashboards dashlet-config --type <t> [--object o] [--field f] [--filter '<json>'|--filter-file f] [--full]   # print one dashlet config (no write)
-kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools + sharing (kizen docs show mcp-server)
+kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools, upstream tools + sharing (kizen docs show mcp-server)
 kizen layouts update <object_api_name> [--spec-file | < stdin]  # PUT-replace a record layout
 kizen records create <object> --field api_name=value [...]      # one record (values resolved vs schema)
 kizen records create <object> [--spec-file f.csv|f.json | < stdin]   # bulk create from CSV/JSON
@@ -206,7 +213,7 @@ kizen automations update [--spec-file path | < stdin]
 kizen dashboards update <uuid|api_name> [--spec-file | < stdin]   # metadata + dashlets (diff by id)
 kizen toolbar-templates update <uuid|name> [--spec-file | < stdin]   # no spec re-saves plugin pages after a release
 kizen dashboards duplicate <uuid|api_name> [--name X] [--api-name Y]   # unpublished copy, source's sharing
-kizen mcp-servers update <uuid|api_name> [--spec-file | < stdin]   # tools compare as a set; `get --raw` output re-applies as a skip
+kizen mcp-servers update <uuid|api_name> [--spec-file | < stdin]   # tools compare as a set; `get --raw` output re-applies as a skip; omitting upstreams keeps them
 kizen records update <object> <uuid> --field api_name=value [...]    # one record
 kizen records update <object> [--spec-file f.csv|f.json | < stdin]   # bulk update (each row needs an 'id')
 kizen records upsert <object> <lookup_value> --field api_name=value [...]  # create-or-update by lookup_value

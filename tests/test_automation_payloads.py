@@ -4843,6 +4843,63 @@ def test_step_schedule_activity_sends_note_and_html_note(patch_live_lookups):
     assert action["html_note"] == "<p><strong>Rich</strong> note</p>"
 
 
+def test_step_schedule_activity_resolves_field_refs_to_field_ids(patch_live_lookups):
+    """`field_ref` is a spec convenience: the wire takes only `field_id`."""
+    patients = load_fixture("objects/patients.json")
+    by_name = {f["api_name"]: f["id"] for f in patients["fields"]}
+    payload = _build(
+        _schedule_activity_spec(
+            {
+                "activity_type_id": "11111111-1111-4111-8111-111111111111",
+                "schedule": {
+                    "type": "on_or_around_date",
+                    "on_or_around_date": {
+                        "field_ref": "patients.date_of_birth",
+                        "date_offset": "days_after",
+                        "date_offset_days": 1,
+                    },
+                },
+                "assigned_to": {
+                    "assignment_type": "team_selector_field",
+                    "field_ref": "owner",
+                },
+            }
+        )
+    )
+    action = payload["steps"][0]["action_schedule_activity"]
+    assert action["schedule"]["on_or_around_date"] == {
+        "field_id": by_name["date_of_birth"],
+        "date_offset": "days_after",
+        "date_offset_days": 1,
+    }
+    assert action["assigned_to"] == {
+        "assignment_type": "team_selector_field",
+        "field_id": by_name["owner"],
+    }
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"type": "later"},
+        {"type": "with_delay"},
+        {"type": "with_delay", "with_delay": {"delay_type": "days", "delay_value": 1}},
+        {"type": "with_delay", "with_delay": {"delay_type": "day", "delay_value": 0}},
+        {
+            "type": "on_or_around_date",
+            "on_or_around_date": {"date_offset": "on_day", "date_offset_days": 0},
+        },
+    ],
+)
+def test_step_schedule_activity_refuses_a_malformed_schedule(schedule):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AutomationDef.model_validate(
+            _schedule_activity_spec({"activity_type": "call", "schedule": schedule})
+        )
+
+
 def test_step_schedule_activity_association_configs_author_shape(patch_live_lookups):
     patients = load_fixture("objects/patients.json")
     encounters_field = next(
@@ -7058,6 +7115,59 @@ def test_notify_team_member_selector_not_checked(patch_live_lookups):
     }
     action = _build(spec)["steps"][0]["action_notify_member_via_text"]
     assert action["team_member"] == {"type": "team_member"}
+
+
+_BY_OWNER = {"type": "team_selector_field", "field_ref": "owner"}
+_MESSAGE_ID = "11111111-1111-1111-1111-111111111111"
+
+
+@pytest.mark.parametrize(
+    ("step_type", "block", "selector"),
+    [
+        ("assign_team_member", _BY_OWNER, None),
+        (
+            "notify_member_via_email",
+            {"team_member": _BY_OWNER, "email_template_id": _MESSAGE_ID},
+            "team_member",
+        ),
+        (
+            "notify_member_via_email",
+            {
+                "team_member": {"type": "owner"},
+                "cc_team_member": _BY_OWNER,
+                "email_template_id": _MESSAGE_ID,
+            },
+            "cc_team_member",
+        ),
+        (
+            "notify_member_via_text",
+            {"team_member": _BY_OWNER, "content": "hi"},
+            "team_member",
+        ),
+        (
+            "send_related_contact_email",
+            {"email": _MESSAGE_ID, "cc_team_member": _BY_OWNER},
+            "cc_team_member",
+        ),
+    ],
+)
+def test_team_member_selector_resolves_field_ref(
+    patch_live_lookups, step_type, block, selector
+):
+    """Each `_team_member_selector` caller sends `field_ref` as `field_id`."""
+    action = _build(_one_step_spec(step_type, block))["steps"][0][
+        _block_field_for(step_type)
+    ]
+    built = action[selector] if selector else action
+    assert built == {"type": "team_selector_field", "field_id": _FAR_SELECTOR}
+
+
+def test_team_member_selector_field_id_wins_over_field_ref(patch_live_lookups):
+    block = {**_BY_OWNER, "field_id": _EMPLOYEE}
+    action = _build(_one_step_spec("assign_team_member", block))["steps"][0][
+        "action_assign_team_member"
+    ]
+    assert action == {"type": "team_selector_field", "field_id": _EMPLOYEE}
 
 
 def test_translate_keeps_an_incomplete_assign_team_member():

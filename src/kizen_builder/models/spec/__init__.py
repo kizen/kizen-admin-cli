@@ -143,6 +143,7 @@ from kizen_builder.models.spec.mcp_servers import (
     SharingBuckets,
     MCPServerSharing,
     MCPServerDef,
+    UpstreamSelection,
 )
 from kizen_builder.models.spec.email_templates import (
     ColumnPreset,
@@ -332,6 +333,7 @@ __all__ = [
     "SharingBuckets",
     "MCPServerSharing",
     "MCPServerDef",
+    "UpstreamSelection",
     "ColumnPreset",
     "COLUMN_FRACTIONS",
     "TextBlockDef",
