@@ -38,7 +38,12 @@ from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.plans import PlanError
 
 autos_app = typer.Typer(
-    help="Read, create, update, and run automations.", no_args_is_help=True
+    help=(
+        "Read, create, update, and run automations. Writing a spec? "
+        "`step-types show <type>` prints a step's config block, its choices "
+        "and a step to start from, with no live env."
+    ),
+    no_args_is_help=True,
 )
 app.add_typer(autos_app, name="automations")
 
@@ -405,6 +410,9 @@ def _step_label(step: dict[str, Any]) -> str:
     if goto:
         target = goto.get("step_key") or goto.get("trigger_key") or "?"
         label += f" [cyan]→ {target}[/cyan]"
+    if step.get("type") == "exit_loop":
+        target = (step.get("action_exit_loop") or {}).get("step") or "innermost loop"
+        label += f" [cyan]→ {escape(str(target))}[/cyan]"
     if step.get("should_skip_execution"):
         label += " [yellow](skipped)[/yellow]"
     if desc:

@@ -529,7 +529,13 @@ def _update_payload(
         and current.get("skip_non_working_days") is not None
     ):
         payload["skip_non_working_days"] = current["skip_non_working_days"]
-    return _carry_omitted_step_keys(payload, auto, current)
+    payload, kept = _carry_omitted_step_keys(payload, auto, current)
+    from kizen_builder.translate import exit_loop_problems, resolve_exit_loop_targets
+
+    resolve_exit_loop_targets(payload["steps"])
+    if problems := exit_loop_problems(payload["steps"], current.get("steps")):
+        raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
+    return payload, kept
 
 
 # Keys a PUT resets to Kizen's default when they're left out or sent as the
@@ -608,6 +614,8 @@ _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
     ),
     "plugin_code_step": (_KeptBlockKeys(("preview_user_id",)),),
     "update_variable": (_KeptBlockKeys(("value_resolution",)),),
+    # Read as the loop's id; `resolve_exit_loop_targets` turns it into the key.
+    "exit_loop": (_KeptBlockKeys(("step",), set_by=("loop_to_exit", "step")),),
 }
 
 
@@ -985,7 +993,13 @@ def _automation_preview(
             else "ACTIVATES an inactive automation"
         )
         active_display = f"{live_active} → {auto.active} ({direction})"
-    warnings = [*_fan_out_warnings(auto), *_unlaid_rule_warnings(auto, payload, ctx)]
+    from kizen_builder.translate import exit_loop_dead_end_warnings
+
+    warnings = [
+        *_fan_out_warnings(auto),
+        *_unlaid_rule_warnings(auto, payload, ctx),
+        *exit_loop_dead_end_warnings(payload["steps"]),
+    ]
     return {
         "env": env,
         "api_name": auto.api_name,
@@ -1158,8 +1172,9 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     _validate_trigger_orders(payload["triggers"])
     payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
 
-    from kizen_builder.translate import validate_payload
+    from kizen_builder.translate import resolve_exit_loop_targets, validate_payload
 
+    resolve_exit_loop_targets(payload["steps"])
     problems = validate_payload(payload)
     if problems:
         raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
@@ -1785,6 +1800,22 @@ _TRIGGER_BUILDERS: dict[str, Any] = {
     "survey_submitted": _trigger_survey_submitted,
     "email_received": _trigger_email_received,
     "stage_updated": _trigger_stage_updated,
+}
+
+# One line per wired trigger type, for `kizen automations step-types list`.
+TRIGGER_PURPOSES: dict[str, str] = {
+    "manual": "a user starts it on a record",
+    "new_entity_created": "a record is created",
+    "activity_logged": "an activity of a given type is logged",
+    "on_or_around_date": "a date field on the record comes around",
+    "webhook": "an external system calls its URL",
+    "field_updated": "a field on the record changes",
+    "schedule": "a recurring schedule (an rrule)",
+    "scheduled_activity_overdue": "a scheduled activity goes overdue",
+    "form_submitted": "a form on the target object is submitted",
+    "survey_submitted": "a survey on the target object is submitted",
+    "email_received": "the Contact emails in (Contact automations only)",
+    "stage_updated": "a record moves between stages (pipelines only)",
 }
 
 
@@ -2441,12 +2472,31 @@ def _step_archive_record(
     return out
 
 
-def _team_member_selector(block: dict[str, Any]) -> dict[str, Any]:
+def _with_field_id(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """``block`` with a `field_ref` resolved into `field_id`, for the blocks
+    whose wire key takes only the UUID: every team-member selector and
+    schedule_activity's `on_or_around_date`. A `field_id` beside it wins. A
+    live read carries no `field_ref`, so translating one looks nothing up."""
+    ref = block.get("field_ref")
+    if not ref:
+        return block
+    rest = {k: v for k, v in block.items() if k != "field_ref"}
+    if not rest.get("field_id"):
+        rest["field_id"] = _resolve_field_ref(ref, auto, ctx)
+    return rest
+
+
+def _team_member_selector(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
     """Normalize a team-member selector (assign_team_member action,
-    cc_team_member on message steps) to write dialect: *_id keys with bare
-    UUIDs (role_id, employee_id, employee_ids, field_id, related_field_id).
-    Reads return expanded objects under the bare names.
+    team_member/cc_team_member on message steps) to write dialect: *_id keys
+    with bare UUIDs (role_id, employee_id, employee_ids, field_id,
+    related_field_id). Reads return expanded objects under the bare names.
     """
+    block = _with_field_id(block, auto, ctx)
     out: dict[str, Any] = {"type": block.get("type")}
     for read_key, write_key in (
         ("role", "role_id"),
@@ -2471,6 +2521,7 @@ def _team_member_selector(block: dict[str, Any]) -> dict[str, Any]:
     "employee_id",
     "employee",
     "field_id",
+    "field_ref",
     "field",
     "related_field_id",
     "related_field",
@@ -2480,7 +2531,7 @@ def _team_member_selector(block: dict[str, Any]) -> dict[str, Any]:
 def _step_assign_team_member(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
-    return _team_member_selector(block)
+    return _team_member_selector(block, auto, ctx)
 
 
 # Per `type`: each key the selector needs, and what it names. Checked on the
@@ -2569,6 +2620,17 @@ def _step_go_to_automation_step(
     if block.get("trigger_key"):
         out["trigger_key"] = block["trigger_key"]
     return out
+
+
+# Kizen requires the block, `{}` at least, and resolves a loop key in `step`
+# on write; a read gives the loop's id, which `translate.resolve_exit_loop_targets`
+# turns back into its key (confirmed live 2026-11-11).
+@honours("loop_to_exit", "step")
+def _step_exit_loop(
+    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+) -> dict[str, Any]:
+    target = block.get("loop_to_exit") or block.get("step")
+    return {"step": target} if target else {}
 
 
 @honours(
@@ -3586,10 +3648,13 @@ def _step_schedule_activity(
     if schedule:
         # Drop null sub-fields — API rejects null for with_delay / on_or_around_date
         out["schedule"] = {k: v for k, v in schedule.items() if v is not None}
+        on_date = out["schedule"].get("on_or_around_date")
+        if isinstance(on_date, dict):
+            out["schedule"]["on_or_around_date"] = _with_field_id(on_date, auto, ctx)
     if block.get("notifications") is not None:
         out["notifications"] = block["notifications"]
     if block.get("assigned_to"):
-        out["assigned_to"] = _normalize_assigned_to(block["assigned_to"])
+        out["assigned_to"] = _normalize_assigned_to(block["assigned_to"], auto, ctx)
     if block.get("association_configs") is not None:
         out["association_configs"] = [
             _normalize_association_config(a, auto, ctx, n)
@@ -3654,7 +3719,9 @@ def _normalize_association_config(
     return out
 
 
-def _normalize_assigned_to(at: dict[str, Any]) -> dict[str, Any]:
+def _normalize_assigned_to(
+    at: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
     """schedule_activity's assignment selector — confirmed against the
     public `/api/docs/schema` `ScheduleActivityAssignmentRequest`, which
     backs all 11 "Assign To" options in the UI (round_robin_all/_role/
@@ -3678,6 +3745,7 @@ def _normalize_assigned_to(at: dict[str, Any]) -> dict[str, Any]:
       variable-based options at all), so `_team_member_selector` doesn't
       need this.
     """
+    at = _with_field_id(at, auto, ctx)
     out: dict[str, Any] = {
         # schedule_activity's wire key is assignment_type; assign_team_member
         # and notify_member_via_email use "type" for the same selector, so
@@ -3704,7 +3772,7 @@ def _normalize_assigned_to(at: dict[str, Any]) -> dict[str, Any]:
 
 @honours("send_to_contact_field", "send_from_owner", "email", "cc_team_member")
 def _step_send_related_contact_email(
-    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     """Reads expand send_to_contact_field (field object) and email (full
     message resource); writes take the bare field UUID and an {id}
@@ -3721,7 +3789,7 @@ def _step_send_related_contact_email(
         out["email"] = {"id": email["id"]}
     cc = block.get("cc_team_member")
     if isinstance(cc, dict):
-        out["cc_team_member"] = _team_member_selector(cc)
+        out["cc_team_member"] = _team_member_selector(cc, auto, ctx)
     return out
 
 
@@ -3769,7 +3837,7 @@ def _step_send_related_contact_text(
     ),
 )
 def _step_notify_member_via_email(
-    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     """Native team-member email notification (owner or another
     team_selector field), as opposed to send_related_contact_email which
@@ -3784,10 +3852,10 @@ def _step_notify_member_via_email(
     out: dict[str, Any] = {}
     team_member = block.get("team_member")
     if isinstance(team_member, dict):
-        out["team_member"] = _team_member_selector(team_member)
+        out["team_member"] = _team_member_selector(team_member, auto, ctx)
     cc = block.get("cc_team_member")
     if isinstance(cc, dict):
-        out["cc_team_member"] = _team_member_selector(cc)
+        out["cc_team_member"] = _team_member_selector(cc, auto, ctx)
     message_id = (
         block.get("id")
         or block.get("email_template_id")
@@ -3864,7 +3932,7 @@ def _step_notify_member_via_text(
     out: dict[str, Any] = {}
     team_member = block.get("team_member")
     if isinstance(team_member, dict):
-        out["team_member"] = _team_member_selector(team_member)
+        out["team_member"] = _team_member_selector(team_member, auto, ctx)
     for key in ("content", "html_content"):
         if block.get(key) is not None:
             out[key] = block[key]
@@ -4137,6 +4205,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "plugin_code_step": _step_plugin_code_step,
     "archive_record": _step_archive_record,
     "go_to_automation_step": _step_go_to_automation_step,
+    "exit_loop": _step_exit_loop,
     "start_automation": _step_start_automation,
     "change_field_value": _step_change_field_value,
     "modify_related_entities": _step_modify_related_entities,
@@ -4156,6 +4225,46 @@ _STEP_BUILDERS: dict[str, Any] = {
     "notify_member_via_text": _step_notify_member_via_text,
     "math_operator": _step_math_operator,
     "search_records": _step_search_records,
+}
+
+# One line per wired step type, for `kizen automations step-types list`.
+STEP_PURPOSES: dict[str, str] = {
+    "condition": "branch on a filter, group membership or LLM decision",
+    "delay": "wait a duration or until a time",
+    "goal": "wait for a condition or event",
+    "loop": "run its body once per item of an array variable",
+    "stop_execution": "end this branch and set the run's final status",
+    "code_step": "run Python",
+    "plugin_code_step": "run a step an installed plugin ships",
+    "archive_record": "archive the record",
+    "go_to_automation_step": "jump to another step",
+    "start_automation": "start another automation, which must be active",
+    "change_field_value": (
+        "set or clear a field; on a pipeline's stage it moves the record"
+    ),
+    "modify_related_entities": "update related records",
+    "create_related_entity": "create a related record and link it",
+    "initialize_variable": "declare an automation variable, at the front",
+    "update_variable": "change an automation variable",
+    "call_llm": "prompt an LLM, optionally with an MCP server's tools",
+    "file_content_extraction": (
+        "extract from a file on the record, a related record or a variable"
+    ),
+    "audio_transcription": (
+        "transcribe audio on the record, a related record or a variable"
+    ),
+    "assign_team_member": "assign the record's owner (round-robin, role, field…)",
+    "schedule_activity": "schedule an activity",
+    "send_related_contact_email": "email a related contact",
+    "send_related_contact_text": "text a related contact",
+    "notify_member_via_email": "email a team member",
+    "notify_member_via_text": "text a team member",
+    "math_operator": "arithmetic into a variable or field",
+    "search_records": "search an object into an array variable",
+    "branch": "run its children in parallel (a branch group)",
+    "merge_branches": "rejoin a branch group",
+    "next_or_finish": "close a loop body",
+    "exit_loop": "end a loop early",
 }
 
 
