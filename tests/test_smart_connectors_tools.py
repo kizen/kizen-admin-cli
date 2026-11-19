@@ -592,6 +592,13 @@ def test_set_sql_params_skips_the_write_when_nothing_changes():
 
     assert result.exit_code == 0, result.output
     assert "No change to upload_counties's SQL parameters" in result.output
+
+    # DETAIL is operational, but nothing is written, so nothing deactivates.
+    as_json = _set_sql_params("--param", "sql_param_1=test value", "--json")
+    assert as_json.exit_code == 0, as_json.output
+    plan = json.loads(as_json.stdout)
+    assert plan["changed"] is False
+    assert plan["deactivates"] is False
     assert not write.called
 
 

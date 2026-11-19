@@ -33,15 +33,16 @@ def plan_set_sql_params(
     merged = {**current, **params}
     for name in unset or []:
         merged.pop(name, None)
+    changed = merged != current
     return {
         "env": config.name,
         "connector": _connector_ref(detail),
         "connector_api_name": detail.get("api_name"),
         "from_params": current,
         "to_params": merged,
-        "changed": merged != current,
+        "changed": changed,
         "status": detail.get("status"),
-        "deactivates": detail.get("status") in ACTIVE_CONNECTOR_STATUSES,
+        "deactivates": changed and detail.get("status") in ACTIVE_CONNECTOR_STATUSES,
     }
 
 
