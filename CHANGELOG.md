@@ -90,9 +90,11 @@ called out explicitly under **Changed** or **Removed**.
   key the `steps` verbs take, and `get --json` prints an outline of every
   trigger and step, then each one with its config block, in place of the
   old summary. Strings over 2,000 characters and filter-rule view_models
-  print as `<N chars elided; kizen automations steps get <api> <key>>`, so
-  the read stays under 64,000 characters; a spec or step patch that still
-  holds one fails its dry run. Kizen stores no step keys, so a
+  print as `<N chars elided; kizen automations steps get <api> <key>>`.
+  When the read would still pass 20,000 characters (where the in-app agent
+  cuts a command's output), whole config blocks, then whole steps, print
+  that way too, largest first; the outline always keeps every step. A spec
+  or step patch that still holds a stand-in fails its dry run. Kizen stores no step keys, so a
   read renames steps `s<NN>_<type>`: `automations create|update` now print
   `step keys after the write: wait → s00_delay` in the plan and after
   applying (`step_keys` with `--json`), and `steps add|edit|remove` name the

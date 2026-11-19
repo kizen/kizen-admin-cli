@@ -449,8 +449,9 @@ def test_automations_get_json_carries_each_steps_config_block():
     ids=lambda p: p.name.split(".")[0],
 )
 def test_automations_get_json_fits_the_agent_cap_with_the_outline_first(path):
-    """The in-app agent truncates at 64,000 characters: the outline must fit
-    and come before any config block."""
+    """The in-app agent cuts a command's output at 20,000 characters: the
+    whole read must fit, outline included, with the outline before any config
+    block."""
     raw = json.loads(path.read_text())
     with respx.mock:
         mock_automation_lookup(raw)
@@ -458,18 +459,25 @@ def test_automations_get_json_fits_the_agent_cap_with_the_outline_first(path):
             cli.app, ["automations", "get", raw["api_name"], "--json"]
         )
     assert result.exit_code == 0, result.output
-    assert len(result.stdout) < 64_000
+    assert len(result.stdout) < 20_000
     assert list(json.loads(result.stdout))[-3:] == ["outline", "triggers", "steps"]
 
 
+def _long_string(step: dict) -> tuple[str, str, str] | None:
+    """The first config field in ``step`` holding a string over 2,000 chars."""
+    for block, value in step.items():
+        if isinstance(value, dict):
+            for field, inner in value.items():
+                if isinstance(inner, str) and len(inner) > 2000:
+                    return block, field, inner
+    return None
+
+
 def test_automations_get_json_elides_long_strings_that_steps_get_prints_whole():
-    raw = load_fixture("automations/on_or_around_date_goto.raw.json")
-    step = next(
-        s
-        for s in live_to_payload(raw)["steps"]
-        if len(s.get("action_code_step", {}).get("script", "")) > 20_000
+    raw = load_fixture("automations/llm_comparison.raw.json")
+    step, (block, field, text) = next(
+        (s, found) for s in live_to_payload(raw)["steps"] if (found := _long_string(s))
     )
-    script = step["action_code_step"]["script"]
     with respx.mock:
         mock_automation_lookup(raw)
         got = runner.invoke(cli.app, ["automations", "get", raw["api_name"], "--json"])
@@ -477,11 +485,37 @@ def test_automations_get_json_elides_long_strings_that_steps_get_prints_whole():
             cli.app, ["automations", "steps", "get", raw["api_name"], step["key"]]
         )
     elided = next(s for s in json.loads(got.stdout)["steps"] if s["key"] == step["key"])
-    assert elided["action_code_step"]["script"] == (
-        f"<{len(script):,} chars elided; "
+    assert elided[block][field] == (
+        f"<{len(text):,} chars elided; "
         f"kizen automations steps get {raw['api_name']} {step['key']}>"
     )
-    assert json.loads(one.stdout)["action_code_step"]["script"] == script
+    assert json.loads(one.stdout)[block][field] == text
+
+
+def test_automations_get_json_over_the_cap_keeps_every_key_and_points_at_the_rest():
+    """A read too big for the cap cuts config blocks, then whole steps, to a
+    stand-in naming the `steps get` that prints them; the outline keeps every
+    step."""
+    raw = load_fixture("automations/on_or_around_date_goto.raw.json")
+    keys = [s["key"] for s in live_to_payload(raw)["steps"]]
+    with respx.mock:
+        mock_automation_lookup(raw)
+        got = json.loads(
+            runner.invoke(
+                cli.app, ["automations", "get", raw["api_name"], "--json"]
+            ).stdout
+        )
+    assert [s["key"] for s in got["outline"]["steps"]] == keys
+    assert [s["key"] for s in got["steps"]] == keys
+    cut = 0
+    for step in got["steps"]:
+        for value in step.values():
+            if isinstance(value, str) and value.endswith(
+                " chars elided; "
+                f"kizen automations steps get {raw['api_name']} {step['key']}>"
+            ):
+                cut += 1
+    assert cut
 
 
 @pytest.mark.parametrize("verb", ["create", "update"])

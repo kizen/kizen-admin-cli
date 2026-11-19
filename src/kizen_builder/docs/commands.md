@@ -17,7 +17,7 @@ kizen objects list                           # list objects, custom and built-in
 kizen objects get <api_name>                 # one object incl. categories, fields, option UUIDs; full stage detail for pipelines
 kizen objects stages list <pipeline>         # a pipeline's stages: name, status, chance-to-close, order
 kizen automations list                       # list automations (summary)
-kizen automations get <api_name>             # triggers + steps by step key; --json: outline, then each config block, strings over 2,000 chars as "<N chars elided; kizen automations steps get <api> <key>>"
+kizen automations get <api_name>             # triggers + steps by step key; --json: outline, then each config block, strings over 2,000 chars (and, past 20,000 chars in all, whole blocks then steps) as "<N chars elided; kizen automations steps get <api> <key>>"
 kizen automations show <api_name>            # step tree with synthesized step keys (handles for steps verbs)
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
 kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms

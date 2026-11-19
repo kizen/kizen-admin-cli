@@ -118,7 +118,9 @@ def autos_get(
             "Alias for --output json: top-level fields, an outline of every "
             "trigger and step, then each one with its config block. Strings "
             "over 2,000 characters and filter-rule view_models print as "
-            "'<N chars elided; kizen automations steps get <api_name> <key>>'."
+            "'<N chars elided; kizen automations steps get <api_name> <key>>', "
+            "and so do whole blocks, then whole steps, when the read would "
+            "pass 20,000 characters."
         ),
     ),
     raw_out: bool = typer.Option(
@@ -207,9 +209,11 @@ def autos_get(
     )
 
 
-# The in-app agent truncates a response at 64,000 characters; these keep
-# `get --json` under it on the largest live automations.
+# The in-app agent cuts a command's output at 20,000 characters. Strings
+# over `_ELIDE_OVER` always print as a stand-in; past `_FIT_UNDER` whole
+# config blocks do too, largest first, until the read fits.
 _ELIDE_OVER = 2000
+_FIT_UNDER = 19_000
 # Fields `type` and `parent_condition` already say.
 _DERIVED_STEP_FIELDS = ("parent_yes_no", "prefix", "goal_type")
 
@@ -270,32 +274,76 @@ def _get_json(
     for field in ("error_notification_email", "priority_rank"):
         if payload.get(field) is not None:
             top[field] = payload[field]
-    return {
-        **top,
-        "variables": payload.get("variables", []),
-        "outline": {
-            "triggers": [
-                {
-                    "order": t["order"],
-                    "type": t["type"],
-                    "description": t.get("description", ""),
-                }
-                for t in triggers
-            ],
-            "steps": [
-                {
-                    "key": s["key"],
-                    "type": s["type"],
-                    "parent_key": s["parent_key"],
-                    "branch": s["parent_condition"],
-                    "description": s.get("description", ""),
-                }
-                for s in steps
-            ],
-        },
-        "triggers": triggers,
-        "steps": steps,
-    }
+    return _fit(
+        {
+            **top,
+            "variables": payload.get("variables", []),
+            "outline": {
+                "triggers": [
+                    {
+                        "order": t["order"],
+                        "type": t["type"],
+                        "description": t.get("description", ""),
+                    }
+                    for t in triggers
+                ],
+                "steps": [
+                    {
+                        "key": s["key"],
+                        "type": s["type"],
+                        "parent_key": s["parent_key"],
+                        "branch": s["parent_condition"],
+                        "description": s.get("description", ""),
+                    }
+                    for s in steps
+                ],
+            },
+            "triggers": triggers,
+            "steps": steps,
+        }
+    )
+
+
+def _fit(result: dict[str, Any]) -> dict[str, Any]:
+    """`result` cut to print under `_FIT_UNDER` characters. Config blocks go
+    first, largest entry first; then whole entries shrink to their key (a
+    trigger's order) and a stand-in. The outline always stays whole, and a
+    stand-in left in a spec fails the dry run, so a read copied into an
+    update can't drop a step."""
+    api_name = result["api_name"]
+
+    def full(section: str, entry: dict[str, Any]) -> str:
+        if section == "steps":
+            return f"kizen automations steps get {api_name} {entry['key']}"
+        return f"kizen automations get {api_name} --raw"
+
+    def size(value: Any) -> int:
+        return len(json.dumps(value, default=str))
+
+    def blocks_elided(section: str, entry: dict[str, Any]) -> dict[str, Any]:
+        return {
+            k: (
+                ELIDED.format(n=size(v), full=full(section, entry))
+                if isinstance(v, dict | list) and v
+                else v
+            )
+            for k, v in entry.items()
+        }
+
+    def stub(section: str, entry: dict[str, Any]) -> dict[str, Any]:
+        ident = "key" if section == "steps" else "order"
+        marker = ELIDED.format(n=size(entry), full=full(section, entry))
+        return {ident: entry[ident], "elided": marker}
+
+    entries = [
+        (sec, i) for sec in ("steps", "triggers") for i in range(len(result[sec]))
+    ]
+    for cut in (blocks_elided, stub):
+        for sec, i in sorted(entries, key=lambda e: -size(result[e[0]][e[1]])):
+            if len(_entry_per_line(result)) < _FIT_UNDER:
+                return result
+            result[sec][i] = cut(sec, result[sec][i])
+    return result
 
 
 def _entry_per_line(value: Any, indent: str = "") -> str:
