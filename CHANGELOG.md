@@ -56,7 +56,8 @@ called out explicitly under **Changed** or **Removed**.
 - **Apply results keep the server response's top-level values only; `--full`
   restores the whole body.** A result that lost nested values carries
   `"raw_trimmed": true` beside `raw`. `.results[].server_uuid` and scalar
-  reads like `.results[0].raw.base_message_id` are unchanged.
+  reads like `.results[0].raw.base_message_id` are unchanged. A failed
+  result keeps its whole `raw`, so the server's field-level errors survive.
 
 ### Fixed
 

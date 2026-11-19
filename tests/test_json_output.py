@@ -406,6 +406,29 @@ def test_full_keeps_the_whole_server_response():
     assert first["message"] is None
 
 
+def test_a_failed_result_keeps_its_whole_error_body():
+    """The field-level errors sit under nested keys; `message` carries only
+    `detail`, so trimming would lose them."""
+    error = {"detail": "Invalid input.", "fields": {"name": ["Already taken."]}}
+    result = ApplyResult(
+        plan_id="p1",
+        env="testenv",
+        results=[
+            OperationResult(
+                key="invoice.total",
+                kind="field",
+                action="create",
+                status="failed",
+                message="Invalid input.",
+                raw=error,
+            )
+        ],
+    )
+    (failed,) = json.loads(plan_tools.result_to_json(result))["results"]
+    assert failed["raw"] == error
+    assert "raw_trimmed" not in failed
+
+
 def test_every_mutation_verb_passes_full_through():
     """`--full` exists wherever an apply result is printed."""
     missing = []

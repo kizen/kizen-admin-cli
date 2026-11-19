@@ -1417,13 +1417,14 @@ _RAW_SCALARS = (str, int, float, bool, type(None))
 def result_to_json(result: ApplyResult, *, full: bool = False) -> str:
     """The apply result as JSON. Unless ``full``, each ``raw`` keeps only the
     server response's top-level scalar values, and a result that lost any
-    nested value says so with ``raw_trimmed: true``. ``full`` keeps every key,
-    empty ones included."""
+    nested value says so with ``raw_trimmed: true``. A failed result keeps its
+    whole ``raw``: that's the error body, and its field-level errors are often
+    nested. ``full`` keeps every key, empty ones included."""
     data = result.model_dump(mode="json")
     if not full:
         for r in data["results"]:
             raw = r["raw"]
-            if raw is None:
+            if raw is None or r["status"] == "failed":
                 continue
             kept = {k: v for k, v in raw.items() if isinstance(v, _RAW_SCALARS)}
             if len(kept) < len(raw):
