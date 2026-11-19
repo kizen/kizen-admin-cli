@@ -782,9 +782,12 @@ def smart_connectors_set_sql_params(
     params: dict[str, str] = {}
     for item in param:
         name, sep, value = item.partition("=")
-        if not sep or not name.strip():
+        name = name.strip()
+        if not sep or not name:
             raise typer.BadParameter(f"--param must be name=value (got {item!r}).")
-        params[name.strip()] = value.strip()
+        if name in params:
+            raise typer.BadParameter(f"--param {name} is given twice.")
+        params[name] = value.strip()
     unset = [n.strip() for n in unset]
     if not params and not unset:
         raise typer.BadParameter("pass at least one --param or --unset.")

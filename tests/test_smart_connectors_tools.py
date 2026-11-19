@@ -652,6 +652,10 @@ def test_set_sql_params_needs_a_change_and_no_name_both_set_and_unset():
     both = _set_sql_params("--param", "sql_param_2=west", "--unset", "sql_param_2")
     assert both.exit_code == 2
     assert "both set and unset: sql_param_2" in plain(both.output)
+
+    twice = _set_sql_params("--param", "sql_param_1=a", "--param", "sql_param_1=b")
+    assert twice.exit_code == 2
+    assert "--param sql_param_1 is given twice" in plain(twice.output)
     assert not respx.calls
 
 
