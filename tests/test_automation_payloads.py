@@ -3973,6 +3973,43 @@ def test_diff_automation_reproduced_spec_is_empty(patch_live_lookups):
     assert result["diff"] == []
 
 
+def test_diff_automation_fills_left_out_orders_like_update(patch_live_lookups):
+    """`diff` parses the spec the way `update --dry-run` does, so a spec
+    that leaves `order` out (as step-types tells authors to) diffs instead
+    of failing with "Field required"."""
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    spec = {
+        "api_name": "test_two_code_steps",
+        "name": "Test Two Code Steps",
+        "type": "global",
+        "triggers": [
+            {
+                "trigger_type": "manual",
+                "id": raw["triggers"][0]["id"],
+                "description": raw["triggers"][0]["description"],
+            }
+        ],
+        "steps": [
+            {
+                "key": key,
+                "id": live["id"],
+                "step_type": "code_step",
+                "parent_key": parent,
+                "description": live["description"],
+                "user_description": live["user_description"],
+                "action_on_failure": "notify_pause",
+                "action_code_step": live["action_code_step"],
+            }
+            for key, parent, live in (
+                ("step0", None, steps[0]),
+                ("step1", "step0", steps[1]),
+            )
+        ],
+    }
+    assert diff_automation(spec)["diff"] == []
+
+
 def test_diff_automation_surfaces_active_flip(patch_live_lookups):
     """`active` is diffed like any other top-level field — no special-casing
     for the BCLI-016 bug beyond reusing `plan_update_automation`'s own

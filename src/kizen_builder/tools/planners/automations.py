@@ -480,11 +480,7 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     """
     from kizen_builder.translate import diff_wire_payloads, live_to_payload
 
-    auto = (
-        automation
-        if isinstance(automation, AutomationDef)
-        else AutomationDef.model_validate(automation)
-    )
+    auto = _checked(automation).auto
     ctx = LiveContext()
     env = ctx.env
 
