@@ -2,7 +2,8 @@
 
 Every read command emits one of three formats:
 
-* ``table`` — rich tables to stdout, for humans at the terminal (default).
+* ``table`` — rich tables to stdout, for humans at the terminal (default);
+  piped, the same rows without borders or padding.
 * ``json`` — pretty JSON, for agents and API-style consumers.
 * ``csv``  — ANSI-free CSV to stdout, for spreadsheets and piping;
   the workhorse format for ``records list`` and automation executions.
@@ -19,6 +20,10 @@ Design notes:
   (it is documented in CLAUDE.md and baked into agent workflows).
 * JSON and CSV go to stdout with no rich markup so they pipe cleanly;
   errors already go to stderr in the command bodies.
+* :func:`for_agent` is the one check for "a program is reading this, not a
+  person": true when the stream isn't a terminal, overridden either way by
+  ``KIZEN_OUTPUT=terminal|agent``. Everything that prints differently when
+  piped asks it, rather than calling ``isatty()`` itself.
 """
 
 from __future__ import annotations
@@ -26,12 +31,18 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import IO, Any
 
 import typer
+
+from kizen_builder.config import ConfigError
+
+OUTPUT_ENV = "KIZEN_OUTPUT"
 
 
 class OutputFormat(StrEnum):
@@ -63,6 +74,27 @@ def resolve_format(output: str | None, json_flag: bool = False) -> OutputFormat:
         raise typer.BadParameter(
             f"invalid output format {output!r}; choose one of: {choices}"
         ) from e
+
+
+def for_agent(stream: IO[str] | None = None) -> bool:
+    """Whether output to ``stream`` (default: the current stdout) should take
+    its piped form: ``KIZEN_OUTPUT=agent`` → true, ``KIZEN_OUTPUT=terminal`` →
+    false, unset → true unless the stream is a terminal.
+
+    Raises :class:`ConfigError` for any other ``KIZEN_OUTPUT`` value.
+    """
+    mode = os.environ.get(OUTPUT_ENV, "")
+    if mode == "agent":
+        return True
+    if mode == "terminal":
+        return False
+    if mode:
+        raise ConfigError(
+            f"{OUTPUT_ENV}={mode!r} is not a choice; use 'terminal' or 'agent'."
+        )
+    stream = sys.stdout if stream is None else stream
+    isatty = getattr(stream, "isatty", None)
+    return not (isatty is not None and isatty())
 
 
 @dataclass

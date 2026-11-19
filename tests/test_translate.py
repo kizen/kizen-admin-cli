@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import json
+from typing import Any
 
 import pytest
 
@@ -21,12 +22,13 @@ from kizen_builder.tools.plans import PlanError
 from kizen_builder.translate import (
     diff_wire_payloads,
     live_to_payload,
+    resolve_exit_loop_targets,
     semantic_diff,
     synthesize_step_keys,
     synthesize_trigger_keys,
     validate_payload,
 )
-from tests.conftest import load_fixture
+from tests.conftest import load_fixture, plain
 
 ALL_FIXTURES = [
     "automations/activity_logged_schedule_activity.raw.json",
@@ -46,6 +48,7 @@ ALL_FIXTURES = [
     "automations/loops.raw.json",
     "automations/merged_condition.raw.json",
     "automations/merged_condition_skipped.raw.json",
+    "automations/nested_loops.raw.json",
     "automations/new_features_loops.raw.json",
     "automations/on_or_around_date_goto.raw.json",
     "automations/plugin_code_steps.raw.json",
@@ -127,6 +130,13 @@ def ui_loops() -> dict:
     `tool_failure_policy` were popped because the CLI doesn't model them yet;
     the change that models them restores them here."""
     return live_to_payload(load_fixture("automations/new_features_loops.raw.json"))
+
+
+@pytest.fixture(scope="module")
+def nested_loops() -> dict:
+    """UI-built: two nested loops, with an exit loop on the yes lane of a
+    merged condition in the inner body, targeting the outer loop."""
+    return live_to_payload(load_fixture("automations/nested_loops.raw.json"))
 
 
 def _steps_by_type(payload: dict, step_type: str) -> list[dict]:
@@ -1573,6 +1583,24 @@ def test_loop_keeps_its_initiator_flag(loops: dict) -> None:
     assert all(s["is_branch_group_initiator"] for s in _steps_by_type(loops, "loop"))
 
 
+def test_exit_loop_target_reads_back_as_its_loop_key(nested_loops: dict) -> None:
+    """Read as the loop's id; a PUT that echoes the id 400s (confirmed live
+    2026-11-11)."""
+    (leave,) = _steps_by_type(nested_loops, "exit_loop")
+    assert leave["prefix"] == "step"
+    assert leave["action_exit_loop"] == {"step": "s04_loop"}
+    assert validate_payload(nested_loops) == []
+
+
+def test_exit_loop_null_target_stays_null() -> None:
+    raw = load_fixture("automations/nested_loops.raw.json")
+    next(s for s in raw["steps"] if s["step_type"] == "exit_loop")[
+        "action_exit_loop"
+    ] = {"step": None}
+    (leave,) = _steps_by_type(live_to_payload(raw), "exit_loop")
+    assert leave["action_exit_loop"] == {}
+
+
 def test_loop_closers_carry_no_config_block(loops: dict) -> None:
     for s in _steps_by_type(loops, "next_or_finish"):
         assert not [k for k in s if k.startswith("step_")]
@@ -1683,6 +1711,11 @@ def _delay(key: str, parent: str, branch: str = "") -> dict:
     return _ws(key, "delay", parent, branch, step_delay={"minutes": 1})
 
 
+def _exit(key: str, parent: str, target: str | None = None) -> dict:
+    block = {} if target is None else {"step": target}
+    return _ws(key, "exit_loop", parent, action_exit_loop=block)
+
+
 def _base(**kw) -> list[dict]:
     """head → loop `l` → body `b1`, closed by `n`, then `after`."""
     steps, p = _head()
@@ -1724,6 +1757,8 @@ def _accepted_shapes() -> dict[str, list[dict]]:
         _delay("b1", "l"),
         _ws("n", "next_or_finish", "l"),
     ]
+    shapes["A9-exit-after-body-step"] = _base() + [_exit("x", "b1")]
+    shapes["A9b-exit-names-its-loop"] = _base() + [_exit("x", "b1", "l")]
     shapes["B5-nest-3"] = _nest(3)
     head, p = _head()
     shapes["B7-loop-on-yes-branch"] = head + [
@@ -1733,12 +1768,35 @@ def _accepted_shapes() -> dict[str, list[dict]]:
         _ws("n", "next_or_finish", "l"),
         _delay("no1", "c", "no"),
     ]
+    shapes["B9-step-after-exit"] = _base() + [
+        _exit("x", "b1"),
+        _delay("after_x", "x"),
+    ]
+    shapes["B10-exit-direct-child"] = _base() + [_exit("x", "l")]
     shapes["B13-two-body-lanes"] = _base() + [_delay("b2", "l")]
     shapes["B14-branch-group-in-body"] = _base() + [
         _ws("br", "branch", "l", is_branch_group_initiator=True),
         _delay("lane1", "br"),
         _delay("lane2", "br"),
         _ws("m", "merge_branches", "br"),
+    ]
+    head, p = _head(2)
+    shapes["D2-exit-after-inner-loop"] = head + [
+        _loop("l0", p, "arr0", "arr0_item"),
+        _loop("l1", "l0", "arr1", "arr1_item"),
+        _delay("ib", "l1"),
+        _ws("n1", "next_or_finish", "l1"),
+        _exit("x", "n1"),
+        _ws("n0", "next_or_finish", "l0"),
+    ]
+    head, p = _head(2)
+    shapes["D4-inner-exit-ends-the-outer-loop"] = head + [
+        _loop("l0", p, "arr0", "arr0_item", id="id-l0"),
+        _loop("l1", "l0", "arr1", "arr1_item"),
+        _exit("x", "l1", "l0"),
+        _exit("y", "l1", "id-l0"),
+        _ws("n1", "next_or_finish", "l1"),
+        _ws("n0", "next_or_finish", "l0"),
     ]
     head, p = _head(data_type="uuid")
     shapes["D3-uuid-array"] = head + [
@@ -1813,7 +1871,7 @@ def test_one_array_at_two_levels_the_server_accepts_fails_only_the_cli_rule() ->
     ]
 
 
-@pytest.mark.parametrize("fixture", ["loops", "ui_loops"])
+@pytest.mark.parametrize("fixture", ["loops", "ui_loops", "nested_loops"])
 def test_captured_loop_graphs_validate(request, fixture: str) -> None:
     assert validate_payload(request.getfixturevalue(fixture)) == []
 
@@ -1870,6 +1928,58 @@ def test_next_or_finish_closing_a_condition_is_flagged() -> None:
         _ws("cn", "next_or_finish", "c"),
     ]
     assert _NOT_UNDER_LOOP.format(k="cn", p="c") in _problems(steps)
+
+
+_EXIT = "exit_loop step 'x' is not inside a loop body (server 400s otherwise)"
+
+
+def test_exit_loop_outside_any_loop_is_flagged() -> None:
+    head, p = _head()
+    assert _problems(head + [_delay("d", p), _exit("x", "d")]) == [_EXIT]
+
+
+def test_exit_loop_after_the_next_or_finish_is_flagged() -> None:
+    assert _problems(_base() + [_exit("x", "n")]) == [_EXIT]
+
+
+def test_exit_loop_without_its_block_is_flagged() -> None:
+    assert _problems(_base() + [_ws("x", "exit_loop", "b1")]) == [
+        "exit_loop step 'x' has no action_exit_loop block; Kizen requires one, "
+        "{} at least (server 400s otherwise)"
+    ]
+
+
+@pytest.mark.parametrize("target", ["b1", "nope", "l2"])
+def test_exit_loop_aimed_at_no_loop_around_it_is_flagged(target: str) -> None:
+    steps, p = _head(2)
+    steps += [
+        _loop("l", p, "arr0", "arr0_item"),
+        _delay("b1", "l"),
+        _exit("x", "b1", target),
+        _ws("n", "next_or_finish", "l"),
+        _loop("l2", "n", "arr1", "arr1_item"),
+        _ws("n2", "next_or_finish", "l2"),
+    ]
+    assert _problems(steps) == [
+        f"exit_loop step 'x' exits '{target}', which is not a loop around it "
+        "(loops around it: l)"
+    ]
+
+
+def test_resolve_exit_loop_targets_gives_keys() -> None:
+    steps = _ACCEPTED["D4-inner-exit-ends-the-outer-loop"]
+    steps = copy.deepcopy(steps) + [_exit("z", "l1")]
+    steps[-1]["id"] = "id-z"
+    resolve_exit_loop_targets(steps)
+    by_key = {s["key"]: s.get("action_exit_loop") for s in steps}
+    assert (by_key["x"], by_key["y"], by_key["z"]) == (
+        {"step": "l0"},
+        {"step": "l0"},
+        {},
+    )
+    new = _exit("w", "l1")
+    resolve_exit_loop_targets([*steps, new])
+    assert new["action_exit_loop"] == {"step": "l1"}
 
 
 def test_loop_over_a_scalar_is_flagged() -> None:
@@ -1934,12 +2044,15 @@ def test_loops_sharing_an_item_variable_are_flagged() -> None:
 
 
 def _show(monkeypatch, fixture: str, *args: str) -> str:
+    return _show_raw(monkeypatch, load_fixture(fixture), *args).stdout
+
+
+def _show_raw(monkeypatch, raw: dict, *args: str) -> Any:
     from typer.testing import CliRunner
 
     import kizen_builder.cli as cli
     from kizen_builder.api import automations as auto_api
 
-    raw = load_fixture(fixture)
     monkeypatch.setattr(
         auto_api,
         "list_automations",
@@ -1950,7 +2063,7 @@ def _show(monkeypatch, fixture: str, *args: str) -> str:
         cli.app, ["automations", "show", raw["api_name"], *args]
     )
     assert result.exit_code == 0, result.output
-    return result.stdout
+    return result
 
 
 def test_show_labels_a_loop_with_its_variables(monkeypatch) -> None:
@@ -1978,6 +2091,35 @@ def test_show_puts_the_body_under_the_loop_and_the_rest_after_it(
         "            └── s11_next_or_finish  Next/Finish",
         "                └── s12_delay  Delay",
     ]
+
+
+def test_show_draws_an_exit_loop_target(monkeypatch) -> None:
+    out = _show(monkeypatch, "automations/nested_loops.raw.json")
+    assert "s09_exit_loop → s04_loop  Exit loop_1 Loop" in out
+
+
+def test_show_draws_a_null_exit_target_as_the_innermost_loop(monkeypatch) -> None:
+    raw = load_fixture("automations/nested_loops.raw.json")
+    next(s for s in raw["steps"] if s["step_type"] == "exit_loop")[
+        "action_exit_loop"
+    ] = {"step": None}
+    out = _show_raw(monkeypatch, raw).stdout
+    assert "s09_exit_loop → innermost loop  Exit loop_1 Loop" in out
+
+
+def test_show_warns_about_steps_after_an_exit_loop(monkeypatch) -> None:
+    raw = load_fixture("automations/nested_loops.raw.json")
+    leave = next(s for s in raw["steps"] if s["step_type"] == "exit_loop")
+    moved = next(s for s in raw["steps"] if s["step_type"] == "update_variable")
+    moved["parent_step_id"], moved["parent_condition"] = leave["id"], ""
+    result = _show_raw(monkeypatch, raw)
+    assert (
+        "steps after exit_loop step 's09_exit_loop' never run: s07_update_variable"
+        in plain(result.stderr)
+    )
+    assert "warnings" not in _show(
+        monkeypatch, "automations/nested_loops.raw.json", "--json"
+    )
 
 
 def test_show_json_is_the_translated_payload(monkeypatch) -> None:
