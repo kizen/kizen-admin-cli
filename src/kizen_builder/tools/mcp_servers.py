@@ -1,4 +1,5 @@
-"""Read tools for MCP servers: resolve, list, detail, tool catalogue, history.
+"""Read tools for MCP servers: resolve, list, detail, tool catalogue, history,
+upstream servers.
 
 Servers are referenced by UUID or ``api_name``. Display names are not unique in
 Kizen, so they are never matched.
@@ -65,6 +66,7 @@ def get_mcp_server_detail(ref: str) -> dict[str, Any]:
             {"group": t.get("group"), "name": t.get("name")}
             for t in raw.get("tools") or []
         ],
+        "upstreams": raw.get("upstreams") or [],
         "raw": raw,
     }
 
@@ -82,6 +84,31 @@ def catalog_tool_names(catalog: dict[str, Any]) -> set[str]:
         for t in g.get("tools") or []
         if t.get("name")
     }
+
+
+def _upstream_tools(
+    client: KizenClient, server: dict[str, Any]
+) -> list[dict[str, Any]]:
+    # An upstream awaiting authorization has a null tool_count and no tools.
+    if not server.get("tool_count"):
+        return []
+    return mcp_api.get_upstream_tools(client, server["id"]).get("tools") or []
+
+
+def list_upstream_servers(with_tools: bool = False) -> list[dict[str, Any]]:
+    """Every upstream server. ``with_tools`` adds each one's ``tools`` rows."""
+    with _client() as c:
+        servers = mcp_api.list_upstream_servers(c)
+        if with_tools:
+            for s in servers:
+                s["tools"] = _upstream_tools(c, s)
+        return servers
+
+
+def upstream_tools(server: dict[str, Any]) -> list[dict[str, Any]]:
+    """An upstream server row's tools: ``{id, name, suffix, is_enabled, …}``."""
+    with _client() as c:
+        return _upstream_tools(c, server)
 
 
 def list_history(ref: str) -> list[dict[str, Any]]:

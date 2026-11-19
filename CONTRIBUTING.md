@@ -140,7 +140,7 @@ src/kizen_builder/
     forms.py                     #   form/survey CRUD (base_path-shared with surveys)
     integration_secrets.py       #   integration-secret listing (read-only; values never kept)
     layouts.py                   #   record-layout CRUD (field/block arrangement)
-    mcp_servers.py               #   MCP server CRUD, tool catalogue, events history
+    mcp_servers.py               #   MCP server CRUD, tool catalogue, events history, upstream server reads
     messages.py                  #   automation-scoped message resources (notify_* step content)
     permissions.py               #   roles, permission groups, permissions catalog
     pipelines.py                 #   pipeline-stage CRUD + record stage-move
@@ -163,7 +163,7 @@ src/kizen_builder/
     form_ui.py                   #   build a form/survey's visual, submittable page layout
     forms.py                     #   list/get forms and surveys (base_path-shared)
     layouts.py                   #   list/get, block helpers, inject_layout_ids
-    mcp_servers.py               #   resolve/list/get MCP servers, tool catalogue, history
+    mcp_servers.py               #   resolve/list/get MCP servers, tool catalogue, history, upstream server reads
     messages.py                  #   automation message content (notify_* step templates)
     objects.py                   #   list_objects(), get_object(api_name)
     permission_builder.py        #   enumerate/build/mutate the full permission-group structure
@@ -215,7 +215,7 @@ src/kizen_builder/
   translate.py                   # Automation GET → PUT wire translation.
   models/spec/                   # Pydantic shapes for desired state (spec inputs);
                                   #   package, one module per cluster — see __init__.py.
-    mcp_servers.py               #   MCPServerDef + its sharing block
+    mcp_servers.py               #   MCPServerDef + its sharing block and upstreams
     toolbar_templates.py         #   ToolbarTemplateDef + ToolbarEntryDef
   output.py                      # Shared table/json/csv output layer for read commands.
   cli/                           # Typer wrappers around tools/. The `kizen` command.
@@ -347,6 +347,9 @@ console from hard-wrapping long lines). When a remote value sits inside our
 own styling, escape only the value and pass `emoji=False`:
 `err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)`, with
 `escape` from `rich.markup`. A table cell takes `rich.text.Text(value)`.
+The 220 columns hold in a terminal only: piped, `console` and `err_console`
+print a table as plain `| a | b |` rows, so a cell has to carry its meaning in
+plain text, not in a style or a nested renderable.
 
 **Reading a file the user named.** Read it through `read_text_file(path,
 "--flag")`, or `read_json_file` when it holds JSON, and parse JSON from a flag
