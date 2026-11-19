@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kizen_builder.models.spec.automations_shared import FilterConfig
 
@@ -110,6 +110,38 @@ class ActionGoToAutomationStepConfig(BaseModel):
         default=None,
         description="Key of the target step within this automation. Resolved to step UUID at apply time.",
     )
+
+
+class ActionExitLoopConfig(BaseModel):
+    """Config for `step_type: exit_loop`. Kizen requires the block; `{}` ends
+    the innermost loop around the step."""
+
+    model_config = ConfigDict(extra="allow")
+
+    loop_to_exit: str | None = Field(
+        default=None,
+        description=(
+            "Key of the loop this step ends. It must be a loop the step sits "
+            "inside. Omitted, it ends the innermost loop around the step, as "
+            "Kizen's builder does."
+        ),
+    )
+    step: str | None = Field(
+        default=None,
+        description=(
+            "The wire spelling of `loop_to_exit`: a loop step key, or the "
+            "loop's id as read."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _one_target(self) -> Self:
+        if self.loop_to_exit and self.step:
+            raise ValueError(
+                "exit_loop takes 'loop_to_exit' or 'step', not both: "
+                "'step' is the wire spelling of 'loop_to_exit'"
+            )
+        return self
 
 
 class ActionStopExecutionConfig(BaseModel):

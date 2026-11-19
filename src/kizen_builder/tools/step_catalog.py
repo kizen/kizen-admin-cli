@@ -1501,6 +1501,21 @@ _GOAL = Guide(
     ),
 )
 
+_EXIT_LOOP = Guide(
+    notes=(
+        "Targeting an outer loop ends it and every loop inside it. Targeting "
+        "the innermost loop ends only that one, and the loop around it moves "
+        'on to its next item. The step logs "Loop ended early by an Exit Loop '
+        'step". Confirmed live 2026-11-11.',
+        "Steps hung under an exit_loop never run: Kizen saves them, and "
+        "`create`, `update` and `show` warn. To stop a search's loop at the "
+        "first record, end the body with an exit_loop.",
+        "The CLI sends the loop's key. Kizen reads it back as the loop's id, "
+        "and `steps get` and `roundtrip` show the key again; `diff` counts "
+        "the two as no change.",
+    ),
+)
+
 _STEP_GUIDES: dict[str, Guide] = {
     "assign_team_member": _ASSIGN_TEAM_MEMBER,
     "audio_transcription": _EXTRACTION,
@@ -1509,6 +1524,7 @@ _STEP_GUIDES: dict[str, Guide] = {
     "code_step": _CODE_STEP,
     "condition": _CONDITION,
     "create_related_entity": _CREATE_RELATED_ENTITY,
+    "exit_loop": _EXIT_LOOP,
     "file_content_extraction": _EXTRACTION,
     "goal": _GOAL,
     "initialize_variable": _VARIABLE_SOURCES,
