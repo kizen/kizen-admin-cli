@@ -7299,3 +7299,34 @@ def test_read_back_verbs_warn_about_an_inactive_start_target():
     for result in results:
         [warning] = result["warnings"]
         assert "start_automation target 'the_target' is inactive." in warning
+
+
+def test_live_build_reports_every_step_it_cannot_build(patch_live_lookups, monkeypatch):
+    """A step the live build refuses doesn't hide the steps after it."""
+    from kizen_builder.tools.planners import automations as planner
+
+    real = planner._build_step_payload
+
+    def refuse_two(step, auto, ctx):
+        if step.key in ("first", "third"):
+            raise PlanError(f"step '{step.key}': no such field 'missing_{step.key}'")
+        return real(step, auto, ctx)
+
+    monkeypatch.setattr(planner, "_build_step_payload", refuse_two)
+    spec = {
+        "api_name": "x",
+        "name": "X",
+        "type": "global",
+        "triggers": [{"trigger_type": "manual", "order": 0}],
+        "steps": [
+            _s("first", None, "delay", 0),
+            _s("second", "first", "delay", 0),
+            _s("third", "second", "delay", 0),
+        ],
+    }
+    with pytest.raises(SpecProblems) as e:
+        _build(spec)
+    assert [(f.step, f.index, f.message) for f in e.value.errors] == [
+        ("first", 0, "no such field 'missing_first'"),
+        ("third", 2, "no such field 'missing_third'"),
+    ]

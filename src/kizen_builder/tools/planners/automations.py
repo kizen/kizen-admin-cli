@@ -1169,7 +1169,7 @@ def _build_automation_payload(
     payload["triggers"] = [
         _build_trigger_payload(t, auto, ctx) for t in triggers_with_manual(auto)
     ]
-    payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
+    payload["steps"] = _build_step_payloads(auto, ctx, warnings)
 
     from kizen_builder.translate import validate_payload
 
@@ -1946,6 +1946,39 @@ NO_MOVE_STAGE_STEP = (
 # Kizen saves a stop without an action, but a run that reaches it never
 # finishes (confirmed live 2026-10-30), so the spec path never sends one.
 _STOP_EXECUTION_DEFAULT_ACTION = "stop_and_complete"
+
+
+def _build_step_payloads(
+    auto: AutomationDef, ctx: LiveContext, warnings: list[Finding] | None
+) -> list[dict[str, Any]]:
+    """Every step's payload. When steps can't be built, one error carries
+    them all, so one dry run reports every step; a lone failure raises as
+    it is."""
+    built: list[dict[str, Any]] = []
+    failed: list[tuple[int, AutomationStepDef, PlanError]] = []
+    for i, step in enumerate(auto.steps):
+        try:
+            built.append(_build_step_payload(step, auto, ctx))
+        except PlanError as e:
+            failed.append((i, step, e))
+    if not failed:
+        return built
+    if len(failed) == 1 and not isinstance(failed[0][2], SpecProblems):
+        raise failed[0][2]
+    errors: list[Finding] = []
+    warnings = list(warnings or [])
+    for i, step, problem in failed:
+        if isinstance(problem, SpecProblems):
+            errors.extend(problem.errors)
+            warnings.extend(problem.warnings)
+            continue
+        prefix = f"step '{step.key}': "
+        message = str(problem)
+        if message.startswith(prefix):
+            errors.append(Finding(message[len(prefix) :], step=step.key, index=i))
+        else:
+            errors.append(Finding(message))
+    raise SpecProblems(errors, warnings)
 
 
 def _build_step_payload(
