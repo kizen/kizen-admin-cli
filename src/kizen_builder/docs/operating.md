@@ -198,7 +198,19 @@ For `kizen automations create` / `update`, the JSON is an `AutomationDef`.
 and step types, `field_ref` resolution, condition `filter_config`, the GET→PUT
 wire dialect, and the quirks that bite — lives in
 `kizen docs show automation`.** Read that before authoring one; don't grep
-the source. A few load-bearing reminders:
+the source.
+
+Build the spec from the catalog, then check it before it touches anything:
+
+1. `kizen automations step-types skeleton --object <api_name>` prints a
+   minimal automation to start from.
+2. `kizen automations step-types show <type>` prints one step's or trigger's
+   config block: entries to copy, the keys each choice needs, and the values
+   to look up first. `step-types list` names every wired type.
+3. `kizen automations create --spec-file <path> --dry-run` checks the spec
+   against the environment: fields, activity types, team members.
+
+A few load-bearing reminders:
 
 - One root (`parent_key: null`); branch entries under a `condition`/`goal` set
   `parent_branch: "yes"|"no"`; rejoin branches with a branch group rather
@@ -207,8 +219,9 @@ the source. A few load-bearing reminders:
   references').
 - `stop_execution`'s `action` sets the run's final status; the planner sends
   `stop_and_complete` when it's omitted.
-- A step or trigger type the CLI doesn't wire is a `PlanError`;
-  `kizen docs show automation` lists the wired and the unwired ones.
+- A step or trigger type the CLI doesn't wire is a `PlanError`.
+  `kizen automations step-types list` lists the wired ones, and
+  `kizen docs show automation` names the unwired ones.
 - Condition `filter_config` uses the shared filter DSL — the same one
   `records list --filter` and saved views take. `kizen docs show filters` has
   both layers (the friendly DSL and the wire form it resolves to), the per-type

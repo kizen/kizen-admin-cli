@@ -132,6 +132,7 @@ kizen docs show operating    # the operating model and the approval gate
 kizen docs show commands     # the command map
 kizen docs show reference    # which topic covers what, plus conventions across surfaces
 kizen docs show automation   # a spec-file shape — one topic per shape
+kizen automations step-types show <type>   # one automation step's or trigger's config block
 kizen docs show examples     # one worked example across surfaces
 kizen docs list              # every topic
 kizen docs path              # where they live on disk
@@ -172,7 +173,7 @@ What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
 - **Automation and trigger coverage.** The plan-builder dispatches on type and
   raises a clear error listing what's supported if you hit one that isn't
-  wired. The authoritative list is in `kizen docs show automation`.
+  wired. `kizen automations step-types list` lists every wired type.
 - **`code_step.secrets`** reference env-specific secret bindings. The
   environment must have a secret configured under each name the step expects,
   or it fails at runtime.

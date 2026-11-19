@@ -21,6 +21,19 @@ called out explicitly under **Changed** or **Removed**.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
 
+- **`kizen automations step-types`** shows what a step's or trigger's config
+  block takes, with no environment. `step-types show <type>` prints entries
+  to copy, the keys each choice needs, every field with its choices, and the
+  values to look up first; `--variant <name>` prints one entry as JSON for a
+  spec file or `steps add`, and `--json` adds the block's JSON Schema.
+  `step-types list` names every wired step and trigger type,
+  `step-types skeleton` prints a minimal automation to build on, and
+  `step-types concepts` covers what most steps share. `step-types show`
+  accepts common names such as `wait` and `ai_step`, and lists the types a
+  name like `send_email` could mean; any other unwired name gets the wired
+  type it most likely means. The automation doc's wired-type tables are
+  gone; `step-types list` replaces them.
+
 ### Changed
 
 - **schedule_activity's `schedule` and `assigned_to` are typed; a wrong

@@ -1785,6 +1785,22 @@ _TRIGGER_BUILDERS: dict[str, Any] = {
     "stage_updated": _trigger_stage_updated,
 }
 
+# One line per wired trigger type, for `kizen automations step-types list`.
+TRIGGER_PURPOSES: dict[str, str] = {
+    "manual": "a user starts it on a record",
+    "new_entity_created": "a record is created",
+    "activity_logged": "an activity of a given type is logged",
+    "on_or_around_date": "a date field on the record comes around",
+    "webhook": "an external system calls its URL",
+    "field_updated": "a field on the record changes",
+    "schedule": "a recurring schedule (an rrule)",
+    "scheduled_activity_overdue": "a scheduled activity goes overdue",
+    "form_submitted": "a form on the target object is submitted",
+    "survey_submitted": "a survey on the target object is submitted",
+    "email_received": "the Contact emails in (Contact automations only)",
+    "stage_updated": "a record moves between stages (pipelines only)",
+}
+
 
 # ---------------------------------------------------------------------------
 # Known enum choices — enriching a real 400, not rejecting a spec value
@@ -4168,6 +4184,45 @@ _STEP_BUILDERS: dict[str, Any] = {
     "notify_member_via_text": _step_notify_member_via_text,
     "math_operator": _step_math_operator,
     "search_records": _step_search_records,
+}
+
+# One line per wired step type, for `kizen automations step-types list`.
+STEP_PURPOSES: dict[str, str] = {
+    "condition": "branch on a filter, group membership or LLM decision",
+    "delay": "wait a duration or until a time",
+    "goal": "wait for a condition or event",
+    "loop": "run its body once per item of an array variable",
+    "stop_execution": "end this branch and set the run's final status",
+    "code_step": "run Python",
+    "plugin_code_step": "run a step an installed plugin ships",
+    "archive_record": "archive the record",
+    "go_to_automation_step": "jump to another step",
+    "start_automation": "start another automation, which must be active",
+    "change_field_value": (
+        "set or clear a field; on a pipeline's stage it moves the record"
+    ),
+    "modify_related_entities": "update related records",
+    "create_related_entity": "create a related record and link it",
+    "initialize_variable": "declare an automation variable, at the front",
+    "update_variable": "change an automation variable",
+    "call_llm": "prompt an LLM, optionally with an MCP server's tools",
+    "file_content_extraction": (
+        "extract from a file on the record, a related record or a variable"
+    ),
+    "audio_transcription": (
+        "transcribe audio on the record, a related record or a variable"
+    ),
+    "assign_team_member": "assign the record's owner (round-robin, role, field…)",
+    "schedule_activity": "schedule an activity",
+    "send_related_contact_email": "email a related contact",
+    "send_related_contact_text": "text a related contact",
+    "notify_member_via_email": "email a team member",
+    "notify_member_via_text": "text a team member",
+    "math_operator": "arithmetic into a variable or field",
+    "search_records": "search an object into an array variable",
+    "branch": "run its children in parallel (a branch group)",
+    "merge_branches": "rejoin a branch group",
+    "next_or_finish": "close a loop body",
 }
 
 
