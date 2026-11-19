@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 
+import httpx
 import pytest
 import respx
 from typer.testing import CliRunner
@@ -289,6 +290,28 @@ def test_preview_used_by_reports_a_network_error():
     assert preview_used_by(fetch, "x") == "unknown (HTTP 0: network error: timed out)"
 
 
+@pytest.mark.parametrize("body", [None, "<html>gateway</html>", []])
+def test_preview_used_by_reports_a_body_that_is_not_an_object(body):
+    """An empty or non-JSON 2xx body: the plan still builds."""
+    assert preview_used_by(lambda client: body, "x") == (
+        "unknown (the response had no JSON object)"
+    )
+
+
+@respx.mock
+def test_preview_used_by_tries_once_with_a_short_timeout(patch_live_lookups):
+    """The lookup is advisory: no retries, and a 10s timeout instead of 30s."""
+    route = respx.get(_references_url("gender")).mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
+    plan = plan_delete_field("patients", "gender")
+    (op,) = plan.operations
+    assert op.preview["used_by"] == "unknown (HTTP 0: network error: timed out)"
+    assert route.call_count == 1
+    timeout = route.calls[0].request.extensions["timeout"]
+    assert timeout["read"] == 10.0
+
+
 # ---------------------------------------------------------------------------
 # fields delete — the preview warns, never refuses
 # ---------------------------------------------------------------------------
@@ -461,3 +484,19 @@ def test_where_used_unknown_field(objects_from_fixtures):
     stderr = _plain(result.stderr)
     assert stderr.startswith("error: field 'nope' not found on 'patients'.")
     assert "Traceback" not in result.output
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "respond", [{"content": b""}, {"text": "<html>gateway</html>"}]
+)
+def test_fields_where_used_reports_a_body_that_is_not_an_object(
+    objects_from_fixtures, respond
+):
+    """An empty or non-JSON 2xx body is a clear error, not a traceback."""
+    respx.get(_references_url("gender")).respond(200, **respond)
+    result = runner.invoke(cli.app, ["fields", "where-used", "patients", "gender"])
+    assert result.exit_code == 1
+    assert _plain(result.stderr) == (
+        "error: Kizen's where-used lookup for patients.gender returned no JSON object."
+    )

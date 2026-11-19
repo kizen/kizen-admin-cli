@@ -48,8 +48,13 @@ class KizenAPIError(Exception):
 class KizenClient:
     """Context-managed HTTP client bound to a single environment."""
 
-    def __init__(self, config: EnvConfig, timeout: float = 30.0) -> None:
+    def __init__(
+        self, config: EnvConfig, timeout: float = 30.0, *, retries: bool = True
+    ) -> None:
+        """``retries=False`` sends every request once, for an advisory read
+        that should fail fast rather than hold the command."""
         self._config = config
+        self._retries = retries
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         auth: httpx.Auth | None = None
         match config.auth:
@@ -154,10 +159,11 @@ class KizenClient:
         self, method: str, path: str, *, read_only: bool = False, **kwargs: Any
     ) -> httpx.Response:
         write = method != "GET" and not read_only
+        max_attempts = _MAX_ATTEMPTS if self._retries else 1
         attempt = 0
         while True:
             attempt += 1
-            retries_left = attempt < _MAX_ATTEMPTS
+            retries_left = attempt < max_attempts
             try:
                 resp = self._client.request(method, path, **kwargs)
             except httpx.HTTPError as exc:

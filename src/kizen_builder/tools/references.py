@@ -38,6 +38,10 @@ _IDENTITY_KEYS = {
 
 _PREVIEW_NAMES = 3
 
+# The delete-preview lookup is advisory: a slow references endpoint must not
+# hold a dry run past an agent's command timeout, so it gets one short try.
+_PREVIEW_TIMEOUT = 10.0
+
 
 class WhereUsedRefused(Exception):
     """Kizen answered the where-used lookup itself with a 403."""
@@ -124,8 +128,14 @@ def api_error_detail(e: KizenAPIError) -> str:
     return "no detail in the response"
 
 
-def _get(call: ReferencesCall) -> dict[str, Any]:
-    with KizenClient(load_env_config()) as client:
+def _get(call: ReferencesCall, *, preview: bool = False) -> dict[str, Any]:
+    config = load_env_config()
+    client = (
+        KizenClient(config, timeout=_PREVIEW_TIMEOUT, retries=False)
+        if preview
+        else KizenClient(config)
+    )
+    with client:
         return call(client)
 
 
@@ -134,7 +144,7 @@ def where_used(
 ) -> dict[str, Any]:
     """Run one references GET and normalize it. A 403 on the lookup itself
     raises `WhereUsedRefused`, worded from Kizen's detail, never the client's
-    credentials advice."""
+    credentials advice; an empty or non-JSON 2xx body raises `LookupError`."""
     try:
         body = _get(call)
     except KizenAPIError as e:
@@ -145,15 +155,22 @@ def where_used(
             f"(HTTP 403: {api_error_detail(e)})."
         )
         raise WhereUsedRefused(f"{message} {refused_hint}".strip()) from e
+    if not isinstance(body, dict):
+        raise LookupError(
+            f"Kizen's where-used lookup for {target} returned no JSON object."
+        )
     return normalize(body)
 
 
 def preview_used_by(call: ReferencesCall, command: str) -> str:
     """The ``used_by`` preview value. A failed lookup never blocks the plan."""
     try:
-        return used_by_line(normalize(_get(call)), command)
+        body: Any = _get(call, preview=True)
     except KizenAPIError as e:
         return f"unknown (HTTP {e.status_code}: {api_error_detail(e)})"
+    if not isinstance(body, dict):
+        return "unknown (the response had no JSON object)"
+    return used_by_line(normalize(body), command)
 
 
 def field_where_used(object_api_name: str, field_api_name: str) -> dict[str, Any]:
