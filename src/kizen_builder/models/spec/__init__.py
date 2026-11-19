@@ -84,6 +84,7 @@ from kizen_builder.models.spec.automations_actions_control import (
     StepGoalConfig,
     StepLoopConfig,
     ActionGoToAutomationStepConfig,
+    ActionExitLoopConfig,
     ActionStopExecutionConfig,
     ActionArchiveRecordConfig,
     ActionModifyAutomationConfig,
@@ -142,6 +143,7 @@ from kizen_builder.models.spec.mcp_servers import (
     SharingBuckets,
     MCPServerSharing,
     MCPServerDef,
+    UpstreamSelection,
 )
 from kizen_builder.models.spec.email_templates import (
     ColumnPreset,
@@ -308,6 +310,7 @@ __all__ = [
     "ActionModifyRelatedEntitiesConfig",
     "ActionModifyRelatedEntitiesAutomationConfig",
     "ActionGoToAutomationStepConfig",
+    "ActionExitLoopConfig",
     "ActionInitializeVariableConfig",
     "ActionUpdateVariableConfig",
     "ActionMathOperatorConfig",
@@ -330,6 +333,7 @@ __all__ = [
     "SharingBuckets",
     "MCPServerSharing",
     "MCPServerDef",
+    "UpstreamSelection",
     "ColumnPreset",
     "COLUMN_FRACTIONS",
     "TextBlockDef",

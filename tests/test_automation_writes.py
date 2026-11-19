@@ -212,6 +212,25 @@ def test_steps_edit_to_a_dangling_parent_exits_1(live, tmp_path) -> None:
     assert not live.put.called
 
 
+def test_steps_edit_under_an_exit_loop_warns(tmp_path) -> None:
+    """Kizen saves a step hung under an exit_loop, but a run never reaches it."""
+    raw = load_fixture("automations/nested_loops.raw.json")
+    spec = tmp_path / "patch.json"
+    spec.write_text(json.dumps({"parent_key": "s09_exit_loop", "parent_yes_no": ""}))
+    with respx.mock(assert_all_mocked=True) as mock:
+        mock_automation_lookup(raw, mock)
+        result = _invoke(
+            "steps", "edit", raw["api_name"], "s07_update_variable", "--dry-run",
+            "--spec-file", str(spec),
+        )  # fmt: skip
+
+    assert result.exit_code == 0, result.output
+    warning = (
+        "steps after exit_loop step 's09_exit_loop' never run: s07_update_variable"
+    )
+    assert warning in " ".join(result.stderr.split())
+
+
 def test_steps_add_drops_a_copied_id(live, tmp_path) -> None:
     spec = tmp_path / "step.json"
     spec.write_text(json.dumps({"step_type": "stop_execution", "id": _s00_id(live)}))
