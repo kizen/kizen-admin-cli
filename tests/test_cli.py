@@ -518,6 +518,49 @@ def test_automations_get_json_over_the_cap_keeps_every_key_and_points_at_the_res
     assert cut
 
 
+def _untranslatable(monkeypatch):
+    import kizen_builder.translate as translate
+
+    def broken(raw):
+        raise KeyError("step_new_kind")
+
+    monkeypatch.setattr(translate, "live_to_payload", broken)
+    return load_fixture("automations/two_code_steps.raw.json")
+
+
+def test_automations_get_falls_back_to_the_summary_when_translation_fails(
+    monkeypatch,
+):
+    """`get` is the first read before any change, so a translator gap warns
+    and prints the summary instead of failing."""
+    raw = _untranslatable(monkeypatch)
+    with respx.mock:
+        mock_automation_lookup(raw)
+        result = runner.invoke(
+            cli.app, ["automations", "get", raw["api_name"], "--json"]
+        )
+    assert result.exit_code == 0, result.output
+    assert "couldn't translate this automation ('step_new_kind')" in plain(
+        result.stderr
+    )
+    got = json.loads(result.stdout)
+    assert got["api_name"] == raw["api_name"]
+    assert [s["id"] for s in got["steps"]] == [
+        s["id"] for s in sorted(raw["steps"], key=lambda s: s["order"])
+    ]
+
+
+def test_automations_steps_get_reports_a_failed_translation(monkeypatch):
+    raw = _untranslatable(monkeypatch)
+    with respx.mock:
+        mock_automation_lookup(raw)
+        result = runner.invoke(
+            cli.app, ["automations", "steps", "get", raw["api_name"], "s00_code_step"]
+        )
+    assert result.exit_code == 1
+    assert "step_new_kind" in plain(result.stderr)
+
+
 @pytest.mark.parametrize("verb", ["create", "update"])
 def test_automation_spec_with_a_get_json_stand_in_fails_the_dry_run(verb):
     marker = "<4,812 chars elided; kizen automations steps get x s00_code_step>"

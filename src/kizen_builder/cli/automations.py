@@ -143,7 +143,17 @@ def autos_get(
         return
 
     with cli_errors(LookupError, PlanError):
-        result = auto_tools.show_automation(api_name)
+        try:
+            result = auto_tools.show_automation(api_name)
+        except auto_tools.UntranslatedAutomation as e:
+            err_console.print(
+                f"[yellow]warning:[/yellow] the CLI couldn't translate this "
+                f"automation ({escape(str(e))}), so this is the summary: no "
+                "step keys or configs. --raw prints the whole API response.",
+                emoji=False,
+            )
+            _print_summary(e.summary, fmt)
+            return
     print_warnings(result)
     payload = result["payload"]
     # A spec trigger takes no `key` (the model refuses one), so a trigger
@@ -204,6 +214,60 @@ def autos_get(
             out.Column("type", "type"),
             out.Column("description", "description"),
             out.Column("parent_key", "parent_key"),
+            out.Column("parent_condition", "parent_condition"),
+        ],
+    )
+
+
+def _print_summary(result: dict[str, Any], fmt: out.OutputFormat) -> None:
+    """`get` for an automation the translator can't read: the raw GET's
+    triggers and steps, by id."""
+
+    def table() -> None:
+        console.print(
+            f"[bold]{escape(result['name'] or '')}[/bold]  "
+            f"[dim]({result['api_name']}, id={result['id']}, "
+            f"rev={result['revision']})[/dim]"
+        )
+        trig_table = Table(title="Triggers")
+        trig_table.add_column("type")
+        trig_table.add_column("description")
+        trig_table.add_column("auth")
+        for t in result["triggers"]:
+            trig_table.add_row(
+                t["trigger_type"] or "",
+                t["description"] or "",
+                t.get("auth_type") or "",
+            )
+        console.print(trig_table)
+        step_table = Table(title="Steps")
+        step_table.add_column("ord", justify="right")
+        step_table.add_column("id", style="dim")
+        step_table.add_column("type")
+        step_table.add_column("description")
+        step_table.add_column("parent", style="dim")
+        step_table.add_column("branch")
+        for st in result["steps"]:
+            step_table.add_row(
+                str(st["order"]) if st["order"] is not None else "",
+                (st["id"] or "")[:8],
+                st["step_type"] or "",
+                st["description"] or "",
+                (st["parent_step_id"] or "")[:8],
+                st["parent_condition"] or "",
+            )
+        console.print(step_table)
+
+    out.render(
+        fmt,
+        json_data={k: v for k, v in result.items() if k != "raw"},
+        table=table,
+        csv_rows=result["steps"],
+        csv_columns=[
+            out.Column("order", "order"),
+            out.Column("step_type", "step_type"),
+            out.Column("description", "description"),
+            out.Column("parent_step_id", "parent_step_id"),
             out.Column("parent_condition", "parent_condition"),
         ],
     )
@@ -661,7 +725,7 @@ def autos_show(
     subcommands take. They are synthesized deterministically from the live
     step order, so re-running `show` after any change gives the fresh set.
     """
-    with cli_errors(LookupError, PlanError):
+    with cli_errors(LookupError, PlanError, auto_tools.UntranslatedAutomation):
         result = auto_tools.show_automation(api_name)
 
     print_warnings(result)

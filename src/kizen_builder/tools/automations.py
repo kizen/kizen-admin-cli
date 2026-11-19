@@ -107,7 +107,12 @@ def get_automation(api_name: str) -> dict[str, Any]:
         if match is None:
             raise LookupError(f"no automation with api_name '{api_name}'")
         detail = auto_api.get_automation(client, match["id"])
+    return summarize_automation(detail, config.name)
 
+
+def summarize_automation(detail: dict[str, Any], env: str) -> dict[str, Any]:
+    """The raw GET as summary rows: no step keys, no configs, nothing
+    translated, so it reads any automation."""
     triggers = []
     for t in detail.get("triggers") or []:
         row = {
@@ -140,7 +145,7 @@ def get_automation(api_name: str) -> dict[str, Any]:
         )
 
     return {
-        "env": config.name,
+        "env": env,
         "id": detail.get("id"),
         "name": detail.get("name"),
         "api_name": detail.get("api_name"),
@@ -233,15 +238,30 @@ def _inactive_target_warnings(
     return {"warnings": warnings} if warnings else {}
 
 
+class UntranslatedAutomation(Exception):
+    """The automation was read but couldn't be translated; ``summary`` is
+    what `summarize_automation` makes of the raw GET."""
+
+    def __init__(self, reason: str, summary: dict[str, Any]) -> None:
+        super().__init__(reason)
+        self.summary = summary
+
+
 def show_automation(api_name: str) -> dict[str, Any]:
     """The automation as a translated wire payload — synthesized step keys
-    included — for tree rendering and as the source of step-edit handles."""
+    included — for tree rendering and as the source of step-edit handles.
+    Raises `UntranslatedAutomation`, carrying the summary, when the
+    translation fails."""
     from kizen_builder.translate import live_to_payload
 
     config = load_env_config()
     with KizenClient(config) as client:
         raw, listing = _fetch_with_listing(client, api_name)
-    payload = live_to_payload(raw)
+    try:
+        payload = live_to_payload(raw)
+    except Exception as e:  # any translator failure: the read still works
+        summary = summarize_automation(raw, config.name)
+        raise UntranslatedAutomation(str(e) or type(e).__name__, summary) from e
     return {
         "env": config.name,
         "api_name": api_name,

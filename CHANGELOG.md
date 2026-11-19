@@ -94,7 +94,9 @@ called out explicitly under **Changed** or **Removed**.
   When the read would still pass 20,000 characters (where the in-app agent
   cuts a command's output), whole config blocks, then whole steps, print
   that way too, largest first; the outline always keeps every step. A spec
-  or step patch that still holds a stand-in fails its dry run. Kizen stores no step keys, so a
+  or step patch that still holds a stand-in fails its dry run. An
+  automation the CLI can't translate still reads: `get` warns and prints the
+  old summary, by step id. Kizen stores no step keys, so a
   read renames steps `s<NN>_<type>`: `automations create|update` now print
   `step keys after the write: wait → s00_delay` in the plan and after
   applying (`step_keys` with `--json`), and `steps add|edit|remove` name the

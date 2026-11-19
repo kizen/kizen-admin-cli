@@ -208,7 +208,7 @@ def steps_get(
     key: str = typer.Argument(..., help="Step key from `kizen automations show`."),
 ) -> None:
     """Print one step's wire JSON — the starting point for `steps edit`."""
-    with cli_errors(LookupError, PlanError):
+    with cli_errors(LookupError, PlanError, auto_tools.UntranslatedAutomation):
         result = auto_tools.show_automation(api_name)
         step = step_tools.find_step(result["payload"], key)
     typer.echo(json.dumps(step, indent=2))
