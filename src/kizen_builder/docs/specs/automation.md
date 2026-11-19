@@ -174,6 +174,13 @@ automation-step`):
 4. **The body**, hanging off the loop.
 5. **One `next_or_finish` child of the loop**, which closes the body. The steps
    after the loop hang off it.
+6. **Optionally, `exit_loop` steps in the body**, which end a loop early.
+   `action_exit_loop.loop_to_exit` names the loop to end: the one it's in, or
+   one around it. Omitted, it ends the innermost loop around the step, as
+   Kizen's builder does. The CLI sends the loop's key. Kizen reads it back as
+   the loop's id, and `steps get` and `roundtrip` show the key again. `diff`
+   counts the same loop read as an id and sent as a key as no change, and
+   labels a retarget by id octet, as it labels every step.
 
 Both variable steps go at the front of the automation, like every
 `initialize_variable`. Confirmed live 2026-10-27.
@@ -220,7 +227,8 @@ Both variable steps go at the front of the automation, like every
 - **Descriptions:** a CLI-created loop reads back as "Loop" and its item step as
   "Initialize Variable". The UI writes "For each item in '<array>'" and "Item
   Reference Variable". Set `description` to match the UI. Confirmed live
-  2026-10-27.
+  2026-10-27. A CLI-created exit loop reads back as "Exit Loop"; the UI writes
+  "Exit <array> Loop".
 - **`diff`** ignores `is_array_item_variable` and `source_array_variable`, which
   the server adds to the item variable from the loop. It reads a null key in a
   top-level or `initialize_variable` variable definition as absent. Confirmed
@@ -232,6 +240,14 @@ Both variable steps go at the front of the automation, like every
   builder refuses both, so the CLI refuses them at plan time (`--dry-run` shows
   it). The API accepts both: six levels, and one array at two levels, each
   confirmed live 2026-10-27.
+- **Exit loop:** targeting an outer loop ends it and every loop inside it.
+  Targeting the innermost loop ends only that one, and the loop around it moves
+  on to its next item. The step logs "Loop ended early by an Exit Loop step".
+  Steps hung under an exit_loop never run: Kizen saves them, and `create`,
+  `update` and `show` warn. Each of these is a 400, refused at plan time: an
+  exit_loop outside every loop body, and a `loop_to_exit` that isn't a loop
+  around the step. Kizen requires the `action_exit_loop` block, and the CLI
+  always sends one. Confirmed live 2026-11-11.
 
 ### Working with the records a search found
 
@@ -250,7 +266,8 @@ variable inside the body:
   of its fields onto this record.
 
 Every pass of the loop sets the field again, so when the search finds several
-records the last one wins. Narrow the filter until it matches one record.
+records the last one wins. Narrow the filter until it matches one record. To
+stop at the first record instead, end the body with an `exit_loop` step.
 
 This links each new hire to the playbook named "Sales Onboarding", and copies
 the playbook's text. Both variable steps sit at the front, as the loop section
@@ -1542,7 +1559,7 @@ Confirmed live 2026-10-30, in this order.
   | `add_only` | `[a, b]` (and `[a, c]` gives `[a, a, c]`) | not observed |
   | `overwrite` | `[b]` | `[]` |
   | `overwrite_except_null` | `[b]` | `[a]`: kept |
-  | null / omitted | `[b]` | `[]` |
+  | null (stored) | `[b]` (re-confirmed 2026-11-11) | `[]` |
 
   - It works on array variables only. On a scalar variable the server 400s
     with "Value resolution is supported for array variables only." The
@@ -1551,12 +1568,21 @@ Confirmed live 2026-10-30, in this order.
   - Only `update_variable` takes it. On `initialize_variable` the server
     drops it silently, so the planner refuses it there.
   - Any other value is a plan error.
+  - **Left out on a step without an `id`** (`automations create`, `steps
+    add`, or a step an `update` adds), the CLI sends `add_only` when the
+    automation declares the variable as an array (by `initialize_variable`,
+    or as a `search_records` destination). Otherwise it sends nothing, and
+    a POST without it stores `null` (confirmed live 2026-11-11).
   - **A PUT that omits it keeps the stored value** on a step whose `id` is
-    carried. Only an explicit `null` resets it, and the planner drops nulls,
+    carried. `update` now sends the live value itself, so `diff` shows no
+    change. Only an explicit `null` resets it, and the planner drops nulls,
     so deleting the key from a spec doesn't clear it. Set `overwrite`
-    instead, which behaved the same as null.
-  - The builder UI has no control for it as of 2026-10-14, and opening the
-    step doesn't show a stored value.
+    instead, which behaves the same as null.
+  - In the builder it is "Append or Replace": *Append Values to End of
+    Array* is `add_only`, *Overwrite with These Sources (Clear if Blank)* is
+    `overwrite`, and *Overwrite with These Sources (But Skip if Blank)* is
+    `overwrite_except_null`. The builder picks Append for a new step, and
+    existing steps keep what they have. Observed 2026-11-11.
 - **`stop_execution`'s "Action Options" dropdown is a required choice in
   the builder UI, and two of its five options don't stop anything.**
   Confirmed live (one automation with all 5 steps built through the UI,
@@ -1628,15 +1654,20 @@ Confirmed live 2026-10-30, in this order.
     `max_sequential_turns` and `tool_failure_policy` (see **Tools (MCP
     server)**). On a `stop_execution` whose `id` matches, its `action` and
     `notify`. On a `plugin_code_step` whose `id` matches, its
-    `preview_user_id`.
+    `preview_user_id`. On an `update_variable` whose `id` matches, its
+    `value_resolution`. On an `exit_loop` whose `id` matches, its target,
+    sent as the loop's key; when no spec step carries that loop's `id`, the
+    plan is refused and names the loop.
     `--dry-run` names those steps and triggers as `keeps_live=[<key>, …]`.
-    A Kizen PUT without them resets each to its default, except the stop's,
-    which Kizen keeps when the block is empty (confirmed live 2026-10-30).
+    A Kizen PUT without them resets each to its default, except the stop's
+    and `value_resolution`, which Kizen keeps (confirmed live 2026-10-30 and
+    2026-11-11).
     For `preview_user_id` that reset is unconfirmed: Kizen only accepts a
     pin on a business app's preview.
   - A step or trigger without `id` is new to Kizen, so what its spec leaves
     out gets Kizen's defaults: the type's default description, an empty
-    note, not skipped.
+    note, not skipped. The exception is an array `update_variable`'s
+    `value_resolution`, which the CLI sets to `add_only`.
 - **`condition.filter_config`** uses the filtering DSL (`{"all"|"any": [...]}`,
   single conditions wrapped in `{"all": [...]}`) — same as `saved-views.md`.
   Fields are **bare api_names**; **ops are per field type** (e.g. dropdown uses
@@ -1752,7 +1783,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
 | `value_html` on an `update_variable` source | `''` |
-| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
+| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ### Read→write transforms
 
@@ -1777,6 +1808,7 @@ Each of these was discovered via a live 400, 500, or silent data loss:
 | `error_notification_severity_level` on every step | echoed as read. Omitted, the step is silently reset to `inherit`. Confirmed live 2026-09-28 |
 | `branch` and `merge_branches` steps, read with no config block | no `action_*` block written. Confirmed live 2026-09-28 |
 | `step_loop` with `array_variable`/`item_variable` as variable definitions | bare variable **names**; their ids are a 400 ("The loop must iterate an array variable…"). `next_or_finish` is read with no config block, and none is written. Confirmed live 2026-10-27 |
+| `action_exit_loop.step` read as the target loop's **id** | the loop's step **key**. A PUT that echoes the id 400s ("Exit Loop step references a loop that does not exist."). A null `step` is echoed as null, and it ends the innermost loop. Confirmed live 2026-11-11 |
 | A loop's item variable read with `is_array_item_variable: true` and `source_array_variable: <array>` | echoed as read. The server sets both itself from the loop, so sending them is harmless and omitting them changes nothing. `diff` ignores both. Confirmed live 2026-10-27 |
 | Extraction/transcription `input_field` plus its mirrored `context_entity_field` `input_value_source` | `input_field` only — see [Extraction input](#extraction-input) |
 | `modify_related_entities.automation_variables` (expanded variable definitions) and the block's own `id` | not sent; `record_source_variables` (bare names) is the write key |
@@ -1818,7 +1850,10 @@ inconsistent:
     by an `initialize_variable` step;
   - its item variable is declared by an `initialize_variable` step as a single
     variable of the array's type (and, for records, the same object), and no
-    two loops share one.
+    two loops share one;
+  - an `exit_loop` sits inside a loop body;
+  - its `action_exit_loop.step` names a loop around it, or is null;
+  - an `exit_loop` carries an `action_exit_loop` block, `{}` at least.
 
   The server has no nesting limit (6 deep saves) and no limit on body lanes.
   The CLI adds two rules of its own, from Kizen's builder: at most three

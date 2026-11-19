@@ -1,0 +1,36 @@
+{
+  "tool_count": 3,
+  "last_discovered_at": "2026-11-11T15:16:23.792362Z",
+  "tools": [
+    {
+      "id": "00000000-0000-4000-8000-0000000007e1",
+      "name": "deep_wiki__ask_wiki_question",
+      "suffix": "ask_wiki_question",
+      "upstream_name": "ask_wiki_question",
+      "annotations": {},
+      "is_enabled": true,
+      "is_new": true,
+      "description": "Ask any question about a GitHub repository's codebase and get an AI-powered answer\ngrounded in its DeepWiki."
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000007e2",
+      "name": "deep_wiki__read_wiki_contents",
+      "suffix": "read_wiki_contents",
+      "upstream_name": "read_wiki_contents",
+      "annotations": {},
+      "is_enabled": true,
+      "is_new": true,
+      "description": "View documentation about a GitHub repository."
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000007e3",
+      "name": "deep_wiki__read_wiki_structure",
+      "suffix": "read_wiki_structure",
+      "upstream_name": "read_wiki_structure",
+      "annotations": {},
+      "is_enabled": true,
+      "is_new": true,
+      "description": "Get a list of documentation topics for a GitHub repository."
+    }
+  ]
+}
