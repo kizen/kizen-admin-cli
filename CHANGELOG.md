@@ -23,8 +23,8 @@ called out explicitly under **Changed** or **Removed**.
 - **Automations can end a loop early with an `exit_loop` step again.** Kizen's
   builder now ships it. `action_exit_loop.loop_to_exit` names the loop to end,
   and omitting it ends the innermost loop around the step. `create`, `update`
-  and `steps` refuse an exit loop outside a loop body, or one aimed at a loop
-  it isn't inside. `show` draws the target and warns about steps hung under
+  and `steps` refuse an exit loop outside a loop body, one aimed at a loop it
+  isn't inside, or one that sets both `loop_to_exit` and `step`. `show` draws the target and warns about steps hung under
   it, which never run.
 
 ### Fixed

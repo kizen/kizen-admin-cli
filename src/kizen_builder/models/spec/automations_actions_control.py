@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StepConditionConfig(BaseModel):
@@ -123,6 +123,15 @@ class ActionExitLoopConfig(BaseModel):
             "loop's id as read."
         ),
     )
+
+    @model_validator(mode="after")
+    def _one_target(self) -> Self:
+        if self.loop_to_exit and self.step:
+            raise ValueError(
+                "exit_loop takes 'loop_to_exit' or 'step', not both: "
+                "'step' is the wire spelling of 'loop_to_exit'"
+            )
+        return self
 
 
 class ActionStopExecutionConfig(BaseModel):

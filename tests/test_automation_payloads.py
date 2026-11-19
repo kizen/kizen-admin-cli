@@ -5715,6 +5715,15 @@ def test_exit_loop_sends_its_loop_key(patch_live_lookups, block, sent):
     assert _built_steps(spec)["leave"]["action_exit_loop"] == sent
 
 
+def test_exit_loop_with_both_target_spellings_is_refused():
+    """`step` is the wire spelling of `loop_to_exit`; with both set, one would
+    silently win."""
+    spec = _authored_loop_spec(_nested_loops(2), record_based=False)
+    _exit(spec)["action_exit_loop"] = {"loop_to_exit": "l0", "step": "l1"}
+    with pytest.raises(ValueError, match="'loop_to_exit' or 'step', not both"):
+        AutomationDef.model_validate(spec)
+
+
 _LOOPS_AROUND = "(loops around it: l1, l0)"
 
 
