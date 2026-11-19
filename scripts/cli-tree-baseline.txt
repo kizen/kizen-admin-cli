@@ -5151,7 +5151,6 @@
 │ --search          <str>  Filter by name (server-side search).                                    │
 │ --output  -o      <str>  Output format: table (default), json, or csv.                           │
 │ --json                   Alias for --output json.                                                │
-│ --full                   With --json, keep the whole server response in `raw`.                   │
 │ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     

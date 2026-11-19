@@ -40,7 +40,6 @@ def toolbar_templates_list(
     ),
     output: str = OUTPUT_OPTION,
     json_out: bool = JSON_OPTION,
-    full: bool = FULL_OPTION,
 ) -> None:
     """List toolbar templates: name, owner, top-level entries, updated, id."""
     fmt = out.resolve_format(output, json_out)
