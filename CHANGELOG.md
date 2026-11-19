@@ -61,10 +61,12 @@ called out explicitly under **Changed** or **Removed**.
   back from the server as a 400.
 - **A `field_updated` trigger with a `from_value` or `to_value` but no match
   mode fires only on that value.** The CLI now sends `specific_value` for the
-  missing mode, or `date_between` for a date range. Before, Kizen stored `any_including_blank` and the trigger
-  fired on every change to the field. Goal steps' triggers get the same
-  default. A trigger with an `id` keeps its live mode when the live trigger
-  has that value set too.
+  missing mode, or `date_between` for a date range. Before, Kizen stored
+  `any_including_blank` and the trigger fired on every change to the field.
+  Goal steps' triggers get the same default. A trigger with an `id` keeps its
+  live mode when the live trigger has that value set too, so an automation
+  an earlier version built this way keeps misfiring after an `update`: state
+  `from_match_mode` / `to_match_mode` in its spec to fix it.
 - **A new `create_related_entity` step links the new record without
   unlinking the others.** When `context_entity_field` is to-many and the spec
   leaves `context_entity_field_resolution` out, the CLI now sends `add_only`.
