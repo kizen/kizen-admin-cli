@@ -208,6 +208,25 @@ def test_a_compact_plan_with_empty_values_round_trips_through_apply(
     assert applied == [plan]
 
 
+def test_a_piped_dry_run_plan_keeps_every_top_level_key(monkeypatch, piped):
+    """kicode checks these keys before it stores a plan, so a null
+    business_id (a profile with none) must stay in."""
+    plan = Plan.build(
+        env="testenv", business_id=None, summary="test plan", operations=[]
+    ).model_copy(update={"business_id": None})
+    monkeypatch.setattr(field_planners, "plan_update_field", lambda **kw: plan)
+
+    dry = runner.invoke(
+        cli.app,
+        ["fields", "update", "invoice", "total", "--name", "T", "--dry-run", "--json"],
+    )
+    assert dry.exit_code == 0, dry.output
+    data = json.loads(dry.stdout)
+    assert list(data) == ["id", "env", "business_id", "summary", "operations"]
+    assert data["business_id"] is None
+    assert data["operations"] == []
+
+
 def _apply_target(plan):
     class _Config:
         name = "testenv"
