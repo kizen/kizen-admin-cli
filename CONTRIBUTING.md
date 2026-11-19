@@ -347,6 +347,9 @@ console from hard-wrapping long lines). When a remote value sits inside our
 own styling, escape only the value and pass `emoji=False`:
 `err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)`, with
 `escape` from `rich.markup`. A table cell takes `rich.text.Text(value)`.
+The 220 columns hold in a terminal only: piped, `console` and `err_console`
+print a table as plain `| a | b |` rows, so a cell has to carry its meaning in
+plain text, not in a style or a nested renderable.
 
 **Reading a file the user named.** Read it through `read_text_file(path,
 "--flag")`, or `read_json_file` when it holds JSON, and parse JSON from a flag

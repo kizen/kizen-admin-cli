@@ -130,6 +130,11 @@ wire behavior in one place. **Don't grep for a quirk; open the surface's doc.**
 - **Show, don't paraphrase.** When relaying read results, prefer the actual
   command output (or a tight summary of it) over free-text descriptions. The
   user wants the ground truth.
+- **Piped output is compact.** Captured or piped, tables print as
+  `| a | b |` rows without borders or padding, `docs show` prints the raw
+  markdown, and an apply with `--yes` prints one plan line before its
+  results. `KIZEN_OUTPUT=terminal` gives the terminal form anywhere;
+  `KIZEN_OUTPUT=agent` gives the piped form.
 
 
 ## Verifying rendered output
@@ -175,7 +180,7 @@ Every mutation goes through this loop:
    validates against it (e.g. resolves field_refs, detects collisions),
    and renders the plan — including the exact wire payload for automation
    updates (`last_revision`, carried-over server fields).
-3. Show the plan to the user (the rich-table output is good for chat).
+3. Show the plan to the user (the plan table is good for chat).
 4. **Wait for explicit approval.** Even small additive changes need a
    "go" before applying. Don't apply on assumption.
 5. Re-run the same command without `--dry-run`, adding `--yes` since

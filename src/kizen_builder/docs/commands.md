@@ -13,7 +13,7 @@ each entity — `kizen docs list` for the surface topics.
 
 ```
 kizen envs list                              # show env this directory resolves to
-kizen docs show <topic>                      # rendered in a terminal; raw markdown when piped (--rendered/--raw force either)
+kizen docs show <topic>                      # rendered in a terminal; raw markdown when piped (--rendered/--raw or KIZEN_OUTPUT force either)
 kizen objects list                           # list objects, custom and built-in (e.g. Contacts)
 kizen objects get <api_name>                 # one object incl. categories, fields, option UUIDs; full stage detail for pipelines
 kizen objects stages list <pipeline>         # a pipeline's stages: name, status, chance-to-close, order
