@@ -1006,6 +1006,30 @@ def test_on_day_and_time_findings_on_trigger_and_step_come_together(
     ]
 
 
+def test_on_day_and_time_leaves_an_unreadable_field_to_the_server(
+    patch_live_lookups, monkeypatch
+):
+    """A failed /fields read doesn't fail a dry run the check only advises on."""
+    from kizen_builder.api.client import KizenAPIError
+    from kizen_builder.tools.planners.automations import (
+        LiveContext,
+        plan_create_automation,
+    )
+
+    def refused(self, object_ref, field_id):
+        raise KizenAPIError(403, "You do not have permission")
+
+    monkeypatch.setattr(LiveContext, "field_by_id", refused)
+    spec = _patients_spec(
+        _patient_date_activity("date_of_birth"),
+        triggers=_patient_date_trigger("date_of_birth"),
+    )
+    (op,) = plan_create_automation(spec).operations
+    assert op.payload["triggers"][1]["trigger_on_or_around_date"]["date_offset"] == (
+        "on_day_and_time"
+    )
+
+
 @pytest.mark.parametrize("days", [{}, {"date_offset_days": 0}], ids=["none", "zero"])
 def test_a_days_after_trigger_needs_a_day_count(days):
     block = {"date_offset": "days_after", "time": "09:00", "period": "am", **days}

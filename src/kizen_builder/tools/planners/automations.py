@@ -49,6 +49,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from kizen_builder.api.client import KizenAPIError
 from kizen_builder.config import load_env_config
 from kizen_builder.filtering import VariableReferenceError
 from kizen_builder.models.spec import (
@@ -4294,7 +4295,7 @@ def _date_field_finding(
         return None
     try:
         field = ctx.field_by_id(auto.target_object, field_id)
-    except PlanError:
+    except (PlanError, KizenAPIError):
         return None  # can't read the object: leave it to the server
     if not field or field.get("field_type") == "datetime":
         return None
