@@ -3,6 +3,13 @@
 **Consumed by:** `kizen automations create|update --spec-file <f>` (also stdin).
 An automation is triggers + a step graph, sent as one atomic POST/PUT.
 
+**Writing one:** `kizen automations step-types skeleton --object <api_name>`
+prints a minimal automation to build on. `kizen automations step-types show
+<type>` prints one step's or trigger's config block, with entries to copy and
+the keys each choice needs; `step-types list` names every wired type. This
+page holds what those don't: the graph rules, worked patterns, and how the
+API behaves.
+
 > This is the richest spec. The graph rules below (one root, `parent_key`
 > chaining, `parent_branch` on branch entries) are enforced at plan time — a
 > violation fails the dry-run with a specific message. This file covers the
@@ -130,8 +137,8 @@ sets a step's own severity. Omitted, a new step inherits and an `update`
 keeps an existing step's live severity. Confirmed live 2026-09-28.
 
 **Field references — two forms, don't mix them up:**
-- **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations)
-  uses the object-qualified `"<object_api>.<field_api>"`, resolved to this
+- **Action-block `field_ref`** (e.g. `change_field_value`, `call_llm` destinations,
+  a team-member selector's `team_selector_field`) uses the object-qualified `"<object_api>.<field_api>"`, resolved to this
   business's UUID at apply time. A bare `field_id` UUID also works.
 - **Condition `filter_config` `field`** uses the **bare field api_name**
   (`account_region`), *not* object-qualified — it's the filter DSL, same as
@@ -552,11 +559,10 @@ two deals and started the target once on each, and both briefs were written.
 
 ---
 
-## Wired trigger types (12)
+## Wired trigger types
 
-`manual`, `new_entity_created`, `activity_logged`, `on_or_around_date`,
-`webhook`, `field_updated`, `schedule`, `scheduled_activity_overdue`,
-`form_submitted`, `survey_submitted`, `email_received`, `stage_updated`.
+`kizen automations step-types list` lists them, and `step-types show <type>`
+prints one's block.
 
 Each requiring config sets a `trigger_<name>` block matching `trigger_type`
 (e.g. `field_updated` → `trigger_field_updated: { field_ref, fire_on_create, … }`).
@@ -699,38 +705,13 @@ Confirmed live 2026-10-30: four configs saved and read back as sent, with the
 defaults above filled in. A date trigger fires only on its date, so no run of
 one was observed.
 
-## Wired step types (30)
+## Wired step types
 
-| step_type | config block | purpose |
-|-----------|--------------|---------|
-| `condition` | `step_condition` | branch on a filter / group membership / LLM decision |
-| `delay` | `step_delay` | wait a duration or until a time |
-| `goal` | `step_goal` | wait for a condition/event |
-| `stop_execution` | `action_stop_execution` | end this branch. `action` sets the run's final status (see the options below); omitted, the CLI sends `stop_and_complete` |
-| `go_to_automation_step` | `action_go_to_automation_step` | jump to another step (`step_key`) |
-| `code_step` | `action_code_step` | run Python (`script`, `inputs`, `outputs`, `secrets`) |
-| `plugin_code_step` | `action_plugin_code_step` | run a step that an installed plugin ships |
-| `call_llm` | `action_call_llm` | prompt an LLM, optionally with an MCP server's tools, write to `destinations` |
-| `file_content_extraction` | `action_file_content_extraction` | extract from a file field on the record, a related record, or in a variable (`input_value_source`) |
-| `audio_transcription` | `action_audio_transcription` | transcribe an audio field on the record, a related record, or in a variable (`input_value_source`) |
-| `change_field_value` | `action_change_field_value` | set/clear a field — option fields take labels; on a pipeline's stage it moves the record (see [Moving a record to a stage](#moving-a-record-to-a-stage)) |
-| `archive_record` | `action_archive_record` | archive the record |
-| `create_related_entity` | `action_create_related_entity` | create a related record — see [`create_related_entity`](#create_related_entity) |
-| `modify_related_entities` | `action_modify_related_entities` | update related records |
-| `start_automation` | `action_start_automation` | start another automation, which must be active (see [Running once per record on a schedule](#running-once-per-record-on-a-schedule)) |
-| `assign_team_member` | `action_assign_team_member` | assign owner (round-robin, role, field, …) |
-| `schedule_activity` | `action_schedule_activity` | schedule an activity |
-| `initialize_variable` / `update_variable` | `action_initialize_variable` / `action_update_variable` | automation variables — see root-chain rule below |
-| `math_operator` | `action_math_operator` | arithmetic into a variable/field |
-| `notify_member_via_email` | `action_notify_member_via_email` | email a team member (see quirk) |
-| `notify_member_via_text` | `action_notify_member_via_text` | text a team member (inline content) |
-| `send_related_contact_email` | `action_send_related_contact_email` | email a related contact |
-| `send_related_contact_text` | `action_send_related_contact_text` | text a related contact |
-| `search_records` | `action_search_records` | search an object, write results into an array variable |
-| `branch` | none | run its children in parallel — see Branch groups |
-| `merge_branches` | none | rejoin a branch group — see Branch groups |
-| `loop` | `step_loop` | run its body once per item of an array variable — see Loops |
-| `next_or_finish` | none | close a loop body — see Loops |
+`kizen automations step-types list` lists them, and `step-types show <type>`
+prints one's block. `branch`, `merge_branches`, `loop` and `next_or_finish`
+are covered under [Branch groups](#branch-groups) and [Loops](#loops), and
+where `initialize_variable` goes under
+[Key quirks](#key-quirks-the-ones-that-bite).
 
 `search_records` (the automation-builder equivalent of `records list
 --filter`) needs its own `custom_object` — independent of the automation's
@@ -1481,6 +1462,10 @@ message belongs to one automation. So the order is fixed:
 ```
 
 - `send_related_contact_email` takes the message as `email: {"id": <id>}`.
+- To email whoever a team-selector field names, set `team_member` (or
+  `cc_team_member`) to `{"type": "team_selector_field", "field_ref":
+  "<object>.<field>"}`. The CLI sends the field's UUID as `field_id`
+  (confirmed live 2026-11-16).
 - **Messages outlive their automation.** Deleting the automation leaves its
   messages bound to the deleted id, and Kizen answers a `DELETE` of one with
   405. A recreated automation can't use them, so it needs new ones (confirmed
@@ -1893,6 +1878,9 @@ name or UUID. `schedule.type` picks one of three shapes:
 | `with_delay` | a `with_delay` block |
 | `on_or_around_date` | an `on_or_around_date` block |
 
+The dry-run refuses any other `type`, a `type` without its block, and any
+value outside what the lists below allow.
+
 `skip_non_working_days` (bool) sits on `schedule` itself. This step schedules a
 Follow Up for the deal's owner two working days after the run:
 
@@ -1912,8 +1900,7 @@ Follow Up for the deal's owner two working days after the run:
 
 **`with_delay`:**
 
-- `delay_type` (required): `minute`, `hour` or `day`. `days` is a 400, and the
-  CLI's error lists the three.
+- `delay_type` (required): `minute`, `hour` or `day`.
 - `delay_value`: a whole number, 1 or more. `delay_value_type` is `static`
   (the default, read back when omitted) or `automation_variable`, which reads
   the number from `delay_variable: {"name": <variable>}`.
@@ -1927,8 +1914,9 @@ Follow Up for the deal's owner two working days after the run:
 
 **`on_or_around_date`:**
 
-- `field_id` (a date or datetime field's UUID) or `variable: {"name": …}`.
-  The CLI doesn't resolve names inside `schedule`, so give the UUID.
+- `field_ref` (a date or datetime field, as `<object>.<field>` or a bare
+  api_name) or `variable: {"name": …}`. The CLI resolves `field_ref` to the
+  wire's `field_id`; a `field_id` UUID works too.
 - `date_offset` (required): `on_day`, `on_day_and_time`, `days_before` or
   `days_after`, with `date_offset_days` 1 or more.
 - `time_offset`: `specific_time` (the default, with `time` as `HH:MM`),
@@ -1997,7 +1985,9 @@ owner, team_member, team_selector_field, last_active(_role), specific_role,
 team_member_from_variable, role_from_variable). Wire keys are
 `role_id`/`employee_id`/`employee_ids`/`field_id` — the same `*_id` dialect
 `assign_team_member` uses, and a live 400 caught the builder emitting bare
-`role`/`employee`/`field` here.
+`role`/`employee`/`field` here. `team_selector_field` takes the field as
+`field_ref` (`<object>.<field>`), which the CLI resolves to `field_id`, as
+it does in every team-member selector.
 
 But **`variable` must be an `{"id"|"name": …}` object** — not the bare name
 string this codebase's other variable references use. `assign_team_member` has a
@@ -2015,8 +2005,8 @@ and not the `team_member` selector's set on notify/send steps. Confirmed live
 | `round_robin_role` | `role_id` |
 | `round_robin_team_members` | `employee_ids` |
 | `round_robin_all` | — |
-| `team_selector_field` | `field_id`: a team-selector field on the automation's own object |
-| `related_team_selector_field` | **Both required**: `related_field_id` is a single-value relationship field on the automation's own object (the hop); `field_id` is the team-selector field on the object it points to |
+| `team_selector_field` | `field_id` (or `field_ref`): a team-selector field on the automation's own object |
+| `related_team_selector_field` | **Both required**: `related_field_id` is a single-value relationship field on the automation's own object (the hop); `field_id` is the team-selector field on the object it points to. A `field_ref` here must name that object (`<far_object>.<field>`); a bare name resolves against the automation's own object |
 
 `owner`, `last_active`, `last_active_role` and `employees` are all valid on
 *other* selectors and all 400 here with *"… is not a valid choice"*.

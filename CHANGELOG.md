@@ -21,13 +21,25 @@ called out explicitly under **Changed** or **Removed**.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
 
-
 - `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
   template from a spec of objects, plugin pages, links and categories. Plugin
   pages are rebuilt from the installed plugin on every write, and `update
   <template>` with no spec re-saves them after a plugin release; plugin
   toolbar-item references are kept as references. Nothing applies a template
   to users.
+
+- **`kizen automations step-types`** shows what a step's or trigger's config
+  block takes, with no environment. `step-types show <type>` prints entries
+  to copy, the keys each choice needs, every field with its choices, and the
+  values to look up first; `--variant <name>` prints one entry as JSON for a
+  spec file or `steps add`, and `--json` adds the block's JSON Schema.
+  `step-types list` names every wired step and trigger type,
+  `step-types skeleton` prints a minimal automation to build on, and
+  `step-types concepts` covers what most steps share. `step-types show`
+  accepts common names such as `wait` and `ai_step`, and lists the types a
+  name like `send_email` could mean; any other unwired name gets the wired
+  type it most likely means. The automation doc's wired-type tables are
+  gone; `step-types list` replaces them.
 
 ### Changed
 
@@ -37,12 +49,25 @@ called out explicitly under **Changed** or **Removed**.
   terminal still gets the rendered view. `--raw` still works, and the new
   `--rendered` forces rich output when piped.
 
+- **schedule_activity's `schedule` and `assigned_to` are typed; a wrong
+  choice fails the dry-run.** A wrong `schedule.type`, a `with_delay` or
+  `on_or_around_date` type without its block, `delay_type: days`, a
+  `delay_value` or `date_offset_days` below 1, or an unknown
+  `assignment_type` is refused before anything is sent. Before, each came
+  back from the server as a 400.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+- **`field_ref` in a team-member block (notify, assign, cc, and
+  schedule_activity's assignee) now resolves to the field's UUID.** In the
+  notify and cc selectors and schedule_activity's assignee it was dropped
+  before, and the server answered with *"field_id is required"*;
+  `assign_team_member` refused it at plan time. `schedule.on_or_around_date`
+  takes `field_ref` too. A `field_id` beside it still wins.
 
 ## [0.7.0] — 2026-11-16
 
