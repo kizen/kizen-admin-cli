@@ -21,6 +21,13 @@ called out explicitly under **Changed** or **Removed**.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
 
+- `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
+  template from a spec of objects, plugin pages, links and categories. Plugin
+  pages are rebuilt from the installed plugin on every write, and `update
+  <template>` with no spec re-saves them after a plugin release; plugin
+  toolbar-item references are kept as references. Nothing applies a template
+  to users.
+
 - **`kizen automations step-types`** shows what a step's or trigger's config
   block takes, with no environment. `step-types show <type>` prints entries
   to copy, the keys each choice needs, every field with its choices, and the
@@ -35,6 +42,12 @@ called out explicitly under **Changed** or **Removed**.
   gone; `step-types list` replaces them.
 
 ### Changed
+
+- **`kizen docs show` prints the raw markdown when piped or captured.** The
+  output is the shipped file byte for byte, so `grep`, `head` and an agent's
+  capture see the source instead of rich's column-padded rendering. A
+  terminal still gets the rendered view. `--raw` still works, and the new
+  `--rendered` forces rich output when piped.
 
 - **schedule_activity's `schedule` and `assigned_to` are typed; a wrong
   choice fails the dry-run.** A wrong `schedule.type`, a `with_delay` or
@@ -57,15 +70,6 @@ called out explicitly under **Changed** or **Removed**.
   takes `field_ref` too. A `field_id` beside it still wins.
 
 ## [0.7.0] — 2026-11-16
-
-### Added
-
-- `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
-  template from a spec of objects, plugin pages, links and categories. Plugin
-  pages are rebuilt from the installed plugin on every write, and `update
-  <template>` with no spec re-saves them after a plugin release; plugin
-  toolbar-item references are kept as references. Nothing applies a template
-  to users.
 
 ## [0.6.0] — 2026-11-11
 

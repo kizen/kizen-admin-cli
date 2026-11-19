@@ -1901,14 +1901,18 @@
  live state. `commands` maps the command surface. `reference` covers API                            
  quirks and wire formats. Everything else is a spec-file shape.                                     
                                                                                                     
+ Piped or captured output is the raw markdown file, byte for byte, so it                            
+ greps cleanly.                                                                                     
+                                                                                                    
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    topic      <str>  Topic name, e.g. operating, commands, reference, automation. See `kizen   │
 │                        docs list`.                                                               │
 │                        [required]                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
-│ --raw           Print the raw markdown instead of rendering it.                                  │
-│ --help          Show this message and exit.                                                      │
+│ --rendered    --raw      Force rich rendering, or the raw markdown file. Default: rendered in a  │
+│                          terminal, raw when piped or captured.                                   │
+│ --help                   Show this message and exit.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: envs [OPTIONS] COMMAND [ARGS]...                                                            
