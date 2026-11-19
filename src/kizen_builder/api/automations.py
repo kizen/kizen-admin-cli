@@ -37,7 +37,8 @@ def update_automation(
 
 
 def get_automation(client: KizenClient, automation_id: str) -> dict[str, Any]:
-    """GET /api/automation2/automations/{id}."""
+    """GET /api/automation2/automations/{id}. The path takes the api_name
+    too, and an unknown one gets a 404 (confirmed live 2026-11-19)."""
     return client.get(f"/api/automation2/automations/{automation_id}")
 
 

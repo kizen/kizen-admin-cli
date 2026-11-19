@@ -11,10 +11,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from kizen_builder.api import automations as auto_api
 from kizen_builder.api import references as ref_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools import permissions as perm_tools
+from kizen_builder.tools.activities import resolve_activity_id
 from kizen_builder.tools.objects import get_object
 
 ReferencesCall = Callable[[KizenClient], dict[str, Any]]
@@ -220,3 +222,34 @@ def group_where_used(ref: str) -> dict[str, Any]:
         f"permission group '{group['name']}'",
     )
     return {"target": {"group": group["name"], "id": group["id"]}, **result}
+
+
+def automation_where_used(api_name: str) -> dict[str, Any]:
+    """Everything Kizen reports using one automation, starting with the
+    automations whose `start_automation` steps start it."""
+    with KizenClient(load_env_config()) as client:
+        try:
+            auto = auto_api.get_automation(client, api_name)
+        except KizenAPIError as e:
+            if e.status_code != 404:
+                raise
+            raise LookupError(f"no automation with api_name '{api_name}'") from e
+    result = where_used(
+        lambda c: ref_api.automation_references(c, auto["id"]),
+        f"automation '{api_name}'",
+    )
+    return {
+        "target": {"automation": api_name, "name": auto["name"], "id": auto["id"]},
+        **result,
+    }
+
+
+def activity_where_used(identifier: str) -> dict[str, Any]:
+    """Everything Kizen reports using one activity type (api_name, UUID or
+    name), plus how many are scheduled and logged."""
+    with KizenClient(load_env_config()) as client:
+        activity_id, name = resolve_activity_id(client, identifier)
+    result = where_used(
+        lambda c: ref_api.activity_references(c, activity_id), f"activity '{name}'"
+    )
+    return {"target": {"activity": name, "id": activity_id}, **result}

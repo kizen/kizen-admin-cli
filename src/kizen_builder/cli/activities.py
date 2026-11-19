@@ -24,8 +24,10 @@ from kizen_builder.cli._shared import (
     err_console,
     read_json_file,
 )
+from kizen_builder.cli._where_used import render_where_used
 from kizen_builder.tools import activities as act_tools
 from kizen_builder.tools import objects as obj_tools
+from kizen_builder.tools import references as ref_tools
 from kizen_builder.tools.planners import activities as act_planners
 from kizen_builder.tools.plans import is_not_found
 
@@ -397,6 +399,26 @@ def activities_update(
         yes=yes,
         json_out=json_out,
     )
+
+
+@activities_app.command(
+    "where-used",
+    epilog="Where-used endpoint and what it reports: see `kizen docs show activity`",
+)
+def activities_where_used(
+    identifier: str = typer.Argument(..., help="Activity api_name, UUID or name."),
+    output: str = OUTPUT_OPTION,
+    json_out: bool = JSON_OPTION,
+) -> None:
+    """List what uses an activity type: automations, homepages and more.
+
+    `activities delete` shows the same in its preview as `used_by`, and still
+    deletes.
+    """
+    fmt = out.resolve_format(output, json_out)
+    with cli_errors(LookupError, ref_tools.WhereUsedRefused):
+        result = ref_tools.activity_where_used(identifier)
+    render_where_used(result, fmt, f"activity '{result['target']['activity']}'")
 
 
 @activities_app.command("delete")

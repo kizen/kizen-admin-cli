@@ -1,0 +1,55 @@
+{
+  "scheduled_activities": 0,
+  "logged_activities": 1,
+  "automations": [
+    {
+      "id": "5cf679bf-eab3-49f6-87cb-9cb317548f5c",
+      "display_name": "Summarize meetings",
+      "can_view": true,
+      "steps": [
+        {
+          "id": "d2e03351-107b-4b03-b7c7-ddd039506c49",
+          "display_name": "schedule_activity - 4",
+          "type": "schedule_activity"
+        }
+      ],
+      "triggers": [],
+      "conditions": [],
+      "variables": [],
+      "goals": []
+    },
+    {
+      "id": "a08f8845-1b59-40d1-82a0-bb17df73392b",
+      "display_name": "Mark meeting follow-ups done",
+      "can_view": true,
+      "steps": [],
+      "triggers": [
+        {
+          "id": "2b249e9c-6229-4df2-8e15-31db3b0ef9e6",
+          "display_name": "activity_logged - 1",
+          "type": "activity_logged"
+        }
+      ],
+      "conditions": [],
+      "variables": [],
+      "goals": []
+    }
+  ],
+  "smart_connectors": [],
+  "dashboards": [],
+  "homepages": [
+    {
+      "id": "0212d6b2-ca89-49a6-a93e-64eca59e8ff8",
+      "display_name": "Team Homepage",
+      "can_view": true,
+      "dashlets": [
+        {
+          "id": "1c68b9a0-a2ff-40cf-8031-62c341b67537",
+          "display_name": "[default]"
+        }
+      ]
+    }
+  ],
+  "filter_groups": [],
+  "toolbar_templates": []
+}

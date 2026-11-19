@@ -7,14 +7,17 @@ close ports of ``planners/fields.py``.
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
+from kizen_builder.api import references as ref_api
 from kizen_builder.api.client import KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.models.spec import ActivityDef, ActivityFieldDef
 from kizen_builder.models.spec.activities import check_association_keys
+from kizen_builder.tools import references as ref_tools
 from kizen_builder.tools.activities import (
     describe_visibility_rule,
     get_activity,
@@ -236,6 +239,11 @@ def plan_delete_activity(identifier: str) -> Plan:
             "env": env,
             "activity": current.get("name"),
             "n_submissions": current.get("n_submissions"),
+            "used_by": ref_tools.preview_used_by(
+                lambda c: ref_api.activity_references(c, current["id"]),
+                "kizen activities where-used "
+                + shlex.quote(current.get("api_name") or identifier),
+            ),
         },
         existing_uuid=current["id"],
     )
