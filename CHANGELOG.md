@@ -53,6 +53,13 @@ called out explicitly under **Changed** or **Removed**.
   isn't inside, or one that sets both `loop_to_exit` and `step`. `show` draws
   the target and warns about steps hung under it, which never run.
 
+- **`kizen fields where-used <object> <field>`** lists what uses a field:
+  automations (down to the step, trigger or condition), forms, surveys,
+  messages, dashboards, homepages, chart groups, filter groups, smart
+  connectors, broadcasts, activities, and how many records hold a value.
+  `fields delete` shows the same as a `used_by` line in its preview and still
+  deletes.
+
 ### Changed
 
 - **`kizen docs show` prints the raw markdown when piped or captured.** The
