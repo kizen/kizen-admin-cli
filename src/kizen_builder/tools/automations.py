@@ -252,7 +252,7 @@ def show_automation(api_name: str) -> dict[str, Any]:
     included — for tree rendering and as the source of step-edit handles.
     Raises `UntranslatedAutomation`, carrying the summary, when the
     translation fails."""
-    from kizen_builder.translate import live_to_payload
+    from kizen_builder.translate import exit_loop_dead_end_warnings, live_to_payload
 
     config = load_env_config()
     with KizenClient(config) as client:
@@ -262,6 +262,10 @@ def show_automation(api_name: str) -> dict[str, Any]:
     except Exception as e:  # any translator failure: the read still works
         summary = summarize_automation(raw, config.name)
         raise UntranslatedAutomation(str(e) or type(e).__name__, summary) from e
+    warnings = [
+        *_inactive_target_warnings(payload, listing).get("warnings", []),
+        *exit_loop_dead_end_warnings(payload["steps"]),
+    ]
     return {
         "env": config.name,
         "api_name": api_name,
@@ -271,7 +275,7 @@ def show_automation(api_name: str) -> dict[str, Any]:
         "name": raw.get("name"),
         "custom_object_name": (raw.get("custom_object") or {}).get("name"),
         "payload": payload,
-        **_inactive_target_warnings(payload, listing),
+        **({"warnings": warnings} if warnings else {}),
     }
 
 
@@ -290,8 +294,10 @@ def patch_steps(
     it after the write: planned, then read from the re-GET once applied.
     """
     from kizen_builder.translate import (
+        exit_loop_dead_end_warnings,
         live_to_payload,
         planned_step_keys,
+        resolve_exit_loop_targets,
         semantic_diff,
         validate_payload,
         written_step_keys,
@@ -302,7 +308,9 @@ def patch_steps(
         before = _fetch_raw(client, api_name)
         payload = live_to_payload(before)
         report = mutate(payload, before)
+        resolve_exit_loop_targets(payload["steps"])
         problems = validate_payload(payload)
+        warnings = exit_loop_dead_end_warnings(payload["steps"])
         result: dict[str, Any] = {
             "env": config.name,
             "api_name": api_name,
@@ -310,6 +318,7 @@ def patch_steps(
             "revision_before": before.get("revision"),
             "report": report,
             "validation_problems": problems,
+            **({"warnings": warnings} if warnings else {}),
             "payload": payload,
             "step_keys": planned_step_keys(payload["steps"]),
             "executed": False,

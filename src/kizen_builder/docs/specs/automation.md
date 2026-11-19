@@ -104,13 +104,18 @@ part, and `create` and `update` add none:
 4. **The body**, hanging off the loop.
 5. **One `next_or_finish` child of the loop.** The steps after the loop hang
    off it.
+6. **Optionally, `exit_loop` steps in the body**, which end a loop early.
+   `action_exit_loop.loop_to_exit` names the loop to end: the one it's in, or
+   one around it. Omitted, it ends the innermost loop around the step
+   (`kizen automations step-types show exit_loop`).
 
 `kizen docs show automation-patterns`, "Find or create a Contact by email",
 has all five. `steps add` of a loop adds its closer and item variable
 (`kizen docs show automation-step`). Kizen's editor names a loop "For each
 item in '<array>'" and its item step "Item Reference Variable", but a
 CLI-created one reads back as "Loop" and "Initialize Variable", so set
-`description` to match. Confirmed live 2026-10-27.
+`description` to match. Confirmed live 2026-10-27. A CLI-created exit loop
+reads back as "Exit Loop"; the UI writes "Exit <array> Loop".
 
 ## Variables
 
@@ -131,11 +136,16 @@ CLI-created one reads back as "Loop" and "Initialize Variable", so set
   | `add_only` | `[a, b]` (and `[a, c]` gives `[a, a, c]`) | not observed |
   | `overwrite` | `[b]` | `[]` |
   | `overwrite_except_null` | `[b]` | `[a]`: kept |
-  | null / omitted | `[b]` | `[]` |
+  | null (stored) | `[b]` (re-confirmed 2026-11-11) | `[]` |
 
-  An update that leaves it out keeps the stored value, so deleting the key
-  doesn't clear it: set `overwrite`. The builder UI neither shows nor sets it
-  (as of 2026-10-14).
+  A new step (`create`, `steps add`, or one an `update` adds) that leaves it
+  out on an array variable gets `add_only`, as Kizen's builder picks for a
+  new step. A step with an `id` keeps its stored value, so deleting the key
+  doesn't clear it: set `overwrite`. In the builder it is "Append or
+  Replace": *Append Values to End of Array* is `add_only`, *Overwrite with
+  These Sources (Clear if Blank)* is `overwrite`, and *Overwrite with These
+  Sources (But Skip if Blank)* is `overwrite_except_null`. Observed
+  2026-11-11.
 
 ## What an update keeps
 
@@ -150,7 +160,8 @@ mention it never turns a running automation off), `folder`,
 `skip_non_working_days` and webhook auth; and on a step or trigger whose `id`
 matches, its descriptions, skip and failure settings, and per-type settings a
 Kizen PUT would reset, such as an LLM step's `merge_field_validation` and MCP
-server, a stop's `action`, a plugin step's `preview_user_id`, and a
+server, a stop's `action`, a plugin step's `preview_user_id`, an
+`update_variable`'s `value_resolution`, an `exit_loop`'s target loop, and a
 `schedule_activity`'s `target_variable`.
 `--dry-run` names them as `keeps_live=[<key>, …]`. An explicit value always
 wins, `""` and `false` included; `description: ""` gets the type's default

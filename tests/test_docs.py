@@ -3,7 +3,13 @@ resolution and size caps."""
 
 from __future__ import annotations
 
+import pytest
+from typer.testing import CliRunner
+
+import kizen_builder.cli as cli
 from kizen_builder import docs
+
+runner = CliRunner()
 
 
 def test_write_stubs_creates_both_harness_files(tmp_path):
@@ -143,3 +149,23 @@ def test_automation_topic_opens_with_the_build_order():
         "Build order: skeleton → step-types show <type> for each step → "
         "create --dry-run → create → use the step keys the write prints."
     )
+
+
+@pytest.mark.parametrize("flags", [[], ["--raw"]])
+def test_docs_show_prints_the_file_verbatim_when_not_a_terminal(flags):
+    """CliRunner's stdout isn't a TTY, like a pipe or an agent's capture."""
+    result = runner.invoke(cli.app, ["docs", "show", "automation", *flags])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == docs.topic_path("automation").read_text()
+
+
+def test_docs_show_rendered_forces_rich_when_not_a_terminal():
+    heading = docs.topic_path("operating").read_text().splitlines()[0]
+    assert heading.startswith("# Operating a Kizen environment")
+
+    result = runner.invoke(cli.app, ["docs", "show", "operating", "--rendered"])
+
+    assert result.exit_code == 0, result.output
+    assert "Operating a Kizen environment" in result.output
+    assert heading not in result.output
