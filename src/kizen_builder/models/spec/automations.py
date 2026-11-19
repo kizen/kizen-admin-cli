@@ -17,6 +17,7 @@ from kizen_builder.models.spec.automations_actions_code import (
 )
 from kizen_builder.models.spec.automations_actions_control import (
     ActionArchiveRecordConfig,
+    ActionExitLoopConfig,
     ActionGoToAutomationStepConfig,
     ActionModifyAutomationConfig,
     ActionStartAutomationConfig,
@@ -67,6 +68,7 @@ _STEP_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "goal": "step_goal",
     "loop": "step_loop",
     "go_to_automation_step": "action_go_to_automation_step",
+    "exit_loop": "action_exit_loop",
     "http_request": "action_http_request",
     "initialize_variable": "action_initialize_variable",
     "math_operator": "action_math_operator",
@@ -210,6 +212,7 @@ class AutomationStepDef(BaseModel):
     action_delete_scheduled_activity: ActionDeleteScheduledActivityConfig | None = None
     action_file_content_extraction: ActionFileContentExtractionConfig | None = None
     action_go_to_automation_step: ActionGoToAutomationStepConfig | None = None
+    action_exit_loop: ActionExitLoopConfig | None = None
     action_http_request: ActionHttpRequestConfig | None = None
     action_initialize_variable: ActionInitializeVariableConfig | None = None
     action_math_operator: ActionMathOperatorConfig | None = None
