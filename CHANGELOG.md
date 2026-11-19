@@ -115,8 +115,9 @@ called out explicitly under **Changed** or **Removed**.
   It used to pass, then fail live with *"Array aggregation mode is required
   for array variables"*. **It also refuses `change_field_value` in a global
   automation**, which has no record of its own for it to write, and points
-  at `modify_related_entities` on the loop's item variable. The same checks
-  run in `steps add` and `steps edit`.
+  at `modify_related_entities` on the loop's item variable; a step that
+  already has an `id` only warns, so an unrelated update still goes through.
+  The same checks run in `steps add` and `steps edit`.
 
 - **`archive_record` can target a related record or a variable's record.**
   Its card lists `record_source`, `relationship_fields` (field refs) and

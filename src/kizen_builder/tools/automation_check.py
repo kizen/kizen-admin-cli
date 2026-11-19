@@ -146,8 +146,9 @@ def check_step(
     """The checks one step gets on its own: block keys nothing reads,
     placeholders left in, variables nothing declares, an array variable
     with no aggregation mode, an entity variable with no object, a field
-    change in a global automation, and selector options missing the keys
-    they're written with. Returns ``(errors, warnings)``.
+    change in a global automation (a warning for a step that has an `id`),
+    and selector options missing the keys they're written with. Returns
+    ``(errors, warnings)``.
     ``declared`` maps each variable name to its declaration."""
     if not isinstance(step, dict):
         return [], []
@@ -158,9 +159,13 @@ def check_step(
         *_variable_errors(index, step, declared),
         *_array_mode_errors(index, step, declared),
         *_entity_subtype_errors(index, step),
-        *_own_record_errors(index, step, is_global),
     ]
-    return errors, _selector_warnings(index, step)
+    warnings = _selector_warnings(index, step)
+    own_record = _own_record_errors(index, step, is_global)
+    # A step with an id already exists, so it doesn't block an unrelated
+    # update; a new one does.
+    (warnings if step.get("id") else errors).extend(own_record)
+    return errors, warnings
 
 
 def block_rule_errors(step: dict[str, Any]) -> list[Finding]:

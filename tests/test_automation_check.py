@@ -467,6 +467,23 @@ def test_a_field_change_in_a_global_automation_is_an_error():
     assert not [e for e in _errors_or_none(_spec(change)) if e.step == "flag"]
 
 
+def test_an_existing_field_change_in_a_global_automation_only_warns():
+    """A step already on the live automation doesn't block an unrelated
+    update, such as a rename."""
+    change = {
+        "key": "flag",
+        "id": "0b8f3c6e-9d2a-4c51-8e7f-2a6d1c4b9e30",
+        "step_type": "change_field_value",
+        "action_change_field_value": {
+            "field_ref": "flagged",
+            "specific_field_value": True,
+        },
+    }
+    checked = check_automation(_spec(change, type="global", target_object=None))
+    w = _only(checked.warnings, step="flag")
+    assert "global automation has none" in w.message
+
+
 def _errors_or_none(spec):
     try:
         check_automation(spec)
