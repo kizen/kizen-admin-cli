@@ -347,6 +347,9 @@ console from hard-wrapping long lines). When a remote value sits inside our
 own styling, escape only the value and pass `emoji=False`:
 `err_console.print(f"[red]error:[/red] {escape(str(e))}", emoji=False)`, with
 `escape` from `rich.markup`. A table cell takes `rich.text.Text(value)`.
+The 220 columns hold in a terminal only: piped, `console` and `err_console`
+print a table as plain `| a | b |` rows, so a cell has to carry its meaning in
+plain text, not in a style or a nested renderable.
 
 **Reading a file the user named.** Read it through `read_text_file(path,
 "--flag")`, or `read_json_file` when it holds JSON, and parse JSON from a flag
@@ -380,7 +383,12 @@ exit 1 from any command, and anything else into `error: internal: …`.
    read makes `translate` refuse the automation, and
    `test_every_captured_read_key_is_classified` fails on a fixture that has
    one.
-6. Update the wired list in `src/kizen_builder/docs/specs/automation.md`.
+6. Give the type a one-line purpose in `STEP_PURPOSES` or
+   `TRIGGER_PURPOSES`, next to the registry; `kizen automations step-types`
+   lists it from there, and `tests/test_step_catalog.py` fails without one.
+   If the block has a key whose value decides which other keys it carries,
+   add a `Guide` for it in `tools/step_catalog.py`: an entry per shape, and
+   what each option needs.
 7. If the type has an enum-typed field whose valid values you've confirmed
    (live, in a fixture, or via the drift snapshot once it captures enum
    values), add them to `KNOWN_ENUM_CHOICES` / `KNOWN_ENUM_CHOICES_TRIGGERS`
