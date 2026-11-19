@@ -21,7 +21,11 @@ from kizen_builder.tools.steps import (
     subtree_keys,
     synthesize_key,
 )
-from kizen_builder.translate import live_to_payload, validate_payload
+from kizen_builder.translate import (
+    live_to_payload,
+    resolve_exit_loop_targets,
+    validate_payload,
+)
 from tests.conftest import load_fixture
 
 
@@ -289,13 +293,55 @@ def test_remove_only_body_step_leaves_an_empty_body(loops: dict) -> None:
     assert validate_payload(loops) == []
 
 
-def test_steps_add_refuses_an_exit_loop(loops: dict) -> None:
-    from pydantic import ValidationError
+@pytest.fixture()
+def nested() -> dict:
+    """Built in Kizen's builder: s04_loop around s05_loop, whose body is the
+    merged s06_condition with s07_update_variable on no and s09_exit_loop
+    (targeting s04_loop) on yes."""
+    return live_to_payload(load_fixture("automations/nested_loops.raw.json"))
 
+
+def _add_exit_loop(payload: dict, spec: dict, parent: str, **placement) -> dict:
     from kizen_builder.tools.automations import build_wire_step
 
-    with pytest.raises(ValidationError, match="unknown step_type 'exit_loop'"):
-        build_wire_step({"step_type": "exit_loop"}, loops, "object_with_workflow")
+    wire = build_wire_step(spec, payload, None)
+    insert_step(payload, wire, parent_key=parent, **placement)
+    resolve_exit_loop_targets(payload["steps"])
+    return find_step(payload, wire["key"])
+
+
+def test_steps_add_exit_loop_as_a_leaf_ends_the_innermost_loop(nested: dict) -> None:
+    added = _add_exit_loop(
+        nested, {"step_type": "exit_loop"}, "s07_update_variable", adopt_children=False
+    )
+    assert added["prefix"] == "step"
+    assert added["action_exit_loop"] == {"step": "s05_loop"}
+    assert validate_payload(nested) == []
+
+
+def test_steps_add_exit_loop_names_an_outer_loop(nested: dict) -> None:
+    spec = {"step_type": "exit_loop", "action_exit_loop": {"loop_to_exit": "s04_loop"}}
+    added = _add_exit_loop(nested, spec, "s07_update_variable", adopt_children=False)
+    assert added["action_exit_loop"] == {"step": "s04_loop"}
+    assert validate_payload(nested) == []
+
+
+def test_steps_add_exit_loop_that_would_adopt_is_refused(nested: dict) -> None:
+    with pytest.raises(PlanError) as e:
+        _add_exit_loop(nested, {"step_type": "exit_loop"}, "s06_condition", branch="no")
+    assert str(e.value) == (
+        "an exit_loop ends the loop, so steps after it never run; add it with "
+        "--leaf (it would adopt s07_update_variable)"
+    )
+
+
+def test_steps_add_under_an_exit_loop_is_refused(nested: dict) -> None:
+    with pytest.raises(PlanError) as e:
+        insert_step(nested, _mk_stop(nested), parent_key="s09_exit_loop")
+    assert str(e.value) == (
+        "'s09_exit_loop' is an exit_loop: an exit_loop ends the loop, so steps "
+        "after it never run"
+    )
 
 
 # `steps add` of a loop: the loop, its next_or_finish and its item variable.

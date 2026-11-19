@@ -12,7 +12,7 @@
     {
       "name": "listCustomObjects",
       "display_name": "listCustomObjects",
-      "description": "List the objects configured in this business - Kizen's built-in objects (such as Contacts) plus any custom Standard or Pipeline objects. Use this to discover what kinds of records exist before querying them. Returns each object's api_name, display names, type, id, creation date, and record count. Supports search, sorting, and pagination. Only objects you have permission to see are returned. To fetch one object you already have an api_name or id for, use getCustomObject instead.",
+      "description": "List the objects configured in this business - Kizen's built-in objects (such as Contacts) plus any custom Standard or Pipeline objects. Use this to discover what kinds of records exist before querying them. Returns each object's api_name, display names, type, creation date, and record count. Supports search, sorting, and pagination. Only objects you have permission to see are returned. To fetch one object you already have an api_name or id for, use getCustomObject instead.",
       "group": "custom_objects",
       "group_label": "Custom Objects",
       "annotations": {
@@ -25,7 +25,7 @@
     {
       "name": "listObjectFields",
       "display_name": "listObjectFields",
-      "description": "List the fields defined on one object, which is how you discover its schema before reading or writing records. Takes the object's api_name or id from listCustomObjects. Each row leads with `name` - the api_name to use in API payloads - alongside the display name, field type, category name, and the flags that govern writes (is_required, is_read_only, allows_nulls, allows_empty). Relation fields show their target as '<cardinality> -> <api_name>', e.g. 'many_to_one -> receipts', with '(inverse)' appended on the mirror side of the relation. Dropdown-style fields list their valid `options`. Supports search on the display name or api_name, sorting, and filtering by category name. Not paginated - every field you have permission to see is returned. For a dropdown-style field, use listObjectFieldOptions (passing this row's `name`) to list its valid options.",
+      "description": "List the fields defined on one object, which is how you discover its schema before reading or writing records. Takes the object's api_name from listCustomObjects (or its UUID). Each row leads with `name` - the api_name to use in API payloads - alongside the display name, field type, category name, and the flags that govern writes (is_required, is_read_only, allows_nulls, allows_empty). Relation fields show their target as '<cardinality> -> <api_name>', e.g. 'many_to_one -> receipts', with '(inverse)' appended on the mirror side of the relation. Dropdown-style fields list their valid `options`. Supports search on the display name or api_name, sorting, and filtering by category name. Not paginated - every field you have permission to see is returned. For a dropdown-style field, use listObjectFieldOptions (passing this row's `name`) to list its valid options.",
       "group": "custom_objects",
       "group_label": "Custom Objects",
       "annotations": {
@@ -38,7 +38,7 @@
     {
       "name": "searchCatalog",
       "display_name": "searchCatalog",
-      "description": "Semantic search across knowledge catalogs. Returns the most relevant content chunks with their source description, source_id, url, and a relevance score. Optionally narrow the search to specific catalogs by api_name or UUID.\n\n{catalog_list}",
+      "description": "Semantic search across knowledge catalogs. Returns the most relevant content chunks with their source description, source_id, url, and a relevance score. Optionally narrow the search to specific catalogs by api_name.\n\n{catalog_list}",
       "group": "custom_knowledge",
       "group_label": "Custom Knowledge",
       "annotations": {
@@ -47,14 +47,22 @@
         "idempotentHint": true,
         "openWorldHint": false
       }
+    },
+    {
+      "name": "deep_wiki__ask_wiki_question",
+      "display_name": "deep_wiki__ask_wiki_question",
+      "description": "Ask any question about a GitHub repository's codebase and get an AI-powered answer\ngrounded in its DeepWiki.",
+      "group": "upstream",
+      "group_label": "Upstream Servers",
+      "annotations": null
     }
   ],
   "is_system_managed": false,
   "endpoint_url": "https://kizen.test/api/mcp/support_tools",
   "is_enabled": true,
   "is_default_for_business": false,
-  "created": "2026-10-27T08:18:35.333889-05:00",
-  "updated": "2026-10-27T08:18:36.775948-05:00",
+  "created": "2026-11-11T09:45:03.206389-06:00",
+  "updated": "2026-11-11T09:45:03.206398-06:00",
   "owner": {
     "id": "00000000-0000-4000-8000-0000000005e7",
     "display_name": "Sample User (user@example.com)"
@@ -84,5 +92,15 @@
     "View": 0,
     "Edit": 0,
     "Admin": 0
-  }
+  },
+  "upstreams": [
+    {
+      "server": "00000000-0000-4000-8000-0000000007d1",
+      "server_name": "Deep Wiki",
+      "include_all": false,
+      "tool_ids": [
+        "00000000-0000-4000-8000-0000000007e1"
+      ]
+    }
+  ]
 }
