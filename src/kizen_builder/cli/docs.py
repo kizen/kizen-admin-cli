@@ -30,8 +30,12 @@ def docs_show(
         ...,
         help="Topic name, e.g. operating, commands, reference, automation. See `kizen docs list`.",
     ),
-    raw: bool = typer.Option(
-        False, "--raw", help="Print the raw markdown instead of rendering it."
+    rendered: bool | None = typer.Option(
+        None,
+        "--rendered/--raw",
+        help="Force rich rendering, or the raw markdown file. "
+        "Default: rendered in a terminal, raw when piped or captured "
+        "(KIZEN_OUTPUT=terminal|agent overrides the default).",
     ),
 ) -> None:
     """Print one documentation topic.
@@ -39,6 +43,9 @@ def docs_show(
     `operating` is the manual — the approval gate and the rules for acting on
     live state. `commands` maps the command surface. `reference` covers API
     quirks and wire formats. Everything else is a spec-file shape.
+
+    Piped or captured output is the raw markdown file, byte for byte, so it
+    greps cleanly.
     """
     try:
         path = docs_res.topic_path(topic)
@@ -50,7 +57,9 @@ def docs_show(
         raise typer.Exit(code=2) from exc
 
     text = path.read_text()
-    if raw:
+    if rendered is None:
+        rendered = not out.for_agent()
+    if not rendered:
         # Bypass Console so the output is byte-faithful and pipe-safe.
         sys.stdout.write(text)
         return

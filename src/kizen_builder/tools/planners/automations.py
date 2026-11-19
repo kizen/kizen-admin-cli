@@ -539,7 +539,13 @@ def _update_payload(
         and current.get("skip_non_working_days") is not None
     ):
         payload["skip_non_working_days"] = current["skip_non_working_days"]
-    return _carry_omitted_step_keys(payload, auto, current)
+    payload, kept = _carry_omitted_step_keys(payload, auto, current)
+    from kizen_builder.translate import exit_loop_problems, resolve_exit_loop_targets
+
+    resolve_exit_loop_targets(payload["steps"])
+    if problems := exit_loop_problems(payload["steps"], current.get("steps")):
+        raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
+    return payload, kept
 
 
 # Keys a PUT resets to Kizen's default when they're left out or sent as the
@@ -581,9 +587,10 @@ _KEPT_LLM_PROMPT_KEYS = (
 )
 
 # Config-block keys a PUT resets the same way, by step type (confirmed live
-# 2026-10-30). `stop_execution` is the exception: Kizen keeps a live action
-# when the block is left out, but carrying both keys sends them together and
-# keeps `diff` from reporting the action as removed.
+# 2026-10-30). The exceptions are a stop's action and an update_variable's
+# value_resolution, which Kizen keeps when left out (confirmed live 2026-10-30
+# and 2026-11-11). They're carried so `diff` doesn't report them as removed,
+# and so a stop's two keys go together.
 _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
     "schedule_activity": (
         _KeptBlockKeys(("target_variable",), write=lambda v: _unwrap_variable_name(v)),
@@ -616,6 +623,9 @@ _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
         _KeptBlockKeys(("notify",), default=False),
     ),
     "plugin_code_step": (_KeptBlockKeys(("preview_user_id",)),),
+    "update_variable": (_KeptBlockKeys(("value_resolution",)),),
+    # Read as the loop's id; `resolve_exit_loop_targets` turns it into the key.
+    "exit_loop": (_KeptBlockKeys(("step",), set_by=("loop_to_exit", "step")),),
     # The planner always sends this one. Carried so its add_only default
     # for a to-many field doesn't replace a live overwrite.
     "create_related_entity": (_KeptBlockKeys(("context_entity_field_resolution",)),),
@@ -1065,9 +1075,12 @@ def _automation_preview(
             else "ACTIVATES an inactive automation"
         )
         active_display = f"{live_active} → {auto.active} ({direction})"
+    from kizen_builder.translate import exit_loop_dead_end_warnings
+
     warnings = [
         *(_warning_line(f) for f in checked.warnings),
         *_unlaid_rule_warnings(auto, payload, ctx),
+        *exit_loop_dead_end_warnings(payload["steps"]),
     ]
     defaults = [*checked.defaults, *_planned_defaults(auto, payload, current)]
     return {
@@ -1342,8 +1355,9 @@ def _build_automation_payload(
             raise SpecProblems([*findings, Finding(str(e))], warnings) from e
         raise
 
-    from kizen_builder.translate import validate_payload
+    from kizen_builder.translate import resolve_exit_loop_targets, validate_payload
 
+    resolve_exit_loop_targets(payload["steps"])
     findings += [
         Finding(p, path="triggers" if p.startswith("trigger") else "steps")
         for p in dict.fromkeys(validate_payload(payload))
@@ -2148,6 +2162,9 @@ NO_MOVE_STAGE_STEP = (
 # finishes (confirmed live 2026-10-30), so the spec path never sends one.
 _STOP_EXECUTION_DEFAULT_ACTION = "stop_and_complete"
 
+# The builder's Append or Replace default for a new array update (2026-11-10).
+_ARRAY_UPDATE_DEFAULT_RESOLUTION = "add_only"
+
 
 def _build_step_payloads(
     auto: AutomationDef, ctx: LiveContext, warnings: list[Finding] | None
@@ -2239,6 +2256,15 @@ def _build_step_payload(
         raise PlanError(f"step '{step.key}': {e}") from e
     if step.step_type == "stop_execution":
         wire_block.setdefault("action", _STOP_EXECUTION_DEFAULT_ACTION)
+    if (
+        step.step_type == "update_variable"
+        and not step.id
+        and wire_block.get("value_resolution") is None
+        and _declared_variables(auto.steps)
+        .get(wire_block.get("variable"), {})
+        .get("is_array")
+    ):
+        wire_block["value_resolution"] = _ARRAY_UPDATE_DEFAULT_RESOLUTION
     _resolve_llm_plugin_app(step.step_type, step.key, wire_block, ctx)
     problem = _built_block_problem(step.step_type, step.key, wire_block, auto, ctx)
     if problem:
@@ -2890,6 +2916,17 @@ def _step_go_to_automation_step(
     if block.get("trigger_key"):
         out["trigger_key"] = block["trigger_key"]
     return out
+
+
+# Kizen requires the block, `{}` at least, and resolves a loop key in `step`
+# on write; a read gives the loop's id, which `translate.resolve_exit_loop_targets`
+# turns back into its key (confirmed live 2026-11-11).
+@honours("loop_to_exit", "step")
+def _step_exit_loop(
+    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+) -> dict[str, Any]:
+    target = block.get("loop_to_exit") or block.get("step")
+    return {"step": target} if target else {}
 
 
 @honours(
@@ -4582,6 +4619,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "plugin_code_step": _step_plugin_code_step,
     "archive_record": _step_archive_record,
     "go_to_automation_step": _step_go_to_automation_step,
+    "exit_loop": _step_exit_loop,
     "start_automation": _step_start_automation,
     "change_field_value": _step_change_field_value,
     "modify_related_entities": _step_modify_related_entities,
@@ -4640,6 +4678,7 @@ STEP_PURPOSES: dict[str, str] = {
     "branch": "run its children in parallel (a branch group)",
     "merge_branches": "rejoin a branch group",
     "next_or_finish": "close a loop body",
+    "exit_loop": "end a loop early",
 }
 
 

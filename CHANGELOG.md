@@ -20,6 +20,18 @@ called out explicitly under **Changed** or **Removed**.
   variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
+- **MCP server specs can pick upstream server tools.** `upstreams` takes each
+  upstream's `api_name` and `include_all: true` or `tool_names`; the CLI maps
+  them to ids and refuses unknown ones. `kizen mcp-servers upstreams` lists
+  upstream servers and their tools. Creating and authorizing upstreams stays
+  in Kizen.
+
+- `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
+  template from a spec of objects, plugin pages, links and categories. Plugin
+  pages are rebuilt from the installed plugin on every write, and `update
+  <template>` with no spec re-saves them after a plugin release; plugin
+  toolbar-item references are kept as references. Nothing applies a template
+  to users.
 
 - **`kizen automations step-types`** shows what a step's or trigger's config
   block takes, with no environment. `step-types show <type>` prints entries
@@ -35,7 +47,29 @@ called out explicitly under **Changed** or **Removed**.
   numbers by position. The automation doc's wired-type tables are gone;
   `step-types list` replaces them.
 
+- **Automations can end a loop early with an `exit_loop` step again.** Kizen's
+  builder now ships it. `action_exit_loop.loop_to_exit` names the loop to end,
+  and omitting it ends the innermost loop around the step. `create`, `update`
+  and `steps` refuse an exit loop outside a loop body, one aimed at a loop it
+  isn't inside, or one that sets both `loop_to_exit` and `step`. `show` draws
+  the target and warns about steps hung under it, which never run.
+
 ### Changed
+
+- **`kizen docs show` prints the raw markdown when piped or captured.** The
+  output is the shipped file byte for byte, so `grep`, `head` and an agent's
+  capture see the source instead of rich's column-padded rendering. A
+  terminal still gets the rendered view. `--raw` still works, and the new
+  `--rendered` forces rich output when piped.
+- **Piped output (agents, scripts) prints tables as plain rows without
+  borders or padding, and an apply leads with its results.** A table is a
+  `title:` line, a `| h1 | h2 |` header and one `| c1 | c2 |` line per row.
+  A piped apply with `--yes` prints `Plan <id> → env: <env>, <n> op(s)`
+  instead of the operations table (`--dry-run` still prints it in full),
+  and its results say `ok`/`failed`/`skipped`/`adjusted` instead of symbols.
+  A terminal looks the same as before. `KIZEN_OUTPUT=terminal` gives the
+  terminal form anywhere; `KIZEN_OUTPUT=agent` gives the piped form, for
+  tables and for `docs show`.
 
 - **`step-types show` and dry-run now check and list every key and choice
   of `filter_config`, the `field_updated` trigger, `create_related_entity`,
@@ -85,6 +119,15 @@ called out explicitly under **Changed** or **Removed**.
   merge-field namespaces are in `step-types concepts`, and the `step-types
   show` footer now reads "See also".
 
+- **A new `update_variable` step on an array variable appends by default.**
+  When a spec or a `steps add` block leaves `value_resolution` out, the CLI now
+  sends `add_only`, which Kizen's builder picks for a new step since its
+  2026-11-10 release. Before, the step was saved with no value, which replaces
+  the array. An update spec without step ids creates new steps, so its array
+  updates now append too. A step with an `id` keeps its live value, and
+  `automations diff` no longer shows that kept value as removed. Set
+  `value_resolution: "overwrite"` to replace.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The
@@ -97,6 +140,13 @@ called out explicitly under **Changed** or **Removed**.
   before, and the server answered with *"field_id is required"*;
   `assign_team_member` refused it at plan time. `schedule.on_or_around_date`
   takes `field_ref` too. A `field_id` beside it still wins.
+- **`kizen mcp-servers get --raw` output works as an `update` spec again.**
+  Since Kizen's 2026-11-10 release it failed with `upstreams: Extra inputs are
+  not permitted`.
+- **Editing an automation that has an exit loop step built in Kizen's builder
+  no longer fails** with "Exit Loop step references a loop that does not
+  exist." `steps`, `roundtrip --execute` and `update` now send the loop's key
+  instead of echoing the id read back.
 - **A code step's `related_field` input or output on a to-many relationship
   fails the dry-run.** The server refused it with *"The field must not allow
   multiple values"*. The finding says to read the relationship with
@@ -122,15 +172,6 @@ called out explicitly under **Changed** or **Removed**.
   `automations steps add` and `steps edit` run the same checks.
 
 ## [0.7.0] — 2026-11-16
-
-### Added
-
-- `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
-  template from a spec of objects, plugin pages, links and categories. Plugin
-  pages are rebuilt from the installed plugin on every write, and `update
-  <template>` with no spec re-saves them after a plugin release; plugin
-  toolbar-item references are kept as references. Nothing applies a template
-  to users.
 
 ## [0.6.0] — 2026-11-11
 
