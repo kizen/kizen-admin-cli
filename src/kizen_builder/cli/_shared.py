@@ -1,8 +1,9 @@
 """Objects every command module needs: the root Typer app, its callback and
 the group that ends any command on one `error:` line, the two consoles, the
-shared output-format options, `cli_errors()`, `exit_spec_errors()`, the
-user-file readers (`read_text_file`, `read_json_file`, `parse_json`),
-`warn_renamed_flag()`, and `_short`.
+shared output-format options, the shared `--limit` option (`limit_option()`),
+`cli_errors()`, `exit_spec_errors()`, the user-file readers
+(`read_text_file`, `read_json_file`, `parse_json`), `warn_renamed_flag()`,
+and `_short`.
 
 Nothing here imports a command module, so every other module in the
 package can import this one.
@@ -87,6 +88,29 @@ OUTPUT_OPTION = typer.Option(
     None, "--output", "-o", help="Output format: table (default), json, or csv."
 )
 JSON_OPTION = typer.Option(False, "--json", help="Alias for --output json.")
+
+
+def _limit_nonnegative(value: int) -> int:
+    if value < 0:
+        raise typer.BadParameter("--limit must be >= 0 (0 for all).")
+    return value
+
+
+def limit_option(default: int, noun: str) -> Any:
+    """The `--limit/-n` option every list command shares.
+
+    `N > 0` asks for up to N rows and `0` for every row. A negative value is
+    a usage error (exit 2) raised before the command body runs. The body
+    passes `limit or None` on, so the read layer sees `None` for "all".
+    """
+    return typer.Option(
+        default,
+        "--limit",
+        "-n",
+        help=f"Max {noun} to return (0 for all).",
+        callback=_limit_nonnegative,
+    )
+
 
 # Every command that talks to Kizen fails the same way: one `error: <message>`
 # line on stderr, exit code 1. `ConfigError` (no usable credentials for this

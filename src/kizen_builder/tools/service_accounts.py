@@ -39,7 +39,9 @@ def get_service_account(ref: str) -> dict[str, Any]:
         return sa_api.get_service_account(client, account["id"])
 
 
-def list_service_account_history(ref: str, limit: int = 25) -> list[dict[str, Any]]:
+def list_service_account_history(
+    ref: str, limit: int | None = 25
+) -> list[dict[str, Any]]:
     with KizenClient(load_env_config()) as client:
         account = resolve_service_account(client, ref)
         return sa_api.list_service_account_history(client, account["id"], limit)

@@ -16,6 +16,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    limit_option,
     load_filter_spec,
 )
 from kizen_builder.tools import records as record_tools
@@ -140,7 +141,7 @@ def records_list(
             "name is rejected before any request is sent."
         ),
     ),
-    limit: int = typer.Option(100, "--limit", "-n", help="Max records to return."),
+    limit: int = limit_option(100, "records"),
     output: str = OUTPUT_OPTION,
     json_out: bool = JSON_OPTION,
 ) -> None:
@@ -175,7 +176,7 @@ def records_list(
             object_api_name,
             filters=filters,
             search=search or None,
-            limit=limit,
+            limit=limit or None,
             **({"field_names": field_names} if field_names else {}),
         )
 

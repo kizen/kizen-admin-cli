@@ -15,6 +15,7 @@ from typing import Any
 from kizen_builder.api.client import KizenClient
 
 _BASE = "/api/service-accounts"
+_HISTORY_PAGE_MAX = 1000  # endpoint's max page_size; not confirmed live 2026-11-18
 
 
 def list_service_accounts(
@@ -69,10 +70,15 @@ def delete_service_account(client: KizenClient, account_id: str) -> None:
 
 
 def list_service_account_history(
-    client: KizenClient, account_id: str, limit: int
+    client: KizenClient, account_id: str, limit: int | None
 ) -> list[dict[str, Any]]:
-    """GET /api/service-accounts/{id}/history — one page of up to ``limit`` events."""
-    resp = client.get(f"{_BASE}/{account_id}/history", params={"page_size": limit})
-    if isinstance(resp, dict):
-        return list(resp.get("results") or [])
-    return list(resp or [])
+    """GET /api/service-accounts/{id}/history — up to ``limit`` events.
+
+    Follows ``next`` until ``limit`` events are in hand or none remain;
+    ``None`` returns every event. Pass ``None``, not ``0``, for "all".
+    """
+    page_size = _HISTORY_PAGE_MAX if limit is None else min(limit, _HISTORY_PAGE_MAX)
+    rows = client.paginate(
+        f"{_BASE}/{account_id}/history", {"page_size": page_size}, limit=limit
+    )
+    return rows if limit is None else rows[:limit]

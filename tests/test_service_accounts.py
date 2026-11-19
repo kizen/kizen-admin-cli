@@ -121,16 +121,53 @@ def test_list_pages_at_100_and_sends_search():
 
 @respx.mock
 def test_history_makes_one_request_with_page_size_limit():
+    events = [{"id": f"e{i}"} for i in range(5)]
     route = respx.get(f"{SA_URL}/{ACCOUNT_ID}/history").mock(
         return_value=httpx.Response(
             200,
-            json={**_envelope([{"id": "e1"}]), "next": f"{SA_URL}/x?page=2"},
+            json={**_envelope(events), "next": f"{SA_URL}/x?page=2"},
         )
     )
     with _client() as c:
-        assert sa_api.list_service_account_history(c, ACCOUNT_ID, 5) == [{"id": "e1"}]
+        assert sa_api.list_service_account_history(c, ACCOUNT_ID, 5) == events
     assert route.call_count == 1
     assert dict(route.calls[0].request.url.params) == {"page_size": "5"}
+
+
+def _history_pages(*sizes):
+    """History envelopes of ``sizes`` events each, linked by ``next``."""
+    url = f"{SA_URL}/{ACCOUNT_ID}/history"
+    pages, start = [], 0
+    for i, size in enumerate(sizes):
+        events = [{"id": f"e{start + j}"} for j in range(size)]
+        start += size
+        nxt = f"{url}?page={i + 2}&page_size=1000" if i < len(sizes) - 1 else None
+        pages.append(httpx.Response(200, json={**_envelope(events), "next": nxt}))
+    return pages
+
+
+@respx.mock
+def test_history_without_a_limit_follows_next_to_the_end():
+    route = respx.get(f"{SA_URL}/{ACCOUNT_ID}/history").mock(
+        side_effect=_history_pages(3, 2)
+    )
+    with _client() as c:
+        events = sa_api.list_service_account_history(c, ACCOUNT_ID, None)
+    assert [e["id"] for e in events] == [f"e{i}" for i in range(5)]
+    assert route.call_count == 2
+    assert dict(route.calls[0].request.url.params) == {"page_size": "1000"}
+
+
+@respx.mock
+def test_history_limit_past_one_page_pages_at_1000_and_slices():
+    route = respx.get(f"{SA_URL}/{ACCOUNT_ID}/history").mock(
+        side_effect=_history_pages(1000, 1000)
+    )
+    with _client() as c:
+        events = sa_api.list_service_account_history(c, ACCOUNT_ID, 1500)
+    assert len(events) == 1500
+    assert route.call_count == 2
+    assert dict(route.calls[0].request.url.params) == {"page_size": "1000"}
 
 
 @respx.mock

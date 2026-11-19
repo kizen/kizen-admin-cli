@@ -23,6 +23,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`team search --limit` returns more than 100 members.** It used to stop
+  silently at 100.
+- **`--limit` means the same thing on `records list`, `team search` and
+  `service-accounts history`.** `-n 0` returns every row, and a negative
+  `-n` is an error instead of a short or empty list. `service-accounts
+  history` now pages, so a large `-n` is no longer cut to one page.
 - **`automations runs list --limit` returns more than 100 runs.** It used to
   stop silently at 100. It now pages until it has `--limit` runs, and `-n 0`
   returns every run. A negative `--limit` is now an error instead of returning

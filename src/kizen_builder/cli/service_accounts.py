@@ -21,6 +21,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    limit_option,
 )
 from kizen_builder.cli.permissions import _resolve_group_id
 from kizen_builder.config import load_env_config
@@ -152,14 +153,14 @@ def sa_get(
 @sa_app.command("history", epilog=_EPILOG)
 def sa_history(
     account: str = typer.Argument(..., help=_REF_HELP),
-    limit: int = typer.Option(25, "--limit", "-n", help="Max events to return."),
+    limit: int = limit_option(25, "events"),
     output: str = OUTPUT_OPTION,
     json_out: bool = JSON_OPTION,
 ) -> None:
     """Show a service account's history events."""
     fmt = out.resolve_format(output, json_out)
     with cli_errors(LookupError):
-        events = sa_tools.list_service_account_history(account, limit=limit)
+        events = sa_tools.list_service_account_history(account, limit=limit or None)
 
     def by(e: dict[str, Any]) -> str:
         who = e.get("initiator") or {}

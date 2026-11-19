@@ -66,9 +66,11 @@ def search_records(
     filters: list[dict[str, Any]] | None = None,
     search: str | None = None,
     field_names: list[str] | None = None,
-    limit: int = 100,
+    limit: int | None = 100,
 ) -> list[dict[str, Any]]:
     """Search records in a custom object, returning up to ``limit`` results.
+
+    ``limit=None`` returns every matching record, paging at 500.
 
     ``search`` is an optional text string forwarded to the API's ``?search=``
     query param for fast keyword filtering without building filter groups.
@@ -114,10 +116,10 @@ def search_records(
             filters=filters,
             search=search,
             field_names=wire_field_names,
-            page_size=min(limit, 500),
+            page_size=500 if limit is None else min(limit, 500),
             limit=limit,
         )
-    return results[:limit]
+    return results if limit is None else results[:limit]
 
 
 def active_record_ids(object_api_name: str) -> list[str]:

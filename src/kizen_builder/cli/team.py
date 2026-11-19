@@ -14,6 +14,7 @@ from kizen_builder.cli._shared import (
     cli_errors,
     console,
     err_console,
+    limit_option,
 )
 from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools import team as team_tools
@@ -28,7 +29,7 @@ app.add_typer(team_app, name="team")
 @team_app.command("search")
 def team_search(
     name: str = typer.Argument(..., help="Name or email fragment to search for."),
-    limit: int = typer.Option(10, "--limit", "-n", help="Max results to return."),
+    limit: int = limit_option(10, "results"),
     output: str = OUTPUT_OPTION,
     json_out: bool = JSON_OPTION,
 ) -> None:
@@ -39,7 +40,7 @@ def team_search(
     """
     fmt = out.resolve_format(output, json_out)
     with cli_errors():
-        results = team_tools.search_team(name, limit=limit)
+        results = team_tools.search_team(name, limit=limit or None)
 
     def table() -> None:
         t = Table(title=f'Team members matching "{name}"')

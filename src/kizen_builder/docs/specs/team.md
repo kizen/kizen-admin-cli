@@ -32,10 +32,23 @@ from both** — `team get` resolves the role ids to names.
 substrings. `team get` therefore takes a UUID straight to `GET /api/team/{id}`,
 and falls back to `/api/team/typeahead` (name/email search) otherwise.
 
+`/api/team/typeahead` paging (confirmed live 2026-11-18):
+
+- Without `page_size` it returns a bare list of every match.
+- With `page_size` it returns the DRF envelope
+  `{count, next, previous, errors, results}`; `next` carries `search` forward
+  along with `page` and `page_size`.
+- `count` is the total number of matches, not the page length.
+- `page_size=0` is treated as invalid: the server falls back to its default
+  page size.
+
+`team search` sends `page_size` and follows `next` until it has `-n` matches
+or none remain.
+
 ## Command surface
 
-- `kizen team search <name>` — unchanged: id/full_name/email/title via
-  `/api/team/typeahead`.
+- `kizen team search <name>` — id/full_name/email/title via
+  `/api/team/typeahead`, paged as described above.
 - `kizen team get <id|name|email>` — one team member's roles
   (`{id, name}` each), via `/api/team/{id}` + `/api/role` cross-reference.
   Ambiguous name/email matches list the candidates and ask for the id.
