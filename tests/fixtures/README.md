@@ -28,6 +28,8 @@ automation steps).
   step on the merged condition's `no` branch was removed by hand afterwards:
   the condition's `no_steps` is emptied and the `order`s after it are
   renumbered. Re-capture from the drift tier's `drift_loops` spec.
+- `automations/nested_loops.raw.json` — built in Kizen's builder 2026-11-11,
+  read back unchanged; its exit loop targets the outer loop.
 - `records/`, `executions/`, `team/` — tool-level `--json` output.
   Exceptions: `executions/detail_form_submission.json` and
   `executions/history_form_submission.json` are hand-authored to the OpenAPI

@@ -46,6 +46,13 @@ called out explicitly under **Changed** or **Removed**.
   type it most likely means. The automation doc's wired-type tables are
   gone; `step-types list` replaces them.
 
+- **Automations can end a loop early with an `exit_loop` step again.** Kizen's
+  builder now ships it. `action_exit_loop.loop_to_exit` names the loop to end,
+  and omitting it ends the innermost loop around the step. `create`, `update`
+  and `steps` refuse an exit loop outside a loop body, one aimed at a loop it
+  isn't inside, or one that sets both `loop_to_exit` and `step`. `show` draws
+  the target and warns about steps hung under it, which never run.
+
 ### Changed
 
 - **`kizen docs show` prints the raw markdown when piped or captured.** The
@@ -85,6 +92,10 @@ called out explicitly under **Changed** or **Removed**.
 - **`kizen mcp-servers get --raw` output works as an `update` spec again.**
   Since Kizen's 2026-11-10 release it failed with `upstreams: Extra inputs are
   not permitted`.
+- **Editing an automation that has an exit loop step built in Kizen's builder
+  no longer fails** with "Exit Loop step references a loop that does not
+  exist." `steps`, `roundtrip --execute` and `update` now send the loop's key
+  instead of echoing the id read back.
 
 ## [0.7.0] — 2026-11-16
 
