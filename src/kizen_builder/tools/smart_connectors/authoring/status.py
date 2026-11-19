@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from kizen_builder.api import smart_connectors as sc_api
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors.authoring._helpers import _connector_ref
@@ -26,7 +26,8 @@ def plan_set_status(connector: str, status: str) -> dict[str, Any]:
 
     Activating an inactive connector also counts its queued live executions,
     which resume once it's active. The UI's "Active?" toggle warns about them
-    the same way (FlowBuilder ControlBar, read 2026-11-17).
+    the same way (FlowBuilder ControlBar, read 2026-11-17). The count is only
+    a warning, so a failed count leaves ``queued_live_runs`` as ``None``.
     """
     if status not in SETTABLE_CONNECTOR_STATUSES:
         known = (
@@ -40,14 +41,17 @@ def plan_set_status(connector: str, status: str) -> dict[str, Any]:
     config = load_env_config()
     with KizenClient(config) as client:
         detail = sc_api.get_smart_connector(client, connector)
-        queued = 0
+        queued: int | None = 0
         if (
             status == "operational"
             and detail.get("status") not in ACTIVE_CONNECTOR_STATUSES
         ):
-            queued = sc_api.count_executions(
-                client, connector, status="queued", include_dry_run=False
-            )
+            try:
+                queued = sc_api.count_executions(
+                    client, connector, status="queued", include_dry_run=False
+                )
+            except KizenAPIError:
+                queued = None
 
     live = (detail.get("live_script") or {}).get("id")
     return {

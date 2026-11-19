@@ -223,7 +223,14 @@ def _set_status(
                     "[yellow]![/yellow] no published script — publish one with "
                     "`push --publish` or runs will have nothing to execute"
                 )
-            if plan["queued_live_runs"]:
+            if plan["queued_live_runs"] is None:
+                target.print(
+                    "[yellow]![/yellow] couldn't check for queued live "
+                    f"executions. See `smart-connectors executions list {name} "
+                    "--status queued`.",
+                    emoji=False,
+                )
+            elif plan["queued_live_runs"]:
                 target.print(
                     f"[yellow]![/yellow] {plan['queued_live_runs']} live executions "
                     "are pending. Once active, the connector resumes processing "

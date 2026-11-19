@@ -1244,6 +1244,24 @@ def test_activate_preview_warns_about_every_missing_prerequisite():
 
 
 @respx.mock
+def test_activate_still_previews_when_the_queued_count_fails():
+    # The count is only a warning, so a failed count must not block activate.
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+    respx.get(f"{BASE}/order_import/executions").mock(
+        return_value=httpx.Response(500, json={"detail": "Server Error"})
+    )
+
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "activate", "order_import", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "couldn't check for queued live executions" in result.output
+
+
+@respx.mock
 def test_activate_skips_the_queued_check_for_a_need_attention_connector():
     # The UI's toggle already shows need_attention as on, so it doesn't check.
     detail = {**DETAIL, "status": "need_attention"}
