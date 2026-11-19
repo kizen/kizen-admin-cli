@@ -21,12 +21,27 @@ called out explicitly under **Changed** or **Removed**.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
 
+### Changed
+
+- **schedule_activity's `schedule` and `assigned_to` are typed; a wrong
+  choice fails the dry-run.** A wrong `schedule.type`, a `with_delay` or
+  `on_or_around_date` type without its block, `delay_type: days`, a
+  `delay_value` or `date_offset_days` below 1, or an unknown
+  `assignment_type` is refused before anything is sent. Before, each came
+  back from the server as a 400.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+- **`field_ref` in a team-member block (notify, assign, cc, and
+  schedule_activity's assignee) now resolves to the field's UUID.** In the
+  notify and cc selectors and schedule_activity's assignee it was dropped
+  before, and the server answered with *"field_id is required"*;
+  `assign_team_member` refused it at plan time. `schedule.on_or_around_date`
+  takes `field_ref` too. A `field_id` beside it still wins.
 
 ## [0.7.0] — 2026-11-16
 
