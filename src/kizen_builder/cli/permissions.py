@@ -22,7 +22,9 @@ from kizen_builder.cli._shared import (
     read_json_file,
     warn_renamed_flag,
 )
+from kizen_builder.cli._where_used import render_where_used
 from kizen_builder.tools import permissions as perm_tools
+from kizen_builder.tools import references as ref_tools
 from kizen_builder.tools.planners import permissions as perm_planners
 
 roles_app = typer.Typer(help="Read and manage roles.", no_args_is_help=True)
@@ -369,6 +371,25 @@ def roles_update(
     )
 
 
+@roles_app.command(
+    "where-used",
+    epilog="Where-used endpoint and what it reports: see `kizen docs show permission-group`",
+)
+def roles_where_used(
+    role: str = typer.Argument(..., help="Role name or UUID."),
+    output: str = OUTPUT_OPTION,
+    json_out: bool = JSON_OPTION,
+) -> None:
+    """List what names a role: automations, homepages, sharing settings and more.
+
+    `roles delete` shows the same in its preview as `used_by`, and still deletes.
+    """
+    fmt = out.resolve_format(output, json_out)
+    with cli_errors(LookupError, ref_tools.WhereUsedRefused):
+        result = ref_tools.role_where_used(role)
+    render_where_used(result, fmt, f"role '{result['target']['role']}'")
+
+
 @roles_app.command("delete")
 def roles_delete(
     role: str = typer.Argument(..., help="Role name or UUID."),
@@ -484,6 +505,26 @@ def perms_group_update(
         yes=yes,
         json_out=json_out,
     )
+
+
+@perms_app.command(
+    "group-where-used",
+    epilog="Where-used endpoint and what it reports: see `kizen docs show permission-group`",
+)
+def perms_group_where_used(
+    group: str = typer.Argument(..., help="Permission group name or UUID."),
+    output: str = OUTPUT_OPTION,
+    json_out: bool = JSON_OPTION,
+) -> None:
+    """List what uses a permission group: roles, service accounts, filter groups.
+
+    `permissions group-delete` shows the same in its preview as `used_by`, and
+    still deletes.
+    """
+    fmt = out.resolve_format(output, json_out)
+    with cli_errors(LookupError, ref_tools.WhereUsedRefused):
+        result = ref_tools.group_where_used(group)
+    render_where_used(result, fmt, f"permission group '{result['target']['group']}'")
 
 
 @perms_app.command("group-delete")
