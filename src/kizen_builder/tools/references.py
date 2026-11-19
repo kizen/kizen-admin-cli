@@ -11,12 +11,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from kizen_builder.api import automations as auto_api
 from kizen_builder.api import references as ref_api
 from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools import permissions as perm_tools
 from kizen_builder.tools.activities import resolve_activity_id
-from kizen_builder.tools.automations import list_automations
 from kizen_builder.tools.objects import get_object
 
 ReferencesCall = Callable[[KizenClient], dict[str, Any]]
@@ -227,9 +227,13 @@ def group_where_used(ref: str) -> dict[str, Any]:
 def automation_where_used(api_name: str) -> dict[str, Any]:
     """Everything Kizen reports using one automation, starting with the
     automations whose `start_automation` steps start it."""
-    auto = next((a for a in list_automations() if a["api_name"] == api_name), None)
-    if auto is None:
-        raise LookupError(f"no automation with api_name '{api_name}'")
+    with KizenClient(load_env_config()) as client:
+        try:
+            auto = auto_api.get_automation(client, api_name)
+        except KizenAPIError as e:
+            if e.status_code != 404:
+                raise
+            raise LookupError(f"no automation with api_name '{api_name}'") from e
     result = where_used(
         lambda c: ref_api.automation_references(c, auto["id"]),
         f"automation '{api_name}'",

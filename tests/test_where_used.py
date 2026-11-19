@@ -691,7 +691,7 @@ AUTO_REFS = f"{FAKE_BASE_URL}/api/references/automations/{AUTO_ID}"
 
 @pytest.fixture
 def automation_list():
-    respx.get(AUTOMATIONS_URL).respond(
+    respx.get(AUTOMATIONS_URL, name="automation_list").respond(
         json={
             "results": [
                 {
@@ -702,6 +702,12 @@ def automation_list():
             ],
             "next": None,
         }
+    )
+    respx.get(f"{AUTOMATIONS_URL}/assign_region").respond(
+        json={"id": AUTO_ID, "api_name": "assign_region", "name": "Assign the region"}
+    )
+    respx.get(f"{AUTOMATIONS_URL}/nope").respond(
+        404, json={"detail": "No Automation matches the given query."}
     )
 
 
@@ -808,6 +814,15 @@ def test_automations_where_used_unknown_api_name(automation_list):
     result = runner.invoke(cli.app, ["automations", "where-used", "nope"])
     assert result.exit_code == 1
     assert _plain(result.stderr) == "error: no automation with api_name 'nope'"
+
+
+@respx.mock
+def test_automations_where_used_reads_one_automation_not_the_list(automation_list):
+    """The detail path takes the api_name, so a big tenant isn't paged through."""
+    respx.get(AUTO_REFS).respond(json=load_fixture("references/automation_unused.json"))
+    result = runner.invoke(cli.app, ["automations", "where-used", "assign_region"])
+    assert result.exit_code == 0, result.output
+    assert not respx.routes["automation_list"].called
 
 
 # ---------------------------------------------------------------------------
