@@ -17,6 +17,7 @@ from rich.markup import escape
 from rich.prompt import Confirm
 from rich.table import Table
 
+from kizen_builder import output as out
 from kizen_builder.cli._shared import (
     cli_errors,
     console,
@@ -30,8 +31,20 @@ from kizen_builder.tools.planners.automations import known_choices_addendum
 from kizen_builder.tools.plans import PlanError
 
 
-def _render_plan(plan: plan_tools.Plan, target: Console) -> None:
-    """Rich-render a plan (header, summary, operations table)."""
+def _render_plan(
+    plan: plan_tools.Plan, target: Console, *, brief: bool = False
+) -> None:
+    """Rich-render a plan (header, summary, operations table).
+
+    `brief` is for a plan about to apply without a prompt: piped, one line
+    stands in for the table, so the output leads with the results. The
+    reader saw the full plan in its dry run.
+    """
+    if brief and out.for_agent(target.file):
+        target.print(
+            f"Plan {plan.id} → env: {escape(plan.env)}, {len(plan.operations)} op(s)"
+        )
+        return
     target.print(f"[bold]Plan {plan.id}[/bold]  [dim]→ env: {plan.env}[/dim]")
     target.print(plan.summary)
     table = Table(title="Operations")
@@ -46,7 +59,11 @@ def _render_plan(plan: plan_tools.Plan, target: Console) -> None:
     target.print(table)
 
 
+_STATUS_SYMBOLS = {"ok": "✓", "skipped": "·", "failed": "✗", "adjusted": "~"}
+
+
 def _render_result(result: plan_tools.ApplyResult) -> None:
+    words = out.for_agent()
     table = Table(title=f"Results — plan {result.plan_id}")
     table.add_column("status", justify="center")
     table.add_column("kind")
@@ -54,11 +71,8 @@ def _render_result(result: plan_tools.ApplyResult) -> None:
     table.add_column("server uuid")
     table.add_column("note")
     for r in result.results:
-        symbol = {"ok": "✓", "skipped": "·", "failed": "✗", "adjusted": "~"}.get(
-            r.status, "?"
-        )
         table.add_row(
-            symbol,
+            r.status if words else _STATUS_SYMBOLS.get(r.status, "?"),
             r.kind,
             r.key,
             (r.server_uuid or ""),
@@ -117,10 +131,10 @@ def _run_mutation(
             )
         return
 
-    preview_target = err_console if json_out else console
-    _render_plan(plan, preview_target)
-
     all_skip = all(op.action == "skip" for op in plan.operations)
+    preview_target = err_console if json_out else console
+    _render_plan(plan, preview_target, brief=yes or all_skip)
+
     if all_skip:
         preview_target.print("[yellow]no changes to apply[/yellow]")
     elif not yes:

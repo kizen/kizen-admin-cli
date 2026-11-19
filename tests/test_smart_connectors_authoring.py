@@ -1668,7 +1668,7 @@ def test_executions_get_cli_shows_the_full_error_steps_and_files():
     text = " ".join(result.output.split())
     # In full, and verbatim despite the brackets.
     assert FAILED_ERROR in text
-    assert "execution_variable_eval │ cancelled" in text
+    assert "| execution_variable_eval | cancelled |" in text
     assert "report: — · output: — · input: orders.csv (7.1KB)" in text
 
 
@@ -1680,7 +1680,7 @@ def test_executions_get_cli_step_table_strips_the_type_prefix():
     )
     assert result.exit_code == 0, result.output
     text = " ".join(result.output.split())
-    assert "load_step_run │ completed │ orders │ Orders │ 2 │ 1 │ 3" in text
+    assert "| load_step_run | completed | orders | Orders | 2 | 1 | 3 |" in text
     assert "smart_connector_" not in text
     assert "report: Order Import_dry_run_output_1.xlsx (7.1KB)" in text
 
