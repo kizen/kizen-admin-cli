@@ -44,7 +44,8 @@ kizen automations steps edit flag_big_north_accounts flag --spec-file step.json 
 ## `steps add` — insert one step
 
 The spec is a **single step** (`step_type` + its config block; `field_ref`
-welcome). **Placement comes from the flags, not the spec:**
+welcome). `kizen automations step-types show <type> --variant <name>` prints
+one to start from. **Placement comes from the flags, not the spec:**
 
 - `--parent <key>` — attach under that step (or `--root` to become the new first step).
 - `--branch yes|no` — required when the parent is a `condition`/`goal`.
@@ -113,6 +114,10 @@ Consequences worth knowing:
   leaves them on the parent). A `next_or_finish` can't be added on its own.
   Confirmed live 2026-10-27, with `roundtrip --execute` clean after each add
   and remove.
+- **`add` of an `exit_loop` goes in with `--leaf`.** The spec is
+  `{"step_type": "exit_loop"}`, plus `"action_exit_loop": {"loop_to_exit":
+  "<loop key>"}` to end a loop around the innermost one. Without `--leaf` the
+  add is refused, because the steps it would adopt would never run.
 - **`remove` splices:** children adopt the removed step's parent and inherit its
   branch position, and `go_to` references retarget to that parent. Removing a
   condition or goal that has children requires `--cascade`, which deletes the

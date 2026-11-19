@@ -196,15 +196,32 @@ def insert_step(
         if parent is None or parent["type"] not in _BRANCHING_TYPES:
             raise PlanError("branch placement requires a condition or goal parent step")
 
+    if parent is not None and parent["type"] == "exit_loop":
+        raise PlanError(
+            f"'{parent_key}' is an exit_loop: an exit_loop ends the loop, so steps "
+            "after it never run"
+        )
+    adopted = (
+        [
+            c
+            for c in children_of(payload, parent_key, branch if parent else None)
+            if c["type"] not in _CLOSER_TYPES
+        ]
+        if adopt_children
+        else []
+    )
+    if adopted and new_step["type"] == "exit_loop":
+        raise PlanError(
+            "an exit_loop ends the loop, so steps after it never run; add it with "
+            f"--leaf (it would adopt {', '.join(c['key'] for c in adopted)})"
+        )
+
     report: dict[str, Any] = {"key": new_step["key"], "adopted": []}
-    if adopt_children:
-        for child in children_of(payload, parent_key, branch if parent else None):
-            if child["type"] in _CLOSER_TYPES:
-                continue
-            child["parent_key"] = new_step["key"]
-            child["parent_yes_no"] = ""
-            child["parent_condition"] = ""
-            report["adopted"].append(child["key"])
+    for child in adopted:
+        child["parent_key"] = new_step["key"]
+        child["parent_yes_no"] = ""
+        child["parent_condition"] = ""
+        report["adopted"].append(child["key"])
 
     new_step["parent_key"] = parent_key
     new_step["parent_yes_no"] = branch

@@ -371,7 +371,10 @@ def test_where_used_table(objects_from_fixtures):
     assert text.startswith("1 records with a value")
     assert "Used by" in text
     assert "Lead follow-up with merge {{ entity" in text
-    assert "Route leads by owner conditions: condition - 3, condition - 1" in text
+    assert (
+        "| automations | Route leads by owner | conditions: condition - 3, "
+        "condition - 1 |" in text
+    )
 
 
 @respx.mock

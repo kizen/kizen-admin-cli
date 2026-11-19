@@ -28,6 +28,8 @@ automation steps).
   step on the merged condition's `no` branch was removed by hand afterwards:
   the condition's `no_steps` is emptied and the `order`s after it are
   renumbered. Re-capture from the drift tier's `drift_loops` spec.
+- `automations/nested_loops.raw.json` — built in Kizen's builder 2026-11-11,
+  read back unchanged; its exit loop targets the outer loop.
 - `records/`, `executions/`, `team/` — tool-level `--json` output.
   Exceptions: `executions/detail_form_submission.json` and
   `executions/history_form_submission.json` are hand-authored to the OpenAPI
@@ -62,9 +64,15 @@ automation steps).
   person and service-account names, emails, host and business id replaced).
   `list.json` is a `GET /api/mcp-servers` page: the system `readonly` server
   plus `support_tools`, whose `detail.json` is shared with one service account
-  as a team member. `detail_readonly.json`, `tools.json`, `step_options.json`
-  and `events_history.json` (newest first; three updates and the create) are
-  the matching raw responses.
+  as a team member. Both were re-captured 2026-11-11 (after Kizen's
+  2026-11-10 release), when `support_tools` also took one `deep_wiki` upstream
+  tool. `detail_readonly.json`, `tools.json`, `step_options.json` and
+  `events_history.json` (newest first; three updates and the create) are the
+  2026-10-27 raw responses. `upstream_servers.json` (a
+  `GET /api/mcp-upstream-servers` page: `deep_wiki`, connected with no auth,
+  and `slack`, needing OAuth with no tools) and `upstream_tools.json`
+  (`deep_wiki`'s `/tools`) are 2026-11-11 captures with upstream server, tool
+  and owner ids replaced.
 - `references/` — raw `GET /api/references/custom-objects/{o}/fields/{f}`
   bodies from cli-testing, 2026-11-11. `field_used.json` is a team-selector
   field named by one merge-field message, two automations' conditions and one
