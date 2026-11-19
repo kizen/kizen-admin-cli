@@ -769,10 +769,10 @@ def test_automations_where_used_table(automation_list):
     text = _plain(result.stdout)
     assert text.startswith("Used by")
     assert (
-        "automations Link the organization steps: start_automation - 7, "
-        "start_automation - 11; use types: direct" in text
+        "| automations | Link the organization | steps: start_automation - 7, "
+        "start_automation - 11; use types: direct |" in text
     )
-    assert "messages (unnamed) use types: conditional_content" in text
+    assert "| messages | (unnamed) | use types: conditional_content |" in text
 
 
 @respx.mock
@@ -865,9 +865,12 @@ def test_activities_where_used_table(activity_lookup):
     assert result.exit_code == 0, result.output
     text = _plain(result.stdout)
     assert text.startswith("1 logged activities Used by")
-    assert "Summarize meetings steps: schedule_activity - 4" in text
-    assert "Mark meeting follow-ups done triggers: activity_logged - 1" in text
-    assert "Team Homepage dashlets: [default]" in text
+    assert "| automations | Summarize meetings | steps: schedule_activity - 4 |" in text
+    assert (
+        "| automations | Mark meeting follow-ups done | "
+        "triggers: activity_logged - 1 |" in text
+    )
+    assert "| homepages | Team Homepage | dashlets: [default] |" in text
 
 
 @respx.mock
