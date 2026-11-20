@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from kizen_builder.api import smart_connectors as sc_api
-from kizen_builder.api.client import KizenClient
+from kizen_builder.api.client import KizenAPIError, KizenClient
 from kizen_builder.config import load_env_config
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors.authoring._helpers import _connector_ref
@@ -16,10 +16,19 @@ CONNECTOR_STATUSES = ("setup", "operational", "need_attention", "inactive")
 # attempt to: "Status can only be set to 'Operational' or 'Inactive' on an
 # update." Confirmed live 2026-09-25.
 SETTABLE_CONNECTOR_STATUSES = ("operational", "inactive")
+# The statuses the UI treats as active: its "Active?" toggle shows on for both.
+# react-app pages/SmartConnectors/helpers.ts, read 2026-11-17.
+ACTIVE_CONNECTOR_STATUSES = ("operational", "need_attention")
 
 
 def plan_set_status(connector: str, status: str) -> dict[str, Any]:
-    """Preview a status change. ``operational`` is what a live run requires."""
+    """Preview a status change. ``operational`` is what a live run requires.
+
+    Activating an inactive connector also counts its queued live executions,
+    which resume once it's active. The UI's "Active?" toggle warns about them
+    the same way (FlowBuilder ControlBar, read 2026-11-17). The count is only
+    a warning, so a failed count leaves ``queued_live_runs`` as ``None``.
+    """
     if status not in SETTABLE_CONNECTOR_STATUSES:
         known = (
             f"'{status}' is set by the server, not by an update"
@@ -32,6 +41,17 @@ def plan_set_status(connector: str, status: str) -> dict[str, Any]:
     config = load_env_config()
     with KizenClient(config) as client:
         detail = sc_api.get_smart_connector(client, connector)
+        queued: int | None = 0
+        if (
+            status == "operational"
+            and detail.get("status") not in ACTIVE_CONNECTOR_STATUSES
+        ):
+            try:
+                queued = sc_api.count_executions(
+                    client, connector, status="queued", include_dry_run=False
+                )
+            except KizenAPIError:
+                queued = None
 
     live = (detail.get("live_script") or {}).get("id")
     return {
@@ -44,6 +64,7 @@ def plan_set_status(connector: str, status: str) -> dict[str, Any]:
         "has_live_script": bool(live),
         "load_steps": len((detail.get("flow") or {}).get("loads") or []),
         "execution_variables": len(detail.get("execution_variables") or []),
+        "queued_live_runs": queued,
     }
 
 

@@ -122,7 +122,7 @@ def update_smart_connector(
 
     Everything past creation is a PATCH against this endpoint:
     ``source_file_id``, ``execution_variables``, ``flow``, ``kizen_data_seeds``,
-    and the ``status`` flip to ``operational``.
+    ``sql_parameters``, and the ``status`` flip to ``operational``.
     """
     return client.patch(f"{_BASE}/{connector}", json=payload)
 
@@ -188,6 +188,17 @@ def list_executions(
         }
     )
     return client.paginate(f"{_BASE}/{connector}/executions", params or None)
+
+
+def count_executions(
+    client: KizenClient, connector: str, *, status: str, include_dry_run: bool
+) -> int:
+    """How many executions match, read from the list's ``count`` (one row fetched)."""
+    page = client.get(
+        f"{_BASE}/{connector}/executions",
+        params={"status": status, "include_dry_run": include_dry_run, "page_size": 1},
+    )
+    return int(page.get("count") or 0)
 
 
 def get_execution(

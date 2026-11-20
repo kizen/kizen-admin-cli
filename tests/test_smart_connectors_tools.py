@@ -19,7 +19,7 @@ import kizen_builder.cli as cli
 from kizen_builder.tools import smart_connectors as sct
 from kizen_builder.tools.plans import PlanError
 from kizen_builder.tools.smart_connectors import pull as sc_pull
-from tests.conftest import FAKE_BASE_URL
+from tests.conftest import FAKE_BASE_URL, plain
 
 BASE = f"{FAKE_BASE_URL}/api/smart-connectors"
 
@@ -526,3 +526,167 @@ def test_run_executes_sql_when_chdb_present(tmp_path):
     assert meta["stats"]["num_rows"] == 2
     assert any(f["file_name"] == "out.csv" for f in meta["output_files"])
     assert Path(meta["output_files"][0]["file_path"]).exists()
+
+
+# ---------------------------------------------------------------------------
+# set-sql-params
+# ---------------------------------------------------------------------------
+
+
+def _set_sql_params(*args):
+    return CliRunner().invoke(
+        cli.app, ["smart-connectors", "set-sql-params", "upload_counties", *args]
+    )
+
+
+@respx.mock
+def test_set_sql_params_dry_run_merges_over_live_and_writes_nothing():
+    detail = {**DETAIL, "sql_parameters": {"sql_param_2": "west"}}
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    write = respx.patch(f"{BASE}/conn-uuid")
+
+    result = _set_sql_params("--param", "sql_param_1=test value", "--dry-run")
+
+    assert result.exit_code == 0, result.output
+    assert "+ sql_param_1 = 'test value'" in result.output
+    assert "sql_param_2" not in result.output
+    assert not write.called
+
+
+@respx.mock
+def test_set_sql_params_patches_the_whole_merged_dict():
+    detail = {
+        **DETAIL,
+        "status": "setup",
+        "sql_parameters": {"sql_param_2": "west", "sql_param_1": "old"},
+    }
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    merged = {"sql_param_2": "west", "sql_param_1": "test value"}
+    write = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200, json={"api_name": "upload_counties", "sql_parameters": merged}
+        )
+    )
+
+    # Padded like a sloppy paste: the UI trims both name and value.
+    result = _set_sql_params("--param", " sql_param_1 = test value ", "--yes", "--json")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(write.calls.last.request.content) == {"sql_parameters": merged}
+    assert json.loads(result.stdout)["sql_parameters"] == merged
+
+
+@respx.mock
+def test_set_sql_params_skips_the_write_when_nothing_changes():
+    detail = {**DETAIL, "sql_parameters": {"sql_param_1": "test value"}}
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    write = respx.patch(f"{BASE}/conn-uuid")
+
+    result = _set_sql_params("--param", "sql_param_1=test value", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert "No change to upload_counties's SQL parameters" in result.output
+
+    # DETAIL is operational, but nothing is written, so nothing deactivates.
+    as_json = _set_sql_params("--param", "sql_param_1=test value", "--json")
+    assert as_json.exit_code == 0, as_json.output
+    plan = json.loads(as_json.stdout)
+    assert plan["changed"] is False
+    assert plan["deactivates"] is False
+    assert not write.called
+
+
+@respx.mock
+def test_set_sql_params_rejects_a_param_without_equals_before_any_call():
+    result = _set_sql_params("--param", "sql_param_1", "--dry-run")
+
+    assert result.exit_code == 2
+    assert "name=value" in plain(result.output)
+    assert not respx.calls
+
+
+@respx.mock
+def test_set_sql_params_unset_removes_only_the_named_param():
+    detail = {
+        **DETAIL,
+        "status": "setup",
+        "sql_parameters": {"sql_param_2": "west", "sql_param_1": "test value"},
+    }
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    write = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "api_name": "upload_counties",
+                "sql_parameters": {"sql_param_2": "west"},
+            },
+        )
+    )
+
+    dry = _set_sql_params("--unset", "sql_param_1", "--dry-run")
+    assert dry.exit_code == 0, dry.output
+    assert "- sql_param_1" in dry.output
+    assert not write.called
+
+    result = _set_sql_params("--unset", "sql_param_1", "--yes")
+    assert result.exit_code == 0, result.output
+    assert json.loads(write.calls.last.request.content) == {
+        "sql_parameters": {"sql_param_2": "west"}
+    }
+
+
+@respx.mock
+def test_set_sql_params_needs_a_change_and_no_name_both_set_and_unset():
+    none = _set_sql_params("--dry-run")
+    assert none.exit_code == 2
+    assert "at least one --param or --unset" in plain(none.output)
+
+    both = _set_sql_params("--param", "sql_param_2=west", "--unset", "sql_param_2")
+    assert both.exit_code == 2
+    assert "both set and unset: sql_param_2" in plain(both.output)
+
+    twice = _set_sql_params("--param", "sql_param_1=a", "--param", "sql_param_1=b")
+    assert twice.exit_code == 2
+    assert "--param sql_param_1 is given twice" in plain(twice.output)
+    assert not respx.calls
+
+
+@respx.mock
+@pytest.mark.parametrize("status", ["operational", "need_attention"])
+def test_set_sql_params_deactivates_an_active_connector_like_the_ui(status):
+    detail = {**DETAIL, "status": status, "sql_parameters": {}}
+    respx.get(f"{BASE}/upload_counties").mock(
+        return_value=httpx.Response(200, json=detail)
+    )
+    params = {"sql_param_1": "test value"}
+    write = respx.patch(f"{BASE}/conn-uuid").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "api_name": "upload_counties",
+                "sql_parameters": params,
+                "status": "inactive",
+            },
+        )
+    )
+
+    dry = _set_sql_params("--param", "sql_param_1=test value", "--dry-run")
+    assert dry.exit_code == 0, dry.output
+    assert f"status {status} → inactive" in dry.output
+    assert not write.called
+
+    result = _set_sql_params("--param", "sql_param_1=test value", "--yes")
+    assert result.exit_code == 0, result.output
+    assert json.loads(write.calls.last.request.content) == {
+        "sql_parameters": params,
+        "status": "inactive",
+    }
+    assert "smart-connectors activate" in result.output
