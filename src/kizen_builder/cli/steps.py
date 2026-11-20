@@ -22,6 +22,10 @@ from kizen_builder.cli.automations import autos_app, print_warnings
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
 from kizen_builder.tools.findings import SpecProblems
+from kizen_builder.tools.planners.automations import (
+    _block_field_for,
+    step_planned_defaults,
+)
 from kizen_builder.tools.plans import PlanError
 
 steps_app = typer.Typer(
@@ -65,6 +69,10 @@ def _detect_message_auto_versions(diff: list[dict[str, Any]]) -> list[str]:
                 f"(id {id_change['before']!r} → {id_change['after']!r})"
             )
     return callouts
+
+
+def _with_defaults(report: dict[str, Any], defaults: list[str]) -> dict[str, Any]:
+    return {**report, "defaults": defaults} if defaults else report
 
 
 def _run_step_patch(
@@ -229,7 +237,12 @@ def steps_edit(
         normalized = auto_tools.normalize_step_patch(
             dict(patch), key, step["type"], payload, target_object
         )
-        return step_tools.edit_step(payload, key, normalized)
+        cfg = _block_field_for(step["type"])
+        defaults = step_planned_defaults(
+            key, step["type"], patch.get(cfg) or {}, normalized.get(cfg) or {}
+        )
+        report = step_tools.edit_step(payload, key, normalized)
+        return _with_defaults(report, defaults)
 
     _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
 
@@ -287,6 +300,7 @@ def steps_add(
         target_object = (raw.get("custom_object") or {}).get("name")
         parent_key, adopt = parent or None, not leaf
         warnings += auto_tools.check_step_spec(spec, payload)
+        defaults: list[str] = []
         if spec.get("step_type") == "loop":
             loop, closer, item = auto_tools.build_wire_loop(
                 spec, payload, target_object
@@ -296,8 +310,13 @@ def steps_add(
             )
         else:
             wire = auto_tools.build_wire_step(spec, payload, target_object)
+            step_type = spec["step_type"]
+            cfg = _block_field_for(step_type)
+            defaults = step_planned_defaults(
+                wire["key"], step_type, spec.get(cfg) or {}, wire.get(cfg) or {}
+            )
             report = step_tools.insert_step(payload, wire, parent_key, branch, adopt)
-        return report
+        return _with_defaults(report, defaults)
 
     _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
 

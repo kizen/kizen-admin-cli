@@ -1420,6 +1420,106 @@ def test_create_related_entity_reduces_expanded_variable_refs(patch_live_lookups
     assert action["target_variable"] == "new_record"
 
 
+def _related_entity_spec(target_object: str, field: str, **extra) -> dict:
+    block = {
+        "target_custom_object": "encounters",
+        "new_entity_name": "Follow-up",
+        "new_entity_owner_type": "assign_from_context_record",
+        "context_entity_field": field,
+        **extra,
+    }
+    return {
+        **_one_step_spec("create_related_entity", block),
+        "target_object": target_object,
+    }
+
+
+@pytest.mark.parametrize(
+    "target_object, field, planned, many",
+    [
+        ("patients", "encounters", "add_only", "is"),
+        ("document_sets", "primary_audit_log_record", "overwrite", "isn't"),
+    ],
+    ids=["to-many", "to-one"],
+)
+def test_create_related_entity_resolution_follows_cardinality(
+    patch_live_lookups, target_object, field, planned, many
+):
+    """overwrite on a to-many field unlinks every record already related."""
+    (op,) = plan_create_automation(
+        _related_entity_spec(target_object, field)
+    ).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == planned
+    assert op.preview["defaults"] == [
+        f"step 'only' context_entity_field_resolution: '{planned}' "
+        f"(context_entity_field {many} to-many)"
+    ]
+
+
+def test_create_related_entity_explicit_resolution_wins(patch_live_lookups):
+    spec = _related_entity_spec(
+        "patients", "encounters", context_entity_field_resolution="overwrite"
+    )
+    (op,) = plan_create_automation(spec).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == "overwrite"
+    assert "defaults" not in op.preview
+
+
+_CRE_STEP_ID = "6a2e4c8f-1b3d-4f5a-9c7e-0d2b4f6a8c05"
+
+
+@pytest.mark.parametrize(
+    "live_resolution, planned",
+    [("overwrite", "overwrite"), (None, "add_only")],
+)
+def test_update_omitting_the_context_resolution_keeps_the_live_one(
+    patch_live_lookups, monkeypatch, live_resolution, planned
+):
+    import kizen_builder.tools.planners.automations as ma
+
+    spec = _related_entity_spec("patients", "encounters")
+    spec["steps"][0]["id"] = _CRE_STEP_ID
+    live_step = {
+        "id": _CRE_STEP_ID,
+        "step_type": "create_related_entity",
+        "order": 0,
+        "description": "Create",
+        "user_description": "",
+        "parent_step_id": None,
+        "parent_condition": "",
+        "action_on_failure": "silent_continue",
+        "should_skip_execution": False,
+        "error_notification_severity_level": "inherit",
+        "action_create_related_entity": {
+            "context_entity_field_resolution": live_resolution
+        },
+    }
+    spec["steps"][0].update(_live_step_keys(live_step))
+    raw = {
+        "id": "7b3f5d9a-2c4e-4a6b-8d0f-1e3a5c7b9d06",
+        "api_name": spec["api_name"],
+        "name": spec["name"],
+        "revision": 2,
+        "active": False,
+        "triggers": [],
+        "steps": [live_step],
+    }
+    listing = [{"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    (op,) = plan_update_automation(spec).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == planned
+    if live_resolution:
+        assert "only" in op.preview["keeps_live"]
+        assert "defaults" not in op.preview
+    else:
+        assert "only" not in op.preview.get("keeps_live", [])
+        assert len(op.preview["defaults"]) == 1
+
+
 @pytest.mark.parametrize(
     "target", ["client_client", {"name": "client_client"}, {"id": "client_client"}]
 )
@@ -7226,6 +7326,214 @@ def test_field_updated_ids_and_reads_need_no_lookup(patch_live_lookups):
         {"field_ref": "encounter_priority", "from_value": urgent, "to_value": read}
     )
     assert block["from_value"] == block["to_value"] == urgent
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_value_without_a_mode_plans_specific_value(
+    patch_live_lookups, goal
+):
+    """Kizen stores any_including_blank for a mode left out, which fired the
+    trigger on every change."""
+    block = _field_updated_values(
+        {
+            "field_ref": "encounter_priority",
+            "from_value": "Routine",
+            "to_value": "Urgent",
+        },
+        goal=goal,
+    )
+    assert block["from_match_mode"] == block["to_match_mode"] == "specific_value"
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_date_range_without_a_mode_plans_date_between(
+    patch_live_lookups, goal
+):
+    """The UI stores date_between for a date range; Kizen accepts
+    specific_value for one too (probed 2026-11-17)."""
+    date_range = {
+        "date_start": "2026-07-05T06:15:00.000Z",
+        "date_end": "2026-07-19T04:00:00.000Z",
+        "type": "date_range",
+    }
+    block = _field_updated_values(
+        {"field_ref": "encounter_start", "to_value": date_range}, goal=goal
+    )
+    assert block["to_match_mode"] == "date_between"
+    assert block["to_value"] == date_range
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_explicit_mode_wins_and_no_value_gets_no_mode(
+    patch_live_lookups, goal
+):
+    block = _field_updated_values(
+        {
+            "field_ref": "encounter_priority",
+            "from_match_mode": "any_excluding_blank",
+            "from_value": "Routine",
+            "to_match_mode": "any_including_blank",
+            "to_value": "Urgent",
+        },
+        goal=goal,
+    )
+    assert block["from_match_mode"] == "any_excluding_blank"
+    assert block["to_match_mode"] == "any_including_blank"
+    bare = _field_updated_values({"field_ref": "encounter_priority"}, goal=goal)
+    assert "from_match_mode" not in bare and "to_match_mode" not in bare
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_the_preview_names_a_planned_match_mode(patch_live_lookups, goal):
+    spec = _field_ref_trigger_spec(
+        "field_updated",
+        {
+            "field_ref": "encounter_priority",
+            "fire_on_create": False,
+            "to_value": "Urgent",
+        },
+        goal=goal,
+        target="encounters",
+    )
+    (op,) = plan_create_automation(spec).operations
+    where = (
+        "step 'g0' goal trigger 'goal_trigger_0'"
+        if goal
+        else "trigger 'trigger.field_updated.1'"
+    )
+    assert op.preview["defaults"] == [
+        f"{where} to_match_mode: 'specific_value' (to_value is set)"
+    ]
+
+
+_FU_TRIGGER_ID = "3f0f2a8e-6f5e-4d55-9a57-0c3c3e1f8b01"
+_FU_GOAL_ID = "8d1c7a52-2b8e-4f0e-a3f4-6b1f5d0c9e02"
+_FU_GOAL_TRIGGER_ID = "c4b6e0d9-7a3f-4e21-8f5b-2d9a1c7e4f03"
+
+
+def _field_updated_update(live_value: bool) -> tuple[dict, dict]:
+    """A live encounters automation whose trigger and goal trigger store
+    any_including_blank, with a to_value of Urgent or none, and an update
+    spec of it that sets to_value Urgent and leaves the modes out."""
+    urgent = _option_id("encounters", "encounter_priority", "Urgent")
+    live_block = {
+        "from_match_mode": "any_including_blank",
+        "to_match_mode": "any_including_blank",
+        "from_value": None,
+        "to_value": {"id": urgent} if live_value else None,
+    }
+    goal = {
+        "id": _FU_GOAL_ID,
+        "step_type": "goal",
+        "order": 0,
+        "description": "Goal",
+        "user_description": "",
+        "parent_step_id": None,
+        "parent_condition": "",
+        "action_on_failure": "silent_continue",
+        "should_skip_execution": False,
+        "error_notification_severity_level": "inherit",
+        "step_goal": {
+            "wait_type": "never",
+            "triggers": [
+                {
+                    "id": _FU_GOAL_TRIGGER_ID,
+                    "trigger_type": "field_updated",
+                    "trigger_field_updated": live_block,
+                }
+            ],
+        },
+    }
+    raw = {
+        "id": "5e7d9b1a-0c2f-4a8e-b6d3-1f4e7a9c2b04",
+        "api_name": "priority_urgent",
+        "name": "Priority Urgent",
+        "revision": 3,
+        "active": False,
+        "triggers": [
+            {
+                "id": _FU_TRIGGER_ID,
+                "trigger_type": "field_updated",
+                "trigger_field_updated": dict(live_block),
+            }
+        ],
+        "steps": [goal],
+    }
+    spec_block = {
+        "field_ref": "encounter_priority",
+        "fire_on_create": False,
+        "to_value": "Urgent",
+    }
+    spec = {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "record_based",
+        "target_object": "encounters",
+        "triggers": [
+            {
+                "trigger_type": "field_updated",
+                "id": _FU_TRIGGER_ID,
+                "order": 1,
+                "trigger_field_updated": spec_block,
+            }
+        ],
+        "steps": [
+            {
+                "key": "g0",
+                "id": _FU_GOAL_ID,
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {
+                    "wait_type": "never",
+                    "triggers": [
+                        {
+                            "id": _FU_GOAL_TRIGGER_ID,
+                            "trigger_type": "field_updated",
+                            "trigger_field_updated": spec_block,
+                        }
+                    ],
+                },
+                **_live_step_keys(goal),
+            }
+        ],
+    }
+    return raw, spec
+
+
+@pytest.mark.parametrize(
+    "live_value, planned",
+    [(True, "any_including_blank"), (False, "specific_value")],
+    ids=["live_value_keeps_mode", "value_added_gets_default"],
+)
+def test_update_omitting_a_match_mode_keeps_the_live_one(
+    patch_live_lookups, monkeypatch, live_value, planned
+):
+    """Kizen stores a mode for a side with no value, so a live mode is kept
+    only beside a live value: adding to_value to an any-change trigger must
+    not keep any_including_blank."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw, spec = _field_updated_update(live_value)
+    listing = [{"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    (op,) = plan_update_automation(spec).operations
+    trigger = op.payload["triggers"][1]
+    (goal_trigger,) = op.payload["steps"][0]["step_goal"]["triggers"]
+    assert trigger["trigger_field_updated"]["to_match_mode"] == planned
+    assert goal_trigger["trigger_field_updated"]["to_match_mode"] == planned
+    named = {trigger["key"], "g0"}
+    if live_value:
+        assert named <= set(op.preview["keeps_live"])
+        assert "defaults" not in op.preview
+    else:
+        assert not named & set(op.preview.get("keeps_live", []))
+        assert op.preview["defaults"] == [
+            f"trigger '{trigger['key']}' to_match_mode: 'specific_value' (to_value is set)",
+            "step 'g0' goal trigger 'goal_trigger_0' to_match_mode: 'specific_value' "
+            "(to_value is set)",
+        ]
 
 
 @pytest.mark.parametrize(

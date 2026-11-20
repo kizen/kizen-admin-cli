@@ -429,7 +429,7 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
 
     payload, keeps_live = _update_payload(auto, ctx, current, checked.warnings)
     preview = _automation_preview(
-        env, auto, payload, ctx, checked, live_active=live_active
+        env, auto, payload, ctx, checked, live_active=live_active, current=current
     )
     preview.update(_folder_preview(auto, ctx, current))
     preview["current_revision"] = current.get("revision")
@@ -626,6 +626,9 @@ _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
     "update_variable": (_KeptBlockKeys(("value_resolution",)),),
     # Read as the loop's id; `resolve_exit_loop_targets` turns it into the key.
     "exit_loop": (_KeptBlockKeys(("step",), set_by=("loop_to_exit", "step")),),
+    # The planner always sends this one. Carried so its add_only default
+    # for a to-many field doesn't replace a live overwrite.
+    "create_related_entity": (_KeptBlockKeys(("context_entity_field_resolution",)),),
 }
 
 
@@ -687,6 +690,69 @@ def _kept_block(
     return field, block, changed
 
 
+def _kept_match_modes(
+    spec: AutomationStepDef | AutomationTriggerDef,
+    built: dict[str, Any],
+    live: dict[str, Any],
+) -> tuple[str | None, dict[str, Any], bool]:
+    """`_kept_block` for a field_updated trigger, and for a goal's
+    field_updated triggers matched by id: a side whose value the spec sets
+    without a match mode keeps the live mode when the live side has a value
+    too. Kizen stores a mode for a side with no value, so a value added on
+    update gets the create default instead."""
+    field = trigger_config_field("field_updated")
+    if isinstance(spec, AutomationTriggerDef):
+        if spec.trigger_type != "field_updated":
+            return None, {}, False
+        block = _keep_live_match_modes(
+            _to_dict(spec.trigger_field_updated),
+            built.get(field) or {},
+            live.get(field) or {},
+        )
+        return field, block, block != built.get(field)
+    if spec.step_type != "goal" or spec.step_goal is None:
+        return None, {}, False
+    goal = built.get("step_goal") or {}
+    live_goal_triggers = {
+        t["id"]: t
+        for t in (live.get("step_goal") or {}).get("triggers") or []
+        if t.get("id")
+    }
+    triggers = []
+    for t_spec, t_built in zip(
+        spec.step_goal.triggers, goal.get("triggers") or [], strict=True
+    ):
+        t_live = live_goal_triggers.get(t_spec.get("id"))
+        if t_built.get("type") == "field_updated" and t_live:
+            t_built = {
+                **t_built,
+                field: _keep_live_match_modes(
+                    t_spec.get(field) or {},
+                    t_built.get(field) or {},
+                    t_live.get(field) or {},
+                ),
+            }
+        triggers.append(t_built)
+    block = {**goal, "triggers": triggers}
+    return "step_goal", block, block != goal
+
+
+def _keep_live_match_modes(
+    spec: dict[str, Any], built: dict[str, Any], live: dict[str, Any]
+) -> dict[str, Any]:
+    out = dict(built)
+    for side in ("from", "to"):
+        mode = f"{side}_match_mode"
+        if (
+            spec.get(f"{side}_value") is not None
+            and not spec.get(mode)
+            and live.get(f"{side}_value") is not None
+            and live.get(mode)
+        ):
+            out[mode] = live[mode]
+    return out
+
+
 def _carry_omitted_step_keys(
     payload: dict[str, Any], auto: AutomationDef, current: dict[str, Any]
 ) -> tuple[dict[str, Any], list[str]]:
@@ -720,6 +786,8 @@ def _carry_omitted_step_keys(
         if values.get("should_skip_execution") is not True:
             values.pop("continue_with_branch", None)
         field, block, block_kept = _kept_block(spec, built, live)
+        if field is None:
+            field, block, block_kept = _kept_match_modes(spec, built, live)
         if block_kept or any(built.get(k) != v for k, v in values.items()):
             kept.append(built["key"])
         out = {**built, **values}
@@ -985,6 +1053,7 @@ def _automation_preview(
     checked: CheckedSpec,
     *,
     live_active: bool | None = None,
+    current: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the `--dry-run` preview cell for one automation.
 
@@ -995,6 +1064,8 @@ def _automation_preview(
     automation)`) instead of a bare bool, so a reviewer scanning
     `--dry-run` output sees a change, not a value. ``plan_create_automation``
     has no live state to compare against and omits ``live_active``.
+    ``current``, the live automation, tells a value kept live from one the
+    planner chose.
     """
     active_display: Any = auto.active
     if live_active is not None and live_active != auto.active:
@@ -1011,6 +1082,7 @@ def _automation_preview(
         *_unlaid_rule_warnings(auto, payload, ctx),
         *exit_loop_dead_end_warnings(payload["steps"]),
     ]
+    defaults = [*checked.defaults, *_planned_defaults(auto, payload, current)]
     return {
         "env": env,
         "api_name": auto.api_name,
@@ -1020,9 +1092,87 @@ def _automation_preview(
         "active": active_display,
         "trigger_count": len(auto.triggers),
         "step_count": len(auto.steps),
-        **({"defaults": checked.defaults} if checked.defaults else {}),
+        **({"defaults": defaults} if defaults else {}),
         **({"warnings": warnings} if warnings else {}),
     }
+
+
+def _planned_defaults(
+    auto: AutomationDef, payload: dict[str, Any], current: dict[str, Any] | None
+) -> list[str]:
+    """A `defaults` line for each match mode and context_entity_field
+    resolution the planner chose: the spec leaves it out, and the live
+    trigger or step doesn't supply it."""
+    live = current or {}
+    live_triggers = {t["id"]: t for t in live.get("triggers") or [] if t.get("id")}
+    live_steps = {s["id"]: s for s in live.get("steps") or [] if s.get("id")}
+    field = trigger_config_field("field_updated")
+    lines: list[str] = []
+    for t, built in zip(triggers_with_manual(auto), payload["triggers"], strict=True):
+        if t.trigger_type == "field_updated":
+            lines += _match_mode_defaults(
+                f"trigger '{built['key']}'",
+                _to_dict(t.trigger_field_updated),
+                built[field],
+                (live_triggers.get(t.id or "") or {}).get(field) or {},
+            )
+    for step, built in zip(auto.steps, payload["steps"], strict=True):
+        if step.step_type in ("create_related_entity", "goal"):
+            cfg = _block_field_for(step.step_type)
+            lines += step_planned_defaults(
+                step.key,
+                step.step_type,
+                _to_dict(getattr(step, cfg)),
+                built.get(cfg) or {},
+                (live_steps.get(step.id or "") or {}).get(cfg) or {},
+            )
+    return lines
+
+
+def step_planned_defaults(
+    key: str,
+    step_type: str,
+    spec: dict[str, Any],
+    built: dict[str, Any],
+    live: dict[str, Any] | None = None,
+) -> list[str]:
+    """`_planned_defaults` for one step's config block."""
+    live = live or {}
+    if step_type == "create_related_entity":
+        k = "context_entity_field_resolution"
+        if built.get("context_entity_field") and not spec.get(k) and not live.get(k):
+            many = "is" if built[k] == "add_only" else "isn't"
+            return [
+                f"step '{key}' {k}: '{built[k]}' (context_entity_field {many} to-many)"
+            ]
+        return []
+    if step_type != "goal":
+        return []
+    field = trigger_config_field("field_updated")
+    live_triggers = {t["id"]: t for t in live.get("triggers") or [] if t.get("id")}
+    lines: list[str] = []
+    nested = zip(spec.get("triggers") or [], built.get("triggers") or [], strict=True)
+    for t_spec, t_built in nested:
+        if t_built["type"] == "field_updated":
+            lines += _match_mode_defaults(
+                f"step '{key}' goal trigger '{t_built['key']}'",
+                t_spec.get(field) or {},
+                t_built[field],
+                (live_triggers.get(t_spec.get("id")) or {}).get(field) or {},
+            )
+    return lines
+
+
+def _match_mode_defaults(
+    where: str, spec: dict[str, Any], built: dict[str, Any], live: dict[str, Any]
+) -> list[str]:
+    lines = []
+    for side in ("from", "to"):
+        mode = f"{side}_match_mode"
+        kept = live.get(f"{side}_value") is not None and live.get(mode)
+        if built.get(mode) and not spec.get(mode) and not kept:
+            lines.append(f"{where} {mode}: '{built[mode]}' ({side}_value is set)")
+    return lines
 
 
 def _warning_line(f: Finding) -> str:
@@ -1755,6 +1905,15 @@ def _trigger_field_updated(block: dict[str, Any], ctx: LiveContext) -> dict[str,
         v = out.get(k)
         if isinstance(v, dict) and v.get("id"):
             out[k] = v["id"]
+    # Kizen stores any_including_blank for a mode left out, so a value
+    # without one fired on every change (confirmed live 2026-11-16). A date
+    # range gets date_between, as the UI stores it; Kizen also accepts
+    # specific_value for one (probed 2026-11-17).
+    for side in ("from", "to"):
+        value = out.get(f"{side}_value")
+        if value is not None and not out.get(f"{side}_match_mode"):
+            is_range = isinstance(value, dict) and value.get("type") == "date_range"
+            out[f"{side}_match_mode"] = "date_between" if is_range else "specific_value"
     return out
 
 
@@ -3213,6 +3372,7 @@ def _step_modify_related_entities(
 def _step_create_related_entity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
+    context_field = _resolve_field(block.get("context_entity_field"), auto, ctx)
     out: dict[str, Any] = {
         "new_entity_name": block.get("new_entity_name"),
         "new_entity_name_html": block.get("new_entity_name_html"),
@@ -3226,9 +3386,7 @@ def _step_create_related_entity(
         "new_entity_owner_employees": [
             _unwrap_id(e) for e in (block.get("new_entity_owner_employees") or []) if e
         ],
-        "context_entity_field": _resolve_field(
-            block.get("context_entity_field"), auto, ctx
-        ),
+        "context_entity_field": context_field,
         "target_custom_object": _resolve_object(
             block.get("target_custom_object") or block.get("target_object"), ctx
         ),
@@ -3236,9 +3394,8 @@ def _step_create_related_entity(
         "variable_field_resolution": block.get(
             "variable_field_resolution", "overwrite"
         ),
-        "context_entity_field_resolution": block.get(
-            "context_entity_field_resolution", "overwrite"
-        ),
+        "context_entity_field_resolution": block.get("context_entity_field_resolution")
+        or _context_field_resolution(context_field, auto, ctx),
         "automations_to_start": [
             _unwrap_id(a) for a in (block.get("automations_to_start") or []) if a
         ],
@@ -3250,6 +3407,20 @@ def _step_create_related_entity(
         ),
     }
     return {k: v for k, v in out.items() if v is not None}
+
+
+def _context_field_resolution(
+    field_id: str | None, auto: AutomationDef, ctx: LiveContext
+) -> str:
+    """``add_only`` for a to-many context_entity_field, where ``overwrite``
+    unlinks every record already related; ``overwrite`` otherwise."""
+    if not field_id or not auto.target_object:
+        return "overwrite"
+    fields = ctx.object_data(auto.target_object)["fields"]
+    field = next((f for f in fields if f.get("id") == field_id), None)
+    if field and field.get("relation") and not _is_single_value_relationship(field):
+        return "add_only"
+    return "overwrite"
 
 
 @honours(
