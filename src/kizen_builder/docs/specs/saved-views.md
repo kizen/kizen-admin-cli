@@ -240,6 +240,7 @@ in the Kizen UI (the CLI has no filter-group share command).
 
 - `kizen docs show filters` — every clause type, the operator lists, and
   custom-field refs.
-- `kizen docs show automation` — condition steps reuse this DSL; the
-  `search_records` step references filter groups by name or id.
+- `kizen automations step-types show condition` — condition steps reuse
+  this DSL; `step-types show search_records` references filter groups by
+  name or id.
 - `kizen docs show dashboard` — same sharing block, and dashlet filters.

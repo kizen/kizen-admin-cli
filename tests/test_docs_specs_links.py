@@ -109,3 +109,56 @@ def test_reference_router_names_every_topic():
     expected = set(docs.list_topics()) - {"operating", "commands", "reference"}
     missing = sorted(expected - routed)
     assert not missing, "reference.md's router has no row for: " + ", ".join(missing)
+
+
+# `kizen docs show <topic>`, "<Section>" (or 'Section'), possibly wrapped.
+_SECTION_REF = re.compile(
+    r"kizen\s+docs\s+show\s+([a-z][a-z0-9-]*)`?\s*,\s*"
+    r"(?:\\?\"([^\"\\\n]{3,80})\\?\"|'([^'\n]{3,80})')"
+)
+
+
+def _headings(topic: str) -> list[str]:
+    text = docs.topic_path(topic).read_text()
+    return [
+        line.lstrip("#").replace("`", "").strip().lower()
+        for line in text.splitlines()
+        if line.startswith("#")
+    ]
+
+
+def _dangling_sections(where: str, text: str) -> list[str]:
+    topics = set(docs.list_topics())
+    out = []
+    for topic, double, single in _SECTION_REF.findall(text):
+        if topic not in topics:
+            continue  # the topic tests above report it
+        section = (double or single).replace("`", "").strip().lower()
+        if not any(h == section or h.startswith(section) for h in _headings(topic)):
+            out.append(f'{where} -> docs show {topic}, "{double or single}"')
+    return out
+
+
+def test_section_pointers_name_a_heading():
+    """A pointer to a section of a topic names a heading that exists, in the
+    shipped docs, the source, the repo docs and the step-type cards."""
+    from kizen_builder.tools import step_catalog
+
+    repo = Path(kizen_builder.__file__).resolve().parents[2]
+    files = [
+        *docs.docs_root().rglob("*.md"),
+        *Path(kizen_builder.__file__).parent.rglob("*.py"),
+        *(repo / "docs").glob("*.md"),
+        repo / "CONTRIBUTING.md",
+        repo / "README.md",
+    ]
+    dangling = []
+    for f in sorted(files):
+        dangling += _dangling_sections(f.name, f.read_text())
+    for name in (*step_catalog.STEP_TYPES, *step_catalog.TRIGGER_TYPES):
+        info = step_catalog.describe(name)
+        text = "\n".join([*info.get("notes", []), info["doc"]])
+        dangling += _dangling_sections(f"step-types show {name}", text)
+    for name, text in step_catalog.CONCEPTS.items():
+        dangling += _dangling_sections(f"concept {name}", text)
+    assert not dangling, "a pointer names a missing section:\n" + "\n".join(dangling)

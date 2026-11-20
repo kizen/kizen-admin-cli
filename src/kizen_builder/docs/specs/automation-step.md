@@ -9,8 +9,9 @@ re-sending the whole `AutomationDef`. Step keys come from
 - `kizen automations steps edit <api> <key> --spec-file <f>` — a **patch**.
 - `kizen automations steps add <api> (--parent <key>|--root) [--branch yes|no] [--leaf] --spec-file <f>` — a **new step**.
 
-See `automation.md` for step types, config blocks, and graph rules — the
-building blocks are identical; only the delivery differs.
+Step blocks are the same as in a whole automation: `kizen automations
+step-types show <type>` prints one, and `kizen docs show automation` has the
+graph rules. Only the delivery differs.
 
 ---
 
@@ -44,7 +45,8 @@ kizen automations steps edit flag_big_north_accounts flag --spec-file step.json 
 ## `steps add` — insert one step
 
 The spec is a **single step** (`step_type` + its config block; `field_ref`
-welcome). **Placement comes from the flags, not the spec:**
+welcome). `kizen automations step-types show <type> --variant <name>` prints
+one to start from. **Placement comes from the flags, not the spec:**
 
 - `--parent <key>` — attach under that step (or `--root` to become the new first step).
 - `--branch yes|no` — required when the parent is a `condition`/`goal`.
@@ -60,11 +62,7 @@ kizen automations steps add flag_big_north_accounts --parent check --branch yes 
   --spec-file delay.json --dry-run
 ```
 
-## Gotchas
-
-- **Re-run `automations show` before every step op** — keys rotate after each apply.
-- **`steps remove <key> [--cascade]`** removes one step (or the whole subtree).
-- The post-apply output includes a before/after semantic diff — that's the audit trail.
+`steps remove <key> [--cascade]` removes one step, or its whole subtree.
 
 ---
 
@@ -113,6 +111,10 @@ Consequences worth knowing:
   leaves them on the parent). A `next_or_finish` can't be added on its own.
   Confirmed live 2026-10-27, with `roundtrip --execute` clean after each add
   and remove.
+- **`add` of an `exit_loop` goes in with `--leaf`.** The spec is
+  `{"step_type": "exit_loop"}`, plus `"action_exit_loop": {"loop_to_exit":
+  "<loop key>"}` to end a loop around the innermost one. Without `--leaf` the
+  add is refused, because the steps it would adopt would never run.
 - **`remove` splices:** children adopt the removed step's parent and inherit its
   branch position, and `go_to` references retarget to that parent. Removing a
   condition or goal that has children requires `--cascade`, which deletes the
@@ -133,11 +135,12 @@ Consequences worth knowing:
   synthesized `key`s rotate — `go_to` references are re-keyed onto those, same
   as before.
 - **A step setting the CLI doesn't model stops the loop before the PUT,**
-  on any step, not only the one you're editing — see "GET and PUT are
-  different dialects" in `kizen docs show automation`.
+  on any step, not only the one you're editing, rather than dropping the
+  setting. The error names the step and the block; change that step in the
+  Kizen UI.
 
 ## See also
 
-- `kizen docs show automation` — the full step-type catalog, config blocks, and
-  the GET→PUT translation this loop depends on.
+- `kizen automations step-types show <type>` — one step type's block.
+- `kizen docs show automation` — the graph rules and what an update keeps.
 - `kizen docs show automation-runtime` — watching and controlling a run.

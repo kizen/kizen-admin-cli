@@ -20,7 +20,11 @@ called out explicitly under **Changed** or **Removed**.
   variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
   `set` creates a variable or changes its value or name, and leaves the
   others alone.
-
+- **MCP server specs can pick upstream server tools.** `upstreams` takes each
+  upstream's `api_name` and `include_all: true` or `tool_names`; the CLI maps
+  them to ids and refuses unknown ones. `kizen mcp-servers upstreams` lists
+  upstream servers and their tools. Creating and authorizing upstreams stays
+  in Kizen.
 
 - `kizen toolbar-templates list|get|create|update|delete`: build a toolbar
   template from a spec of objects, plugin pages, links and categories. Plugin
@@ -28,6 +32,27 @@ called out explicitly under **Changed** or **Removed**.
   <template>` with no spec re-saves them after a plugin release; plugin
   toolbar-item references are kept as references. Nothing applies a template
   to users.
+
+- **`kizen automations step-types`** shows what a step's or trigger's config
+  block takes, with no environment. `step-types show <type>` prints entries
+  to copy, the keys each choice needs, every field with its choices, and the
+  values to look up first; `--variant <name>` prints one entry as JSON for a
+  spec file or `steps add`, and `--json` adds the block's JSON Schema.
+  `step-types list` names every wired step and trigger type,
+  `step-types skeleton` prints a minimal automation to build on, and
+  `step-types concepts` covers what most steps share. `step-types show`
+  accepts common names such as `wait` and `ai_step`, and lists the types a
+  name like `send_email` could mean; any other unwired name gets the wired
+  type it most likely means. Card entries leave out `order`, which the CLI
+  numbers by position. The automation doc's wired-type tables are gone;
+  `step-types list` replaces them.
+
+- **Automations can end a loop early with an `exit_loop` step again.** Kizen's
+  builder now ships it. `action_exit_loop.loop_to_exit` names the loop to end,
+  and omitting it ends the innermost loop around the step. `create`, `update`
+  and `steps` refuse an exit loop outside a loop body, one aimed at a loop it
+  isn't inside, or one that sets both `loop_to_exit` and `step`. `show` draws
+  the target and warns about steps hung under it, which never run.
 
 ### Changed
 
@@ -62,12 +87,123 @@ called out explicitly under **Changed** or **Removed**.
   reads like `.results[0].raw.base_message_id` are unchanged. A failed
   result keeps its whole `raw`, so the server's field-level errors survive.
 
+- **`step-types show` and dry-run now check and list every key and choice
+  of `filter_config`, the `field_updated` trigger, `create_related_entity`,
+  `math_operator`, code- and plugin-step inputs and outputs, and each notify
+  step's recipient types.** A bare filter clause is reported with its wrapped
+  form, a `field_updated` option can be given by name, and an email
+  recipient of one `employee` is sent as `employees`.
+- **Automation dry-runs report every spec problem at once, with the step,
+  path and a suggested fix. `api_name` and step and trigger `order` default
+  when left out.** `automations create|update --dry-run` lists every wrong
+  choice, unknown key, placeholder, undeclared variable and graph problem
+  before any live call, each with a "did you mean" and the command that
+  lists the allowed values; `--json` puts them under `errors` and
+  `warnings`. Before, each run stopped at the first. `api_name` defaults to
+  the slugified name, a step's or trigger's `order` to its position, and the
+  plan preview says so. `steps add` and `steps edit` run the same per-step
+  checks.
+- **schedule_activity's `schedule` and `assigned_to` are typed; a wrong
+  choice fails the dry-run.** A wrong `schedule.type`, a `with_delay` or
+  `on_or_around_date` type without its block, `delay_type: days`, a
+  `delay_value` or `date_offset_days` below 1, or an unknown
+  `assignment_type` is refused before anything is sent. Before, each came
+  back from the server as a 400.
+- **A `field_updated` trigger with a `from_value` or `to_value` but no match
+  mode fires only on that value.** The CLI now sends `specific_value` for the
+  missing mode, or `date_between` for a date range. Before, Kizen stored
+  `any_including_blank` and the trigger fired on every change to the field.
+  Goal steps' triggers get the same default. A trigger with an `id` keeps its
+  live mode when the live trigger has that value set too, so an automation
+  an earlier version built this way keeps misfiring after an `update`: state
+  `from_match_mode` / `to_match_mode` in its spec to fix it.
+- **A new `create_related_entity` step links the new record without
+  unlinking the others.** When `context_entity_field` is to-many and the spec
+  leaves `context_entity_field_resolution` out, the CLI now sends `add_only`.
+  Before, it sent `overwrite`, which left the new record as the field's only
+  link. A step with an `id` keeps its live value.
+- **The automation spec page is now a short guide; per-step detail is in
+  `kizen automations step-types show`.** `kizen docs show automation` opens
+  with the build order and keeps the step graph, variables and what an update
+  keeps; `kizen docs show operating` leads with the approval gate. Per-step
+  notes print with `step-types show <type>`, and the rules `--dry-run`
+  enforces and the API wire detail are no longer repeated. Worked examples
+  moved to `kizen docs show automation-patterns` (the AI-reads-a-reply and
+  knowledge-catalog ones to `docs show code-steps` and `docs show
+  mcp-server`), environment setup to `docs show environments`, and what to
+  check in the browser after a write to `docs show verifying`. The
+  merge-field namespaces are in `step-types concepts`, and the `step-types
+  show` footer now reads "See also".
+
+- **A new `update_variable` step on an array variable appends by default.**
+  When a spec or a `steps add` block leaves `value_resolution` out, the CLI now
+  sends `add_only`, which Kizen's builder picks for a new step since its
+  2026-11-10 release. Before, the step was saved with no value, which replaces
+  the array. An update spec without step ids creates new steps, so its array
+  updates now append too. A step with an `id` keeps its live value, and
+  `automations diff` no longer shows that kept value as removed. Set
+  `value_resolution: "overwrite"` to replace.
+
 ### Fixed
 
 - **Automations with a plugin step pinned to a preview can be edited.** The
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+
+- **`archive_record` can target a related record or a variable's record.**
+  Its card lists `record_source`, `relationship_fields` (field refs) and
+  `automation_variable_name`, and the dry run refuses a source without its
+  key. **`send_related_contact_email`/`_text` take `send_to_contact_field`
+  by name and require it**: a bare name or `object.field` resolves, where it
+  used to fail with *"Must be a valid UUID"*, and a missing one fails the dry
+  run with the candidate fields. The text step's `relationship_field_ref` is
+  an alias. **A variable source's `field_ref` is resolved** to `field`; it
+  used to pass the dry run and fail with *"field is required"*.
+
+- **Pre-wrapped merge-field spans are no longer escaped and wrapped again.**
+  A token already in a `kzn-merge-field` span is sent as written, in message
+  text, AI prompts and webhook headers.
+
+- **`field_ref` in a team-member block (notify, assign, cc, and
+  schedule_activity's assignee) now resolves to the field's UUID.** In the
+  notify and cc selectors and schedule_activity's assignee it was dropped
+  before, and the server answered with *"field_id is required"*;
+  `assign_team_member` refused it at plan time. `schedule.on_or_around_date`
+  takes `field_ref` too. A `field_id` beside it still wins.
+- **`kizen mcp-servers get --raw` output works as an `update` spec again.**
+  Since Kizen's 2026-11-10 release it failed with `upstreams: Extra inputs are
+  not permitted`.
+- **Editing an automation that has an exit loop step built in Kizen's builder
+  no longer fails** with "Exit Loop step references a loop that does not
+  exist." `steps`, `roundtrip --execute` and `update` now send the loop's key
+  instead of echoing the id read back.
+- **A code step's `related_field` input or output on a to-many relationship
+  fails the dry-run.** The server refused it with *"The field must not allow
+  multiple values"*. The finding says to read the relationship with
+  `input_type: field` and `is_list: true`, or to write with
+  `modify_related_entities`. `related_field` also takes `related_field_ref`
+  and an `object.field` ref.
+- **An entity variable's `data_subtype` takes the object's api_name; a
+  missing one fails the dry-run.** The server wanted the UUID and answered an
+  api_name with *"is not a valid UUID"*.
+- **A date schedule or date trigger with no `time` fails the dry-run.** A
+  schedule's `on_or_around_date` needs `time` unless `time_offset` is not
+  `specific_time` or `date_offset` is `on_day_and_time`; a trigger needs
+  `time` and `period` unless it's `on_day_and_time`. Each was a 400 before.
+- **The dry run now rejects invalid `source_subtype`, `array_separator`,
+  `value_type`, goal `delay_type` and `change_type` values, and `step-types
+  show` lists the valid ones.** These used to fail only at apply.
+- **Four more automation specs the server rejects fail the dry-run.** Each
+  was a 400 before:
+  - a `static` variable source with no `source_subtype`;
+  - `date_offset: on_day_and_time` on a date field, not a datetime one, in
+    an `on_or_around_date` trigger, a goal's trigger or a schedule;
+  - `days_before` or `days_after` with `date_offset_days` 0 or left out;
+  - two or more `destinations` on `call_llm`, `file_content_extraction` or
+    `audio_transcription` without `is_advanced: true`.
+
+  `automations steps add` and `steps edit` run the same checks.
 
 ## [0.7.0] — 2026-11-16
 

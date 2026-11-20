@@ -140,7 +140,7 @@ src/kizen_builder/
     forms.py                     #   form/survey CRUD (base_path-shared with surveys)
     integration_secrets.py       #   integration-secret listing (read-only; values never kept)
     layouts.py                   #   record-layout CRUD (field/block arrangement)
-    mcp_servers.py               #   MCP server CRUD, tool catalogue, events history
+    mcp_servers.py               #   MCP server CRUD, tool catalogue, events history, upstream server reads
     messages.py                  #   automation-scoped message resources (notify_* step content)
     permissions.py               #   roles, permission groups, permissions catalog
     pipelines.py                 #   pipeline-stage CRUD + record stage-move
@@ -163,7 +163,7 @@ src/kizen_builder/
     form_ui.py                   #   build a form/survey's visual, submittable page layout
     forms.py                     #   list/get forms and surveys (base_path-shared)
     layouts.py                   #   list/get, block helpers, inject_layout_ids
-    mcp_servers.py               #   resolve/list/get MCP servers, tool catalogue, history
+    mcp_servers.py               #   resolve/list/get MCP servers, tool catalogue, history, upstream server reads
     messages.py                  #   automation message content (notify_* step templates)
     objects.py                   #   list_objects(), get_object(api_name)
     permission_builder.py        #   enumerate/build/mutate the full permission-group structure
@@ -215,7 +215,7 @@ src/kizen_builder/
   translate.py                   # Automation GET → PUT wire translation.
   models/spec/                   # Pydantic shapes for desired state (spec inputs);
                                   #   package, one module per cluster — see __init__.py.
-    mcp_servers.py               #   MCPServerDef + its sharing block
+    mcp_servers.py               #   MCPServerDef + its sharing block and upstreams
     toolbar_templates.py         #   ToolbarTemplateDef + ToolbarEntryDef
   output.py                      # Shared table/json/csv output layer for read commands.
   cli/                           # Typer wrappers around tools/. The `kizen` command.
@@ -278,6 +278,8 @@ src/kizen_builder/
 
   docs/                          # Ships in the wheel. Served by `kizen docs show`.
     operating.md                 #   how to operate an env (the manual)
+    environments.md              #   profiles, credential store, app-builder variables
+    verifying.md                 #   what to check in the browser after a write
     commands.md                  #   the command map
     reference.md                 #   thin router + cross-surface conventions
     filters.md                   #   filter DSL, wire format, per-type ops (cross-cutting)
@@ -287,6 +289,7 @@ src/kizen_builder/
 docs/                            # Repo-only. Never ships. Maintainer procedures.
   ARCHITECTURE.md
   RELEASING.md
+  automations-wire.md            #   automation2 read/write dialects, transforms, wire keys
 
 .kizen/profile                    # non-secret pin: profile name + business_id
 ~/.config/kizen/credentials.toml  # central secret store (0600), never committed
@@ -304,6 +307,8 @@ An *environment* folder is much smaller: a `.kizen/profile` pin plus the
 
 **A new command on an existing surface.** Document the entity in its existing
 `docs/specs/<surface>.md` — spec shape above the divider, wire behavior below.
+Automations are the exception: their wire behavior is in
+[`docs/automations-wire.md`](docs/automations-wire.md).
 Give the command a Typer `epilog` pointing at `kizen docs show <surface>` (grep
 `epilog=` under `cli/` for the pattern). `tests/test_docs_specs_links.py` fails
 if an epilog names a topic that doesn't resolve.
@@ -337,6 +342,12 @@ rename a flag, keep the old spelling as a hidden option and call
 **A new cross-cutting topic** — one that spans surfaces, like `filters` or
 `code-steps` — goes at the root of `src/kizen_builder/docs/` rather than under
 `specs/`, and must be added to `GUIDE_TOPICS` in `docs.py`.
+
+**Doc size.** `tests/test_docs.py::test_every_topic_fits_its_size_cap` caps
+`docs show automation` at 12 KB, `operating` at 8 KB and every other topic at
+34 KB. An in-app agent's tool response is cut at 64,000 characters, so the
+rules go first. A topic that outgrows its cap moves per-type facts onto the
+step-type cards or splits off a topic; it doesn't drop them.
 
 **Printing text the CLI didn't write.** `console.print` parses its string as
 rich markup and emoji shortcodes, so SQL, code, logs and server messages can
@@ -383,13 +394,26 @@ exit 1 from any command, and anything else into `error: internal: …`.
    read makes `translate` refuse the automation, and
    `test_every_captured_read_key_is_classified` fails on a fixture that has
    one.
-6. Update the wired list in `src/kizen_builder/docs/specs/automation.md`.
+6. Give the type a one-line purpose in `STEP_PURPOSES` or
+   `TRIGGER_PURPOSES`, next to the registry; `kizen automations step-types`
+   lists it from there, and `tests/test_step_catalog.py` fails without one.
+   If the block has a key whose value decides which other keys it carries,
+   add a `Guide` for it in `tools/step_catalog.py`: an entry per shape, and
+   what each option needs.
 7. If the type has an enum-typed field whose valid values you've confirmed
    (live, in a fixture, or via the drift snapshot once it captures enum
    values), add them to `KNOWN_ENUM_CHOICES` / `KNOWN_ENUM_CHOICES_TRIGGERS`
    in `tools/planners/automations.py` rather than only writing them into
-   `automation.md` prose — that's what turns a future rejection of the same
+   doc prose — that's what turns a future rejection of the same
    value into a message naming the alternatives instead of a guessing game.
+
+A wire fact the type taught you (a read shape the write refuses, a key that
+differs from the spec) goes in
+[`docs/automations-wire.md`](docs/automations-wire.md). What a spec author
+needs while writing one step goes in the type's model descriptions or in
+`Guide.notes` in `tools/step_catalog.py`, which `step-types show <type>`
+prints. A rule for the whole graph goes in `kizen docs show automation`, and a
+worked multi-step automation in `kizen docs show automation-patterns`.
 
 Wiring a new type also widens the drift suite's scope, which will fail until
 someone covers it.

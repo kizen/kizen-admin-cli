@@ -49,8 +49,8 @@ def get_metadata(client: KizenClient) -> dict[str, Any]:
     `file_content_extraction` / `audio_transcription` / condition
     `llm_decision` (under the `llm` key), Python runtime choices
     (`code_runners`), and a trigger/step support matrix
-    (`support_matrix`). See automation.md "LLM & extraction destinations"
-    for the worked example.
+    (`support_matrix`). See docs/automations-wire.md, "Per-type wire
+    behaviour", for which plugin-app id is the right one.
     """
     return client.get("/api/automation2/automations/metadata")
 

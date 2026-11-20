@@ -7,7 +7,7 @@ the script works.
 
 - **The `code test` flags** → `kizen code test --help` (authoritative).
 - **The `code_step` JSON shape** (inputs/outputs binding, `secrets`, `is_list`)
-  → `kizen docs show automation`.
+  → `kizen automations step-types show code_step`.
 - **Everything about writing the script itself** → this file.
 
 ## The code-step namespace
@@ -63,8 +63,9 @@ A set relationship field **is** in the record response, as the related
 records' `{id, name, display_name}`, and an empty one is left out (see
 [Reading and writing records from a script](#reading-and-writing-records-from-a-script),
 confirmed live 2026-10-30). To read one field of the related record without a
-call, bind it directly as a `related_field` step input; see
-`kizen docs show automation`.
+call, bind it directly as a `related_field` step input; that takes a
+single-value relationship only. See `kizen automations step-types show
+code_step`.
 
 ## Testing it: `kizen code test`
 
@@ -257,9 +258,9 @@ An `email_received` trigger starts a Contacts automation, but the run gets the
 Contact, not the email: no step can read the subject or body from the trigger.
 A code step reads the email from the Contact's timeline instead. It takes the
 newest inbound email from that Contact, which is usually the one that started
-the run, but not after two quick replies or on a run started by hand. The
-automation that hands its text to an AI step is in `kizen docs show
-automation`, "An AI step reads an emailed reply".
+the run, but not after two quick replies or on a run started by hand. [In an
+automation, feeding an AI step](#in-an-automation-feeding-an-ai-step) shows
+the whole automation.
 
 **Which emails.** Kizen's UI code suggests the trigger fires only for email
 that arrives in a connected (integrated) inbox, with `receiving_inbox` picking
@@ -276,8 +277,7 @@ the script finds no inbound email and outputs `""`, and nothing fails. A short
 
 **Bind the Contact's email, not its id.** On a Contacts automation, the
 Contact's id never reaches a script: the merge fields that would carry it
-arrive empty (see `kizen docs show automation`, "Merge-field namespace tokens
-by step type"). An input with `input_type: "field"` and `field_ref:
+arrive empty (see `kizen automations step-types concepts`, merge-fields). An input with `input_type: "field"` and `field_ref:
 "client_client.email"` arrives as the email, so the script looks the Contact up
 by it. Confirmed live 2026-10-30.
 
@@ -358,6 +358,49 @@ With no inbound email, the step succeeds with `email_body` set to `""` and a
 log line, so the steps after it still run. An email no Contact has fails the
 step with the count. Confirmed live 2026-11-02, with `kizen code test` and in
 an automation run, on a Contact with no inbound email.
+
+### In an automation, feeding an AI step
+
+This Contacts automation runs when an email arrives or by hand. The code step
+writes the body into `email_body`, and the AI step's prompt quotes it as `{{
+automation_variable.email_body }}`. With `default_to_unknown`, the AI step
+still runs when no email was found: Kizen sent the prompt with `unknown` in
+the body's place (confirmed live 2026-11-02).
+
+<!-- fixture: examples/support_desk/read_reply.automation.json#/triggers -->
+```json
+[ { "trigger_type": "manual", "order": 0, "trigger_manual": {} },
+  { "trigger_type": "email_received", "order": 1,
+    "trigger_email_received_from_contact": { "receiving_inbox": "any" } } ]
+```
+
+<!-- fixture: examples/support_desk/read_reply.automation.json#/steps -->
+```json
+[ { "key": "body", "parent_key": null, "step_type": "initialize_variable", "order": 0,
+    "action_initialize_variable": { "sources": [],
+      "variable": { "name": "email_body", "data_type": "string" } } },
+  { "key": "summary", "parent_key": "body", "step_type": "initialize_variable", "order": 1,
+    "action_initialize_variable": { "sources": [],
+      "variable": { "name": "reply_summary", "data_type": "string" } } },
+  { "key": "read_email", "parent_key": "summary", "step_type": "code_step", "order": 2,
+    "action_code_step": {
+      "script": "# Read the newest email this Contact sent to a connected inbox, as plain text.\nimport html\nimport re\n\n\ndef ok(resp, what):\n    if resp.status_code != 200:\n        raise Exception(f\"{what} failed: {resp.status_code} {resp.text[:200]}\")\n    return resp.json()\n\n\nemail = (inputs.contact_email or \"\").strip()\nif not email:\n    raise Exception(\"the Contact has no email to look it up by\")\nmatch = {\"type\": \"fields\", \"subtype\": \"non_custom\", \"field\": \"email\"}\nquery = [{\"and\": True, \"filters\": [{**match, \"condition\": \"=\", \"value\": email}]}]\nfound = ok(\n    kizen.api.post(\n        \"/records/client_client/search\",\n        json={\"query\": query, \"and\": True, \"field_names\": [\"email\"]},\n    ),\n    \"searching Contacts\",\n)[\"results\"]\nif len(found) != 1:\n    raise Exception(f\"{len(found)} Contacts have email {email}, not 1\")\n\nevents = ok(\n    kizen.api.get(\n        f\"/records/client_client/{found[0]['id']}/timeline\", params={\"size\": 50}\n    ),\n    \"reading the timeline\",\n)[\"events\"]\ninbound = [e for e in events if e[\"type_name\"] == \"integrated_inbox_email_received\"]\noutputs.email_body = \"\"\nif not inbound:\n    outputs.log(f\"no inbound email in the Contact's last {len(events)} timeline events\")\nelse:\n    data = max(inbound, key=lambda e: e[\"created\"])[\"data\"]\n    sid = data.get(\"synced_email_id\") or data.get(\"syncedEmailId\")\n    if not sid:\n        raise Exception(f\"no synced email id in the event's data: {sorted(data)}\")\n    body = ok(kizen.api.get(f\"/synced-email/{sid}/full_response\"), f\"reading {sid}\")\n    text = body.get(\"text_plain\") or \"\"\n    if not text.strip():\n        markup = body.get(\"text_html\") or \"\"\n        markup = re.sub(r\"(?is)<(script|style).*?</\\1>\", \"\", markup)\n        markup = re.sub(r\"(?i)<br\\s*/?>|</p>|</div>|</li>\", \"\\n\", markup)\n        text = html.unescape(re.sub(r\"<[^>]+>\", \"\", markup))\n    outputs.email_body = text.strip()\n    outputs.log(f\"read email {sid}: {len(outputs.email_body)} characters\")",
+      "inputs": [ { "name": "contact_email", "input_type": "field",
+                    "field_ref": "client_client.email", "data_type": "string" } ],
+      "outputs": [ { "name": "email_body", "output_type": "variable",
+                     "variable_name": "email_body", "data_type": "string" } ] } },
+  { "key": "summarize", "parent_key": "read_email", "step_type": "call_llm", "order": 3,
+    "action_call_llm": {
+      "model_name": "kizen/lite",
+      "merge_field_validation": "default_to_unknown",
+      "prompt": "Summarize this customer's email reply in one sentence. If the reply is Unknown or empty, answer: No reply to summarize.\nReply: {{ automation_variable.email_body }}",
+      "destinations": [ { "variable": "reply_summary" } ] } } ]
+```
+
+Confirmed live 2026-11-02, on a copy of this file: it saved, activated, and a
+run started by hand on a Contact with no inbound email completed. The code step
+logged that it found no inbound email, and `reply_summary` was set to "No
+reply to summarize."
 
 ## Wiring it into an automation
 

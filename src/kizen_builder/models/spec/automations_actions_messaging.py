@@ -2,11 +2,66 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kizen_builder.models.spec.automations_shared import TeamMemberConfig
+from kizen_builder.models.spec.automations_shared import (
+    DAYS_OFFSET_MESSAGE,
+    DAYS_OFFSETS,
+    RawFilterConfig,
+    TeamMemberConfig,
+)
+
+_RECIPIENT_KEYS = (
+    "last_active_role takes role_id, team_selector_field takes field_ref "
+    "('object.field'), and owner and last_active nothing else"
+)
+
+
+# One create per value, 2026-11-16: employees and team_member are refused on
+# a text step.
+class TextRecipient(TeamMemberConfig):
+    """Who `notify_member_via_text` texts."""
+
+    type: (  # type: ignore[assignment]
+        Literal[
+            "owner",
+            "last_active",
+            "last_active_role",
+            "team_selector_field",
+            "employee",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description=f"employee takes employee_id, {_RECIPIENT_KEYS}.",
+    )
+
+
+# Confirmed live 2026-11-16: employee is refused on an email step, the
+# others aren't. The planner sends employee as employees, so a spec written
+# for a text step works here too.
+class EmailRecipient(TeamMemberConfig):
+    """Who `notify_member_via_email` emails, or copies."""
+
+    type: (  # type: ignore[assignment]
+        Literal[
+            "owner",
+            "last_active",
+            "last_active_role",
+            "team_selector_field",
+            "employees",
+            "employee",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description=(
+            f"employees takes employee_ids, {_RECIPIENT_KEYS}. employee "
+            "with employee_id is sent as employees."
+        ),
+    )
 
 
 class ActionSendEmailConfig(BaseModel):
@@ -33,11 +88,21 @@ class ActionSendEmailConfig(BaseModel):
     cc_team_member: TeamMemberConfig | None = None
 
 
+_SEND_TO_CONTACT_FIELD = (
+    "Required: the relationship field to Contacts, on the automation's "
+    "object, that names the recipient, as 'object.field' or a UUID. Resolved "
+    "to a UUID at apply time."
+)
+
+
 class ActionSendRelatedContactEmailConfig(BaseModel):
     """Config for `step_type: send_related_contact_email`."""
 
     model_config = ConfigDict(extra="allow")
 
+    send_to_contact_field: str | None = Field(
+        default=None, description=_SEND_TO_CONTACT_FIELD
+    )
     email: str | dict[str, Any] | None = Field(
         default=None,
         description=(
@@ -61,13 +126,13 @@ class ActionNotifyMemberViaEmailConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    team_member: TeamMemberConfig
+    team_member: EmailRecipient
     id: str | None = Field(
         default=None,
         description="UUID of the email message/template to send (see `kizen messages templates`).",
     )
     email_template_id: str | None = Field(default=None, description="Alias for `id`.")
-    cc_team_member: TeamMemberConfig | None = None
+    cc_team_member: EmailRecipient | None = None
 
 
 class ActionNotifyMemberViaTextConfig(BaseModel):
@@ -81,7 +146,7 @@ class ActionNotifyMemberViaTextConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    team_member: TeamMemberConfig
+    team_member: TextRecipient
     content: str | None = None
     html_content: str | None = None
     base_message_id: str | None = None
@@ -109,13 +174,17 @@ class ActionSendRelatedContactTextConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    relationship_field_ref: str | None = Field(
-        default=None,
-        description="'object.field' for the relationship field pointing to the contact.",
+    send_to_contact_field: str | None = Field(
+        default=None, description=_SEND_TO_CONTACT_FIELD
     )
-    relationship_field_id: str | None = None
-    message: str | None = None
-    html_message: str | None = None
+    text: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "A text AutomationMessage id (bare UUID or {id: uuid}), which the "
+            "CLI can't create yet: add the step in the Kizen UI. A message "
+            "belongs to one automation."
+        ),
+    )
 
 
 class ActionRequestInfoViaTextConfig(BaseModel):
@@ -178,7 +247,15 @@ class ActionAssignTeamMemberConfig(BaseModel):
             "The team-selector field the owner is copied from. Required for "
             "`team_selector_field` (a field on the automation's own object) and "
             "`related_team_selector_field` (a field on the object "
-            "`related_field_id` points to)."
+            "`related_field_id` points to). Or set `field_ref` instead."
+        ),
+    )
+    field_ref: str | None = Field(
+        default=None,
+        description=(
+            "'object.field' reference, resolved to `field_id` at plan time. "
+            "For `related_team_selector_field`, qualify it with the far "
+            "object: a bare name resolves against the automation's own object."
         ),
     )
     related_field_id: str | None = Field(
@@ -224,6 +301,198 @@ class ActionChangeTagsConfig(BaseModel):
     )
 
 
+ActivityAssignmentType = Literal[
+    "round_robin_all",
+    "round_robin_role",
+    "round_robin_team_members",
+    "owner",
+    "team_member",
+    "team_selector_field",
+    "last_active",
+    "last_active_role",
+    "specific_role",
+    "team_member_from_variable",
+    "role_from_variable",
+]
+"""`schedule_activity.assigned_to`'s selector: the server's
+`AssignmentTypeEnum`, the 11 "Assign To" options in the builder. Not the
+smaller sets `assign_team_member` and the notify steps use."""
+
+
+class ActivityAssigneeConfig(TeamMemberConfig):
+    """Who a scheduled activity is assigned to (`schedule_activity.assigned_to`).
+
+    `assignment_type` is the wire key; `type` is accepted as an alias. The
+    companion key each option takes is in `kizen automations step-types show
+    schedule_activity`.
+    """
+
+    assignment_type: ActivityAssignmentType | None = None
+    type: ActivityAssignmentType | None = Field(
+        default=None, description="Alias for `assignment_type`."
+    )
+    role_id: str | None = Field(
+        default=None, description="Role UUID (`kizen roles list`)."
+    )
+    employee_id: str | None = Field(
+        default=None, description="Team member UUID (`kizen team list`)."
+    )
+    employee_ids: list[str] = Field(
+        default_factory=list, description="Team member UUIDs, for a round-robin pool."
+    )
+    field_id: str | None = Field(
+        default=None,
+        description="UUID of a team-selector field on the record. Or use `field_ref`.",
+    )
+    variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description="Automation variable name, for the two `*_from_variable` options.",
+    )
+
+
+_TimeOffsetRelative = Literal[
+    "hours_before", "hours_after", "minutes_before", "minutes_after"
+]
+
+
+class ScheduleWithDelayConfig(BaseModel):
+    """`schedule.with_delay`: due a fixed delay after the step runs.
+
+    Choices are the server's (`GET /api/docs/schema`, 2026-10-30).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    delay_type: Literal["minute", "hour", "day"] = Field(
+        description="Unit of the delay. Singular: `days` is a 400."
+    )
+    delay_value_type: Literal["static", "automation_variable"] | None = Field(
+        default=None,
+        description=(
+            "`static` (the default) reads `delay_value`; `automation_variable` "
+            "reads the number from `delay_variable`."
+        ),
+    )
+    delay_value: int | None = Field(
+        default=None, ge=1, description="Whole number of `delay_type` units."
+    )
+    delay_variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description='`{"name": <number variable>}`, for `delay_value_type: automation_variable`.',
+    )
+    time_offset: (
+        Literal["automation_time", "specific_time"] | _TimeOffsetRelative | None
+    ) = Field(
+        default=None,
+        description=(
+            "Time of day it falls due. `automation_time` (the default) keeps "
+            "the run's time of day; `specific_time` takes `time`; the "
+            "before/after options take `time_offset_value`."
+        ),
+    )
+    time: str | None = Field(
+        default=None, description='`HH:MM` on a 24-hour clock, e.g. "21:00".'
+    )
+    time_offset_value: int | None = None
+
+
+class ScheduleOnOrAroundDateConfig(BaseModel):
+    """`schedule.on_or_around_date`: due relative to a date field or variable.
+
+    Choices are the server's (`GET /api/docs/schema`, 2026-10-30).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    field_ref: str | None = Field(
+        default=None,
+        description=(
+            "A date or datetime field on the record, as `<object>.<field>` "
+            "or a bare field api_name; on_day_and_time needs a datetime one. "
+            "Resolved to `field_id` at apply time. Set this, `field_id` or "
+            "`variable`."
+        ),
+    )
+    field_id: str | dict[str, Any] | None = Field(
+        default=None, description="The field's UUID, in place of `field_ref`."
+    )
+    variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description='`{"name": <date variable>}`, in place of a field.',
+    )
+    date_offset: Literal["on_day", "on_day_and_time", "days_before", "days_after"]
+    date_offset_days: int | None = Field(
+        default=None,
+        ge=1,
+        description="1 or more, even under `on_day`: 0 is a 400.",
+    )
+    time_offset: (
+        Literal["specific_time", "from_field", "from_variable"]
+        | _TimeOffsetRelative
+        | None
+    ) = Field(
+        default=None,
+        description="`specific_time` (the default) takes `time`.",
+    )
+    time: str | None = Field(
+        default=None, description='`HH:MM` on a 24-hour clock, e.g. "10:00".'
+    )
+    time_offset_value: int | None = None
+
+    # The server reads a left-out time_offset as specific_time and then
+    # 400s for want of `time`; on_day_and_time takes the field's own time
+    # and ignores time_offset (confirmed live 2026-11-16).
+    @model_validator(mode="after")
+    def _time_when_specific(self) -> Self:
+        if (
+            self.date_offset != "on_day_and_time"
+            and self.time_offset in (None, "specific_time")
+            and not self.time
+        ):
+            raise ValueError(
+                "needs `time` (HH:MM): a left-out time_offset is "
+                "specific_time, which takes one. Set `time`, or a time_offset "
+                "that doesn't take it (from_field, from_variable, or "
+                "hours/minutes before/after with time_offset_value)"
+            )
+        return self
+
+    # A left-out count is a 400: "This field is required when
+    # date_offset_type is static" (confirmed live 2026-11-17).
+    @model_validator(mode="after")
+    def _days_with_days_offset(self) -> Self:
+        if (
+            self.date_offset in DAYS_OFFSETS
+            and self.date_offset_days is None
+            and (self.model_extra or {}).get("date_offset_type") in (None, "static")
+        ):
+            raise ValueError(DAYS_OFFSET_MESSAGE)
+        return self
+
+
+class ActivityScheduleConfig(BaseModel):
+    """`schedule_activity.schedule`: when the activity falls due. `type`
+    picks the shape, and the block named after it carries the detail."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["immediately", "with_delay", "on_or_around_date"]
+    with_delay: ScheduleWithDelayConfig | None = None
+    on_or_around_date: ScheduleOnOrAroundDateConfig | None = None
+    skip_non_working_days: bool | None = Field(
+        default=None,
+        description="With a `day` delay, count working days only.",
+    )
+
+    @model_validator(mode="after")
+    def _block_matches_type(self) -> Self:
+        if self.type != "immediately" and getattr(self, self.type) is None:
+            raise ValueError(
+                f"schedule type '{self.type}' needs a '{self.type}' block beside it"
+            )
+        return self
+
+
 class ActionScheduleActivityConfig(BaseModel):
     """Config for `step_type: schedule_activity`.
 
@@ -245,14 +514,12 @@ class ActionScheduleActivityConfig(BaseModel):
         default=None,
         description="Activity type api_name or UUID. Same as `activity_type`.",
     )
-    schedule: dict[str, Any] | None = Field(
+    schedule: ActivityScheduleConfig | None = Field(
         default=None,
         description=(
-            "Schedule detail block, e.g. {'type': 'on_or_around_date', "
-            "'on_or_around_date': {'date_offset': ..., 'date_offset_days': ...}}. "
-            "NOTE: date_offset_days must be >= 1 live even under date_offset "
-            "'on_day' — 0 is rejected ('Ensure this value is greater than or "
-            "equal to 1'), despite 'on_day' reading like same-day/zero-offset."
+            "When the activity falls due: `type` and the block it names. "
+            "`kizen automations step-types show schedule_activity` has a "
+            "block for each shape."
         ),
     )
     notifications: list[Any] | dict[str, Any] | None = Field(
@@ -263,7 +530,7 @@ class ActionScheduleActivityConfig(BaseModel):
             "non-empty wire shape is unconfirmed."
         ),
     )
-    assigned_to: TeamMemberConfig | None = Field(
+    assigned_to: ActivityAssigneeConfig | None = Field(
         default=None,
         description=(
             "Who the activity is assigned to. Unlike assign_team_member/"
@@ -337,4 +604,5 @@ class ActionDeleteScheduledActivityConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    filter_config: dict[str, Any] | None = None
+    # Not wired; nothing compiles the DSL here.
+    filter_config: RawFilterConfig | None = None

@@ -38,7 +38,12 @@ from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.plans import PlanError
 
 autos_app = typer.Typer(
-    help="Read, create, update, and run automations.", no_args_is_help=True
+    help=(
+        "Read, create, update, and run automations. Writing a spec? "
+        "`step-types show <type>` prints a step's config block, its choices "
+        "and a step to start from, with no live env."
+    ),
+    no_args_is_help=True,
 )
 app.add_typer(autos_app, name="automations")
 
@@ -185,7 +190,8 @@ def autos_llm_models(
     """List this business's enabled LLM models for call_llm/file_content_extraction/
     audio_transcription/condition llm_decision steps, with each provider's
     business_plugin_app_id. The CLI fills a step's business_plugin_app_id
-    from this list, so a spec needs only model_name — see automation.md.
+    from this list, so a spec needs only model_name — see `kizen automations
+    step-types show call_llm`.
     """
     fmt = out.resolve_format(output, json_out)
     with cli_errors():
@@ -346,13 +352,12 @@ def autos_diff(
     Triggers/steps are matched by `id` first (regardless of `key`/order),
     position among the rest as a fallback for a spec with no `id`s at all.
     `key`/`parent_key`/`prefix` are excluded from the comparison — they're
-    per-side synthetic naming (see `kizen docs show automation`), not
-    automation content — but a genuine reparenting still shows, compared by
-    matched identity rather than raw key. Each line is labelled with the
-    first octet of the step/trigger's `id` so it can be matched to what's
-    visible in the UI; it is unique within one automation. Under `--json`, an
-    added or removed step/trigger also carries its full `id` in the leaf
-    value.
+    per-side synthetic naming, not automation content — but a genuine
+    reparenting still shows, compared by matched identity rather than raw
+    key. Each line is labelled with the first octet of the step/trigger's
+    `id` so it can be matched to what's visible in the UI; it is unique
+    within one automation. Under `--json`, an added or removed step/trigger
+    also carries its full `id` in the leaf value.
     """
     spec_dict, _from_stdin = _read_spec(spec_file)
     spec_api_name = spec_dict.get("api_name")
@@ -405,6 +410,9 @@ def _step_label(step: dict[str, Any]) -> str:
     if goto:
         target = goto.get("step_key") or goto.get("trigger_key") or "?"
         label += f" [cyan]→ {target}[/cyan]"
+    if step.get("type") == "exit_loop":
+        target = (step.get("action_exit_loop") or {}).get("step") or "innermost loop"
+        label += f" [cyan]→ {escape(str(target))}[/cyan]"
     if step.get("should_skip_execution"):
         label += " [yellow](skipped)[/yellow]"
     if desc:

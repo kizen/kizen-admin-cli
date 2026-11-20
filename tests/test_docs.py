@@ -1,4 +1,5 @@
-"""Env-folder scaffolding: instruction stubs and legacy-link cleanup."""
+"""Env-folder scaffolding: instruction stubs and legacy-link cleanup; topic
+resolution and size caps."""
 
 from __future__ import annotations
 
@@ -121,6 +122,32 @@ def test_docs_unavailable_message_is_actionable(monkeypatch, tmp_path):
         assert "pyproject.toml" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected DocsUnavailable")
+
+
+# The in-app agent truncates a response at 64,000 characters, and a session
+# often reads two topics in one command. The two topics every automation build
+# reads get a tighter cap; anything that outgrows one splits into another topic.
+_SIZE_CAPS = {"automation": 12_000, "operating": 8_000}
+_DEFAULT_SIZE_CAP = 34_000
+
+
+def test_every_topic_fits_its_size_cap():
+    over = []
+    for topic in docs.list_topics():
+        size = docs.topic_path(topic).stat().st_size
+        cap = _SIZE_CAPS.get(topic, _DEFAULT_SIZE_CAP)
+        if size > cap:
+            over.append(f"{topic}: {size} bytes, cap {cap}")
+    assert not over, "split these topics:\n" + "\n".join(over)
+
+
+def test_automation_topic_opens_with_the_build_order():
+    lines = docs.topic_path("automation").read_text().splitlines()
+    first = next(line for line in lines[1:] if line.strip())
+    assert first == (
+        "Build order: skeleton → step-types show <type> for each step → "
+        "create --dry-run → create → use the step keys the write prints."
+    )
 
 
 @pytest.mark.parametrize("flags", [[], ["--raw"]])

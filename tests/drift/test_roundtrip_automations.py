@@ -114,6 +114,7 @@ LOOP_STEPS = frozenset(
         "delay",
         "condition",
         "merge_branches",
+        "exit_loop",
         "next_or_finish",
     }
 )
@@ -474,8 +475,8 @@ def test_automation_branch_linkage_survives_the_roundtrip(drift_automation):
 
 def test_automation_read_shape_keys_the_planner_depends_on(drift_automation):
     """`plan_update_automation` rebuilds a PUT body from the read response, so
-    these keys are load-bearing (see the normalization notes in
-    ``docs/specs/automation.md``)."""
+    these keys are load-bearing (see the read→write transforms in
+    ``docs/automations-wire.md``)."""
     live = drift_automation["live"]
     for key in (
         "id",
@@ -1117,8 +1118,8 @@ def drift_control_flow(
 
     The two ``initialize_variable`` steps sit on the un-branched root chain on
     purpose — the server rejects a new-variable declaration anywhere else (see
-    automation.md's root-chain rule), and this is the only automated check that
-    the rule still holds.
+    the root-chain rule in docs/automations-wire.md), and this is the only
+    automated check that the rule still holds.
     """
     spec = _base_spec("ctrl", drift_object)
     spec["steps"] = [
@@ -1438,48 +1439,51 @@ def test_branch_groups_put_back_unchanged(drift_client, drift_branch_groups):
 
 
 # ---------------------------------------------------------------------------
-# Loops: a merged condition with an empty no branch in the body, a second loop
-# after the first, and a step after that
+# Loops: a merged condition with an exit_loop on its no branch in the body, a
+# second loop after the first, and a step after that
 # ---------------------------------------------------------------------------
+
+
+def _loop_step(key: str, parent: str | None, step_type: str, **kw: Any) -> dict:
+    return {"key": key, "parent_key": parent, "step_type": step_type, **kw}
+
+
+def _loop_var(key: str, parent: str | None, is_array: bool) -> dict:
+    block: dict[str, Any] = {
+        "sources": [],
+        "variable": {"name": key, "data_type": "string", "is_array": is_array},
+    }
+    if is_array:
+        block["array_aggregation_mode"] = "add_all"
+        block["sources"] = [
+            {"source_type": "static", "source_subtype": "string", "value": ["a"]}
+        ]
+    return _loop_step(
+        key, parent, "initialize_variable", action_initialize_variable=block
+    )
+
+
+def _loop(key: str, parent: str, array: str) -> dict:
+    block = {"array_variable": array, "item_variable": f"{array}_item"}
+    return _loop_step(
+        key, parent, "loop", is_branch_group_initiator=True, step_loop=block
+    )
 
 
 @pytest.fixture(scope="session")
 def drift_loops(drift_client, scratch, drift_object) -> dict[str, Any]:
-    def step(key: str, parent: str | None, step_type: str, **kw: Any) -> dict:
-        return {"key": key, "parent_key": parent, "step_type": step_type, **kw}
-
-    def var(key: str, parent: str | None, is_array: bool) -> dict:
-        block: dict[str, Any] = {
-            "sources": [],
-            "variable": {"name": key, "data_type": "string", "is_array": is_array},
-        }
-        if is_array:
-            block["array_aggregation_mode"] = "add_all"
-            block["sources"] = [
-                {"source_type": "static", "source_subtype": "string", "value": ["a"]}
-            ]
-        return step(
-            key, parent, "initialize_variable", action_initialize_variable=block
-        )
-
-    def loop(key: str, parent: str, array: str) -> dict:
-        block = {"array_variable": array, "item_variable": f"{array}_item"}
-        return step(
-            key, parent, "loop", is_branch_group_initiator=True, step_loop=block
-        )
-
     def wait(key: str, parent: str, **kw: Any) -> dict:
         delay = {"days": 1, "value_origin": "static"}
-        return step(key, parent, "delay", step_delay=delay, **kw)
+        return _loop_step(key, parent, "delay", step_delay=delay, **kw)
 
     spec = _base_spec("loops", drift_object)
     spec["steps"] = [
-        var("arr0", None, True),
-        var("arr0_item", "arr0", False),
-        var("arr1", "arr0_item", True),
-        var("arr1_item", "arr1", False),
-        loop("each", "arr1_item", "arr0"),
-        step(
+        _loop_var("arr0", None, True),
+        _loop_var("arr0_item", "arr0", False),
+        _loop_var("arr1", "arr0_item", True),
+        _loop_var("arr1_item", "arr1", False),
+        _loop("each", "arr1_item", "arr0"),
+        _loop_step(
             "check",
             "each",
             "condition",
@@ -1490,11 +1494,12 @@ def drift_loops(drift_client, scratch, drift_object) -> dict[str, Any]:
             },
         ),
         wait("wait_yes", "check", parent_branch="yes"),
-        step("merge", "check", "merge_branches"),
-        step("next", "each", "next_or_finish"),
-        loop("each_again", "next", "arr1"),
+        _loop_step("leave", "check", "exit_loop", parent_branch="no"),
+        _loop_step("merge", "check", "merge_branches"),
+        _loop_step("next", "each", "next_or_finish"),
+        _loop("each_again", "next", "arr1"),
         wait("body", "each_again"),
-        step("next_again", "each_again", "next_or_finish"),
+        _loop_step("next_again", "each_again", "next_or_finish"),
         wait("after", "next_again"),
     ]
     for order, s in enumerate(spec["steps"]):
@@ -1514,11 +1519,12 @@ def test_loop_linkage_survives_the_roundtrip(drift_loops):
     each, each_again = sorted(live["loop"], key=lambda s: s["order"])
     nxt, nxt_again = sorted(live["next_or_finish"], key=lambda s: s["order"])
     (check,) = live["condition"]
+    (leave,) = live["exit_loop"]
     assert each["is_branch_group_initiator"] is True
     assert each["step_loop"]["array_variable"]["name"] == "arr0"
     assert each["step_loop"]["item_variable"]["name"] == "arr0_item"
     assert check["parent_step_id"] == each["id"]
-    assert check["step_condition"]["no_steps"] == []
+    assert (leave["parent_step_id"], leave["parent_condition"]) == (check["id"], "no")
     assert nxt["parent_step_id"] == each["id"]
     assert each_again["parent_step_id"] == nxt["id"]
     assert nxt_again["parent_step_id"] == each_again["id"]
@@ -1526,8 +1532,56 @@ def test_loop_linkage_survives_the_roundtrip(drift_loops):
     assert after["parent_step_id"] == nxt_again["id"]
 
 
+def test_untargeted_exit_loop_reads_back_as_its_innermost_loop(drift_loops):
+    """No `loop_to_exit`: the CLI sends the innermost loop's key, and Kizen
+    reads it back as that loop's id."""
+    live = _live_steps_by_type(drift_loops)
+    each = min(live["loop"], key=lambda s: s["order"])
+    (leave,) = live["exit_loop"]
+    assert leave["action_exit_loop"]["step"] == each["id"]
+
+
 def test_loops_put_back_unchanged(drift_client, drift_loops):
     _put_back_unchanged(drift_client, drift_loops)
+
+
+@pytest.fixture(scope="session")
+def drift_nested_exit_loop(drift_client, scratch, drift_object) -> dict[str, Any]:
+    """Two nested loops, with an exit_loop in the inner body aimed at the outer."""
+    spec = _base_spec("nested_exit", drift_object)
+    spec["steps"] = [
+        _loop_var("outer_arr", None, True),
+        _loop_var("outer_arr_item", "outer_arr", False),
+        _loop_var("inner_arr", "outer_arr_item", True),
+        _loop_var("inner_arr_item", "inner_arr", False),
+        _loop("outer", "inner_arr_item", "outer_arr"),
+        _loop("inner", "outer", "inner_arr"),
+        _loop_step(
+            "leave",
+            "inner",
+            "exit_loop",
+            action_exit_loop={"loop_to_exit": "outer"},
+        ),
+        _loop_step("inner_next", "inner", "next_or_finish"),
+        _loop_step("outer_next", "outer", "next_or_finish"),
+    ]
+    for order, s in enumerate(spec["steps"]):
+        s["order"] = order
+    return _create_automation(drift_client, scratch, spec)
+
+
+def test_exit_loop_aimed_at_an_outer_loop_reads_back_as_its_id(drift_nested_exit_loop):
+    live = _live_steps_by_type(drift_nested_exit_loop)
+    outer, inner = sorted(live["loop"], key=lambda s: s["order"])
+    (leave,) = live["exit_loop"]
+    assert leave["parent_step_id"] == inner["id"]
+    assert leave["action_exit_loop"]["step"] == outer["id"]
+
+
+def test_nested_exit_loop_puts_back_unchanged(drift_client, drift_nested_exit_loop):
+    """The read gives the loop's id; a PUT echoing it would 400. The put-back
+    must send the key and keep the target."""
+    _put_back_unchanged(drift_client, drift_nested_exit_loop)
 
 
 # ---------------------------------------------------------------------------
@@ -1704,16 +1758,40 @@ def drift_array_variable_steps(drift_client, scratch, drift_object) -> dict[str,
                 "value_resolution": "add_only",
             },
         },
+        {
+            "key": "default_tags",
+            "step_type": "update_variable",
+            "order": 2,
+            "parent_key": "append_tags",
+            "action_update_variable": {
+                "variable": {"name": "drift_tags", "data_type": "string"},
+                "sources": [{**source, "value": ["c"]}],
+                "array_aggregation_mode": "add_all",
+            },
+        },
     ]
     return _create_automation(drift_client, scratch, spec)
 
 
+def _live_array_updates(record: dict[str, Any]) -> list[dict[str, Any]]:
+    steps = _live_steps_by_type(record)["update_variable"]
+    return [
+        s["action_update_variable"] for s in sorted(steps, key=lambda s: s["order"])
+    ]
+
+
 def test_update_variable_value_resolution_reads_back(drift_array_variable_steps):
-    (live,) = _live_steps_by_type(drift_array_variable_steps)["update_variable"]
-    block = live["action_update_variable"]
+    block, _ = _live_array_updates(drift_array_variable_steps)
     assert block["value_resolution"] == "add_only"
     assert block["array_aggregation_mode"] == "add_all"
     assert block["deduplicate_array"] is True
+
+
+def test_new_array_update_without_value_resolution_reads_back_add_only(
+    drift_array_variable_steps,
+):
+    _, block = _live_array_updates(drift_array_variable_steps)
+    assert block["value_resolution"] == "add_only"
 
 
 def test_archive_record_uses_the_id_suffixed_write_keys(drift_data_steps):
@@ -2606,8 +2684,8 @@ def test_schedule_activity_auto_adds_its_own_context_record_association(
 ):
     """The server fills `association_configs` in itself, and the entry for the
     automation's own target_object comes back as `context_record` even though
-    the spec sent an empty list. If this stops happening, automation.md's
-    association_configs section is wrong. (The activity type here is `all_objects_associated`, so the server
+    the spec sent an empty list. If this stops happening, the
+    association_configs note on `step-types show schedule_activity` is wrong. (The activity type here is `all_objects_associated`, so the server
     also emits a `none` entry per other object in the business — hence
     filtering rather than comparing the whole list.)"""
     sent = next(

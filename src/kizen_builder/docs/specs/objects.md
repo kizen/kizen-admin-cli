@@ -68,8 +68,8 @@ live 2026-10-30).
 
 CLI: `kizen objects stages list|create|update|remove <pipeline>`, and
 `kizen records move` as the runtime counterpart. In an automation, a
-`change_field_value` step on `stage` moves the record (`kizen docs show
-automation`).
+`change_field_value` step on `stage` moves the record (`kizen automations
+step-types show change_field_value`).
 
 - `status` is one of `open | won | lost | disqualified`.
 - **There is no bare DELETE on a stage.** `remove-stage` always migrates the

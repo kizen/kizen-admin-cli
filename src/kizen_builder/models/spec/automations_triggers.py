@@ -6,6 +6,37 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kizen_builder.models.spec.automations_shared import (
+    DAYS_OFFSET_MESSAGE,
+    DAYS_OFFSETS,
+    RawFilterConfig,
+)
+
+FieldChangeMatchMode = Literal[
+    "any_including_blank",
+    "any_excluding_blank",
+    "blank",
+    "specific_value",
+    "values_added",
+    "values_removed",
+    "date_between",
+    "contains_any_of",
+    "contains_none_of",
+]
+"""The server's `FromMatchModeEnum`/`ToMatchModeEnum`, the same list."""
+
+FieldChangeValue = str | int | float | bool | list[Any] | dict[str, Any]
+
+# A dropdown option's UUID reads back as {id, name} (confirmed live
+# 2026-11-16), and so does a team member's; date_between reads back as the
+# date range (tests/fixtures/automations/kitchen_sink_triggers.raw.json).
+_FIELD_CHANGE_VALUE = (
+    "The value its match mode compares with: an option's name or UUID (or a "
+    "list of them), a team member's or record's UUID, or for date_between "
+    '{"date_start", "date_end", "type": "date_range"}. Option names resolve '
+    "to their UUIDs."
+)
+
 
 class TriggerFieldUpdatedConfig(BaseModel):
     """Config for `trigger_type: field_updated`."""
@@ -19,10 +50,31 @@ class TriggerFieldUpdatedConfig(BaseModel):
         )
     )
     fire_on_create: bool = True
-    from_match_mode: str | None = None
-    to_match_mode: str | None = None
-    from_value: dict[str, Any] | None = None
-    to_value: dict[str, Any] | None = None
+    # Kizen stores any_including_blank for a mode left out, so the planner
+    # sends specific_value (date_between for a date range) for one whose
+    # value is set.
+    from_match_mode: FieldChangeMatchMode | None = Field(
+        default=None,
+        description=(
+            "What the field held before the change. Left out: specific_value "
+            "when from_value is set (date_between for a date range), else "
+            "any_including_blank."
+        ),
+    )
+    to_match_mode: FieldChangeMatchMode | None = Field(
+        default=None,
+        description=(
+            "What the field holds after the change. Left out: specific_value "
+            "when to_value is set (date_between for a date range), else "
+            "any_including_blank."
+        ),
+    )
+    from_value: FieldChangeValue | None = Field(
+        default=None, description=_FIELD_CHANGE_VALUE
+    )
+    to_value: FieldChangeValue | None = Field(
+        default=None, description=_FIELD_CHANGE_VALUE
+    )
 
 
 class TriggerContactTagAddedRemovedConfig(BaseModel):
@@ -142,7 +194,10 @@ class TriggerOnOrAroundDateConfig(BaseModel):
     )
     date_offset: str | None = Field(
         default=None,
-        description="DateOffsetEnum value (e.g. 'on_day_and_time', 'days_before', 'days_after').",
+        description=(
+            "DateOffsetEnum value (e.g. 'on_day_and_time', 'days_before', "
+            "'days_after'). on_day_and_time needs a datetime field."
+        ),
     )
     time: str | None = Field(default=None, description="Time of day in HH:MM format.")
     period: Literal["am", "pm", "AM", "PM"] | None = Field(
@@ -152,10 +207,36 @@ class TriggerOnOrAroundDateConfig(BaseModel):
             "sending, since the live API rejects uppercase 'AM'/'PM'."
         ),
     )
-    date_offset_days: int | None = Field(default=None, ge=0)
+    date_offset_days: int | None = Field(
+        default=None, ge=0, description="1 or more with days_before or days_after."
+    )
     # Live data sometimes has null instead of a bool here.
     skip_non_working_days: bool | None = None
     every_year: bool = False
+
+    # Every date_offset but on_day_and_time 400s without `time`, and
+    # without `period` (confirmed live 2026-11-16); on_day_and_time takes
+    # the field's own time.
+    @model_validator(mode="after")
+    def _time_unless_from_field(self) -> Self:
+        if self.date_offset in (None, "on_day_and_time"):
+            return self
+        missing = [f"`{k}`" for k in ("time", "period") if not getattr(self, k)]
+        if missing:
+            raise ValueError(
+                f"date_offset '{self.date_offset}' needs {' and '.join(missing)} "
+                "(time is HH:MM on a 12-hour clock, period am or pm); only "
+                "on_day_and_time takes the time from the field itself"
+            )
+        return self
+
+    # 0 or a left-out count is a 400: "This field is required with
+    # days_before or days_after" (confirmed live 2026-11-17).
+    @model_validator(mode="after")
+    def _days_with_days_offset(self) -> Self:
+        if self.date_offset in DAYS_OFFSETS and not self.date_offset_days:
+            raise ValueError(DAYS_OFFSET_MESSAGE)
+        return self
 
 
 class TriggerWebsiteVisitedConfig(BaseModel):
@@ -274,7 +355,9 @@ class TriggerScheduledActivityOverdueConfig(BaseModel):
             "expanded {id, ...} a live read returns."
         ),
     )
-    filter_config: dict[str, Any] | None = None
+    # The builder sends it as given; only a condition or search_records step
+    # compiles the DSL.
+    filter_config: RawFilterConfig | None = None
 
 
 class TriggerNewEntityCreatedConfig(BaseModel):

@@ -29,7 +29,11 @@ from kizen_builder.tools.plans import PlanError
 
 @autos_app.command(
     "create",
-    epilog="Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`",
+    epilog=(
+        "Spec shape (an AutomationDef: triggers + step graph): see `kizen docs "
+        "show automation`. One step's block: `kizen automations step-types show "
+        "<type>`."
+    ),
 )
 def autos_create(
     spec_file: str = typer.Option(
@@ -60,7 +64,11 @@ def autos_create(
 
 @autos_app.command(
     "update",
-    epilog="Spec shape (an AutomationDef: triggers + step graph): see `kizen docs show automation`",
+    epilog=(
+        "Spec shape (an AutomationDef: triggers + step graph): see `kizen docs "
+        "show automation`. One step's block: `kizen automations step-types show "
+        "<type>`."
+    ),
 )
 def autos_update(
     spec_file: str = typer.Option(

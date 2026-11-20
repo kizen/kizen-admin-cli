@@ -2434,6 +2434,52 @@ def test_steps_bad_variable_prints_escaped_spec_errors(monkeypatch, argv, spec):
     assert "internal:" not in result.stderr
 
 
+_TO_MANY_RELATED = {
+    "action_create_related_entity": {
+        "target_custom_object": "encounters",
+        "new_entity_name": "Follow-up",
+        "new_entity_owner_type": "assign_from_context_record",
+        "context_entity_field": "encounters",
+    }
+}
+
+
+@pytest.mark.parametrize(
+    "argv, spec",
+    [
+        (
+            ["add", "a", "--root"],
+            {"key": "create", "step_type": "create_related_entity", **_TO_MANY_RELATED},
+        ),
+        (["edit", "a", "create"], _TO_MANY_RELATED),
+    ],
+    ids=["add", "edit"],
+)
+def test_steps_preview_names_a_planned_default(
+    monkeypatch, patch_live_lookups, argv, spec
+):
+    live_step = {"key": "create", "type": "create_related_entity"}
+    steps = [live_step] if "edit" in argv else []
+    payload = {"name": "a", "api_name": "a", "type": "record_based", "steps": steps}
+    raw = {"custom_object": {"name": "patients"}}
+
+    def patch_steps(_api, mutate, execute):
+        report = mutate(payload, raw)
+        return {"report": report, "payload": payload, "validation_problems": []}
+
+    monkeypatch.setattr(auto_tools, "patch_steps", patch_steps)
+    result = runner.invoke(
+        cli.app,
+        ["automations", "steps", *argv, "--dry-run", "--json"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["report"]["defaults"] == [
+        "step 'create' context_entity_field_resolution: 'add_only' "
+        "(context_entity_field is to-many)"
+    ]
+
+
 def test_fields_create_single_missing_flags_errors(monkeypatch):
     monkeypatch.setattr(field_planners, "plan_create_field", lambda **kw: _fake_plan())
     # No spec, no --api-name, stdin is a tty (no input) → clean usage error.
@@ -3330,6 +3376,7 @@ def test_team_update_dry_run_plans_without_writing(monkeypatch):
             lambda d: (
                 d["tools"][0]
                 == {"group": "custom_objects", "name": "listCustomObjects"}
+                and d["upstreams"][0]["server_name"] == "Deep Wiki"
                 and "raw" not in d
             ),
         ),
@@ -3342,8 +3389,15 @@ def test_team_update_dry_run_plans_without_writing(monkeypatch):
             ["history", "support_tools"],
             lambda d: d[-1]["type_name"] == "mcp_server_created",
         ),
+        (
+            ["upstreams"],
+            lambda d: (
+                [(s["api_name"], len(s["tools"])) for s in d]
+                == [("deep_wiki", 3), ("slack", 0)]
+            ),
+        ),
     ],
-    ids=["list", "get", "get-raw", "tools", "history"],
+    ids=["list", "get", "get-raw", "tools", "history", "upstreams"],
 )
 def test_mcp_servers_reads_emit_json(args, check):
     base = f"{FAKE_BASE_URL}/api/mcp-servers"
@@ -3354,10 +3408,70 @@ def test_mcp_servers_reads_emit_json(args, check):
     respx.get(f"{base}/{detail['id']}/events-history").respond(
         json=load_fixture("mcp_servers/events_history.json")
     )
+    _serve_upstreams()
     flags = [] if "--raw" in args else ["--json"]
     result = runner.invoke(cli.app, ["mcp-servers", *args, *flags])
     assert result.exit_code == 0, result.output
     assert check(json.loads(result.stdout))
+
+
+def _serve_upstreams() -> respx.Route:
+    """Serve the upstream list and deep_wiki's tools; slack's /tools is left
+    unrouted, so calling it fails the test. Returns the deep_wiki route."""
+    servers = load_fixture("mcp_servers/upstream_servers.json")
+    base = f"{FAKE_BASE_URL}/api/mcp-upstream-servers"
+    respx.get(base).respond(json=servers)
+    return respx.get(f"{base}/{servers['results'][0]['id']}/tools").respond(
+        json=load_fixture("mcp_servers/upstream_tools.json")
+    )
+
+
+@respx.mock
+def test_mcp_servers_upstreams_csv_lists_tools():
+    tools = _serve_upstreams()
+    result = runner.invoke(cli.app, ["mcp-servers", "upstreams", "-o", "csv"])
+    assert result.exit_code == 0, result.output
+    rows = result.stdout.strip().splitlines()
+    assert rows[0] == "upstream,name,enabled,description"
+    assert [r.split(",")[1] for r in rows[1:]] == [
+        "deep_wiki__ask_wiki_question",
+        "deep_wiki__read_wiki_contents",
+        "deep_wiki__read_wiki_structure",
+    ]
+    assert tools.call_count == 1
+
+
+@respx.mock
+def test_mcp_servers_upstreams_table():
+    _serve_upstreams()
+    result = runner.invoke(cli.app, ["mcp-servers", "upstreams"])
+    assert result.exit_code == 0, result.output
+    assert "needs_authorization" in result.stdout
+    assert "Upstream tools" in result.stdout
+
+
+@respx.mock
+def test_mcp_servers_list_csv_names_upstreams():
+    respx.get(f"{FAKE_BASE_URL}/api/mcp-servers").respond(
+        json=load_fixture("mcp_servers/list.json")
+    )
+    result = runner.invoke(cli.app, ["mcp-servers", "list", "-o", "csv"])
+    assert result.exit_code == 0, result.output
+    rows = result.stdout.strip().splitlines()
+    assert rows[0].split(",")[:4] == ["api_name", "name", "tools", "upstreams"]
+    assert [r.split(",")[3] for r in rows[1:]] == ["", "Deep Wiki"]
+
+
+@respx.mock
+def test_mcp_servers_get_table_shows_upstreams():
+    detail = load_fixture("mcp_servers/detail.json")
+    base = f"{FAKE_BASE_URL}/api/mcp-servers"
+    respx.get(base).respond(json=load_fixture("mcp_servers/list.json"))
+    respx.get(f"{base}/{detail['id']}").respond(json=detail)
+    result = runner.invoke(cli.app, ["mcp-servers", "get", "support_tools"])
+    assert result.exit_code == 0, result.output
+    assert "Upstreams" in result.stdout
+    assert "Deep Wiki" in result.stdout
 
 
 def test_mcp_servers_history_changed_column(monkeypatch):

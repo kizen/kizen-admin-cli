@@ -61,7 +61,7 @@ app-builder, `HelperAuth` becomes
 [`BearerHelperAuth`](../src/kizen_builder/auth_helper.py), which sends only
 `Authorization: Bearer` and resends once after a 401 with a refreshed token;
 the environment contract is in
-[`operating.md`](../src/kizen_builder/docs/operating.md). Retry is decided by
+[`environments.md`](../src/kizen_builder/docs/environments.md). Retry is decided by
 method and failure kind, never by endpoint: a GET retries a transport error or a
 429/502/503/504, any request retries a connection that never opened, and a
 write is never retried once sent. A write whose answer was lost says the server

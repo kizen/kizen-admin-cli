@@ -1,9 +1,9 @@
 """Objects every command module needs: the root Typer app, its callback and
 the group that ends any command on one `error:` line, the two consoles (which
 print tables as plain rows when piped), the shared output-format options,
-`cli_errors()`, `exit_spec_errors()`, the user-file readers
-(`read_text_file`, `read_json_file`, `parse_json`), `warn_renamed_flag()`,
-and `_short`.
+`cli_errors()`, `exit_spec_errors()`, `exit_spec_problems()`, the user-file
+readers (`read_text_file`, `read_json_file`, `parse_json`),
+`warn_renamed_flag()`, and `_short`.
 
 Nothing here imports a command module, so every other module in the
 package can import this one.
@@ -32,6 +32,7 @@ from kizen_builder import __version__
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.config import ConfigError, set_profile_override
 from kizen_builder.output import for_agent
+from kizen_builder.tools.findings import SpecProblems
 
 
 class _RootGroup(TyperGroup):
@@ -201,6 +202,27 @@ def exit_spec_errors(e: ValidationError) -> NoReturn:
         err_console.print(
             f"[red]spec error:[/red] {escape(loc)}: {escape(err['msg'])}", emoji=False
         )
+    raise typer.Exit(code=1) from e
+
+
+def exit_spec_problems(e: SpecProblems, json_out: bool = False) -> NoReturn:
+    """Print every finding, then exit 1. Each error is a `spec error:` line
+    and each warning a `warning:` line, with a `see:` line under it naming
+    the command to run. With `json_out`, stdout gets ``{"ok": false,
+    "errors": [...], "warnings": [...]}`` instead."""
+    if json_out:
+        typer.echo(json.dumps(e.as_dict(), indent=2, default=str))
+        raise typer.Exit(code=1) from e
+    for label, findings in (
+        ("[red]spec error:[/red]", e.errors),
+        ("[yellow]warning:[/yellow]", e.warnings),
+    ):
+        for f in findings:
+            err_console.print(
+                f"{label} {escape(f.text())}", emoji=False, soft_wrap=True
+            )
+            if f.hint:
+                err_console.print(f"  see: {escape(f.hint)}", emoji=False)
     raise typer.Exit(code=1) from e
 
 

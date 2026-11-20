@@ -44,6 +44,15 @@ from collections.abc import Callable
 # message. Never narrow this back to exactly one field segment.
 MERGE_FIELD_RE = re.compile(r"\{\{\s*([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)\s*\}\}")
 
+# A token already wrapped in the span (as the builder UI writes it, or as
+# a spec author copied it from a read). `render` keeps it as written, but
+# only with the attributes Kizen writes; any other span is escaped.
+_WRAPPED_RE = re.compile(
+    r'<span class="kzn-merge-field"(?:\s+data-merge-field-[a-z-]+="[^"<>]*")*\s*>\s*'
+    r"\{\{\s*[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+\s*\}\}\s*</span>"
+)
+_RENDER_RE = re.compile(f"{_WRAPPED_RE.pattern}|{MERGE_FIELD_RE.pattern}")
+
 # The fixed set of namespace tokens that are *not* a custom object's
 # api_name — confirmed live 2026-08-26 (`business`, `team_member`, `contact`,
 # `automation_variable`) plus `entity_record`/`custom_objects`, the two
@@ -167,7 +176,8 @@ def render(
 ) -> str:
     """Render ``{{ ns.field }}``/``{{ ns.rel.field }}`` tokens in ``text``
     into ``<span class="kzn-merge-field">`` markup; everything else is
-    HTML-escaped around them.
+    HTML-escaped around them. A token already inside a well-formed span
+    passes through unchanged.
 
     ``resolve_label(namespace, field_path)`` and ``resolve_objectname(namespace)``
     are small caller-supplied lookups (typically backed by live field/object
@@ -179,8 +189,12 @@ def render(
     """
     out: list[str] = []
     last = 0
-    for m in MERGE_FIELD_RE.finditer(text):
+    for m in _RENDER_RE.finditer(text):
         out.append(html.escape(text[last : m.start()]))
+        last = m.end()
+        if m.group(1) is None:
+            out.append(m.group(0))
+            continue
         namespace, _, field_path = m.group(1).partition(".")
 
         label = resolve_label(namespace, field_path) if resolve_label else None
@@ -200,6 +214,5 @@ def render(
             f'<span class="kzn-merge-field" {" ".join(attrs)}>'
             f"{html.escape(m.group(0))}</span>"
         )
-        last = m.end()
     out.append(html.escape(text[last:]))
     return "".join(out)

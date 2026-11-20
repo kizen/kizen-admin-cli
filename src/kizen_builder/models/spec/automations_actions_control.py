@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from kizen_builder.models.spec.automations_shared import FilterConfig
 
 
 class StepConditionConfig(BaseModel):
@@ -21,7 +23,7 @@ class StepConditionConfig(BaseModel):
     type: Literal["in_group", "not_in_group", "custom_filter", "llm_decision"] = (
         "custom_filter"
     )
-    filter_config: dict[str, Any] | None = None
+    filter_config: FilterConfig | None = None
     group_ids: list[str] = Field(
         default_factory=list,
         description="Entity group UUIDs for in_group/not_in_group types.",
@@ -77,7 +79,15 @@ class StepGoalConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     wait_type: str = Field(description="One of: never, delay, specific_datetime.")
-    delay_type: str | None = None
+    # Choices: `GET /api/docs/schema`, 2026-11-17 (`DurationUnitEnum`). A read
+    # of a goal that doesn't wait on a delay carries "", and saves back as it is.
+    delay_type: Literal["minutes", "hours", "days", ""] | None = Field(
+        default=None,
+        description=(
+            "Unit of `delay_amount`, plural (`day` is a 400); a read carries "
+            '"" when the goal waits on no delay.'
+        ),
+    )
     delay_amount: int | None = Field(default=None, ge=0)
     specific_datetime: str | None = Field(
         default=None, description="ISO 8601 datetime string."
@@ -100,6 +110,38 @@ class ActionGoToAutomationStepConfig(BaseModel):
         default=None,
         description="Key of the target step within this automation. Resolved to step UUID at apply time.",
     )
+
+
+class ActionExitLoopConfig(BaseModel):
+    """Config for `step_type: exit_loop`. Kizen requires the block; `{}` ends
+    the innermost loop around the step."""
+
+    model_config = ConfigDict(extra="allow")
+
+    loop_to_exit: str | None = Field(
+        default=None,
+        description=(
+            "Key of the loop this step ends. It must be a loop the step sits "
+            "inside. Omitted, it ends the innermost loop around the step, as "
+            "Kizen's builder does."
+        ),
+    )
+    step: str | None = Field(
+        default=None,
+        description=(
+            "The wire spelling of `loop_to_exit`: a loop step key, or the "
+            "loop's id as read."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _one_target(self) -> Self:
+        if self.loop_to_exit and self.step:
+            raise ValueError(
+                "exit_loop takes 'loop_to_exit' or 'step', not both: "
+                "'step' is the wire spelling of 'loop_to_exit'"
+            )
+        return self
 
 
 class ActionStopExecutionConfig(BaseModel):
@@ -142,9 +184,45 @@ class ActionStopExecutionConfig(BaseModel):
 
 
 class ActionArchiveRecordConfig(BaseModel):
-    """Config for `step_type: archive_record` (no required fields)."""
+    """Config for `step_type: archive_record`. `record_source` picks the
+    record: the automation's own, the one a relationship field points at, or
+    the one an entity variable holds (confirmed live 2026-11-17)."""
 
     model_config = ConfigDict(extra="allow")
+
+    record_source: Literal[
+        "this_record", "related_object_field", "automation_variable"
+    ] = "this_record"
+    relationship_fields: list[str] | None = Field(
+        default=None,
+        description=(
+            "With related_object_field: the relationship field to follow, as "
+            "'object.field' or a UUID. Resolved to UUIDs at apply time."
+        ),
+    )
+    automation_variable_name: str | None = Field(
+        default=None,
+        description="With automation_variable: the entity variable's name.",
+    )
+
+    @model_validator(mode="after")
+    def _source_has_its_key(self) -> Self:
+        extra = self.model_extra or {}
+        if self.record_source == "related_object_field" and not (
+            self.relationship_fields or extra.get("relationship_field_ids")
+        ):
+            raise ValueError(
+                "record_source related_object_field needs relationship_fields: "
+                "the relationship field that points at the record to archive"
+            )
+        if self.record_source == "automation_variable" and not (
+            self.automation_variable_name or extra.get("automation_variable")
+        ):
+            raise ValueError(
+                "record_source automation_variable needs automation_variable_name: "
+                "the entity variable holding the record to archive"
+            )
+        return self
 
 
 class ActionModifyAutomationConfig(BaseModel):

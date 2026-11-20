@@ -14,6 +14,7 @@ import pytest
 
 from kizen_builder.models.spec import AutomationDef
 from kizen_builder.models.spec.automations_triggers import trigger_config_field
+from kizen_builder.tools.findings import SpecProblems
 from kizen_builder.tools.planners.automations import (
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
@@ -225,7 +226,7 @@ def test_stop_execution_without_an_action_sends_stop_and_complete(
 def test_stop_execution_all_five_action_options(patch_live_lookups, action):
     """All 5 values are real, confirmed-live wire shapes (captured from one
     automation with one stop_execution step per UI dropdown option — see
-    automation.md's stop_execution section) — each must round-trip through
+    the stop_execution card in `step-types show`) — each must round-trip through
     the planner rather than being silently dropped to {} or rejected by the
     (previously too-narrow) Literal type."""
     spec = dict(BRANCHING_SPEC)
@@ -311,8 +312,8 @@ def test_modify_related_entities_context_entity_field_dotted_ref_resolves(
     patch_live_lookups,
 ):
     """Regression: context_entity_field only ran through `_unwrap_id`, so a
-    dotted 'object.field' ref (which automation.md's general field_ref rule
-    says should work) was sent to the API as a literal string and 400'd
+    dotted 'object.field' ref (which the `field` concept in `step-types
+    concepts` says should work) was sent to the API as a literal string and 400'd
     ("Must be a valid UUID"). Now resolved via `_resolve_field` like
     field_to_modify/related_object_field already were.
     """
@@ -354,6 +355,37 @@ def test_modify_related_entities_context_entity_field_dotted_ref_resolves(
     assert field_update["field_to_modify"] == attending_provider["id"]
     assert field_update["context_entity_field"] == mrn["id"]
     assert field_update["value_type"] == "context_entity_value"
+
+
+def test_fields_to_modify_items_reach_the_builder_as_given(patch_live_lookups):
+    """The typed items keep the keys they were given, nulls included: a
+    `value_type: null` still sends `value_type`, and an item with neither key
+    still sends `change_type`, as before the items were typed."""
+    item = {"field_to_modify": "encounters.attending_provider"}
+    spec = {
+        "api_name": "mre_as_given",
+        "name": "MRE As Given",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "modify",
+                "step_type": "modify_related_entities",
+                "order": 0,
+                "parent_key": None,
+                "action_modify_related_entities": {
+                    "object_to_modify": "encounters",
+                    "automation_target_relationship_fields": ["patients.encounters"],
+                    "fields_to_modify": [{**item, "value_type": None}, item],
+                },
+            }
+        ],
+    }
+    block = _build(spec)["steps"][0]["action_modify_related_entities"]
+    null_given, neither = block["fields_to_modify"]
+    assert null_given["value_type"] == "specific_value"
+    assert "change_type" not in null_given
+    assert neither["change_type"] == "specific_value"
+    assert "value_type" not in neither
 
 
 def test_modify_related_entities_record_source_from_a_variable(patch_live_lookups):
@@ -1419,6 +1451,106 @@ def test_create_related_entity_reduces_expanded_variable_refs(patch_live_lookups
     assert action["target_variable"] == "new_record"
 
 
+def _related_entity_spec(target_object: str, field: str, **extra) -> dict:
+    block = {
+        "target_custom_object": "encounters",
+        "new_entity_name": "Follow-up",
+        "new_entity_owner_type": "assign_from_context_record",
+        "context_entity_field": field,
+        **extra,
+    }
+    return {
+        **_one_step_spec("create_related_entity", block),
+        "target_object": target_object,
+    }
+
+
+@pytest.mark.parametrize(
+    "target_object, field, planned, many",
+    [
+        ("patients", "encounters", "add_only", "is"),
+        ("document_sets", "primary_audit_log_record", "overwrite", "isn't"),
+    ],
+    ids=["to-many", "to-one"],
+)
+def test_create_related_entity_resolution_follows_cardinality(
+    patch_live_lookups, target_object, field, planned, many
+):
+    """overwrite on a to-many field unlinks every record already related."""
+    (op,) = plan_create_automation(
+        _related_entity_spec(target_object, field)
+    ).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == planned
+    assert op.preview["defaults"] == [
+        f"step 'only' context_entity_field_resolution: '{planned}' "
+        f"(context_entity_field {many} to-many)"
+    ]
+
+
+def test_create_related_entity_explicit_resolution_wins(patch_live_lookups):
+    spec = _related_entity_spec(
+        "patients", "encounters", context_entity_field_resolution="overwrite"
+    )
+    (op,) = plan_create_automation(spec).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == "overwrite"
+    assert "defaults" not in op.preview
+
+
+_CRE_STEP_ID = "6a2e4c8f-1b3d-4f5a-9c7e-0d2b4f6a8c05"
+
+
+@pytest.mark.parametrize(
+    "live_resolution, planned",
+    [("overwrite", "overwrite"), (None, "add_only")],
+)
+def test_update_omitting_the_context_resolution_keeps_the_live_one(
+    patch_live_lookups, monkeypatch, live_resolution, planned
+):
+    import kizen_builder.tools.planners.automations as ma
+
+    spec = _related_entity_spec("patients", "encounters")
+    spec["steps"][0]["id"] = _CRE_STEP_ID
+    live_step = {
+        "id": _CRE_STEP_ID,
+        "step_type": "create_related_entity",
+        "order": 0,
+        "description": "Create",
+        "user_description": "",
+        "parent_step_id": None,
+        "parent_condition": "",
+        "action_on_failure": "silent_continue",
+        "should_skip_execution": False,
+        "error_notification_severity_level": "inherit",
+        "action_create_related_entity": {
+            "context_entity_field_resolution": live_resolution
+        },
+    }
+    spec["steps"][0].update(_live_step_keys(live_step))
+    raw = {
+        "id": "7b3f5d9a-2c4e-4a6b-8d0f-1e3a5c7b9d06",
+        "api_name": spec["api_name"],
+        "name": spec["name"],
+        "revision": 2,
+        "active": False,
+        "triggers": [],
+        "steps": [live_step],
+    }
+    listing = [{"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    (op,) = plan_update_automation(spec).operations
+    block = op.payload["steps"][0]["action_create_related_entity"]
+    assert block["context_entity_field_resolution"] == planned
+    if live_resolution:
+        assert "only" in op.preview["keeps_live"]
+        assert "defaults" not in op.preview
+    else:
+        assert "only" not in op.preview.get("keeps_live", [])
+        assert len(op.preview["defaults"]) == 1
+
+
 @pytest.mark.parametrize(
     "target", ["client_client", {"name": "client_client"}, {"id": "client_client"}]
 )
@@ -1438,7 +1570,7 @@ def test_create_related_entity_on_contacts_refused(patch_live_lookups, target):
         "step 'only': Kizen can't create a Contact from create_related_entity "
         '("contact creation not supported"). Create it in a code_step with POST '
         '/records/client_client/add — see "Find or create a Contact by email" in '
-        "kizen docs show automation."
+        "kizen docs show automation-patterns."
     )
 
 
@@ -3409,6 +3541,129 @@ def test_diff_stop_without_a_block_shows_only_a_real_change(
     ] == lines
 
 
+_TAGS = {"name": "tags", "data_type": "string", "is_array": True}
+_INIT_ID = "0d7996b0-1f5b-4a4b-85a1-4072667b654a"
+_BUMP_ID = "9a27c28b-c32a-43f6-ad80-56def1ded114"
+
+
+def _variable_step(step_id, step_type, order, parent, block):
+    return {
+        "id": step_id,
+        "step_type": step_type,
+        "order": order,
+        "description": step_type,
+        "user_description": "",
+        "parent_step_id": parent,
+        "parent_condition": "",
+        f"action_{step_type}": block,
+        "action_on_failure": "silent_continue",
+        "should_skip_execution": False,
+        "error_notification_severity_level": "inherit",
+    }
+
+
+@pytest.fixture
+def array_update_live(webhook_live, monkeypatch):
+    """`webhook_live` with an array init and an update of it, served as
+    edited: a test sets the live update's `value_resolution`. Returns the
+    raw and a spec of it with no steps."""
+    import kizen_builder.tools.planners.automations as ma
+
+    spec = {**_webhook_spec(webhook_live, auth=True), "steps": []}
+    variable = {**_TAGS, "id": "262e305c-da52-47e1-99ad-4eb80d7682bf"}
+    webhook_live["steps"] = [
+        _variable_step(
+            _INIT_ID,
+            "initialize_variable",
+            0,
+            None,
+            {"sources": [], "variable": variable, "is_required": False},
+        ),
+        _variable_step(
+            _BUMP_ID,
+            "update_variable",
+            1,
+            _INIT_ID,
+            {**_array_update_block(), "variable": variable, "is_required": False},
+        ),
+    ]
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": webhook_live})
+    return webhook_live, spec
+
+
+def _array_update_spec(
+    live: tuple[dict, dict], live_value: str | None, **spec_extra
+) -> dict:
+    """The live automation as a spec, its live update's `value_resolution`
+    set to ``live_value``; the spec's update block gets ``spec_extra``."""
+    raw, spec = live
+    raw["steps"][1]["action_update_variable"]["value_resolution"] = live_value
+    spec = dict(spec)
+    init, bump = raw["steps"]
+    spec["steps"] = [
+        {
+            "key": "init",
+            "id": init["id"],
+            "step_type": "initialize_variable",
+            "order": 0,
+            "parent_key": None,
+            "description": init["description"],
+            "action_initialize_variable": {"sources": [], "variable": dict(_TAGS)},
+            **_live_step_keys(init),
+        },
+        {
+            "key": "bump",
+            "id": bump["id"],
+            "step_type": "update_variable",
+            "order": 1,
+            "parent_key": "init",
+            "description": bump["description"],
+            "action_update_variable": _array_update_block(**spec_extra),
+            **_live_step_keys(bump),
+        },
+    ]
+    return spec
+
+
+@pytest.mark.parametrize(
+    "live_value, spec_extra, sent, kept",
+    [
+        ("add_only", {}, "add_only", True),
+        (None, {}, None, False),
+        ("add_only", {"value_resolution": "overwrite"}, "overwrite", False),
+    ],
+    ids=["live-kept", "live-null", "spec-wins"],
+)
+def test_update_keeps_the_live_value_resolution_it_leaves_out(
+    array_update_live, live_value, spec_extra, sent, kept
+):
+    """Kizen keeps the stored value on a PUT that omits it (confirmed live
+    2026-11-11); sending it keeps `diff` honest."""
+    spec = _array_update_spec(array_update_live, live_value, **spec_extra)
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["steps"][1]["action_update_variable"].get("value_resolution") == (
+        sent
+    )
+    assert ("bump" in op.preview.get("keeps_live", [])) is kept
+
+
+def test_update_new_array_update_defaults_to_add_only(array_update_live):
+    spec = _array_update_spec(array_update_live, "overwrite")
+    del spec["steps"][1]["id"]
+    (op,) = plan_update_automation(spec).operations
+    assert op.payload["steps"][1]["action_update_variable"]["value_resolution"] == (
+        "add_only"
+    )
+
+
+def test_diff_array_update_without_value_resolution_shows_no_change(
+    array_update_live,
+):
+    spec = _array_update_spec(array_update_live, "add_only")
+    diff = diff_automation(spec)["diff"]
+    assert [d for d in diff if d["path"].endswith(".value_resolution")] == []
+
+
 def _webhook_blocks(payload: dict) -> dict[str, dict]:
     return {
         t["trigger_webhook"]["name"]: t["trigger_webhook"]
@@ -3972,6 +4227,43 @@ def test_diff_automation_reproduced_spec_is_empty(patch_live_lookups):
     assert result["diff"] == []
 
 
+def test_diff_automation_fills_left_out_orders_like_update(patch_live_lookups):
+    """`diff` parses the spec the way `update --dry-run` does, so a spec
+    that leaves `order` out (as step-types tells authors to) diffs instead
+    of failing with "Field required"."""
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    spec = {
+        "api_name": "test_two_code_steps",
+        "name": "Test Two Code Steps",
+        "type": "global",
+        "triggers": [
+            {
+                "trigger_type": "manual",
+                "id": raw["triggers"][0]["id"],
+                "description": raw["triggers"][0]["description"],
+            }
+        ],
+        "steps": [
+            {
+                "key": key,
+                "id": live["id"],
+                "step_type": "code_step",
+                "parent_key": parent,
+                "description": live["description"],
+                "user_description": live["user_description"],
+                "action_on_failure": "notify_pause",
+                "action_code_step": live["action_code_step"],
+            }
+            for key, parent, live in (
+                ("step0", None, steps[0]),
+                ("step1", "step0", steps[1]),
+            )
+        ],
+    }
+    assert diff_automation(spec)["diff"] == []
+
+
 def test_diff_automation_surfaces_active_flip(patch_live_lookups):
     """`active` is diffed like any other top-level field — no special-casing
     for the BCLI-016 bug beyond reusing `plan_update_automation`'s own
@@ -4272,6 +4564,25 @@ def test_preview_warns_about_rules_saved_without_the_editor_layout(
                 "destination_variable": "found",
             },
         }
+    )
+    spec["steps"][0].update(parent_key="init", order=1)
+    spec["steps"][1]["order"] = 2
+    spec["steps"].insert(
+        0,
+        {
+            "key": "init",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "action_initialize_variable": {
+                "sources": [],
+                "variable": {
+                    "name": "found",
+                    "data_type": "entity",
+                    "data_subtype": patients["id"],
+                    "is_array": True,
+                },
+            },
+        },
     )
     assert plan_create_automation(spec).operations[0].preview["warnings"] == [
         "step 'check': the rule on 'mrn' (text, starts_with) is saved without the "
@@ -4841,6 +5152,65 @@ def test_step_schedule_activity_sends_note_and_html_note(patch_live_lookups):
     action = payload["steps"][0]["action_schedule_activity"]
     assert action["note"] == "Plain note"
     assert action["html_note"] == "<p><strong>Rich</strong> note</p>"
+
+
+def test_step_schedule_activity_resolves_field_refs_to_field_ids(patch_live_lookups):
+    """`field_ref` is a spec convenience: the wire takes only `field_id`."""
+    patients = load_fixture("objects/patients.json")
+    by_name = {f["api_name"]: f["id"] for f in patients["fields"]}
+    payload = _build(
+        _schedule_activity_spec(
+            {
+                "activity_type_id": "11111111-1111-4111-8111-111111111111",
+                "schedule": {
+                    "type": "on_or_around_date",
+                    "on_or_around_date": {
+                        "field_ref": "patients.date_of_birth",
+                        "date_offset": "days_after",
+                        "date_offset_days": 1,
+                        "time": "09:00",
+                    },
+                },
+                "assigned_to": {
+                    "assignment_type": "team_selector_field",
+                    "field_ref": "owner",
+                },
+            }
+        )
+    )
+    action = payload["steps"][0]["action_schedule_activity"]
+    assert action["schedule"]["on_or_around_date"] == {
+        "field_id": by_name["date_of_birth"],
+        "date_offset": "days_after",
+        "date_offset_days": 1,
+        "time": "09:00",
+    }
+    assert action["assigned_to"] == {
+        "assignment_type": "team_selector_field",
+        "field_id": by_name["owner"],
+    }
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"type": "later"},
+        {"type": "with_delay"},
+        {"type": "with_delay", "with_delay": {"delay_type": "days", "delay_value": 1}},
+        {"type": "with_delay", "with_delay": {"delay_type": "day", "delay_value": 0}},
+        {
+            "type": "on_or_around_date",
+            "on_or_around_date": {"date_offset": "on_day", "date_offset_days": 0},
+        },
+    ],
+)
+def test_step_schedule_activity_refuses_a_malformed_schedule(schedule):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AutomationDef.model_validate(
+            _schedule_activity_spec({"activity_type": "call", "schedule": schedule})
+        )
 
 
 def test_step_schedule_activity_association_configs_author_shape(patch_live_lookups):
@@ -5573,9 +5943,10 @@ def _string_loop_steps() -> list[dict]:
 def _nested_loops(
     depth: int, root_parent: str | None = None, arrays: list[str] | None = None
 ) -> list[dict]:
-    """`depth` loops, each the body of the one before, and a delay in the
-    innermost body. Each loop iterates its entry in `arrays` (by default
-    a different array per level) through its own item variable."""
+    """`depth` loops, each the body of the one before, and a delay then an
+    `exit_loop` in the innermost body. Each loop iterates its entry in
+    `arrays` (by default a different array per level) through its own item
+    variable."""
     arrays = arrays or [f"arr{n}" for n in range(depth)]
     steps: list[dict] = []
     parent = root_parent
@@ -5591,6 +5962,7 @@ def _nested_loops(
         closers.append(_s(f"n{n}", f"l{n}", "next_or_finish", 0))
         parent = f"l{n}"
     steps.append(_s("inner", parent, "delay", 0))
+    steps.append(_s("leave", "inner", "exit_loop", 0))
     return steps + closers[::-1]
 
 
@@ -5680,13 +6052,238 @@ def test_loop_on_a_condition_yes_branch(patch_live_lookups):
     assert _fan_out_lines(_preview(spec)) == []
 
 
-def test_nested_loops(patch_live_lookups):
+def test_nested_loops_with_an_exit_loop(patch_live_lookups):
     spec = _authored_loop_spec(_nested_loops(2), record_based=False)
     by_key = _built_steps(spec)
     assert by_key["l1"]["parent_key"] == "l0"
     assert by_key["inner"]["parent_key"] == "l1"
     assert (by_key["n0"]["parent_key"], by_key["n1"]["parent_key"]) == ("l0", "l1")
+    assert by_key["leave"]["prefix"] == "step"
     assert "warnings" not in _preview(spec)
+
+
+def _exit(spec: dict) -> dict:
+    return next(s for s in spec["steps"] if s["step_type"] == "exit_loop")
+
+
+@pytest.mark.parametrize(
+    "block, sent",
+    [
+        (None, {"step": "l1"}),
+        ({}, {"step": "l1"}),
+        ({"loop_to_exit": "l0"}, {"step": "l0"}),
+        ({"step": "l0"}, {"step": "l0"}),
+    ],
+    ids=["no-block", "empty", "loop_to_exit", "wire-step"],
+)
+def test_exit_loop_sends_its_loop_key(patch_live_lookups, block, sent):
+    """Omitted, the target is the innermost loop around the step, as Kizen's
+    builder writes it (confirmed live 2026-11-11)."""
+    spec = _authored_loop_spec(_nested_loops(2), record_based=False)
+    if block is not None:
+        _exit(spec)["action_exit_loop"] = block
+    assert _built_steps(spec)["leave"]["action_exit_loop"] == sent
+
+
+def test_exit_loop_with_both_target_spellings_is_refused():
+    """`step` is the wire spelling of `loop_to_exit`; with both set, one would
+    silently win."""
+    spec = _authored_loop_spec(_nested_loops(2), record_based=False)
+    _exit(spec)["action_exit_loop"] = {"loop_to_exit": "l0", "step": "l1"}
+    with pytest.raises(ValueError, match="'loop_to_exit' or 'step', not both"):
+        AutomationDef.model_validate(spec)
+
+
+_LOOPS_AROUND = "(loops around it: l1, l0)"
+
+
+@pytest.mark.parametrize(
+    "target", ["inner", "nope", "n1"], ids=["delay", "unknown", "next_or_finish"]
+)
+def test_exit_loop_aimed_at_no_loop_around_it_fails_plan(patch_live_lookups, target):
+    spec = _authored_loop_spec(_nested_loops(2), record_based=False)
+    _exit(spec)["action_exit_loop"] = {"loop_to_exit": target}
+    with pytest.raises(SpecProblems) as e:
+        _build(spec)
+    assert [f.message for f in e.value.errors] == [
+        f"exit_loop step 'leave' exits '{target}', which is not a loop around it "
+        + _LOOPS_AROUND
+    ]
+
+
+def test_exit_loop_aimed_at_a_loop_it_is_not_inside_fails_plan(patch_live_lookups):
+    """`again` is a loop after `each`, not around `leave`."""
+    steps = [
+        _var("arr2", None, "arr2", 0, is_array=True, sources=_STRINGS),
+        _var("item2", "arr2", "arr2_item", 0),
+        *_string_loop_steps(),
+        _s("leave", "body", "exit_loop", 0),
+        _loop("again", "after", "arr2", "arr2_item", 0),
+        _s("again_next", "again", "next_or_finish", 0),
+    ]
+    steps[2]["parent_key"] = "item2"
+    spec = _authored_loop_spec(steps, record_based=False)
+    _exit(spec)["action_exit_loop"] = {"loop_to_exit": "again"}
+    with pytest.raises(SpecProblems) as e:
+        _build(spec)
+    assert [f.message for f in e.value.errors] == [
+        "exit_loop step 'leave' exits 'again', which is not a loop around it "
+        "(loops around it: each)"
+    ]
+
+
+def test_exit_loop_outside_a_loop_fails_plan(patch_live_lookups):
+    steps = [*_string_loop_steps(), _s("leave", "after", "exit_loop", 0)]
+    with pytest.raises(SpecProblems) as e:
+        _build(_authored_loop_spec(steps, record_based=False))
+    assert [f.message for f in e.value.errors] == [
+        "exit_loop step 'leave' is not inside a loop body (server 400s otherwise)"
+    ]
+
+
+def test_steps_after_an_exit_loop_warn(patch_live_lookups):
+    """Kizen saves them, and a run never reaches them (confirmed live
+    2026-11-11)."""
+    steps = [*_nested_loops(2), _s("dead", "leave", "delay", 0)]
+    spec = _authored_loop_spec(steps, record_based=False)
+    assert _preview(spec)["warnings"] == [
+        "steps after exit_loop step 'leave' never run: dead"
+    ]
+
+
+@pytest.fixture
+def nested_live(patch_live_lookups, monkeypatch):
+    """The UI-built `nested_loops` capture, served as the live automation."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/nested_loops.raw.json")
+    listing = [*ma.list_automations(), {"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _capture_spec(raw: dict) -> dict:
+    """A spec reproducing a captured automation step for step, ids and kept
+    keys included, from its translation."""
+    from kizen_builder.translate import live_to_payload
+
+    payload = live_to_payload(raw)
+    raw_steps = {s["id"]: s for s in raw["steps"]}
+    raw_triggers = {t["id"]: t for t in raw["triggers"]}
+    declared = {
+        s["action_initialize_variable"]["variable"]["name"]: s[
+            "action_initialize_variable"
+        ]["variable"]
+        for s in payload["steps"]
+        if s["type"] == "initialize_variable"
+    }
+    steps = []
+    for w in payload["steps"]:
+        step = {
+            "id": w["id"],
+            "key": w["key"],
+            "parent_key": w["parent_key"],
+            "parent_branch": w["parent_yes_no"] or None,
+            "step_type": w["type"],
+            "order": w["order"],
+            "description": w["description"],
+            "is_branch_group_initiator": w["is_branch_group_initiator"],
+            **_live_step_keys(raw_steps[w["id"]]),
+        }
+        field = _block_field_for(w["type"])
+        if field in w:
+            step[field] = dict(w[field])
+        if w["type"] == "update_variable":
+            step[field]["variable"] = declared[w[field]["variable"]]
+        steps.append(step)
+    return {
+        "name": raw["name"],
+        "api_name": raw["api_name"],
+        "type": raw["type"],
+        "triggers": [
+            {
+                "id": t["id"],
+                "trigger_type": t["type"],
+                "order": t["order"],
+                **_live_step_keys(raw_triggers[t["id"]]),
+            }
+            for t in payload["triggers"]
+        ],
+        "steps": steps,
+    }
+
+
+def test_diff_of_the_unchanged_exit_loop_capture_is_empty(nested_live):
+    """The target reads back as the outer loop's id and is sent as its key."""
+    spec = _capture_spec(nested_live)
+    assert _exit(spec)["action_exit_loop"] == {"step": "s04_loop"}
+    assert diff_automation(spec)["diff"] == []
+
+
+def test_diff_shows_an_exit_loop_retarget(nested_live):
+    spec = _capture_spec(nested_live)
+    _exit(spec)["action_exit_loop"] = {"loop_to_exit": "s05_loop"}
+    assert [
+        (d["path"].rsplit(".", 1)[-1], d["before"], d["after"])
+        for d in diff_automation(spec)["diff"]
+    ] == [("step", "48f7ef88", "74853a4b")]
+
+
+@pytest.mark.parametrize(
+    "block, sent, kept",
+    [
+        (None, {"step": "s04_loop"}, True),
+        ({}, {"step": "s04_loop"}, True),
+        ({"loop_to_exit": "s05_loop"}, {"step": "s05_loop"}, False),
+    ],
+    ids=["no-block", "empty", "retarget"],
+)
+def test_update_keeps_the_live_exit_target(nested_live, block, sent, kept):
+    """A PUT that echoes the id read back 400s (confirmed live 2026-11-11), so
+    the kept target goes as the loop's key."""
+    spec = _capture_spec(nested_live)
+    leave = _exit(spec)
+    if block is None:
+        del leave["action_exit_loop"]
+    else:
+        leave["action_exit_loop"] = block
+    (op,) = plan_update_automation(spec).operations
+    (wire,) = [s for s in op.payload["steps"] if s["type"] == "exit_loop"]
+    assert wire["action_exit_loop"] == sent
+    assert (leave["key"] in op.preview.get("keeps_live", [])) is kept
+
+
+def test_update_refuses_a_kept_exit_target_the_spec_has_no_loop_for(nested_live):
+    """The outer loop goes without its `id`, so the target kept from live is
+    an id no spec step carries; sent, it's the 400 a PUT echoing an id gets."""
+    spec = _capture_spec(nested_live)
+    del next(s for s in spec["steps"] if s["key"] == "s04_loop")["id"]
+    del _exit(spec)["action_exit_loop"]
+    with pytest.raises(PlanError) as e:
+        plan_update_automation(spec)
+    assert str(e.value) == (
+        "invalid automation graph:\n  - exit_loop step 's09_exit_loop' keeps its "
+        "live target, loop 'For each item in 'loop_1'' "
+        "(48f7ef88-d047-412b-bbe8-c2a90c781463), which the spec has no step for "
+        "by id; set action_exit_loop.loop_to_exit (loops around it: s05_loop, "
+        "s04_loop)"
+    )
+
+
+def test_update_keeps_a_live_null_exit_target_null(nested_live):
+    raw = copy.deepcopy(nested_live)
+    next(s for s in raw["steps"] if s["step_type"] == "exit_loop")[
+        "action_exit_loop"
+    ] = {"step": None}
+    nested_live.clear()
+    nested_live.update(raw)
+    spec = _capture_spec(nested_live)
+    assert _exit(spec)["action_exit_loop"] == {}
+    (op,) = plan_update_automation(spec).operations
+    (wire,) = [s for s in op.payload["steps"] if s["type"] == "exit_loop"]
+    assert wire["action_exit_loop"] == {}
+    assert "keeps_live" not in op.preview
 
 
 def test_loop_with_two_body_lanes_still_warns(patch_live_lookups):
@@ -5701,10 +6298,9 @@ def test_loop_nested_past_three_is_refused(patch_live_lookups):
     """Kizen's builder holds three levels. The API accepts more, so this is
     the CLI's own rule, checked at plan time."""
     assert "warnings" not in _preview(_authored_loop_spec(_nested_loops(3), False))
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(_authored_loop_spec(_nested_loops(5), False))
-    problems = str(e.value).split("\n  - ")[1:]
-    assert problems == [
+    assert [f.message for f in e.value.errors] == [
         f"loop 'l{n}' is nested {n + 1} levels deep; Kizen's builder allows at "
         "most three. The API accepts deeper loops, but the CLI refuses them so "
         "the automation stays editable in the UI."
@@ -5745,9 +6341,9 @@ def test_nested_loop_over_an_array_already_iterated_is_refused(
     patch_live_lookups, arrays, problem
 ):
     spec = _authored_loop_spec(_nested_loops(len(arrays), arrays=arrays), False)
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(spec)
-    assert str(e.value).split("\n  - ")[1:] == [_same_array_problem(*problem)]
+    assert [f.message for f in e.value.errors] == [_same_array_problem(*problem)]
 
 
 def test_loops_over_one_array_in_sequence_build(patch_live_lookups):
@@ -5866,9 +6462,12 @@ def _branching_test_spec() -> dict:
     }
 
 
-def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatch):
+def test_branching_test_transcription_diffs_only_by_noise(
+    patch_live_lookups, monkeypatch
+):
     """The spec reproduces the UI-built graph, the Kizen AI app included.
-    What's left is noise any spec shows: server-written descriptions."""
+    What's left is noise any spec shows: server-written descriptions, and the
+    append default its id-less array update gets as a new step."""
     import kizen_builder.tools.planners.automations as ma
 
     raw = load_fixture("automations/branching_test.raw.json")
@@ -5883,7 +6482,13 @@ def test_branching_test_transcription_diffs_clean(patch_live_lookups, monkeypatc
         for d in diff_automation(_branching_test_spec())["diff"]
         if d["path"].rsplit(".", 1)[-1] != "description"
     ]
-    assert structural == []
+    assert structural == [
+        {
+            "path": "steps.59a9f2a6.action_update_variable.value_resolution",
+            "before": "<absent>",
+            "after": "add_only",
+        }
+    ]
 
 
 def test_branching_test_payload_shape(patch_live_lookups):
@@ -5980,20 +6585,30 @@ def test_pass_through_builders_accept_any_key(patch_live_lookups):
     assert payload["steps"][0]["step_delay"]["not_a_delay_key"] == 2
 
 
-@pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
-def test_unread_key_fails_before_the_plan_renders(patch_live_lookups, flags):
+def test_unread_key_fails_before_the_plan_renders(patch_live_lookups):
     from typer.testing import CliRunner
 
     import kizen_builder.cli as cli
 
     spec = _one_step_spec("create_related_entity", _CRE_WITH_FIELDS_TO_SET)
     result = CliRunner().invoke(
-        cli.app, ["automations", "create", *flags], input=json.dumps(spec)
+        cli.app, ["automations", "create", "--dry-run"], input=json.dumps(spec)
     )
     assert result.exit_code == 1
-    assert "plan error:" in result.stderr
-    assert "fields_to_set" in result.stderr
+    assert (
+        "spec error: step 'only' action_create_related_entity.fields_to_set: "
+        "unknown key"
+    ) in result.stderr
     assert result.stdout == ""
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["automations", "create", "--dry-run", "--json"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 1
+    (error,) = json.loads(result.stdout)["errors"]
+    assert error["path"] == "action_create_related_entity.fields_to_set"
 
 
 def test_create_related_entity_reads_target_object_as_target_custom_object(
@@ -6320,7 +6935,11 @@ _BAD_VARIABLES = [
 _GOOD_VARIABLES = [
     pytest.param({"name": "owner", "data_type": "employee"}, id="employee"),
     pytest.param(
-        {"name": "branch", "data_type": "entity", "data_subtype": "obj-uuid"},
+        {
+            "name": "branch",
+            "data_type": "entity",
+            "data_subtype": "ceed733b-9dd9-4bf9-8c52-8ba1ac41da45",
+        },
         id="entity",
     ),
     pytest.param({"name": "inbox", "data_type": "email"}, id="email"),
@@ -6435,19 +7054,25 @@ def test_live_update_variable_with_null_value_resolution_replans_unchanged(
     assert planned == live["action_update_variable"]
 
 
-def _init_then_update_spec(*, is_array: bool | None, defined_as: str = "tags") -> dict:
+def _init_then_update_spec(
+    *,
+    is_array: bool | None,
+    defined_as: str = "tags",
+    value_resolution: str | None = "add_only",
+) -> dict:
     variable: dict = {"name": defined_as, "data_type": "string"}
     if is_array is not None:
         variable["is_array"] = is_array
     spec = _one_step_spec("initialize_variable", {"variable": variable, "sources": []})
     spec["steps"][0]["key"] = "init"
+    extra = {"value_resolution": value_resolution} if value_resolution else {}
     spec["steps"].append(
         {
             "key": "bump",
             "step_type": "update_variable",
             "order": 1,
             "parent_key": "init",
-            "action_update_variable": _array_update_block(value_resolution="add_only"),
+            "action_update_variable": _array_update_block(**extra),
         }
     )
     return spec
@@ -6472,6 +7097,64 @@ def test_update_variable_value_resolution_on_undefined_variable_passes(
     """No definition to check against: the server decides."""
     steps = _build(_init_then_update_spec(is_array=False, defined_as="other"))["steps"]
     assert steps[1]["action_update_variable"]["value_resolution"] == "add_only"
+
+
+def _bump_block(spec: dict) -> dict:
+    return _build(spec)["steps"][1]["action_update_variable"]
+
+
+def test_new_array_update_defaults_to_add_only(patch_live_lookups):
+    """The builder's default for a new step since 2026-11-10."""
+    spec = _init_then_update_spec(is_array=True, value_resolution=None)
+    assert _bump_block(spec)["value_resolution"] == "add_only"
+
+
+@pytest.mark.parametrize("value", ["overwrite", "overwrite_except_null"])
+def test_new_array_update_sends_the_value_given(patch_live_lookups, value):
+    spec = _init_then_update_spec(is_array=True, value_resolution=value)
+    assert _bump_block(spec)["value_resolution"] == value
+
+
+@pytest.mark.parametrize(
+    "is_array, defined_as",
+    [(False, "tags"), (None, "tags"), (True, "other")],
+    ids=["scalar", "is_array-unset", "undeclared"],
+)
+def test_new_update_of_a_non_array_gets_no_default(
+    patch_live_lookups, is_array, defined_as
+):
+    spec = _init_then_update_spec(
+        is_array=is_array, defined_as=defined_as, value_resolution=None
+    )
+    assert "value_resolution" not in _bump_block(spec)
+
+
+def test_new_update_of_a_search_destination_defaults_to_add_only(patch_live_lookups):
+    spec = _one_step_spec("update_variable", _array_update_block())
+    spec["steps"][0].update(key="bump", order=1, parent_key="find")
+    spec["steps"].insert(0, {**_search_into("tags"), "key": "find", "order": 0})
+    assert _bump_block(spec)["value_resolution"] == "add_only"
+
+
+def test_array_update_with_an_id_gets_no_default(patch_live_lookups):
+    """An id means the step's settings come from elsewhere."""
+    spec = _init_then_update_spec(is_array=True, value_resolution=None)
+    spec["steps"][1]["id"] = "9a27c28b-c32a-43f6-ad80-56def1ded114"
+    assert "value_resolution" not in _bump_block(spec)
+
+
+def test_steps_add_array_update_defaults_to_add_only(patch_live_lookups):
+    from kizen_builder.tools.automations import build_wire_step
+
+    step = {
+        "step_type": "update_variable",
+        "action_update_variable": {
+            **_array_update_block(),
+            "variable": {"name": "genders", "data_type": "string"},
+        },
+    }
+    block = build_wire_step(step, _GENDERS_DECLARED, "patients")
+    assert block["action_update_variable"]["value_resolution"] == "add_only"
 
 
 def test_value_resolution_check_reads_raw_wire_steps():
@@ -6570,7 +7253,7 @@ def _field_ref_trigger_block(payload: dict, trigger_type: str, goal: bool) -> di
 
 _FIELD_REF_TRIGGER_CASES = [
     ("field_updated", "mrn", {"fire_on_create": True}),
-    ("on_or_around_date", "date_of_birth", {"date_offset": "on_day_and_time"}),
+    ("on_or_around_date", "created", {"date_offset": "on_day_and_time"}),
 ]
 
 
@@ -6611,6 +7294,277 @@ def test_trigger_bare_field_ref_needs_a_target_object(
     )
     with pytest.raises(PlanError, match="unqualified and the automation has no"):
         _build(spec)
+
+
+def _field_updated_values(block: dict, *, goal: bool = False) -> dict:
+    spec = _field_ref_trigger_spec(
+        "field_updated",
+        {"fire_on_create": False, **block},
+        goal=goal,
+        target="encounters",
+    )
+    return _field_ref_trigger_block(_build(spec), "field_updated", goal)
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_option_label_resolves(patch_live_lookups, goal):
+    block = _field_updated_values(
+        {
+            "field_ref": "encounter_priority",
+            "from_match_mode": "specific_value",
+            "from_value": "routine",
+            "to_match_mode": "specific_value",
+            "to_value": "Urgent",
+        },
+        goal=goal,
+    )
+    assert block["to_value"] == _option_id("encounters", "encounter_priority", "Urgent")
+    assert block["from_value"] == _option_id(
+        "encounters", "encounter_priority", "Routine"
+    )
+
+
+def test_field_updated_checkbox_labels_resolve(patch_live_lookups):
+    wheelchair = _option_id("encounters", "special_arrangements", "Wheelchair")
+    block = _field_updated_values(
+        {"field_ref": "special_arrangements", "to_value": ["Wheelchair"]}
+    )
+    assert block["to_value"] == [wheelchair]
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_unknown_option_lists_the_options(patch_live_lookups, goal):
+    with pytest.raises(PlanError) as e:
+        _field_updated_values(
+            {"field_ref": "special_arrangements", "to_value": "Cane"}, goal=goal
+        )
+    assert str(e.value).endswith(
+        "'Cane' isn't an option of 'special_arrangements' on 'encounters'. "
+        "Options: Wheelchair, Walker / Crutches, Interpreter, Oxygen, Other"
+    )
+    where = (
+        "step 'g0': goal trigger 'goal_trigger_0'"
+        if goal
+        else "trigger 'trigger.field_updated.1'"
+    )
+    assert str(e.value).startswith(where)
+
+
+def test_field_updated_ids_and_reads_need_no_lookup(patch_live_lookups):
+    urgent = _option_id("encounters", "encounter_priority", "Urgent")
+    read = {"id": urgent, "name": "Urgent", "deleted": False}
+    block = _field_updated_values(
+        {"field_ref": "encounter_priority", "from_value": urgent, "to_value": read}
+    )
+    assert block["from_value"] == block["to_value"] == urgent
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_value_without_a_mode_plans_specific_value(
+    patch_live_lookups, goal
+):
+    """Kizen stores any_including_blank for a mode left out, which fired the
+    trigger on every change."""
+    block = _field_updated_values(
+        {
+            "field_ref": "encounter_priority",
+            "from_value": "Routine",
+            "to_value": "Urgent",
+        },
+        goal=goal,
+    )
+    assert block["from_match_mode"] == block["to_match_mode"] == "specific_value"
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_date_range_without_a_mode_plans_date_between(
+    patch_live_lookups, goal
+):
+    """The UI stores date_between for a date range; Kizen accepts
+    specific_value for one too (probed 2026-11-17)."""
+    date_range = {
+        "date_start": "2026-07-05T06:15:00.000Z",
+        "date_end": "2026-07-19T04:00:00.000Z",
+        "type": "date_range",
+    }
+    block = _field_updated_values(
+        {"field_ref": "encounter_start", "to_value": date_range}, goal=goal
+    )
+    assert block["to_match_mode"] == "date_between"
+    assert block["to_value"] == date_range
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_explicit_mode_wins_and_no_value_gets_no_mode(
+    patch_live_lookups, goal
+):
+    block = _field_updated_values(
+        {
+            "field_ref": "encounter_priority",
+            "from_match_mode": "any_excluding_blank",
+            "from_value": "Routine",
+            "to_match_mode": "any_including_blank",
+            "to_value": "Urgent",
+        },
+        goal=goal,
+    )
+    assert block["from_match_mode"] == "any_excluding_blank"
+    assert block["to_match_mode"] == "any_including_blank"
+    bare = _field_updated_values({"field_ref": "encounter_priority"}, goal=goal)
+    assert "from_match_mode" not in bare and "to_match_mode" not in bare
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_the_preview_names_a_planned_match_mode(patch_live_lookups, goal):
+    spec = _field_ref_trigger_spec(
+        "field_updated",
+        {
+            "field_ref": "encounter_priority",
+            "fire_on_create": False,
+            "to_value": "Urgent",
+        },
+        goal=goal,
+        target="encounters",
+    )
+    (op,) = plan_create_automation(spec).operations
+    where = (
+        "step 'g0' goal trigger 'goal_trigger_0'"
+        if goal
+        else "trigger 'trigger.field_updated.1'"
+    )
+    assert op.preview["defaults"] == [
+        f"{where} to_match_mode: 'specific_value' (to_value is set)"
+    ]
+
+
+_FU_TRIGGER_ID = "3f0f2a8e-6f5e-4d55-9a57-0c3c3e1f8b01"
+_FU_GOAL_ID = "8d1c7a52-2b8e-4f0e-a3f4-6b1f5d0c9e02"
+_FU_GOAL_TRIGGER_ID = "c4b6e0d9-7a3f-4e21-8f5b-2d9a1c7e4f03"
+
+
+def _field_updated_update(live_value: bool) -> tuple[dict, dict]:
+    """A live encounters automation whose trigger and goal trigger store
+    any_including_blank, with a to_value of Urgent or none, and an update
+    spec of it that sets to_value Urgent and leaves the modes out."""
+    urgent = _option_id("encounters", "encounter_priority", "Urgent")
+    live_block = {
+        "from_match_mode": "any_including_blank",
+        "to_match_mode": "any_including_blank",
+        "from_value": None,
+        "to_value": {"id": urgent} if live_value else None,
+    }
+    goal = {
+        "id": _FU_GOAL_ID,
+        "step_type": "goal",
+        "order": 0,
+        "description": "Goal",
+        "user_description": "",
+        "parent_step_id": None,
+        "parent_condition": "",
+        "action_on_failure": "silent_continue",
+        "should_skip_execution": False,
+        "error_notification_severity_level": "inherit",
+        "step_goal": {
+            "wait_type": "never",
+            "triggers": [
+                {
+                    "id": _FU_GOAL_TRIGGER_ID,
+                    "trigger_type": "field_updated",
+                    "trigger_field_updated": live_block,
+                }
+            ],
+        },
+    }
+    raw = {
+        "id": "5e7d9b1a-0c2f-4a8e-b6d3-1f4e7a9c2b04",
+        "api_name": "priority_urgent",
+        "name": "Priority Urgent",
+        "revision": 3,
+        "active": False,
+        "triggers": [
+            {
+                "id": _FU_TRIGGER_ID,
+                "trigger_type": "field_updated",
+                "trigger_field_updated": dict(live_block),
+            }
+        ],
+        "steps": [goal],
+    }
+    spec_block = {
+        "field_ref": "encounter_priority",
+        "fire_on_create": False,
+        "to_value": "Urgent",
+    }
+    spec = {
+        "api_name": raw["api_name"],
+        "name": raw["name"],
+        "type": "record_based",
+        "target_object": "encounters",
+        "triggers": [
+            {
+                "trigger_type": "field_updated",
+                "id": _FU_TRIGGER_ID,
+                "order": 1,
+                "trigger_field_updated": spec_block,
+            }
+        ],
+        "steps": [
+            {
+                "key": "g0",
+                "id": _FU_GOAL_ID,
+                "step_type": "goal",
+                "order": 0,
+                "parent_key": None,
+                "step_goal": {
+                    "wait_type": "never",
+                    "triggers": [
+                        {
+                            "id": _FU_GOAL_TRIGGER_ID,
+                            "trigger_type": "field_updated",
+                            "trigger_field_updated": spec_block,
+                        }
+                    ],
+                },
+                **_live_step_keys(goal),
+            }
+        ],
+    }
+    return raw, spec
+
+
+@pytest.mark.parametrize(
+    "live_value, planned",
+    [(True, "any_including_blank"), (False, "specific_value")],
+    ids=["live_value_keeps_mode", "value_added_gets_default"],
+)
+def test_update_omitting_a_match_mode_keeps_the_live_one(
+    patch_live_lookups, monkeypatch, live_value, planned
+):
+    """Kizen stores a mode for a side with no value, so a live mode is kept
+    only beside a live value: adding to_value to an any-change trigger must
+    not keep any_including_blank."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw, spec = _field_updated_update(live_value)
+    listing = [{"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    (op,) = plan_update_automation(spec).operations
+    trigger = op.payload["triggers"][1]
+    (goal_trigger,) = op.payload["steps"][0]["step_goal"]["triggers"]
+    assert trigger["trigger_field_updated"]["to_match_mode"] == planned
+    assert goal_trigger["trigger_field_updated"]["to_match_mode"] == planned
+    named = {trigger["key"], "g0"}
+    if live_value:
+        assert named <= set(op.preview["keeps_live"])
+        assert "defaults" not in op.preview
+    else:
+        assert not named & set(op.preview.get("keeps_live", []))
+        assert op.preview["defaults"] == [
+            f"trigger '{trigger['key']}' to_match_mode: 'specific_value' (to_value is set)",
+            "step 'g0' goal trigger 'goal_trigger_0' to_match_mode: 'specific_value' "
+            "(to_value is set)",
+        ]
 
 
 @pytest.mark.parametrize(
@@ -6825,12 +7779,81 @@ def test_notify_team_member_selector_not_checked(patch_live_lookups):
         "order": 0,
         "parent_key": None,
         "action_notify_member_via_text": {
-            "team_member": {"type": "team_member"},
+            "team_member": {"type": "employee"},
             "content": "hi",
         },
     }
     action = _build(spec)["steps"][0]["action_notify_member_via_text"]
-    assert action["team_member"] == {"type": "team_member"}
+    assert action["team_member"] == {"type": "employee"}
+
+
+_BY_OWNER = {"type": "team_selector_field", "field_ref": "owner"}
+_MESSAGE_ID = "11111111-1111-1111-1111-111111111111"
+
+
+@pytest.mark.parametrize("key", ["team_member", "cc_team_member"])
+def test_notify_email_sends_one_employee_as_employees(patch_live_lookups, key):
+    """Kizen refuses `employee` on an email step (confirmed live
+    2026-11-16), the text step's spelling for one team member."""
+    block = {"team_member": {"type": "owner"}, "id": _MESSAGE_ID}
+    block[key] = {"type": "employee", "employee_id": "e-1"}
+    wire = _build(_one_step_spec("notify_member_via_email", block))["steps"][0][
+        "action_notify_member_via_email"
+    ]
+    assert wire[key] == {"type": "employees", "employee_ids": ["e-1"]}
+
+
+@pytest.mark.parametrize(
+    ("step_type", "block", "selector"),
+    [
+        ("assign_team_member", _BY_OWNER, None),
+        (
+            "notify_member_via_email",
+            {"team_member": _BY_OWNER, "email_template_id": _MESSAGE_ID},
+            "team_member",
+        ),
+        (
+            "notify_member_via_email",
+            {
+                "team_member": {"type": "owner"},
+                "cc_team_member": _BY_OWNER,
+                "email_template_id": _MESSAGE_ID,
+            },
+            "cc_team_member",
+        ),
+        (
+            "notify_member_via_text",
+            {"team_member": _BY_OWNER, "content": "hi"},
+            "team_member",
+        ),
+        (
+            "send_related_contact_email",
+            {
+                "send_to_contact_field": _MESSAGE_ID,
+                "email": _MESSAGE_ID,
+                "cc_team_member": _BY_OWNER,
+            },
+            "cc_team_member",
+        ),
+    ],
+)
+def test_team_member_selector_resolves_field_ref(
+    patch_live_lookups, step_type, block, selector
+):
+    """Each `_team_member_selector` caller sends `field_ref` as `field_id`."""
+    action = _build(_one_step_spec(step_type, block))["steps"][0][
+        _block_field_for(step_type)
+    ]
+    built = action[selector] if selector else action
+    assert built == {"type": "team_selector_field", "field_id": _FAR_SELECTOR}
+
+
+def test_team_member_selector_field_id_wins_over_field_ref(patch_live_lookups):
+    block = {**_BY_OWNER, "field_id": _EMPLOYEE}
+    action = _build(_one_step_spec("assign_team_member", block))["steps"][0][
+        "action_assign_team_member"
+    ]
+    assert action == {"type": "team_selector_field", "field_id": _EMPLOYEE}
 
 
 def test_translate_keeps_an_incomplete_assign_team_member():
@@ -7123,3 +8146,160 @@ def test_read_back_verbs_warn_about_an_inactive_start_target():
     for result in results:
         [warning] = result["warnings"]
         assert "start_automation target 'the_target' is inactive." in warning
+
+
+def test_live_build_reports_every_step_it_cannot_build(patch_live_lookups, monkeypatch):
+    """A step the live build refuses doesn't hide the steps after it."""
+    from kizen_builder.tools.planners import automations as planner
+
+    real = planner._build_step_payload
+
+    def refuse_two(step, auto, ctx):
+        if step.key in ("first", "third"):
+            raise PlanError(f"step '{step.key}': no such field 'missing_{step.key}'")
+        return real(step, auto, ctx)
+
+    monkeypatch.setattr(planner, "_build_step_payload", refuse_two)
+    spec = {
+        "api_name": "x",
+        "name": "X",
+        "type": "global",
+        "triggers": [{"trigger_type": "manual", "order": 0}],
+        "steps": [
+            _s("first", None, "delay", 0),
+            _s("second", "first", "delay", 0),
+            _s("third", "second", "delay", 0),
+        ],
+    }
+    with pytest.raises(SpecProblems) as e:
+        _build(spec)
+    assert [(f.step, f.index, f.message) for f in e.value.errors] == [
+        ("first", 0, "no such field 'missing_first'"),
+        ("third", 2, "no such field 'missing_third'"),
+    ]
+
+
+# document_sets fixture: a many_to_one to Contacts and one to Deals.
+_CONTACT_REL = "d93b2ec4-42a6-4772-af2f-f922b10cc12d"
+_DEAL_REL = "9e3788f0-1889-4ab5-bf86-4a01e07ee7c4"
+
+
+def _document_set_step(step_type: str, block: dict) -> dict:
+    spec = _one_step_spec(step_type, block)
+    spec["target_object"] = "document_sets"
+    action = _build(spec)["steps"][0]
+    return action[_block_field_for(step_type)]
+
+
+def test_archive_record_resolves_relationship_field_refs(patch_live_lookups):
+    action = _document_set_step(
+        "archive_record",
+        {
+            "record_source": "related_object_field",
+            "relationship_fields": ["document_sets.primary_deal_record"],
+        },
+    )
+    assert action == {
+        "record_source": "related_object_field",
+        "relationship_field_ids": [_DEAL_REL],
+    }
+
+
+def test_archive_record_from_a_variable(patch_live_lookups):
+    action = _document_set_step(
+        "archive_record",
+        {"record_source": "automation_variable", "automation_variable_name": "rec"},
+    )
+    assert action == {
+        "record_source": "automation_variable",
+        "relationship_field_ids": [],
+        "automation_variable_name": "rec",
+    }
+
+
+@pytest.mark.parametrize(
+    ("source", "needs"),
+    [
+        ("related_object_field", "relationship_fields"),
+        ("automation_variable", "automation_variable_name"),
+    ],
+)
+def test_archive_record_source_needs_its_key(source, needs):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=needs):
+        AutomationDef.model_validate(
+            _one_step_spec("archive_record", {"record_source": source})
+        )
+
+
+@pytest.mark.parametrize(
+    ("step_type", "message_key"),
+    [("send_related_contact_email", "email"), ("send_related_contact_text", "text")],
+)
+@pytest.mark.parametrize(
+    "contact_field",
+    ["document_sets.primary_contact_record", "primary_contact_record", _CONTACT_REL],
+)
+def test_send_to_contact_field_resolves_to_a_uuid(
+    patch_live_lookups, step_type, message_key, contact_field
+):
+    action = _document_set_step(
+        step_type,
+        {"send_to_contact_field": contact_field, message_key: _MESSAGE_ID},
+    )
+    assert action["send_to_contact_field"] == _CONTACT_REL
+    assert action[message_key] == {"id": _MESSAGE_ID}
+
+
+@pytest.mark.parametrize(
+    ("step_type", "message_key"),
+    [("send_related_contact_email", "email"), ("send_related_contact_text", "text")],
+)
+def test_send_to_contact_field_is_required(patch_live_lookups, step_type, message_key):
+    with pytest.raises(PlanError) as e:
+        _document_set_step(step_type, {message_key: _MESSAGE_ID})
+    assert str(e.value) == (
+        "step 'only': send_to_contact_field is required: the relationship field "
+        "that points at the contact. Candidates on document_sets: "
+        "primary_contact_record."
+    )
+
+
+def test_send_related_contact_text_takes_relationship_field_ref(patch_live_lookups):
+    action = _document_set_step(
+        "send_related_contact_text",
+        {"relationship_field_ref": "primary_contact_record", "text": _MESSAGE_ID},
+    )
+    assert action == {
+        "send_to_contact_field": _CONTACT_REL,
+        "text": {"id": _MESSAGE_ID},
+    }
+
+
+@pytest.mark.parametrize("step_type", ["initialize_variable", "update_variable"])
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"field_ref": "document_sets.primary_deal_record"},
+        {"field_ref": "primary_deal_record"},
+        {"field_id": _DEAL_REL},
+    ],
+)
+def test_field_value_source_sends_field(patch_live_lookups, step_type, source):
+    block = {
+        "variable": {"name": "deal", "data_type": "string"},
+        "sources": [
+            {
+                "source_type": "field_value",
+                "source_subtype": "this_record_field",
+                **source,
+            }
+        ],
+    }
+    (wire,) = _document_set_step(step_type, block)["sources"]
+    assert wire == {
+        "source_type": "field_value",
+        "source_subtype": "this_record_field",
+        "field": _DEAL_REL,
+    }

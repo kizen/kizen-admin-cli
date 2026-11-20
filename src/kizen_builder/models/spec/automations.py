@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from kizen_builder.models.spec._base import ApiName
 from kizen_builder.models.spec.automations_actions_code import (
@@ -17,6 +17,7 @@ from kizen_builder.models.spec.automations_actions_code import (
 )
 from kizen_builder.models.spec.automations_actions_control import (
     ActionArchiveRecordConfig,
+    ActionExitLoopConfig,
     ActionGoToAutomationStepConfig,
     ActionModifyAutomationConfig,
     ActionStartAutomationConfig,
@@ -67,6 +68,7 @@ _STEP_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "goal": "step_goal",
     "loop": "step_loop",
     "go_to_automation_step": "action_go_to_automation_step",
+    "exit_loop": "action_exit_loop",
     "http_request": "action_http_request",
     "initialize_variable": "action_initialize_variable",
     "math_operator": "action_math_operator",
@@ -210,6 +212,7 @@ class AutomationStepDef(BaseModel):
     action_delete_scheduled_activity: ActionDeleteScheduledActivityConfig | None = None
     action_file_content_extraction: ActionFileContentExtractionConfig | None = None
     action_go_to_automation_step: ActionGoToAutomationStepConfig | None = None
+    action_exit_loop: ActionExitLoopConfig | None = None
     action_http_request: ActionHttpRequestConfig | None = None
     action_initialize_variable: ActionInitializeVariableConfig | None = None
     action_math_operator: ActionMathOperatorConfig | None = None
@@ -301,12 +304,16 @@ class AutomationDef(BaseModel):
     steps: list[AutomationStepDef] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _validate_automation(self) -> Self:
+    def _validate_automation(self, info: ValidationInfo) -> Self:
         if self.type == "record_based" and self.target_object is None:
             raise ValueError(
                 "record_based automations require 'target_object' (the api_name of "
                 "the custom object this automation runs against)"
             )
+        # The planner passes `graph: False` and lists every graph problem
+        # from `translate.validate_payload` on the built payload instead.
+        if (info.context or {}).get("graph") is False:
+            return self
 
         # Step keys must be unique
         keys = [s.key for s in self.steps]

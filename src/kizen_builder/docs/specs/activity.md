@@ -87,7 +87,7 @@ off the deal:
 ```
 
 The rest of that workflow, which stamps the date, rates the deal and
-schedules a follow-up, is in `kizen docs show automation`. Confirmed live
+schedules a follow-up, is in `kizen docs show automation-patterns`. Confirmed live
 2026-10-30: the type saved with both fields linked, and a run on a deal whose
 Outcome was No Answer took the yes branch. Logging an activity is done in the
 Kizen UI by users, so the runs were started by logging a call by hand.
@@ -383,7 +383,7 @@ DELETE /api/activities/scheduled-activity/<id>
 ## See also
 
 - `kizen docs show field` — the shared type-specific blocks.
-- `kizen docs show automation` — the `schedule_activity` step, its
-  `association_configs`, and its 11 "Assign To" options.
+- `kizen automations step-types show schedule_activity` — the step's block,
+  its "Assign To" options, when it's due, and its `association_configs`.
 - `kizen docs show smart-connectors` — `activity`-type connectors read logged
   activities as their input.

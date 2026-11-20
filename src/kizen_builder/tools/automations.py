@@ -90,8 +90,8 @@ def list_automations(folder: str | None = None) -> list[dict[str, Any]]:
 def list_llm_models() -> list[dict[str, Any]]:
     """Flatten the automations metadata endpoint's LLM catalog into one row
     per (provider, model) — the live source for `call_llm`'s `model_name` +
-    `business_plugin_app_id` pairing (see automation.md "LLM & extraction
-    destinations").
+    `business_plugin_app_id` pairing (see `kizen automations step-types show
+    call_llm`).
     """
     config = load_env_config()
     with KizenClient(config) as client:
@@ -236,12 +236,16 @@ def _inactive_target_warnings(
 def show_automation(api_name: str) -> dict[str, Any]:
     """The automation as a translated wire payload — synthesized step keys
     included — for tree rendering and as the source of step-edit handles."""
-    from kizen_builder.translate import live_to_payload
+    from kizen_builder.translate import exit_loop_dead_end_warnings, live_to_payload
 
     config = load_env_config()
     with KizenClient(config) as client:
         raw, listing = _fetch_with_listing(client, api_name)
     payload = live_to_payload(raw)
+    warnings = [
+        *_inactive_target_warnings(payload, listing).get("warnings", []),
+        *exit_loop_dead_end_warnings(payload["steps"]),
+    ]
     return {
         "env": config.name,
         "api_name": api_name,
@@ -251,7 +255,7 @@ def show_automation(api_name: str) -> dict[str, Any]:
         "name": raw.get("name"),
         "custom_object_name": (raw.get("custom_object") or {}).get("name"),
         "payload": payload,
-        **_inactive_target_warnings(payload, listing),
+        **({"warnings": warnings} if warnings else {}),
     }
 
 
@@ -268,7 +272,9 @@ def patch_steps(
     the before/after semantic diff as evidence of exactly what changed.
     """
     from kizen_builder.translate import (
+        exit_loop_dead_end_warnings,
         live_to_payload,
+        resolve_exit_loop_targets,
         semantic_diff,
         validate_payload,
     )
@@ -278,7 +284,9 @@ def patch_steps(
         before = _fetch_raw(client, api_name)
         payload = live_to_payload(before)
         report = mutate(payload, before)
+        resolve_exit_loop_targets(payload["steps"])
         problems = validate_payload(payload)
+        warnings = exit_loop_dead_end_warnings(payload["steps"])
         result: dict[str, Any] = {
             "env": config.name,
             "api_name": api_name,
@@ -286,6 +294,7 @@ def patch_steps(
             "revision_before": before.get("revision"),
             "report": report,
             "validation_problems": problems,
+            **({"warnings": warnings} if warnings else {}),
             "payload": payload,
             "executed": False,
         }
@@ -412,6 +421,25 @@ def list_subfolders(identifier: str) -> list[dict[str, Any]]:
 
         match = _find_folder(identifier, auto_api.list_folders(client))
         return auto_api.list_subfolders(client, match["id"])
+
+
+def check_step_spec(step: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    """Run ``automations create``'s per-step checks on a step for ``steps
+    add``/``edit``, against the variables the live automation declares.
+    Raises `SpecProblems` listing every error; returns the warnings as
+    lines for the report."""
+    from kizen_builder.tools.automation_check import (
+        block_rule_errors,
+        check_step,
+        declared_variables,
+    )
+    from kizen_builder.tools.findings import SpecProblems
+
+    errors, warnings = check_step(step, declared_variables(payload["steps"]))
+    errors += block_rule_errors(step)
+    if errors:
+        raise SpecProblems(errors, warnings)
+    return [f.text() + (f" (see: {f.hint})" if f.hint else "") for f in warnings]
 
 
 def build_wire_step(

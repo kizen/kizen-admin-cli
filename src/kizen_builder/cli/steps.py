@@ -16,10 +16,16 @@ from kizen_builder.cli._shared import (
     console,
     err_console,
     exit_spec_errors,
+    exit_spec_problems,
 )
-from kizen_builder.cli.automations import autos_app
+from kizen_builder.cli.automations import autos_app, print_warnings
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
+from kizen_builder.tools.findings import SpecProblems
+from kizen_builder.tools.planners.automations import (
+    _block_field_for,
+    step_planned_defaults,
+)
 from kizen_builder.tools.plans import PlanError
 
 steps_app = typer.Typer(
@@ -65,9 +71,13 @@ def _detect_message_auto_versions(diff: list[dict[str, Any]]) -> list[str]:
     return callouts
 
 
+def _with_defaults(report: dict[str, Any], defaults: list[str]) -> dict[str, Any]:
+    return {**report, "defaults": defaults} if defaults else report
+
+
 def _run_step_patch(
     api_name: str,
-    mutate: Callable[[dict[str, Any], dict[str, Any]], Any],
+    mutate: Callable[[dict[str, Any], dict[str, Any], list[str]], Any],
     dry_run: bool,
     yes: bool,
     json_out: bool,
@@ -78,16 +88,30 @@ def _run_step_patch(
     The apply re-runs the whole GET→mutate→validate pipeline against fresh
     live state (plans are ephemeral); last_revision makes a concurrent edit
     between preview and apply fail loudly instead of clobbering.
+    ``mutate`` adds the spec check's warnings to its third argument; they go
+    beside the report, not in it.
     """
 
     def patch(execute: bool) -> dict[str, Any]:
+        warnings: list[str] = []
         try:
             with cli_errors(LookupError, PlanError):
-                return auto_tools.patch_steps(api_name, mutate, execute=execute)
+                try:
+                    result = auto_tools.patch_steps(
+                        api_name,
+                        lambda payload, raw: mutate(payload, raw, warnings),
+                        execute=execute,
+                    )
+                except SpecProblems as e:
+                    exit_spec_problems(e, json_out)
         except ValidationError as e:
             exit_spec_errors(e)
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     preview = patch(execute=False)
+    print_warnings(preview)
 
     if not json_out:
         console.print(
@@ -100,6 +124,8 @@ def _run_step_patch(
             emoji=False,
             soft_wrap=True,
         )
+        for w in preview.get("warnings", []):
+            err_console.print(f"[yellow]warning:[/yellow] {escape(w)}", emoji=False)
         if preview["validation_problems"]:
             console.print("[red]step graph INVALID — refusing to apply:[/red]")
             for p in preview["validation_problems"]:
@@ -199,20 +225,35 @@ def steps_edit(
     """
     patch, from_stdin = _read_spec(spec_file)
 
-    def mutate(payload: dict[str, Any], raw: dict[str, Any]) -> Any:
+    def mutate(
+        payload: dict[str, Any], raw: dict[str, Any], warnings: list[str]
+    ) -> Any:
         step = step_tools.find_step(payload, key)
         target_object = (raw.get("custom_object") or {}).get("name")
+        checked = {k: v for k, v in patch.items() if k != "type"}
+        warnings += auto_tools.check_step_spec(
+            {**checked, "key": key, "step_type": step["type"]}, payload
+        )
         normalized = auto_tools.normalize_step_patch(
             dict(patch), key, step["type"], payload, target_object
         )
-        return step_tools.edit_step(payload, key, normalized)
+        cfg = _block_field_for(step["type"])
+        defaults = step_planned_defaults(
+            key, step["type"], patch.get(cfg) or {}, normalized.get(cfg) or {}
+        )
+        report = step_tools.edit_step(payload, key, normalized)
+        return _with_defaults(report, defaults)
 
     _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
 
 
 @steps_app.command(
     "add",
-    epilog="Step spec shape (one AutomationDef step): see `kizen docs show automation-step`",
+    epilog=(
+        "Step spec shape (one AutomationDef step): see `kizen docs show "
+        "automation-step`. A step to start from: `kizen automations step-types "
+        "show <type> --variant <name>`."
+    ),
 )
 def steps_add(
     api_name: str = typer.Argument(..., help="Automation api_name."),
@@ -253,18 +294,29 @@ def steps_add(
         raise typer.Exit(code=2)
     spec, from_stdin = _read_spec(spec_file)
 
-    def mutate(payload: dict[str, Any], raw: dict[str, Any]) -> Any:
+    def mutate(
+        payload: dict[str, Any], raw: dict[str, Any], warnings: list[str]
+    ) -> Any:
         target_object = (raw.get("custom_object") or {}).get("name")
         parent_key, adopt = parent or None, not leaf
+        warnings += auto_tools.check_step_spec(spec, payload)
+        defaults: list[str] = []
         if spec.get("step_type") == "loop":
             loop, closer, item = auto_tools.build_wire_loop(
                 spec, payload, target_object
             )
-            return step_tools.insert_loop(
+            report = step_tools.insert_loop(
                 payload, loop, closer, item, parent_key, branch, adopt
             )
-        wire = auto_tools.build_wire_step(spec, payload, target_object)
-        return step_tools.insert_step(payload, wire, parent_key, branch, adopt)
+        else:
+            wire = auto_tools.build_wire_step(spec, payload, target_object)
+            step_type = spec["step_type"]
+            cfg = _block_field_for(step_type)
+            defaults = step_planned_defaults(
+                wire["key"], step_type, spec.get(cfg) or {}, wire.get(cfg) or {}
+            )
+            report = step_tools.insert_step(payload, wire, parent_key, branch, adopt)
+        return _with_defaults(report, defaults)
 
     _run_step_patch(api_name, mutate, dry_run, yes, json_out, from_stdin)
 
@@ -285,7 +337,7 @@ def steps_remove(
     body, needs --cascade. A loop with an empty body goes with its
     next_or_finish, which goes only with its loop."""
 
-    def mutate(payload: dict[str, Any], raw: dict[str, Any]) -> Any:
+    def mutate(payload: dict[str, Any], raw: dict[str, Any], _: list[str]) -> Any:
         return step_tools.remove_step(payload, key, cascade=cascade)
 
     _run_step_patch(api_name, mutate, dry_run, yes, json_out)

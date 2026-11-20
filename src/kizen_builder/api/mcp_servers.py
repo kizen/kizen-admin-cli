@@ -13,6 +13,8 @@ Endpoints:
   DELETE /api/mcp-servers/{id}                 hard delete (204)
   GET    /api/mcp-servers/tools                the tool catalogue, by group
   GET    /api/mcp-servers/{id}/events-history  change history (DRF page)
+  GET    /api/mcp-upstream-servers             upstream servers (DRF page), read only
+  GET    /api/mcp-upstream-servers/{id}/tools  one upstream server's tools
 """
 
 from __future__ import annotations
@@ -57,3 +59,13 @@ def get_tool_catalog(client: KizenClient) -> dict[str, Any]:
 def list_events_history(client: KizenClient, server_id: str) -> list[dict[str, Any]]:
     """GET /api/mcp-servers/{id}/events-history — written a second or so after a change."""
     return client.paginate(f"/api/mcp-servers/{server_id}/events-history")
+
+
+def list_upstream_servers(client: KizenClient) -> list[dict[str, Any]]:
+    """GET /api/mcp-upstream-servers — every upstream server, with ``tool_count``."""
+    return client.paginate("/api/mcp-upstream-servers")
+
+
+def get_upstream_tools(client: KizenClient, server_id: str) -> dict[str, Any]:
+    """GET /api/mcp-upstream-servers/{id}/tools — ``{tool_count, last_discovered_at, tools}``."""
+    return client.get(f"/api/mcp-upstream-servers/{server_id}/tools")
