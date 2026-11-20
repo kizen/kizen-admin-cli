@@ -202,7 +202,7 @@ def autos_get(
         console.print(step_table)
 
     if fmt is out.OutputFormat.JSON:
-        typer.echo(_entry_per_line(_get_json(result, triggers, steps)))
+        typer.echo(out.entry_per_line(_get_json(result, triggers, steps)))
         return
     out.render(
         fmt,
@@ -293,7 +293,7 @@ def _elide(value: Any, full: str) -> Any:
     if isinstance(value, dict):
         return {
             k: (
-                ELIDED.format(n=len(json.dumps(v)), full=full)
+                ELIDED.format(n=out.json_size(v), full=full)
                 if k == "view_model" and v
                 else _elide(v, full)
             )
@@ -381,13 +381,10 @@ def _fit(result: dict[str, Any]) -> dict[str, Any]:
             return f"kizen automations steps get {api_name} {entry['key']}"
         return f"kizen automations get {api_name} --raw"
 
-    def size(value: Any) -> int:
-        return len(json.dumps(value, default=str))
-
     def blocks_elided(section: str, entry: dict[str, Any]) -> dict[str, Any]:
         return {
             k: (
-                ELIDED.format(n=size(v), full=full(section, entry))
+                ELIDED.format(n=out.json_size(v), full=full(section, entry))
                 if isinstance(v, dict | list) and v
                 else v
             )
@@ -396,33 +393,18 @@ def _fit(result: dict[str, Any]) -> dict[str, Any]:
 
     def stub(section: str, entry: dict[str, Any]) -> dict[str, Any]:
         ident = "key" if section == "steps" else "order"
-        marker = ELIDED.format(n=size(entry), full=full(section, entry))
+        marker = ELIDED.format(n=out.json_size(entry), full=full(section, entry))
         return {ident: entry[ident], "elided": marker}
 
     entries = [
         (sec, i) for sec in ("steps", "triggers") for i in range(len(result[sec]))
     ]
     for cut in (blocks_elided, stub):
-        for sec, i in sorted(entries, key=lambda e: -size(result[e[0]][e[1]])):
-            if len(_entry_per_line(result)) < _FIT_UNDER:
+        for sec, i in sorted(entries, key=lambda e: -out.json_size(result[e[0]][e[1]])):
+            if len(out.entry_per_line(result)) < _FIT_UNDER:
                 return result
             result[sec][i] = cut(sec, result[sec][i])
     return result
-
-
-def _entry_per_line(value: Any, indent: str = "") -> str:
-    """Indented JSON with each object in a list of objects on one line."""
-    inner = indent + "  "
-    if isinstance(value, dict) and value:
-        body = ",\n".join(
-            f"{inner}{json.dumps(k)}: {_entry_per_line(v, inner)}"
-            for k, v in value.items()
-        )
-        return f"{{\n{body}\n{indent}}}"
-    if isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
-        body = ",\n".join(inner + json.dumps(v, default=str) for v in value)
-        return f"[\n{body}\n{indent}]"
-    return json.dumps(value, default=str)
 
 
 @autos_app.command("llm-models")
