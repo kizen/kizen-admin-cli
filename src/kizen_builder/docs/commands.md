@@ -18,17 +18,17 @@ kizen objects list                           # list objects, custom and built-in
 kizen objects get <api_name>                 # one object incl. categories, fields, option UUIDs; full stage detail for pipelines
 kizen objects stages list <pipeline>         # a pipeline's stages: name, status, chance-to-close, order
 kizen automations list                       # list automations (summary)
-kizen automations get <api_name>             # triggers + steps by step key; --json adds config blocks; long strings, and blocks past 20k chars, elide to a `steps get` pointer
+kizen automations get <api_name>             # triggers + steps by key; --json adds config blocks; long strings, and blocks past 20k chars, elide to a `steps get` pointer
 kizen automations show <api_name>            # step tree with synthesized step keys (handles for steps verbs)
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
-kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms
+kizen automations roundtrip <api_name>       # translate + graph-validate; --execute also PUTs (confirms) and drift-checks
 kizen automations diff <api_name> --spec-file <path>  # preview what `update` from this spec would change — read-only
 kizen automations step-types list            # every step and trigger type the CLI can write (no env needed)
 kizen automations step-types show <type>     # one type's config block: entries to copy, what each choice needs, every field (--json adds the JSON Schema); `wait`, `ai_step` work too
 kizen automations step-types show <type> --variant <name>   # just that entry as JSON, for a spec file or `steps add`
 kizen automations step-types skeleton [--object <api_name>] # a minimal automation spec to build on
 kizen automations step-types concepts        # ideas most steps share: who, when, variables, fields, value sources
-kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen automations step-types show call_llm)
+kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see `step-types show call_llm`)
 kizen automations runs list <api_name>       # recent runs for an automation
 kizen automations runs view <exec_uuid>      # one run: summary + step-by-step trace (per-step status/duration)
 kizen automations runs view <exec_uuid> --no-steps   # summary only (status + record + start/finish)
@@ -186,9 +186,14 @@ output (the plan with `--dry-run`, apply results otherwise).
 
 An apply result is `{plan_id, env, results: [{key, kind, action, status,
 server_uuid, message, raw}]}`, one entry per operation. A created entity's id
-is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. The
-preview goes to stderr and only the JSON to stdout, so don't merge `2>&1` into
-a JSON parse.
+is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. `raw`
+keeps the response's top-level values (`"raw_trimmed": true` when nested ones
+were cut; `--full` keeps all), but a failed result keeps its whole error body.
+The preview goes to stderr and only the JSON to stdout, so don't merge `2>&1`
+into a JSON parse.
+
+Piped `get`/`list` JSON leaves out empty keys: see `kizen docs show
+reference` (Piped JSON drops empty keys).
 
 ```
 # create
@@ -398,13 +403,10 @@ JSON list of objects. Useful for standing up test/reference data. Contacts use
 duplicates records — `records upsert` is the fix. It matches an existing
 record by `lookup_value` (the object's name field; email for contacts) and
 updates it in place, or creates one if nothing matches. Bulk spec rows carry
-`lookup_value` instead of `id`. `--oncreate-unarchive` (`prompt|unarchive|
-overwrite`) controls what happens on create when an archived record already
-matches; `--onupdate-conflict overwrite` lets an update proceed past an
-archived-record naming conflict. Omit both to keep the server's default
-(conflict-raising) behavior. Note `lookup_value` is a single string matched
-against the object's identifying field — there's no separate "which field to
-match on" option.
+`lookup_value` instead of `id`; it is one string matched against the
+object's identifying field, with no "which field to match on" option. For
+archived-record matches (`--oncreate-unarchive`, `--onupdate-conflict`), see
+`kizen docs show records`.
 
 **Field options & deletion.** `fields options add/remove` edit a select-type
 field's options in place via Kizen's dedicated option endpoints (not a field

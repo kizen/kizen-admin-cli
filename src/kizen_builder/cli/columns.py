@@ -10,7 +10,9 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
@@ -73,7 +75,7 @@ def columns_get(
         )
 
     def table() -> None:
-        console.print_json(data=item)
+        out.emit_json(item)
 
     out.render(fmt, json_data=item, table=table)
 
@@ -104,9 +106,8 @@ def columns_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create one column template (saved list-view column layout) on an object.
 
@@ -126,6 +127,7 @@ def columns_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -151,9 +153,8 @@ def columns_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update one column template. Only the flags you set are changed."""
     changes: dict[str, Any] = {}
@@ -173,6 +174,7 @@ def columns_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -204,9 +206,8 @@ def columns_share(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Change who can view, edit or admin a column template.
 
@@ -230,6 +231,7 @@ def columns_share(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -245,9 +247,8 @@ def columns_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete one column template."""
     _run_mutation(
@@ -257,6 +258,7 @@ def columns_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -275,9 +277,8 @@ def columns_apply_to_roles(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Grant one or more roles visibility into this column template."""
     role_ids = [_resolve_role_id(r) for r in role]
@@ -288,6 +289,7 @@ def columns_apply_to_roles(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -308,9 +310,8 @@ def columns_apply_to_users(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Grant one or more team members visibility into this column template."""
     _run_mutation(
@@ -320,6 +321,7 @@ def columns_apply_to_users(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -338,9 +340,8 @@ def columns_apply_to_permission_groups(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Grant one or more permission groups visibility into this column template."""
     group_ids = [_resolve_group_id(g) for g in group]
@@ -351,4 +352,5 @@ def columns_apply_to_permission_groups(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )

@@ -10,7 +10,9 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     cli_errors,
     console,
@@ -114,9 +116,8 @@ def act_fields_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Add one field, or many at once from a JSON spec, to an activity type.
 
@@ -147,6 +148,7 @@ def act_fields_create(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
             stdin_consumed=from_stdin,
         )
         return
@@ -193,6 +195,7 @@ def act_fields_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -215,9 +218,8 @@ def act_fields_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update one field on an activity type. Only the flags you set are changed."""
     changes: dict[str, Any] = {}
@@ -243,6 +245,7 @@ def act_fields_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -256,9 +259,8 @@ def act_fields_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete one field from an activity type."""
     _run_mutation(
@@ -266,6 +268,7 @@ def act_fields_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -289,9 +292,8 @@ def act_field_options_add(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Add options to a select-type activity field. Existing names are skipped."""
     if option_short:
@@ -307,6 +309,7 @@ def act_field_options_add(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -326,9 +329,8 @@ def act_field_options_remove(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Remove one option from a select-type activity field."""
     _run_mutation(
@@ -338,6 +340,7 @@ def act_field_options_remove(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 

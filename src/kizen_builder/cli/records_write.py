@@ -12,6 +12,8 @@ import typer
 
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
+    MUTATION_JSON_OPTION,
     err_console,
     parse_json,
     read_text_file,
@@ -126,9 +128,8 @@ def records_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create one record (via --field) or many (via CSV/JSON spec).
 
@@ -151,6 +152,7 @@ def records_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -181,9 +183,8 @@ def records_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update one record (UUID + --field) or many (CSV/JSON spec with 'id').
 
@@ -216,6 +217,7 @@ def records_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -260,9 +262,8 @@ def records_upsert(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create-or-update one record (lookup_value + --field) or many (CSV/JSON spec).
 
@@ -302,6 +303,7 @@ def records_upsert(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -338,9 +340,8 @@ def records_import(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Load many records as one server-side job through Kizen's CSV uploader.
 
@@ -358,6 +359,7 @@ def records_import(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -384,9 +386,8 @@ def records_archive(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Archive one record (UUID) or many (CSV/JSON spec with 'id').
 
@@ -429,6 +430,7 @@ def records_archive(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -460,9 +462,8 @@ def records_unarchive(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Unarchive one or more records by UUID.
 
@@ -481,6 +482,7 @@ def records_unarchive(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -510,9 +512,8 @@ def records_set_field(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Set one field to one value across many records in a single API call.
 
@@ -549,6 +550,7 @@ def records_set_field(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -565,9 +567,8 @@ def records_move(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Move a pipeline record to a different stage."""
     _run_mutation(
@@ -575,4 +576,5 @@ def records_move(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )

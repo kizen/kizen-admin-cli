@@ -70,6 +70,22 @@ called out explicitly under **Changed** or **Removed**.
   A terminal looks the same as before. `KIZEN_OUTPUT=terminal` gives the
   terminal form anywhere; `KIZEN_OUTPUT=agent` gives the piped form, for
   tables and for `docs show`.
+- **Piped JSON is smaller: one-space indent, and summaries leave out empty
+  values.** In `get`/`list`-style reads and apply results, keys whose value
+  is `null`, `""`, `[]` or `{}` are left out; jq reads a missing key as
+  `null`. So a blank field and a field the response never had look the
+  same there; to check that a write cleared a field, read it with
+  `KIZEN_OUTPUT=terminal`. Everything else keeps every key:
+  `--raw`, plans and payloads, reads you edit and send back
+  (`automations show`, `steps get`,
+  `layouts get`, `activities get`), diffs, run logs, `code test` and other
+  results. A terminal still gets two-space indent and every key;
+  `KIZEN_OUTPUT` picks either form anywhere.
+- **Apply results keep the server response's top-level values only; `--full`
+  restores the whole body.** A result that lost nested values carries
+  `"raw_trimmed": true` beside `raw`. `.results[].server_uuid` and scalar
+  reads like `.results[0].raw.base_message_id` are unchanged. A failed
+  result keeps its whole `raw`, so the server's field-level errors survive.
 
 - **`step-types show` and dry-run now check and list every key and choice
   of `filter_config`, the `field_updated` trigger, `create_related_entity`,

@@ -139,7 +139,7 @@ def autos_get(
     if raw_out:
         with cli_errors(LookupError):
             raw = auto_tools.get_automation(api_name)["raw"]
-        typer.echo(json.dumps(raw, indent=2))
+        out.emit_json(raw)
         return
 
     with cli_errors(LookupError, PlanError):
@@ -202,7 +202,7 @@ def autos_get(
         console.print(step_table)
 
     if fmt is out.OutputFormat.JSON:
-        typer.echo(_entry_per_line(_get_json(result, triggers, steps)))
+        typer.echo(out.entry_per_line(_get_json(result, triggers, steps)))
         return
     out.render(
         fmt,
@@ -293,7 +293,7 @@ def _elide(value: Any, full: str) -> Any:
     if isinstance(value, dict):
         return {
             k: (
-                ELIDED.format(n=len(json.dumps(v)), full=full)
+                ELIDED.format(n=out.json_size(v), full=full)
                 if k == "view_model" and v
                 else _elide(v, full)
             )
@@ -381,13 +381,10 @@ def _fit(result: dict[str, Any]) -> dict[str, Any]:
             return f"kizen automations steps get {api_name} {entry['key']}"
         return f"kizen automations get {api_name} --raw"
 
-    def size(value: Any) -> int:
-        return len(json.dumps(value, default=str))
-
     def blocks_elided(section: str, entry: dict[str, Any]) -> dict[str, Any]:
         return {
             k: (
-                ELIDED.format(n=size(v), full=full(section, entry))
+                ELIDED.format(n=out.json_size(v), full=full(section, entry))
                 if isinstance(v, dict | list) and v
                 else v
             )
@@ -396,33 +393,18 @@ def _fit(result: dict[str, Any]) -> dict[str, Any]:
 
     def stub(section: str, entry: dict[str, Any]) -> dict[str, Any]:
         ident = "key" if section == "steps" else "order"
-        marker = ELIDED.format(n=size(entry), full=full(section, entry))
+        marker = ELIDED.format(n=out.json_size(entry), full=full(section, entry))
         return {ident: entry[ident], "elided": marker}
 
     entries = [
         (sec, i) for sec in ("steps", "triggers") for i in range(len(result[sec]))
     ]
     for cut in (blocks_elided, stub):
-        for sec, i in sorted(entries, key=lambda e: -size(result[e[0]][e[1]])):
-            if len(_entry_per_line(result)) < _FIT_UNDER:
+        for sec, i in sorted(entries, key=lambda e: -out.json_size(result[e[0]][e[1]])):
+            if len(out.entry_per_line(result)) < _FIT_UNDER:
                 return result
             result[sec][i] = cut(sec, result[sec][i])
     return result
-
-
-def _entry_per_line(value: Any, indent: str = "") -> str:
-    """Indented JSON with each object in a list of objects on one line."""
-    inner = indent + "  "
-    if isinstance(value, dict) and value:
-        body = ",\n".join(
-            f"{inner}{json.dumps(k)}: {_entry_per_line(v, inner)}"
-            for k, v in value.items()
-        )
-        return f"{{\n{body}\n{indent}}}"
-    if isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
-        body = ",\n".join(inner + json.dumps(v, default=str) for v in value)
-        return f"[\n{body}\n{indent}]"
-    return json.dumps(value, default=str)
 
 
 @autos_app.command("llm-models")
@@ -531,7 +513,7 @@ def autos_roundtrip(
             result = auto_tools.roundtrip_automation(api_name, execute=True)
 
     if json_out:
-        typer.echo(json.dumps(result, indent=2))
+        out.emit_json(result)
     else:
         console.print(
             f"[bold]{result['api_name']}[/bold]  "
@@ -539,7 +521,7 @@ def autos_roundtrip(
             f"{result['n_triggers']} triggers, {result['n_steps']} steps)[/dim]"
         )
         if show_payload:
-            typer.echo(json.dumps(result["payload"], indent=2))
+            out.emit_json(result["payload"])
         if result["validation_problems"]:
             console.print("[red]structural validation FAILED:[/red]")
             for p in result["validation_problems"]:
@@ -619,7 +601,7 @@ def autos_diff(
 
     print_warnings(result)
     if json_out:
-        typer.echo(json.dumps(result, indent=2))
+        out.emit_json(result)
         return
 
     console.print(
@@ -733,7 +715,7 @@ def autos_show(
 
     print_warnings(result)
     if json_out:
-        typer.echo(json.dumps(result, indent=2))
+        out.emit_json(result)
         return
     console.print(
         f"[dim]rev {result['revision']}, "
@@ -788,7 +770,7 @@ def _print_start_result(result: dict[str, Any]) -> None:
     else:
         console.print("[yellow]started — no execution ID in response[/yellow]")
         console.print(
-            json.dumps(result.get("raw"), indent=2),
+            out.dumps_json(result.get("raw")),
             markup=False,
             emoji=False,
             soft_wrap=True,
@@ -989,7 +971,7 @@ def autos_start(
                 api_name, record_id, variables=variables or None
             )
         if json_out:
-            typer.echo(json.dumps(result, indent=2))
+            out.emit_json(result)
             return
         _print_start_result(result)
         return
@@ -1011,7 +993,7 @@ def autos_start(
         result = {**result, "steps": auto_tools.get_execution_history(execution_id)}
 
     if json_out:
-        typer.echo(json.dumps(result, indent=2))
+        out.emit_json(result)
     else:
         _print_start_result(result)
         if execution_id:
@@ -1052,7 +1034,7 @@ def autos_modification_history(
             search=search or None,
         )
     if json_out:
-        typer.echo(json.dumps(results, indent=2, default=str))
+        out.emit_json(results)
         return
     table = Table(title=f"Modification history — {api_name}")
     table.add_column("when")
@@ -1082,9 +1064,9 @@ def autos_failures(
     with cli_errors(LookupError):
         results = auto_tools.get_failures_history(api_name)
     if json_out:
-        typer.echo(json.dumps(results, indent=2, default=str))
+        out.emit_json(results)
         return
     if not results:
         console.print("[dim]no recorded failures[/dim]")
         return
-    typer.echo(json.dumps(results, indent=2, default=str))
+    out.emit_json(results)

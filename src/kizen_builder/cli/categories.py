@@ -7,7 +7,11 @@ from typing import Any
 import typer
 
 from kizen_builder.cli._mutations import _run_mutation
-from kizen_builder.cli._shared import app
+from kizen_builder.cli._shared import (
+    FULL_OPTION,
+    MUTATION_JSON_OPTION,
+    app,
+)
 from kizen_builder.tools.planners import objects as object_planners
 
 categories_app = typer.Typer(
@@ -29,9 +33,8 @@ def categories_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create one field category on an existing object."""
     cat_dict: dict[str, Any] = {"api_name": api_name, "name": name}
@@ -41,6 +44,7 @@ def categories_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -57,9 +61,8 @@ def categories_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Rename one field category."""
     _run_mutation(
@@ -69,6 +72,7 @@ def categories_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -84,9 +88,8 @@ def categories_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete one field category."""
     _run_mutation(
@@ -94,4 +97,5 @@ def categories_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )

@@ -125,7 +125,11 @@
 │ --dry-run                                        Show the plan without applying.                 │
 │ --yes               -y                           Skip the y/N confirmation prompt.               │
 │ --json                                           Emit JSON (plan with --dry-run, results         │
-│                                                  otherwise).                                     │
+│                                                  otherwise). `raw` holds the server response's   │
+│                                                  top-level values; `--full` gives the whole      │
+│                                                  body.                                           │
+│ --full                                           With --json, keep the whole server response in  │
+│                                                  `raw`.                                          │
 │ --help                                           Show this message and exit.                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -142,7 +146,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -157,7 +163,9 @@
 │ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -203,7 +211,10 @@
 │                                with a "fields" list). Omit with stdin to read from stdin.        │
 │ --dry-run                      Show the plan without applying.                                   │
 │ --yes           -y             Skip the y/N confirmation prompt.                                 │
-│ --json                         Emit JSON (plan with --dry-run, results otherwise).               │
+│ --json                         Emit JSON (plan with --dry-run, results otherwise). `raw` holds   │
+│                                the server response's top-level values; `--full` gives the whole  │
+│                                body.                                                             │
+│ --full                         With --json, keep the whole server response in `raw`.             │
 │ --help                         Show this message and exit.                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -221,7 +232,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -262,7 +275,9 @@
 │ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -280,7 +295,9 @@
 │ --remap-to          <str>  Move records using the removed option onto this option first.         │
 │ --dry-run                  Show the plan without applying.                                       │
 │ --yes       -y             Skip the y/N confirmation prompt.                                     │
-│ --json                     Emit JSON (plan with --dry-run, results otherwise).                   │
+│ --json                     Emit JSON (plan with --dry-run, results otherwise). `raw` holds the   │
+│                            server response's top-level values; `--full` gives the whole body.    │
+│ --full                     With --json, keep the whole server response in `raw`.                 │
 │ --help                     Show this message and exit.                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -301,6 +318,9 @@
 │ --dry-run                               Show the plan without applying.                          │
 │ --yes          -y                       Skip the y/N confirmation prompt.                        │
 │ --json                                  Emit JSON (plan with --dry-run, results otherwise).      │
+│                                         `raw` holds the server response's top-level values;      │
+│                                         `--full` gives the whole body.                           │
+│ --full                                  With --json, keep the whole server response in `raw`.    │
 │ --help                                  Show this message and exit.                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -407,7 +427,10 @@
 │                                   (repeatable).                                                  │
 │    --dry-run                      Show the plan without applying.                                │
 │    --yes           -y             Skip the y/N confirmation prompt.                              │
-│    --json                         Emit JSON (plan with --dry-run, results otherwise).            │
+│    --json                         Emit JSON (plan with --dry-run, results otherwise). `raw`      │
+│                                   holds the server response's top-level values; `--full` gives   │
+│                                   the whole body.                                                │
+│    --full                         With --json, keep the whole server response in `raw`.          │
 │    --help                         Show this message and exit.                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -424,7 +447,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -473,7 +498,10 @@
 │ --clear-notifications                 Remove every reminder.                                     │
 │ --dry-run                             Show the plan without applying.                            │
 │ --yes                  -y             Skip the y/N confirmation prompt.                          │
-│ --json                                Emit JSON (plan with --dry-run, results otherwise).        │
+│ --json                                Emit JSON (plan with --dry-run, results otherwise). `raw`  │
+│                                       holds the server response's top-level values; `--full`     │
+│                                       gives the whole body.                                      │
+│ --full                                With --json, keep the whole server response in `raw`.      │
 │ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -510,7 +538,11 @@
 │ --dry-run                                             Show the plan without applying.            │
 │ --yes                    -y                           Skip the y/N confirmation prompt.          │
 │ --json                                                Emit JSON (plan with --dry-run, results    │
-│                                                       otherwise).                                │
+│                                                       otherwise). `raw` holds the server         │
+│                                                       response's top-level values; `--full`      │
+│                                                       gives the whole body.                      │
+│ --full                                                With --json, keep the whole server         │
+│                                                       response in `raw`.                         │
 │ --help                                                Show this message and exit.                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -532,7 +564,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --plan-file          <str>  Path to a plan JSON file. Default: read from stdin.                  │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit results as JSON.                                                │
+│ --json                      Emit results as JSON. `raw` holds the server response's top-level    │
+│                             values; `--full` gives the whole body.                               │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -607,7 +641,9 @@
 │                             stdin.                                                               │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -639,7 +675,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -683,7 +721,9 @@
 │                           itself — kept for forward compatibility.                               │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -722,7 +762,9 @@
 │    --parent           <str>  Parent folder name/UUID.                                            │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -736,7 +778,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -761,7 +805,9 @@
 │ --parent           <str>  New parent folder name/UUID.                                           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1349,7 +1395,9 @@
 │ --spec-file          <str>  Path to JSON AutomationDef. Default: read from stdin.                │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1381,6 +1429,7 @@
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1415,6 +1464,7 @@
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
 │ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1446,7 +1496,10 @@
 │ *  --name              <str>  Category display name. [required]                                  │
 │    --dry-run                  Show the plan without applying.                                    │
 │    --yes       -y             Skip the y/N confirmation prompt.                                  │
-│    --json                     Emit JSON (plan with --dry-run, results otherwise).                │
+│    --json                     Emit JSON (plan with --dry-run, results otherwise). `raw` holds    │
+│                               the server response's top-level values; `--full` gives the whole   │
+│                               body.                                                              │
+│    --full                     With --json, keep the whole server response in `raw`.              │
 │    --help                     Show this message and exit.                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1461,7 +1514,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1477,7 +1532,9 @@
 │ *  --name             <str>  New display name. [required]                                        │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1582,7 +1639,9 @@
 │ *  --group            <str>  Permission group name or UUID (repeatable). [required]              │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1598,7 +1657,9 @@
 │ *  --role             <str>  Role name or UUID (repeatable). [required]                          │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1616,7 +1677,9 @@
 │                              [required]                                                          │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1640,7 +1703,10 @@
 │    --owner                <str>  Owning team member UUID (defaults to the API caller).           │
 │    --dry-run                     Show the plan without applying.                                 │
 │    --yes          -y             Skip the y/N confirmation prompt.                               │
-│    --json                        Emit JSON (plan with --dry-run, results otherwise).             │
+│    --json                        Emit JSON (plan with --dry-run, results otherwise). `raw` holds │
+│                                  the server response's top-level values; `--full` gives the      │
+│                                  whole body.                                                     │
+│    --full                        With --json, keep the whole server response in `raw`.           │
 │    --help                        Show this message and exit.                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1658,7 +1724,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1707,7 +1775,10 @@
 │ --user                     <str>  UUID=LEVEL for a team member (repeatable). none removes it.    │
 │ --dry-run                         Show the plan without applying.                                │
 │ --yes      -y                     Skip the y/N confirmation prompt.                              │
-│ --json                            Emit JSON (plan with --dry-run, results otherwise).            │
+│ --json                            Emit JSON (plan with --dry-run, results otherwise). `raw`      │
+│                                   holds the server response's top-level values; `--full` gives   │
+│                                   the whole body.                                                │
+│ --full                            With --json, keep the whole server response in `raw`.          │
 │ --help                            Show this message and exit.                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1728,7 +1799,10 @@
 │ --owner                <str>  New owning team member UUID.                                       │
 │ --dry-run                     Show the plan without applying.                                    │
 │ --yes          -y             Skip the y/N confirmation prompt.                                  │
-│ --json                        Emit JSON (plan with --dry-run, results otherwise).                │
+│ --json                        Emit JSON (plan with --dry-run, results otherwise). `raw` holds    │
+│                               the server response's top-level values; `--full` gives the whole   │
+│                               body.                                                              │
+│ --full                        With --json, keep the whole server response in `raw`.              │
 │ --help                        Show this message and exit.                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1763,7 +1837,9 @@
 │ --spec-file          <str>  Path to a JSON DashboardDef. Default: read from stdin.               │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1820,7 +1896,9 @@
 │ --api-name          <str>  api_name for the copy. Default: the server's '<api_name>_copy_N'.     │
 │ --dry-run                  Show the plan without applying.                                       │
 │ --yes       -y             Skip the y/N confirmation prompt.                                     │
-│ --json                     Emit JSON (plan with --dry-run, results otherwise).                   │
+│ --json                     Emit JSON (plan with --dry-run, results otherwise). `raw` holds the   │
+│                            server response's top-level values; `--full` gives the whole body.    │
+│ --full                     With --json, keep the whole server response in `raw`.                 │
 │ --help                     Show this message and exit.                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -1867,7 +1945,9 @@
 │ --spec-file          <str>  Path to a JSON DashboardDef. Default: read from stdin.               │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2003,6 +2083,9 @@
 │ --dry-run                               Show the plan without applying.                          │
 │ --yes                    -y             Skip the y/N confirmation prompt.                        │
 │ --json                                  Emit JSON (plan with --dry-run, results otherwise).      │
+│                                         `raw` holds the server response's top-level values;      │
+│                                         `--full` gives the whole body.                           │
+│ --full                                  With --json, keep the whole server response in `raw`.    │
 │ --help                                  Show this message and exit.                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2020,7 +2103,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2048,7 +2133,9 @@
 │ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2070,7 +2157,9 @@
 │                            (name/code/UUID) first.                                               │
 │ --dry-run                  Show the plan without applying.                                       │
 │ --yes       -y             Skip the y/N confirmation prompt.                                     │
-│ --json                     Emit JSON (plan with --dry-run, results otherwise).                   │
+│ --json                     Emit JSON (plan with --dry-run, results otherwise). `raw` holds the   │
+│                            server response's top-level values; `--full` gives the whole body.    │
+│ --full                     With --json, keep the whole server response in `raw`.                 │
 │ --help                     Show this message and exit.                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2092,7 +2181,10 @@
 │ --category                      <str>  Move to a different category (display name).              │
 │ --dry-run                              Show the plan without applying.                           │
 │ --yes          -y                      Skip the y/N confirmation prompt.                         │
-│ --json                                 Emit JSON (plan with --dry-run, results otherwise).       │
+│ --json                                 Emit JSON (plan with --dry-run, results otherwise). `raw` │
+│                                        holds the server response's top-level values; `--full`    │
+│                                        gives the whole body.                                     │
+│ --full                                 With --json, keep the whole server response in `raw`.     │
 │ --help                                 Show this message and exit.                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2134,7 +2226,10 @@
 │    --owner                <str>  Owning team member UUID (defaults to the API caller).           │
 │    --dry-run                     Show the plan without applying.                                 │
 │    --yes          -y             Skip the y/N confirmation prompt.                               │
-│    --json                        Emit JSON (plan with --dry-run, results otherwise).             │
+│    --json                        Emit JSON (plan with --dry-run, results otherwise). `raw` holds │
+│                                  the server response's top-level values; `--full` gives the      │
+│                                  whole body.                                                     │
+│    --full                        With --json, keep the whole server response in `raw`.           │
 │    --help                        Show this message and exit.                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2152,7 +2247,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2200,7 +2297,10 @@
 │ --owner                         <str>  New owning team member UUID.                              │
 │ --dry-run                              Show the plan without applying.                           │
 │ --yes          -y                      Skip the y/N confirmation prompt.                         │
-│ --json                                 Emit JSON (plan with --dry-run, results otherwise).       │
+│ --json                                 Emit JSON (plan with --dry-run, results otherwise). `raw` │
+│                                        holds the server response's top-level values; `--full`    │
+│                                        gives the whole body.                                     │
+│ --full                                 With --json, keep the whole server response in `raw`.     │
 │ --help                                 Show this message and exit.                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2271,7 +2371,10 @@
 │                                  stdin to read from stdin.                                       │
 │ --dry-run                        Show the plan without applying.                                 │
 │ --yes             -y             Skip the y/N confirmation prompt.                               │
-│ --json                           Emit JSON (plan with --dry-run, results otherwise).             │
+│ --json                           Emit JSON (plan with --dry-run, results otherwise). `raw` holds │
+│                                  the server response's top-level values; `--full` gives the      │
+│                                  whole body.                                                     │
+│ --full                           With --json, keep the whole server response in `raw`.           │
 │ --help                           Show this message and exit.                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2288,7 +2391,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2303,7 +2408,9 @@
 │ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2345,7 +2452,10 @@
 │                                       with a "fields" list). Omit with stdin to read from stdin. │
 │ --dry-run                             Show the plan without applying.                            │
 │ --yes                  -y             Skip the y/N confirmation prompt.                          │
-│ --json                                Emit JSON (plan with --dry-run, results otherwise).        │
+│ --json                                Emit JSON (plan with --dry-run, results otherwise). `raw`  │
+│                                       holds the server response's top-level values; `--full`     │
+│                                       gives the whole body.                                      │
+│ --full                                With --json, keep the whole server response in `raw`.      │
 │ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2363,7 +2473,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2404,7 +2516,9 @@
 │ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2422,7 +2536,9 @@
 │ --remap-to          <str>  Move records using the removed option onto this option first.         │
 │ --dry-run                  Show the plan without applying.                                       │
 │ --yes       -y             Skip the y/N confirmation prompt.                                     │
-│ --json                     Emit JSON (plan with --dry-run, results otherwise).                   │
+│ --json                     Emit JSON (plan with --dry-run, results otherwise). `raw` holds the   │
+│                            server response's top-level values; `--full` gives the whole body.    │
+│ --full                     With --json, keep the whole server response in `raw`.                 │
 │ --help                     Show this message and exit.                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2444,6 +2560,9 @@
 │ --dry-run                               Show the plan without applying.                          │
 │ --yes          -y                       Skip the y/N confirmation prompt.                        │
 │ --json                                  Emit JSON (plan with --dry-run, results otherwise).      │
+│                                         `raw` holds the server response's top-level values;      │
+│                                         `--full` gives the whole body.                           │
+│ --full                                  With --json, keep the whole server response in `raw`.    │
 │ --help                                  Show this message and exit.                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2489,7 +2608,9 @@
 │ --spec-file          <str>  Path to a JSON page spec. Omit with stdin to read from stdin.        │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2517,7 +2638,11 @@
 │ --dry-run                                               Show the plan without applying.          │
 │ --yes                -y                                 Skip the y/N confirmation prompt.        │
 │ --json                                                  Emit JSON (plan with --dry-run, results  │
-│                                                         otherwise).                              │
+│                                                         otherwise). `raw` holds the server       │
+│                                                         response's top-level values; `--full`    │
+│                                                         gives the whole body.                    │
+│ --full                                                  With --json, keep the whole server       │
+│                                                         response in `raw`.                       │
 │ --help                                                  Show this message and exit.              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2609,7 +2734,9 @@
 │ --spec-file          <str>  Path to a JSON LayoutDef. Default: read from stdin.                  │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2647,7 +2774,9 @@
 │ --spec-file          <str>  Path to a JSON MCPServerDef. Default: read from stdin.               │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2664,7 +2793,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2751,7 +2882,9 @@
 │ --spec-file          <str>  Path to a JSON MCPServerDef. Default: read from stdin.               │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2809,7 +2942,10 @@
 │                               [required]                                                         │
 │    --dry-run                  Show the plan without applying.                                    │
 │    --yes       -y             Skip the y/N confirmation prompt.                                  │
-│    --json                     Emit JSON (plan with --dry-run, results otherwise).                │
+│    --json                     Emit JSON (plan with --dry-run, results otherwise). `raw` holds    │
+│                               the server response's top-level values; `--full` gives the whole   │
+│                               body.                                                              │
+│    --full                     With --json, keep the whole server response in `raw`.              │
 │    --help                     Show this message and exit.                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2849,7 +2985,9 @@
 │ *  --name             <str>  Name for the copy. [required]                                       │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2896,7 +3034,9 @@
 │ --spec-file          <str>  Path to a JSON email-template spec. Default: read from stdin.        │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2914,7 +3054,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -2980,7 +3122,10 @@
 │                                   --name/--subject/--craft-json-file/--content-file.             │
 │ --dry-run                         Show the plan without applying.                                │
 │ --yes              -y             Skip the y/N confirmation prompt.                              │
-│ --json                            Emit JSON (plan with --dry-run, results otherwise).            │
+│ --json                            Emit JSON (plan with --dry-run, results otherwise). `raw`      │
+│                                   holds the server response's top-level values; `--full` gives   │
+│                                   the whole body.                                                │
+│ --full                            With --json, keep the whole server response in `raw`.          │
 │ --help                            Show this message and exit.                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3032,7 +3177,10 @@
 │    --pipeline                    Shorthand for --object-type pipeline.                           │
 │    --dry-run                     Show the plan without applying.                                 │
 │    --yes          -y             Skip the y/N confirmation prompt.                               │
-│    --json                        Emit JSON (plan with --dry-run, results otherwise).             │
+│    --json                        Emit JSON (plan with --dry-run, results otherwise). `raw` holds │
+│                                  the server response's top-level values; `--full` gives the      │
+│                                  whole body.                                                     │
+│    --full                        With --json, keep the whole server response in `raw`.           │
 │    --help                        Show this message and exit.                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3046,7 +3194,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3107,7 +3257,9 @@
 │    --order            <int>  Position among stages (defaults to last).                           │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3137,7 +3289,9 @@
 │                              [required]                                                          │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3156,7 +3310,9 @@
 │ --order            <int>  New position among stages.                                             │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3176,7 +3332,11 @@
 │ --dry-run                                             Show the plan without applying.            │
 │ --yes              -y                                 Skip the y/N confirmation prompt.          │
 │ --json                                                Emit JSON (plan with --dry-run, results    │
-│                                                       otherwise).                                │
+│                                                       otherwise). `raw` holds the server         │
+│                                                       response's top-level values; `--full`      │
+│                                                       gives the whole body.                      │
+│ --full                                                With --json, keep the whole server         │
+│                                                       response in `raw`.                         │
 │ --help                                                Show this message and exit.                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3229,7 +3389,10 @@
 │                                    (object/field/section).                                       │
 │    --dry-run                       Show the plan without applying.                               │
 │    --yes            -y             Skip the y/N confirmation prompt.                             │
-│    --json                          Emit JSON (plan with --dry-run, results otherwise).           │
+│    --json                          Emit JSON (plan with --dry-run, results otherwise). `raw`     │
+│                                    holds the server response's top-level values; `--full` gives  │
+│                                    the whole body.                                               │
+│    --full                          With --json, keep the whole server response in `raw`.         │
 │    --help                          Show this message and exit.                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3246,7 +3409,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3266,7 +3431,10 @@
 │                                    [required]                                                    │
 │    --dry-run                       Show the plan without applying.                               │
 │    --yes            -y             Skip the y/N confirmation prompt.                             │
-│    --json                          Emit JSON (plan with --dry-run, results otherwise).           │
+│    --json                          Emit JSON (plan with --dry-run, results otherwise). `raw`     │
+│                                    holds the server response's top-level values; `--full` gives  │
+│                                    the whole body.                                               │
+│    --full                          With --json, keep the whole server response in `raw`.         │
 │    --help                          Show this message and exit.                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3321,7 +3489,9 @@
 │ *  --role             <str>  Role name or UUID (repeatable). [required]                          │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3339,7 +3509,9 @@
 │                              [required]                                                          │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3363,7 +3535,9 @@
 │    --owner            <str>  Owning team member UUID (defaults to the API caller).               │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3381,7 +3555,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3430,7 +3606,10 @@
 │ --user                     <str>  UUID=LEVEL for a team member (repeatable). none removes it.    │
 │ --dry-run                         Show the plan without applying.                                │
 │ --yes      -y                     Skip the y/N confirmation prompt.                              │
-│ --json                            Emit JSON (plan with --dry-run, results otherwise).            │
+│ --json                            Emit JSON (plan with --dry-run, results otherwise). `raw`      │
+│                                   holds the server response's top-level values; `--full` gives   │
+│                                   the whole body.                                                │
+│ --full                            With --json, keep the whole server response in `raw`.          │
 │ --help                            Show this message and exit.                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3452,7 +3631,10 @@
 │ --owner                       <str>  New owning team member UUID.                                │
 │ --dry-run                            Show the plan without applying.                             │
 │ --yes      -y                        Skip the y/N confirmation prompt.                           │
-│ --json                               Emit JSON (plan with --dry-run, results otherwise).         │
+│ --json                               Emit JSON (plan with --dry-run, results otherwise). `raw`   │
+│                                      holds the server response's top-level values; `--full`      │
+│                                      gives the whole body.                                       │
+│ --full                               With --json, keep the whole server response in `raw`.       │
 │ --help                               Show this message and exit.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3498,7 +3680,9 @@
 │                             (or stdin).                                                          │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3523,7 +3707,9 @@
 │                             stdin).                                                              │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3597,7 +3783,10 @@
 │ --timeout             <float>  Seconds to wait for the import job to finish. [default: 900.0]    │
 │ --dry-run                      Show the plan without applying.                                   │
 │ --yes         -y               Skip the y/N confirmation prompt.                                 │
-│ --json                         Emit JSON (plan with --dry-run, results otherwise).               │
+│ --json                         Emit JSON (plan with --dry-run, results otherwise). `raw` holds   │
+│                                the server response's top-level values; `--full` gives the whole  │
+│                                body.                                                             │
+│ --full                         With --json, keep the whole server response in `raw`.             │
 │ --help                         Show this message and exit.                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3648,7 +3837,9 @@
 │ *  --stage            <str>  Target stage name or UUID. [required]                               │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3691,7 +3882,9 @@
 │                              [default: overwrite]                                                │
 │ --dry-run                    Show the plan without applying.                                     │
 │ --yes         -y             Skip the y/N confirmation prompt.                                   │
-│ --json                       Emit JSON (plan with --dry-run, results otherwise).                 │
+│ --json                       Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│ --full                       With --json, keep the whole server response in `raw`.               │
 │ --help                       Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3709,7 +3902,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3730,7 +3925,9 @@
 │                             update (or stdin).                                                   │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3762,7 +3959,10 @@
 │                                      overwrite.                                                  │
 │ --dry-run                            Show the plan without applying.                             │
 │ --yes                 -y             Skip the y/N confirmation prompt.                           │
-│ --json                               Emit JSON (plan with --dry-run, results otherwise).         │
+│ --json                               Emit JSON (plan with --dry-run, results otherwise). `raw`   │
+│                                      holds the server response's top-level values; `--full`      │
+│                                      gives the whole body.                                       │
+│ --full                               With --json, keep the whole server response in `raw`.       │
 │ --help                               Show this message and exit.                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3798,6 +3998,10 @@
 │    --dry-run                                Show the plan without applying.                      │
 │    --yes         -y                         Skip the y/N confirmation prompt.                    │
 │    --json                                   Emit JSON (plan with --dry-run, results otherwise).  │
+│                                             `raw` holds the server response's top-level values;  │
+│                                             `--full` gives the whole body.                       │
+│    --full                                   With --json, keep the whole server response in       │
+│                                             `raw`.                                               │
 │    --help                                   Show this message and exit.                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3811,7 +4015,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3853,7 +4059,10 @@
 │ --default      --no-default           Toggle default-for-new-users.                              │
 │ --dry-run                             Show the plan without applying.                            │
 │ --yes      -y                         Skip the y/N confirmation prompt.                          │
-│ --json                                Emit JSON (plan with --dry-run, results otherwise).        │
+│ --json                                Emit JSON (plan with --dry-run, results otherwise). `raw`  │
+│                                       holds the server response's top-level values; `--full`     │
+│                                       gives the whole body.                                      │
+│ --full                                With --json, keep the whole server response in `raw`.      │
 │ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3884,7 +4093,9 @@
 │                              creates the account disabled.                                       │
 │    --dry-run                 Show the plan without applying.                                     │
 │    --yes      -y             Skip the y/N confirmation prompt.                                   │
-│    --json                    Emit JSON (plan with --dry-run, results otherwise).                 │
+│    --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the │
+│                              server response's top-level values; `--full` gives the whole body.  │
+│    --full                    With --json, keep the whole server response in `raw`.               │
 │    --help                    Show this message and exit.                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3901,7 +4112,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -3970,7 +4183,10 @@
 │ --clear-groups                 Remove every permission group; Kizen disables the account.        │
 │ --dry-run                      Show the plan without applying.                                   │
 │ --yes           -y             Skip the y/N confirmation prompt.                                 │
-│ --json                         Emit JSON (plan with --dry-run, results otherwise).               │
+│ --json                         Emit JSON (plan with --dry-run, results otherwise). `raw` holds   │
+│                                the server response's top-level values; `--full` gives the whole  │
+│                                body.                                                             │
+│ --full                         With --json, keep the whole server response in `raw`.             │
 │ --help                         Show this message and exit.                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4622,7 +4838,10 @@
 │                                  stdin to read from stdin.                                       │
 │ --dry-run                        Show the plan without applying.                                 │
 │ --yes             -y             Skip the y/N confirmation prompt.                               │
-│ --json                           Emit JSON (plan with --dry-run, results otherwise).             │
+│ --json                           Emit JSON (plan with --dry-run, results otherwise). `raw` holds │
+│                                  the server response's top-level values; `--full` gives the      │
+│                                  whole body.                                                     │
+│ --full                           With --json, keep the whole server response in `raw`.           │
 │ --help                           Show this message and exit.                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4639,7 +4858,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4654,7 +4875,9 @@
 │ --name             <str>  Name for the copy. Default: the server's '<name> (copy #N)'.           │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4696,7 +4919,10 @@
 │                                       with a "fields" list). Omit with stdin to read from stdin. │
 │ --dry-run                             Show the plan without applying.                            │
 │ --yes                  -y             Skip the y/N confirmation prompt.                          │
-│ --json                                Emit JSON (plan with --dry-run, results otherwise).        │
+│ --json                                Emit JSON (plan with --dry-run, results otherwise). `raw`  │
+│                                       holds the server response's top-level values; `--full`     │
+│                                       gives the whole body.                                      │
+│ --full                                With --json, keep the whole server response in `raw`.      │
 │ --help                                Show this message and exit.                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4714,7 +4940,9 @@
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
-│ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --json               Emit JSON (plan with --dry-run, results otherwise). `raw` holds the server  │
+│                      response's top-level values; `--full` gives the whole body.                 │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4755,7 +4983,9 @@
 │ --option           <str>  Option label to add (repeatable).                                      │
 │ --dry-run                 Show the plan without applying.                                        │
 │ --yes      -y             Skip the y/N confirmation prompt.                                      │
-│ --json                    Emit JSON (plan with --dry-run, results otherwise).                    │
+│ --json                    Emit JSON (plan with --dry-run, results otherwise). `raw` holds the    │
+│                           server response's top-level values; `--full` gives the whole body.     │
+│ --full                    With --json, keep the whole server response in `raw`.                  │
 │ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4773,7 +5003,9 @@
 │ --remap-to          <str>  Move records using the removed option onto this option first.         │
 │ --dry-run                  Show the plan without applying.                                       │
 │ --yes       -y             Skip the y/N confirmation prompt.                                     │
-│ --json                     Emit JSON (plan with --dry-run, results otherwise).                   │
+│ --json                     Emit JSON (plan with --dry-run, results otherwise). `raw` holds the   │
+│                            server response's top-level values; `--full` gives the whole body.    │
+│ --full                     With --json, keep the whole server response in `raw`.                 │
 │ --help                     Show this message and exit.                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4795,6 +5027,9 @@
 │ --dry-run                               Show the plan without applying.                          │
 │ --yes          -y                       Skip the y/N confirmation prompt.                        │
 │ --json                                  Emit JSON (plan with --dry-run, results otherwise).      │
+│                                         `raw` holds the server response's top-level values;      │
+│                                         `--full` gives the whole body.                           │
+│ --full                                  With --json, keep the whole server response in `raw`.    │
 │ --help                                  Show this message and exit.                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4840,7 +5075,9 @@
 │ --spec-file          <str>  Path to a JSON page spec. Omit with stdin to read from stdin.        │
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
-│ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --json                      Emit JSON (plan with --dry-run, results otherwise). `raw` holds the  │
+│                             server response's top-level values; `--full` gives the whole body.   │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4868,7 +5105,11 @@
 │ --dry-run                                               Show the plan without applying.          │
 │ --yes                -y                                 Skip the y/N confirmation prompt.        │
 │ --json                                                  Emit JSON (plan with --dry-run, results  │
-│                                                         otherwise).                              │
+│                                                         otherwise). `raw` holds the server       │
+│                                                         response's top-level values; `--full`    │
+│                                                         gives the whole body.                    │
+│ --full                                                  With --json, keep the whole server       │
+│                                                         response in `raw`.                       │
 │ --help                                                  Show this message and exit.              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4937,7 +5178,10 @@
 │ --remove-role          <str>  Role to remove (name or UUID, repeatable).                         │
 │ --dry-run                     Show the plan without applying.                                    │
 │ --yes          -y             Skip the y/N confirmation prompt.                                  │
-│ --json                        Emit JSON (plan with --dry-run, results otherwise).                │
+│ --json                        Emit JSON (plan with --dry-run, results otherwise). `raw` holds    │
+│                               the server response's top-level values; `--full` gives the whole   │
+│                               body.                                                              │
+│ --full                        With --json, keep the whole server response in `raw`.              │
 │ --help                        Show this message and exit.                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4971,6 +5215,7 @@
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
 │ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -4988,6 +5233,7 @@
 │ --dry-run            Show the plan without applying.                                             │
 │ --yes      -y        Skip the y/N confirmation prompt.                                           │
 │ --json               Emit JSON (plan with --dry-run, results otherwise).                         │
+│ --full               With --json, keep the whole server response in `raw`.                       │
 │ --help               Show this message and exit.                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
@@ -5043,6 +5289,7 @@
 │ --dry-run                   Show the plan without applying.                                      │
 │ --yes        -y             Skip the y/N confirmation prompt.                                    │
 │ --json                      Emit JSON (plan with --dry-run, results otherwise).                  │
+│ --full                      With --json, keep the whole server response in `raw`.                │
 │ --help                      Show this message and exit.                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     

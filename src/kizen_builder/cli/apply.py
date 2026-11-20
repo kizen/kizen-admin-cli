@@ -14,6 +14,7 @@ from kizen_builder.cli._mutations import (
     _render_result,
 )
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     app,
     cli_errors,
     console,
@@ -32,7 +33,13 @@ def apply_cmd(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(False, "--json", help="Emit results as JSON."),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit results as JSON. `raw` holds the server response's top-level "
+        "values; `--full` gives the whole body.",
+    ),
+    full: bool = FULL_OPTION,
 ) -> None:
     """Apply a saved plan (the JSON a mutation verb emits with --dry-run --json).
 
@@ -95,7 +102,7 @@ def apply_cmd(
     _enrich_known_choice_failures(result)
 
     if json_out:
-        typer.echo(plan_tools.result_to_json(result))
+        typer.echo(plan_tools.result_to_json(result, full=full))
     else:
         _render_result(result)
     if not result.all_ok:

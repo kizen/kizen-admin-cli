@@ -4,7 +4,6 @@ access-level grid.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import typer
@@ -13,7 +12,9 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
@@ -141,7 +142,7 @@ def perms_groups(
     """List permission groups (raw)."""
     with cli_errors():
         items = perm_tools.list_permission_groups(search=search)
-    typer.echo(json.dumps(items, indent=2))
+    out.emit_json(items)
 
 
 _LEVEL_STYLE = {"none": "dim", "view": "cyan", "edit": "yellow", "remove": "green"}
@@ -196,7 +197,7 @@ def perms_group(
     group_id = _resolve_group_id(group)
     if raw_out:
         with cli_errors():
-            typer.echo(json.dumps(perm_tools.get_permission_group(group_id), indent=2))
+            out.emit_json(perm_tools.get_permission_group(group_id))
         return
 
     fmt = out.resolve_format(output, json_out)
@@ -281,7 +282,7 @@ def perms_meta() -> None:
     """Show the permissions catalog / meta-data (raw)."""
     with cli_errors():
         result = perm_tools.get_meta_data()
-    typer.echo(json.dumps(result, indent=2))
+    out.emit_json(result)
 
 
 # --- role mutations --------------------------------------------------------
@@ -310,9 +311,8 @@ def roles_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create a role bundling permission groups + app-level permission flags."""
     group_ids = [_resolve_group_id(g) for g in (group or [])]
@@ -326,6 +326,7 @@ def roles_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -348,9 +349,8 @@ def roles_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update a role. Only the flags you pass change (--group replaces the set)."""
     role_id = _resolve_role_id(role)
@@ -366,6 +366,7 @@ def roles_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -378,9 +379,8 @@ def roles_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete a role."""
     role_id = _resolve_role_id(role)
@@ -389,6 +389,7 @@ def roles_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -424,9 +425,8 @@ def perms_group_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create a permission group (full default structure, optionally shaped)."""
     if from_group is not None:
@@ -446,6 +446,7 @@ def perms_group_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -467,9 +468,8 @@ def perms_group_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Raise/lower specific controls on an existing permission group.
 
@@ -483,6 +483,7 @@ def perms_group_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -495,9 +496,8 @@ def perms_group_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete a permission group."""
     group_id = _resolve_group_id(group)
@@ -506,4 +506,5 @@ def perms_group_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
