@@ -268,7 +268,15 @@ def mcp_servers_upstreams(
             )
         console.print(tools)
 
-    out.render(fmt, json_data=servers, table=table, csv_rows=rows, csv_columns=columns)
+    # prune=False: an upstream with no tools keeps its `"tools": []`
+    out.render(
+        fmt,
+        json_data=servers,
+        table=table,
+        csv_rows=rows,
+        csv_columns=columns,
+        prune=False,
+    )
 
 
 def _history_rows(events: list[dict]) -> list[dict]:
