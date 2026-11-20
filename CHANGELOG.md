@@ -169,6 +169,15 @@ called out explicitly under **Changed** or **Removed**.
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
 
+- **The dry run refuses an array variable step with no
+  `array_aggregation_mode`** on `initialize_variable` and `update_variable`.
+  It used to pass, then fail live with *"Array aggregation mode is required
+  for array variables"*. **It also refuses `change_field_value` in a global
+  automation**, which has no record of its own for it to write, and points
+  at `modify_related_entities` on the loop's item variable; a step that
+  already has an `id` only warns, so an unrelated update still goes through.
+  The same checks run in `steps add` and `steps edit`.
+
 - **`archive_record` can target a related record or a variable's record.**
   Its card lists `record_source`, `relationship_fields` (field refs) and
   `automation_variable_name`, and the dry run refuses a source without its

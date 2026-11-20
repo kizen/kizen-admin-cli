@@ -3577,7 +3577,12 @@ def array_update_live(webhook_live, monkeypatch):
             "initialize_variable",
             0,
             None,
-            {"sources": [], "variable": variable, "is_required": False},
+            {
+                "sources": [],
+                "variable": variable,
+                "array_aggregation_mode": "add_all",
+                "is_required": False,
+            },
         ),
         _variable_step(
             _BUMP_ID,
@@ -3608,7 +3613,11 @@ def _array_update_spec(
             "order": 0,
             "parent_key": None,
             "description": init["description"],
-            "action_initialize_variable": {"sources": [], "variable": dict(_TAGS)},
+            "action_initialize_variable": {
+                "sources": [],
+                "variable": dict(_TAGS),
+                "array_aggregation_mode": "add_all",
+            },
             **_live_step_keys(init),
         },
         {
@@ -4575,6 +4584,7 @@ def test_preview_warns_about_rules_saved_without_the_editor_layout(
             "order": 0,
             "action_initialize_variable": {
                 "sources": [],
+                "array_aggregation_mode": "add_all",
                 "variable": {
                     "name": "found",
                     "data_type": "entity",

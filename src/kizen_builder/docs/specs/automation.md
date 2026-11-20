@@ -96,12 +96,16 @@ A loop runs its body once per item of an array variable. It is a branch group
 closed by `next_or_finish` instead of `merge_branches`. A spec names every
 part, and `create` and `update` add none:
 
-1. **The array:** an `initialize_variable` with `is_array: true`.
+1. **The array:** an `initialize_variable` with `is_array: true` and an
+   `array_aggregation_mode`, which every step that sets an array needs.
 2. **Its item:** an `initialize_variable` with `sources: []`, declaring one
    variable of the array's type (for records, the same `data_subtype`). Each
    loop needs its own.
 3. **The `loop` step**, naming both variables by name in `step_loop`.
-4. **The body**, hanging off the loop.
+4. **The body**, hanging off the loop. To change the record the loop is on,
+   use `modify_related_entities` with `record_source: automation_variable`
+   and the item variable; `change_field_value` writes the automation's own
+   record.
 5. **One `next_or_finish` child of the loop.** The steps after the loop hang
    off it.
 6. **Optionally, `exit_loop` steps in the body**, which end a loop early.

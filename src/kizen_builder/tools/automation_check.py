@@ -19,6 +19,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from kizen_builder.models.spec import AutomationDef, AutomationStepDef
+from kizen_builder.models.spec.automations_actions_data import ArrayAggregationMode
 from kizen_builder.models.spec.automations_shared import UNION_TAGS
 from kizen_builder.tools import step_catalog
 from kizen_builder.tools.findings import Finding, SpecProblems
@@ -81,7 +82,9 @@ def check_automation(spec: Any) -> CheckedSpec:
     errors.extend([*_placeholders(top, ""), *_elided(top, "")])
     declared = declared_variables(steps)
     for i, step in enumerate(steps):
-        step_errors, step_warnings = check_step(step, declared, index=i)
+        step_errors, step_warnings = check_step(
+            step, declared, index=i, is_global=spec.get("type") == "global"
+        )
         errors.extend(step_errors)
         warnings.extend(step_warnings)
     warnings.extend(_order_warnings(steps))
@@ -134,12 +137,18 @@ def with_defaults(spec: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
 
 
 def check_step(
-    step: Any, declared: dict[str, dict[str, Any]], *, index: int | None = None
+    step: Any,
+    declared: dict[str, dict[str, Any]],
+    *,
+    index: int | None = None,
+    is_global: bool = False,
 ) -> tuple[list[Finding], list[Finding]]:
     """The checks one step gets on its own: block keys nothing reads,
-    placeholders left in, variables nothing declares, an entity variable
-    with no object, and selector options missing the keys they're written
-    with. Returns ``(errors, warnings)``.
+    placeholders left in, variables nothing declares, an array variable
+    with no aggregation mode, an entity variable with no object, a field
+    change in a global automation (a warning for a step that has an `id`),
+    and selector options missing the keys they're written with. Returns
+    ``(errors, warnings)``.
     ``declared`` maps each variable name to its declaration."""
     if not isinstance(step, dict):
         return [], []
@@ -148,9 +157,15 @@ def check_step(
         *_placeholders(step, "", _type_hint(step.get("step_type")), step, index),
         *_elided(step, "", step.get("key"), index),
         *_variable_errors(index, step, declared),
+        *_array_mode_errors(index, step, declared),
         *_entity_subtype_errors(index, step),
     ]
-    return errors, _selector_warnings(index, step)
+    warnings = _selector_warnings(index, step)
+    own_record = _own_record_errors(index, step, is_global)
+    # A step with an id already exists, so it doesn't block an unrelated
+    # update; a new one does.
+    (warnings if step.get("id") else errors).extend(own_record)
+    return errors, warnings
 
 
 def block_rule_errors(step: dict[str, Any]) -> list[Finding]:
@@ -604,6 +619,63 @@ def _variable_errors(
                     )
                 )
     return out
+
+
+def _array_mode_errors(
+    index: int | None, step: dict[str, Any], declared: dict[str, dict[str, Any]]
+) -> list[Finding]:
+    """A variable step on an array variable with no
+    ``array_aggregation_mode``: the server 400s it (confirmed live
+    2026-11-18 for both steps)."""
+    step_type = step.get("step_type")
+    if step_type not in ("initialize_variable", "update_variable"):
+        return []
+    block_field = _block_field_for(step_type)
+    block = step.get(block_field)
+    if not isinstance(block, dict) or block.get("array_aggregation_mode") is not None:
+        return []
+    var = block.get("variable")
+    name = _unwrap_variable_name(var)
+    own = var if isinstance(var, dict) else {}
+    # update_variable's own copy may leave is_array out; the declaration has it.
+    if step_type == "update_variable" and name in declared:
+        own = declared[name]
+    if not own.get("is_array"):
+        return []
+    return [
+        Finding(
+            f"variable {name!r} is an array, so {step_type} needs "
+            "array_aggregation_mode",
+            step=step.get("key"),
+            index=index,
+            path=f"{block_field}.array_aggregation_mode",
+            allowed=list(typing.get_args(ArrayAggregationMode)),
+            hint=f"kizen automations step-types show {step_type}",
+        )
+    ]
+
+
+def _own_record_errors(
+    index: int | None, step: dict[str, Any], is_global: bool
+) -> list[Finding]:
+    """A change_field_value writes the automation's own record, which a
+    global automation doesn't have: its runs never finish (seen live
+    2026-11-17)."""
+    if not is_global or step.get("step_type") != "change_field_value":
+        return []
+    return [
+        Finding(
+            "change_field_value writes the automation's own record, and a global "
+            "automation has none. To change the records a search found, loop "
+            "over them and use modify_related_entities with record_source: "
+            "automation_variable and the loop's item variable",
+            step=step.get("key"),
+            index=index,
+            path="step_type",
+            got="change_field_value",
+            hint="kizen automations step-types show modify_related_entities",
+        )
+    ]
 
 
 def _entity_subtype_errors(index: int | None, step: dict[str, Any]) -> list[Finding]:

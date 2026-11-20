@@ -1546,6 +1546,12 @@ _NOTIFY_MEMBER_VIA_EMAIL = Guide(
 )
 _CHANGE_FIELD_VALUE = Guide(
     notes=(
+        "It writes the automation's own record. To change the records a "
+        "search found, loop over them and use `modify_related_entities` "
+        "with `record_source: automation_variable` and the loop's item "
+        "variable in `record_source_variables` (confirmed live 2026-11-18). "
+        "A global automation has no record of its own, so `--dry-run` "
+        "refuses this step there.",
         "Moving a record to a stage: there's no move-stage step: set the "
         "pipeline's `stage` with `change_field_value`, by option label or "
         "UUID. Kizen's API lists `update_pipeline_status`, but its builder "
