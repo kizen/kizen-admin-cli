@@ -63,8 +63,8 @@ A set relationship field **is** in the record response, as the related
 records' `{id, name, display_name}`, and an empty one is left out (see
 [Reading and writing records from a script](#reading-and-writing-records-from-a-script),
 confirmed live 2026-10-30). To read one field of the related record without a
-call, bind it directly as a `related_field` step input; see
-`kizen docs show automation`.
+call, bind it directly as a `related_field` step input; that takes a
+single-value relationship only. See `kizen docs show automation`.
 
 ## Testing it: `kizen code test`
 

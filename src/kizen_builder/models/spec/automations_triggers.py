@@ -6,6 +6,11 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from kizen_builder.models.spec.automations_shared import (
+    DAYS_OFFSET_MESSAGE,
+    DAYS_OFFSETS,
+)
+
 
 class TriggerFieldUpdatedConfig(BaseModel):
     """Config for `trigger_type: field_updated`."""
@@ -142,7 +147,10 @@ class TriggerOnOrAroundDateConfig(BaseModel):
     )
     date_offset: str | None = Field(
         default=None,
-        description="DateOffsetEnum value (e.g. 'on_day_and_time', 'days_before', 'days_after').",
+        description=(
+            "DateOffsetEnum value (e.g. 'on_day_and_time', 'days_before', "
+            "'days_after'). on_day_and_time needs a datetime field."
+        ),
     )
     time: str | None = Field(default=None, description="Time of day in HH:MM format.")
     period: Literal["am", "pm", "AM", "PM"] | None = Field(
@@ -152,10 +160,36 @@ class TriggerOnOrAroundDateConfig(BaseModel):
             "sending, since the live API rejects uppercase 'AM'/'PM'."
         ),
     )
-    date_offset_days: int | None = Field(default=None, ge=0)
+    date_offset_days: int | None = Field(
+        default=None, ge=0, description="1 or more with days_before or days_after."
+    )
     # Live data sometimes has null instead of a bool here.
     skip_non_working_days: bool | None = None
     every_year: bool = False
+
+    # Every date_offset but on_day_and_time 400s without `time`, and
+    # without `period` (confirmed live 2026-11-16); on_day_and_time takes
+    # the field's own time.
+    @model_validator(mode="after")
+    def _time_unless_from_field(self) -> Self:
+        if self.date_offset in (None, "on_day_and_time"):
+            return self
+        missing = [f"`{k}`" for k in ("time", "period") if not getattr(self, k)]
+        if missing:
+            raise ValueError(
+                f"date_offset '{self.date_offset}' needs {' and '.join(missing)} "
+                "(time is HH:MM on a 12-hour clock, period am or pm); only "
+                "on_day_and_time takes the time from the field itself"
+            )
+        return self
+
+    # 0 or a left-out count is a 400: "This field is required with
+    # days_before or days_after" (confirmed live 2026-11-17).
+    @model_validator(mode="after")
+    def _days_with_days_offset(self) -> Self:
+        if self.date_offset in DAYS_OFFSETS and not self.date_offset_days:
+            raise ValueError(DAYS_OFFSET_MESSAGE)
+        return self
 
 
 class TriggerWebsiteVisitedConfig(BaseModel):

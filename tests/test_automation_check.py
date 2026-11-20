@@ -698,3 +698,456 @@ def test_steps_add_reports_warnings_and_still_validates(monkeypatch):
     result = _steps(monkeypatch, ["add", "auto", "--root"], spec)
     assert result.exit_code == 0, result.output
     assert "warning: " in result.stderr and "team_member" in result.stderr
+
+
+# --- shapes the server rejects -------------------------------------------
+
+_CONDITIONS = "ae78e103-ab10-47d5-9dbc-730c26ae4882"  # encounters, many_to_many
+_PATIENT_REL = "889f65e2-dd31-42f0-a088-c3c1dd8ea484"  # encounters, many_to_one
+_PATIENT_DOB = "de05fa11-6ea1-400c-8349-e4c24543eaa1"  # patients.date_of_birth
+
+
+def _encounter_spec(*steps):
+    return {**_spec(*steps), "target_object": "encounters"}
+
+
+def _code(inputs=(), outputs=()):
+    return {
+        "key": "code",
+        "step_type": "code_step",
+        "action_code_step": {
+            "script": "outputs = {}",
+            "inputs": list(inputs),
+            "outputs": list(outputs),
+        },
+    }
+
+
+def _plan_problems(spec):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    with pytest.raises(SpecProblems) as e:
+        plan_create_automation(spec)
+    return e.value.errors
+
+
+def _planned_step(spec):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    (op,) = plan_create_automation(spec).operations
+    return op.payload["steps"][0]
+
+
+def test_a_related_field_input_on_a_to_many_relationship_names_the_binding(
+    patch_live_lookups,
+):
+    rel = {"name": "conds", "input_type": "related_field", "related_field": "x"}
+    spec = _encounter_spec(_code([{**rel, "field": _CONDITIONS}]))
+    (f,) = _plan_problems(spec)
+    assert f.step == "code"
+    assert f.path == "action_code_step.inputs[0].field"
+    assert f.got == "conditions"
+    assert "to-many relationship (many_to_many)" in f.message
+    assert (
+        "input_type 'field' on 'conditions', data_type 'entity' and is_list true"
+        in f.message
+    )
+
+
+def test_a_related_field_output_on_a_to_many_relationship_is_an_error(
+    patch_live_lookups,
+):
+    out = {"name": "cond", "output_type": "related_field", "related_field": "x"}
+    spec = _encounter_spec(_code(outputs=[{**out, "field": _CONDITIONS}]))
+    (f,) = _plan_problems(spec)
+    assert f.path == "action_code_step.outputs[0].field"
+    assert "modify_related_entities" in f.message
+
+
+def test_a_single_value_related_field_builds_from_ids_or_refs(patch_live_lookups):
+    by_id = {
+        "name": "dob",
+        "input_type": "related_field",
+        "field": _PATIENT_REL,
+        "related_field": _PATIENT_DOB,
+    }
+    by_ref = {
+        "name": "dob",
+        "input_type": "related_field",
+        "field_ref": "encounters.patient_rel",
+        "related_field_ref": "patients.date_of_birth",
+    }
+    built = [
+        _planned_step(_encounter_spec(_code([i])))["action_code_step"]["inputs"]
+        for i in (by_id, by_ref)
+    ]
+    assert built[0] == built[1]
+    assert built[0] == [
+        {
+            "name": "dob",
+            "input_type": "related_field",
+            "field": {"id": _PATIENT_REL},
+            "related_field": {"id": _PATIENT_DOB},
+        }
+    ]
+
+
+def test_the_to_many_binding_the_finding_names_builds(patch_live_lookups):
+    conds = {
+        "name": "conds",
+        "input_type": "field",
+        "field_ref": "encounters.conditions",
+        "data_type": "entity",
+        "is_list": True,
+    }
+    (built,) = _planned_step(_encounter_spec(_code([conds])))["action_code_step"][
+        "inputs"
+    ]
+    assert built["field"] == {"id": _CONDITIONS}
+
+
+def _entity_var(**var):
+    return {
+        "key": "init",
+        "step_type": "initialize_variable",
+        "action_initialize_variable": {
+            "variable": {"name": "patient", "data_type": "entity", **var}
+        },
+    }
+
+
+_PATIENTS = "ceed733b-9dd9-4bf9-8c52-8ba1ac41da45"
+
+
+def test_an_entity_variable_without_data_subtype_points_at_objects_list():
+    f = _only(_errors(_encounter_spec(_entity_var())), step="init")
+    assert f.path == "action_initialize_variable.variable.data_subtype"
+    assert f.hint == "kizen objects list"
+
+
+def test_an_entity_variable_takes_an_object_api_name(patch_live_lookups):
+    by_name = _planned_step(_encounter_spec(_entity_var(data_subtype="patients")))
+    by_id = _planned_step(_encounter_spec(_entity_var(data_subtype=_PATIENTS)))
+    assert by_name == by_id
+    variable = by_id["action_initialize_variable"]["variable"]
+    assert variable["data_subtype"] == _PATIENTS
+
+
+def _on_date(**block):
+    on_date = {
+        "field_ref": "deals.close_date",
+        "date_offset": "days_after",
+        "date_offset_days": 1,
+        **block,
+    }
+    return _activity(
+        schedule={"type": "on_or_around_date", "on_or_around_date": on_date}
+    )
+
+
+def test_a_date_schedule_without_time_is_an_error_with_no_live_call():
+    f = _only(_errors(_spec(_on_date())), step="act")
+    assert f.path == "action_schedule_activity.schedule.on_or_around_date"
+    assert "needs `time`" in f.message
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"time": "09:00"},
+        {"time_offset": "hours_before", "time_offset_value": 2},
+        {"date_offset": "on_day_and_time"},
+    ],
+    ids=["time", "relative", "on_day_and_time"],
+)
+def test_a_date_schedule_that_needs_no_time_passes(block):
+    check_automation(_spec(_on_date(date_offset_days=1, **block)))
+
+
+def _date_trigger(**block):
+    on_date = {"field_ref": "deals.close_date", **block}
+    return [{"trigger_type": "on_or_around_date", "trigger_on_or_around_date": on_date}]
+
+
+@pytest.mark.parametrize(
+    ("block", "needs"),
+    [({}, "`time` and `period`"), ({"time": "09:00"}, "`period`")],
+    ids=["no-time", "no-period"],
+)
+def test_a_date_trigger_without_time_is_an_error(block, needs):
+    triggers = _date_trigger(date_offset="days_before", date_offset_days=1, **block)
+    spec = _spec(_set_mrn("a"), triggers=triggers)
+    f = _only(_errors(spec), path="triggers[0].trigger_on_or_around_date")
+    assert f"needs {needs} (" in f.message
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {
+            "date_offset": "days_before",
+            "date_offset_days": 1,
+            "time": "09:00",
+            "period": "am",
+        },
+        {"date_offset": "on_day_and_time"},
+    ],
+    ids=["time", "on_day_and_time"],
+)
+def test_a_date_trigger_that_needs_no_time_passes(block):
+    check_automation(_spec(_set_mrn("a"), triggers=_date_trigger(**block)))
+
+
+def _static_var(**source):
+    return {
+        "key": "greeting",
+        "step_type": "initialize_variable",
+        "action_initialize_variable": {
+            "variable": {"name": "greeting", "data_type": "string"},
+            "sources": [{"source_type": "static", "value": "hello", **source}],
+        },
+    }
+
+
+def test_a_static_source_without_source_subtype_is_an_error():
+    f = _only(_errors(_spec(_static_var())), step="greeting")
+    assert f.path == "action_initialize_variable.sources.0"
+    assert "a static source needs source_subtype" in f.message
+
+
+def test_a_static_source_with_source_subtype_passes():
+    check_automation(_spec(_static_var(source_subtype="string")))
+
+
+def _patients_spec(*steps, **top):
+    return {**_spec(*steps, **top), "target_object": "patients"}
+
+
+def _patient_date_trigger(field):
+    return _date_trigger(field_ref=f"patients.{field}", date_offset="on_day_and_time")
+
+
+def _patient_date_activity(field):
+    on_date = {"field_ref": f"patients.{field}", "date_offset": "on_day_and_time"}
+    return _activity(
+        schedule={"type": "on_or_around_date", "on_or_around_date": on_date}
+    )
+
+
+def test_on_day_and_time_on_a_date_field_trigger_is_an_error(patch_live_lookups):
+    spec = _patients_spec(
+        _set_mrn("a"), triggers=_patient_date_trigger("date_of_birth")
+    )
+    (f,) = _plan_problems(spec)
+    assert f.path == "triggers[0].trigger_on_or_around_date"
+    assert f.got == "date_of_birth"
+    assert f.message == (
+        "on_day_and_time needs a datetime field; 'date_of_birth' is date. "
+        "Use on_day with time and period, or a datetime field."
+    )
+
+
+def test_on_day_and_time_on_a_date_field_schedule_is_an_error(patch_live_lookups):
+    (f,) = _plan_problems(_patients_spec(_patient_date_activity("date_of_birth")))
+    assert f.step == "act"
+    assert f.path == "action_schedule_activity.schedule.on_or_around_date"
+    assert "'date_of_birth' is date. Use on_day with time," in f.message
+
+
+def test_on_day_and_time_on_a_date_field_goal_trigger_is_an_error(
+    patch_live_lookups,
+):
+    goal = {
+        "key": "wait",
+        "step_type": "goal",
+        "step_goal": {
+            "wait_type": "never",
+            "triggers": _patient_date_trigger("date_of_birth"),
+        },
+    }
+    (f,) = _plan_problems(_patients_spec(goal))
+    assert f.step == "wait"
+    assert f.path == "step_goal.triggers[0].trigger_on_or_around_date"
+    assert "'date_of_birth' is date" in f.message
+
+
+def test_on_day_and_time_on_a_datetime_field_builds(patch_live_lookups):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    spec = _patients_spec(
+        _patient_date_activity("created"), triggers=_patient_date_trigger("created")
+    )
+    (op,) = plan_create_automation(spec).operations
+    trigger = op.payload["triggers"][1]["trigger_on_or_around_date"]
+    assert trigger["date_offset"] == "on_day_and_time"
+
+
+def test_on_day_and_time_findings_on_trigger_and_step_come_together(
+    patch_live_lookups, monkeypatch
+):
+    from kizen_builder.tools.planners.automations import LiveContext
+
+    by_id = LiveContext.field_by_id
+
+    def live_shape(self, object_ref, field_id):
+        # The /fields endpoint names a field by `name`, not `api_name`.
+        field = by_id(self, object_ref, field_id)
+        return field and {**field, "name": field["api_name"], "api_name": None}
+
+    monkeypatch.setattr(LiveContext, "field_by_id", live_shape)
+    spec = _patients_spec(
+        _patient_date_activity("date_of_birth"),
+        triggers=_patient_date_trigger("date_of_birth"),
+    )
+    paths = [(f.path, f.got) for f in _plan_problems(spec)]
+    assert paths == [
+        ("triggers[0].trigger_on_or_around_date", "date_of_birth"),
+        ("action_schedule_activity.schedule.on_or_around_date", "date_of_birth"),
+    ]
+
+
+def test_on_day_and_time_leaves_an_unreadable_field_to_the_server(
+    patch_live_lookups, monkeypatch
+):
+    """A failed /fields read doesn't fail a dry run the check only advises on."""
+    from kizen_builder.api.client import KizenAPIError
+    from kizen_builder.tools.planners.automations import (
+        LiveContext,
+        plan_create_automation,
+    )
+
+    def refused(self, object_ref, field_id):
+        raise KizenAPIError(403, "You do not have permission")
+
+    monkeypatch.setattr(LiveContext, "field_by_id", refused)
+    spec = _patients_spec(
+        _patient_date_activity("date_of_birth"),
+        triggers=_patient_date_trigger("date_of_birth"),
+    )
+    (op,) = plan_create_automation(spec).operations
+    assert op.payload["triggers"][1]["trigger_on_or_around_date"]["date_offset"] == (
+        "on_day_and_time"
+    )
+
+
+@pytest.mark.parametrize("days", [{}, {"date_offset_days": 0}], ids=["none", "zero"])
+def test_a_days_after_trigger_needs_a_day_count(days):
+    block = {"date_offset": "days_after", "time": "09:00", "period": "am", **days}
+    spec = _spec(_set_mrn("a"), triggers=_date_trigger(**block))
+    f = _only(_errors(spec), path="triggers[0].trigger_on_or_around_date")
+    assert f.message.startswith("date_offset_days must be at least 1 with days_before")
+
+
+def test_a_days_before_schedule_needs_a_day_count():
+    spec = _spec(
+        _on_date(date_offset="days_before", date_offset_days=None, time="9:00")
+    )
+    f = _only(_errors(spec), step="act")
+    assert f.path == "action_schedule_activity.schedule.on_or_around_date"
+    assert "use on_day for the day itself" in f.message
+
+
+def test_a_schedule_day_count_from_a_variable_needs_no_static_count():
+    on_date = {"date_offset_days": None, "time": "09:00"}
+    check_automation(_spec(_on_date(date_offset_type="variable", **on_date)))
+
+
+_TWO_DESTINATIONS = [{"field_ref": "deals.summary"}, {"field_ref": "deals.notes"}]
+
+
+def _llm(step_type, **block):
+    return {
+        "key": "llm",
+        "step_type": step_type,
+        f"action_{step_type}": {
+            "model_name": "kizen/lite",
+            "prompt": "Summarize the deal.",
+            "destinations": _TWO_DESTINATIONS,
+            **block,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "step_type", ["call_llm", "file_content_extraction", "audio_transcription"]
+)
+def test_two_llm_destinations_need_is_advanced(step_type):
+    f = _only(_errors(_spec(_llm(step_type))), step="llm")
+    assert f.path == f"action_{step_type}"
+    assert f.message == "more than one destination needs is_advanced: true"
+
+
+def test_two_llm_destinations_with_is_advanced_pass():
+    check_automation(_spec(_llm("call_llm", is_advanced=True)))
+
+
+@pytest.mark.parametrize(
+    ("step", "path", "message"),
+    [
+        (
+            _static_var(),
+            "action_initialize_variable.sources.0",
+            "a static source needs source_subtype",
+        ),
+        (
+            _on_date(),
+            "action_schedule_activity.schedule.on_or_around_date",
+            "needs `time`",
+        ),
+        (
+            _on_date(date_offset_days=None, time="09:00"),
+            "action_schedule_activity.schedule.on_or_around_date",
+            "date_offset_days must be at least 1",
+        ),
+        (
+            _llm("call_llm"),
+            "action_call_llm",
+            "more than one destination needs is_advanced: true",
+        ),
+    ],
+    ids=["static_source", "schedule_time", "day_count", "is_advanced"],
+)
+def test_steps_edit_checks_the_block_rules(monkeypatch, step, path, message):
+    key, step_type = step["key"], step["step_type"]
+    patch = {k: v for k, v in step.items() if k not in ("key", "step_type")}
+    live = [{"key": key, "type": step_type}]
+    result = _steps(monkeypatch, ["edit", "auto", key, "--json"], patch, live)
+    assert result.exit_code == 1
+    (error,) = json.loads(result.stdout)["errors"]
+    assert (error["step"], error["path"]) == (key, path)
+    assert "index" not in error
+    assert message in error["message"]
+
+
+def test_steps_edit_block_rules_pass_the_fixed_shape():
+    from kizen_builder.tools.automations import check_step_spec
+
+    fixed = _llm("call_llm", is_advanced=True)
+    assert check_step_spec(fixed, {"steps": []}) == []
+
+
+def test_steps_edit_catches_on_day_and_time_on_a_date_field(patch_live_lookups):
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    step = _patient_date_activity("date_of_birth")
+    patch = {"action_schedule_activity": step["action_schedule_activity"]}
+    payload = {"name": "a", "api_name": "a", "type": "record_based", "steps": []}
+    with pytest.raises(SpecProblems) as e:
+        normalize_step_patch(patch, "act", "schedule_activity", payload, "patients")
+    (f,) = e.value.errors
+    assert f.path == "action_schedule_activity.schedule.on_or_around_date"
+    assert "'date_of_birth' is date" in f.message
+
+
+def test_a_bare_related_field_ref_is_refused(patch_live_lookups):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+    from kizen_builder.tools.plans import PlanError
+
+    dob = {
+        "name": "dob",
+        "input_type": "related_field",
+        "field_ref": "encounters.patient_rel",
+        "related_field_ref": "date_of_birth",
+    }
+    with pytest.raises(PlanError, match="must be `object.field` or a field UUID"):
+        plan_create_automation(_encounter_spec(_code([dob])))

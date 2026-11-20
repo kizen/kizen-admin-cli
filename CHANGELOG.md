@@ -116,6 +116,29 @@ called out explicitly under **Changed** or **Removed**.
   no longer fails** with "Exit Loop step references a loop that does not
   exist." `steps`, `roundtrip --execute` and `update` now send the loop's key
   instead of echoing the id read back.
+- **A code step's `related_field` input or output on a to-many relationship
+  fails the dry-run.** The server refused it with *"The field must not allow
+  multiple values"*. The finding says to read the relationship with
+  `input_type: field` and `is_list: true`, or to write with
+  `modify_related_entities`. `related_field` also takes `related_field_ref`
+  and an `object.field` ref.
+- **An entity variable's `data_subtype` takes the object's api_name; a
+  missing one fails the dry-run.** The server wanted the UUID and answered an
+  api_name with *"is not a valid UUID"*.
+- **A date schedule or date trigger with no `time` fails the dry-run.** A
+  schedule's `on_or_around_date` needs `time` unless `time_offset` is not
+  `specific_time` or `date_offset` is `on_day_and_time`; a trigger needs
+  `time` and `period` unless it's `on_day_and_time`. Each was a 400 before.
+- **Four more automation specs the server rejects fail the dry-run.** Each
+  was a 400 before:
+  - a `static` variable source with no `source_subtype`;
+  - `date_offset: on_day_and_time` on a date field, not a datetime one, in
+    an `on_or_around_date` trigger, a goal's trigger or a schedule;
+  - `days_before` or `days_after` with `date_offset_days` 0 or left out;
+  - two or more `destinations` on `call_llm`, `file_content_extraction` or
+    `audio_transcription` without `is_advanced: true`.
+
+  `automations steps add` and `steps edit` run the same checks.
 
 ## [0.7.0] — 2026-11-16
 

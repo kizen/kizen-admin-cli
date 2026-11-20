@@ -6,7 +6,11 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kizen_builder.models.spec.automations_shared import TeamMemberConfig
+from kizen_builder.models.spec.automations_shared import (
+    DAYS_OFFSET_MESSAGE,
+    DAYS_OFFSETS,
+    TeamMemberConfig,
+)
 
 
 class ActionSendEmailConfig(BaseModel):
@@ -339,8 +343,9 @@ class ScheduleOnOrAroundDateConfig(BaseModel):
         default=None,
         description=(
             "A date or datetime field on the record, as `<object>.<field>` "
-            "or a bare field api_name. Resolved to `field_id` at apply time. "
-            "Set this, `field_id` or `variable`."
+            "or a bare field api_name; on_day_and_time needs a datetime one. "
+            "Resolved to `field_id` at apply time. Set this, `field_id` or "
+            "`variable`."
         ),
     )
     field_id: str | dict[str, Any] | None = Field(
@@ -368,6 +373,36 @@ class ScheduleOnOrAroundDateConfig(BaseModel):
         default=None, description='`HH:MM` on a 24-hour clock, e.g. "10:00".'
     )
     time_offset_value: int | None = None
+
+    # The server reads a left-out time_offset as specific_time and then
+    # 400s for want of `time`; on_day_and_time takes the field's own time
+    # and ignores time_offset (confirmed live 2026-11-16).
+    @model_validator(mode="after")
+    def _time_when_specific(self) -> Self:
+        if (
+            self.date_offset != "on_day_and_time"
+            and self.time_offset in (None, "specific_time")
+            and not self.time
+        ):
+            raise ValueError(
+                "needs `time` (HH:MM): a left-out time_offset is "
+                "specific_time, which takes one. Set `time`, or a time_offset "
+                "that doesn't take it (from_field, from_variable, or "
+                "hours/minutes before/after with time_offset_value)"
+            )
+        return self
+
+    # A left-out count is a 400: "This field is required when
+    # date_offset_type is static" (confirmed live 2026-11-17).
+    @model_validator(mode="after")
+    def _days_with_days_offset(self) -> Self:
+        if (
+            self.date_offset in DAYS_OFFSETS
+            and self.date_offset_days is None
+            and (self.model_extra or {}).get("date_offset_type") in (None, "static")
+        ):
+            raise ValueError(DAYS_OFFSET_MESSAGE)
+        return self
 
 
 class ActivityScheduleConfig(BaseModel):

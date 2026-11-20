@@ -5037,6 +5037,7 @@ def test_step_schedule_activity_resolves_field_refs_to_field_ids(patch_live_look
                         "field_ref": "patients.date_of_birth",
                         "date_offset": "days_after",
                         "date_offset_days": 1,
+                        "time": "09:00",
                     },
                 },
                 "assigned_to": {
@@ -5051,6 +5052,7 @@ def test_step_schedule_activity_resolves_field_refs_to_field_ids(patch_live_look
         "field_id": by_name["date_of_birth"],
         "date_offset": "days_after",
         "date_offset_days": 1,
+        "time": "09:00",
     }
     assert action["assigned_to"] == {
         "assignment_type": "team_selector_field",
@@ -6802,7 +6804,11 @@ _BAD_VARIABLES = [
 _GOOD_VARIABLES = [
     pytest.param({"name": "owner", "data_type": "employee"}, id="employee"),
     pytest.param(
-        {"name": "branch", "data_type": "entity", "data_subtype": "obj-uuid"},
+        {
+            "name": "branch",
+            "data_type": "entity",
+            "data_subtype": "ceed733b-9dd9-4bf9-8c52-8ba1ac41da45",
+        },
         id="entity",
     ),
     pytest.param({"name": "inbox", "data_type": "email"}, id="email"),
@@ -7116,7 +7122,7 @@ def _field_ref_trigger_block(payload: dict, trigger_type: str, goal: bool) -> di
 
 _FIELD_REF_TRIGGER_CASES = [
     ("field_updated", "mrn", {"fire_on_create": True}),
-    ("on_or_around_date", "date_of_birth", {"date_offset": "on_day_and_time"}),
+    ("on_or_around_date", "created", {"date_offset": "on_day_and_time"}),
 ]
 
 
