@@ -213,7 +213,7 @@ def test_piped_automations_get_prints_no_box_drawing(monkeypatch):
         mock_automation_lookup(raw)
         result = runner.invoke(cli.app, ["automations", "get", raw["api_name"]])
     assert result.exit_code == 0, result.output
-    assert "Triggers:\n| type | description | auth |" in result.stdout
+    assert "Triggers:\n| ord | type | description | auth |" in result.stdout
     assert not BOX_DRAWING.search(result.stdout)
 
 

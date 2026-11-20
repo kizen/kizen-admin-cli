@@ -124,9 +124,10 @@ def test_docs_unavailable_message_is_actionable(monkeypatch, tmp_path):
         raise AssertionError("expected DocsUnavailable")
 
 
-# The in-app agent truncates a response at 64,000 characters, and a session
-# often reads two topics in one command. The two topics every automation build
-# reads get a tighter cap; anything that outgrows one splits into another topic.
+# The in-app agent cuts `docs show` at 64,000 characters (every other command
+# at 20,000), and a session often reads two topics in one command. The two
+# topics every automation build reads get a tighter cap; anything that
+# outgrows one splits into another topic.
 _SIZE_CAPS = {"automation": 12_000, "operating": 8_000}
 _DEFAULT_SIZE_CAP = 34_000
 

@@ -54,6 +54,9 @@ automations are in `kizen docs show automation-patterns`.
 - `order` numbers steps, and triggers, `0..N` across the whole automation,
   not per branch. `step-types` entries leave it out; the CLI numbers by
   position.
+- Kizen doesn't store step keys. After a write each step is keyed
+  `s<NN>_<type>` by order, and the write prints the new keys; use those with
+  `--parent` and `steps get`.
 
 ### Branch groups
 

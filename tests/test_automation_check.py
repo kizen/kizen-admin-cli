@@ -493,6 +493,18 @@ def test_warnings_print_with_the_plan_and_dont_block_it(patch_live_lookups):
     ]
 
 
+def test_the_plan_maps_each_spec_key_to_the_key_a_read_gives(patch_live_lookups):
+    from kizen_builder.tools.planners.automations import plan_create_automation
+
+    steps = _set_mrn("set"), _set_mrn("set_again", parent="set", order=1)
+    spec = {**_spec(*steps), "target_object": "patients"}
+    (op,) = plan_create_automation(spec).operations
+    assert op.preview["step_keys"] == {
+        "set": "s00_change_field_value",
+        "set_again": "s01_change_field_value",
+    }
+
+
 # --- graph problems -------------------------------------------------------
 
 

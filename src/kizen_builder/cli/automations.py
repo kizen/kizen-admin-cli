@@ -34,6 +34,7 @@ from kizen_builder.cli._shared import (
 from kizen_builder.config import load_env_config
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools import steps as step_tools
+from kizen_builder.tools.automation_check import ELIDED
 from kizen_builder.tools.planners import automations as auto_planners
 from kizen_builder.tools.plans import PlanError
 
@@ -111,7 +112,16 @@ def autos_get(
     api_name: str = typer.Argument(..., help="Automation api_name."),
     output: str = OUTPUT_OPTION,
     json_out: bool = typer.Option(
-        False, "--json", help="Alias for --output json (summarised, no step configs)."
+        False,
+        "--json",
+        help=(
+            "Alias for --output json: top-level fields, an outline of every "
+            "trigger and step, then each one with its config block. Strings "
+            "over 2,000 characters and filter-rule view_models print as "
+            "'<N chars elided; kizen automations steps get <api_name> <key>>', "
+            "and so do whole blocks, then whole steps, when the read would "
+            "pass 20,000 characters."
+        ),
     ),
     raw_out: bool = typer.Option(
         False, "--raw", help="Emit full Kizen API response as JSON."
@@ -119,24 +129,106 @@ def autos_get(
 ) -> None:
     """Show one automation in full (triggers + steps).
 
-    `--output json` / `--json` emit the summary (no step configs);
-    `--raw` emits the full API response; `--output csv` emits the step
-    list (one row per step).
+    Step rows lead with the key the `steps` verbs take (`s07_condition`).
+    `--output json` / `--json` emit the outline first and the config blocks
+    after it, one trigger or step per line, so a reader that truncates loses
+    configs rather than keys; `--raw` emits the full API response; `--output
+    csv` emits the step list (one row per step).
     """
     fmt = out.resolve_format(output, json_out)
-    with cli_errors(LookupError):
-        result = auto_tools.get_automation(api_name)
-
     if raw_out:
-        out.emit_json(result["raw"])
+        with cli_errors(LookupError):
+            raw = auto_tools.get_automation(api_name)["raw"]
+        out.emit_json(raw)
         return
+
+    with cli_errors(LookupError, PlanError):
+        try:
+            result = auto_tools.show_automation(api_name)
+        except auto_tools.UntranslatedAutomation as e:
+            err_console.print(
+                f"[yellow]warning:[/yellow] the CLI couldn't translate this "
+                f"automation ({escape(str(e))}), so this is the summary: no "
+                "step keys or configs. --raw prints the whole API response.",
+                emoji=False,
+            )
+            _print_summary(e.summary, fmt)
+            return
+    print_warnings(result)
+    payload = result["payload"]
+    # A spec trigger takes no `key` (the model refuses one), so a trigger
+    # copied from here into a spec mustn't carry it.
+    triggers = [
+        {k: v for k, v in t.items() if k not in ("key", "prefix")}
+        for t in payload["triggers"]
+    ]
+    steps = payload["steps"]
 
     def table() -> None:
         console.print(
-            f"[bold]{result['name']}[/bold]  "
-            f"[dim]({result['api_name']}, id={result['id']}, rev={result['revision']})[/dim]"
+            f"[bold]{escape(result['name'] or '')}[/bold]  "
+            f"[dim]({result['api_name']}, id={result['id']}, "
+            f"rev={result['revision']})[/dim]"
         )
 
+        trig_table = Table(title="Triggers")
+        trig_table.add_column("ord", justify="right")
+        trig_table.add_column("type")
+        trig_table.add_column("description")
+        trig_table.add_column("auth")
+        for t in triggers:
+            trig_table.add_row(
+                str(t["order"]),
+                t["type"],
+                t.get("description") or "",
+                (t.get("trigger_webhook") or {}).get("auth_type") or "",
+            )
+        console.print(trig_table)
+
+        step_table = Table(title="Steps")
+        step_table.add_column("key")
+        step_table.add_column("type")
+        step_table.add_column("description")
+        step_table.add_column("parent", style="dim")
+        step_table.add_column("branch")
+        for s in steps:
+            step_table.add_row(
+                s["key"],
+                s["type"],
+                s.get("description") or "",
+                s.get("parent_key") or "",
+                s.get("parent_condition") or "",
+            )
+        console.print(step_table)
+
+    if fmt is out.OutputFormat.JSON:
+        typer.echo(out.entry_per_line(_get_json(result, triggers, steps)))
+        return
+    out.render(
+        fmt,
+        json_data=None,
+        table=table,
+        csv_rows=steps,
+        csv_columns=[
+            out.Column("key", "key"),
+            out.Column("type", "type"),
+            out.Column("description", "description"),
+            out.Column("parent_key", "parent_key"),
+            out.Column("parent_condition", "parent_condition"),
+        ],
+    )
+
+
+def _print_summary(result: dict[str, Any], fmt: out.OutputFormat) -> None:
+    """`get` for an automation the translator can't read: the raw GET's
+    triggers and steps, by id."""
+
+    def table() -> None:
+        console.print(
+            f"[bold]{escape(result['name'] or '')}[/bold]  "
+            f"[dim]({result['api_name']}, id={result['id']}, "
+            f"rev={result['revision']})[/dim]"
+        )
         trig_table = Table(title="Triggers")
         trig_table.add_column("type")
         trig_table.add_column("description")
@@ -148,7 +240,6 @@ def autos_get(
                 t.get("auth_type") or "",
             )
         console.print(trig_table)
-
         step_table = Table(title="Steps")
         step_table.add_column("ord", justify="right")
         step_table.add_column("id", style="dim")
@@ -156,14 +247,14 @@ def autos_get(
         step_table.add_column("description")
         step_table.add_column("parent", style="dim")
         step_table.add_column("branch")
-        for s in result["steps"]:
+        for st in result["steps"]:
             step_table.add_row(
-                str(s["order"]) if s["order"] is not None else "",
-                (s["id"] or "")[:8],
-                s["step_type"] or "",
-                s["description"] or "",
-                (s["parent_step_id"] or "")[:8],
-                s["parent_condition"] or "",
+                str(st["order"]) if st["order"] is not None else "",
+                (st["id"] or "")[:8],
+                st["step_type"] or "",
+                st["description"] or "",
+                (st["parent_step_id"] or "")[:8],
+                st["parent_condition"] or "",
             )
         console.print(step_table)
 
@@ -180,6 +271,140 @@ def autos_get(
             out.Column("parent_condition", "parent_condition"),
         ],
     )
+
+
+# The in-app agent cuts a command's output at 20,000 characters. Strings
+# over `_ELIDE_OVER` always print as a stand-in; past `_FIT_UNDER` whole
+# config blocks do too, largest first, until the read fits.
+_ELIDE_OVER = 2000
+_FIT_UNDER = 19_000
+# Fields `type` and `parent_condition` already say.
+_DERIVED_STEP_FIELDS = ("parent_yes_no", "prefix", "goal_type")
+
+
+def _elide(value: Any, full: str) -> Any:
+    """`value` with each long string, and each filter rule's `view_model` (the
+    editor's layout), swapped for a marker naming the command `full` that
+    prints it whole."""
+    if isinstance(value, str) and len(value) > _ELIDE_OVER:
+        return ELIDED.format(n=len(value), full=full)
+    if isinstance(value, list):
+        return [_elide(v, full) for v in value]
+    if isinstance(value, dict):
+        return {
+            k: (
+                ELIDED.format(n=out.json_size(v), full=full)
+                if k == "view_model" and v
+                else _elide(v, full)
+            )
+            for k, v in value.items()
+        }
+    return value
+
+
+def _get_json(
+    result: dict[str, Any],
+    triggers: list[dict[str, Any]],
+    steps: list[dict[str, Any]],
+) -> dict[str, Any]:
+    payload = result["payload"]
+    api_name = result["api_name"]
+    triggers = _elide(triggers, f"kizen automations get {api_name} --raw")
+    steps = [
+        {
+            "key": s["key"],
+            **_elide(
+                {
+                    k: v
+                    for k, v in s.items()
+                    if k != "key" and k not in _DERIVED_STEP_FIELDS
+                },
+                f"kizen automations steps get {api_name} {s['key']}",
+            ),
+        }
+        for s in steps
+    ]
+    top = {
+        "api_name": api_name,
+        "name": result["name"],
+        "id": result["id"],
+        "revision": result["revision"],
+        "active": result["active"],
+        "type": payload["type"],
+        "target_object": result["custom_object_name"],
+        "user_description": payload.get("user_description", ""),
+        "skip_non_working_days": payload["skip_non_working_days"],
+    }
+    for field in ("error_notification_email", "priority_rank"):
+        if payload.get(field) is not None:
+            top[field] = payload[field]
+    return _fit(
+        {
+            **top,
+            "variables": payload.get("variables", []),
+            "outline": {
+                "triggers": [
+                    {
+                        "order": t["order"],
+                        "type": t["type"],
+                        "description": t.get("description", ""),
+                    }
+                    for t in triggers
+                ],
+                "steps": [
+                    {
+                        "key": s["key"],
+                        "type": s["type"],
+                        "parent_key": s["parent_key"],
+                        "branch": s["parent_condition"],
+                        "description": s.get("description", ""),
+                    }
+                    for s in steps
+                ],
+            },
+            "triggers": triggers,
+            "steps": steps,
+        }
+    )
+
+
+def _fit(result: dict[str, Any]) -> dict[str, Any]:
+    """`result` cut to print under `_FIT_UNDER` characters. Config blocks go
+    first, largest entry first; then whole entries shrink to their key (a
+    trigger's order) and a stand-in. The outline always stays whole, and a
+    stand-in left in a spec fails the dry run, so a read copied into an
+    update can't drop a step."""
+    api_name = result["api_name"]
+
+    def full(section: str, entry: dict[str, Any]) -> str:
+        if section == "steps":
+            return f"kizen automations steps get {api_name} {entry['key']}"
+        return f"kizen automations get {api_name} --raw"
+
+    def blocks_elided(section: str, entry: dict[str, Any]) -> dict[str, Any]:
+        return {
+            k: (
+                ELIDED.format(n=out.json_size(v), full=full(section, entry))
+                if isinstance(v, dict | list) and v
+                else v
+            )
+            for k, v in entry.items()
+        }
+
+    def stub(section: str, entry: dict[str, Any]) -> dict[str, Any]:
+        ident = "key" if section == "steps" else "order"
+        marker = ELIDED.format(n=out.json_size(entry), full=full(section, entry))
+        return {ident: entry[ident], "elided": marker}
+
+    entries = [
+        (sec, i) for sec in ("steps", "triggers") for i in range(len(result[sec]))
+    ]
+    for cut in (blocks_elided, stub):
+        for sec, i in sorted(entries, key=lambda e: -out.json_size(result[e[0]][e[1]])):
+            if len(out.entry_per_line(result)) < _FIT_UNDER:
+                return result
+            result[sec][i] = cut(sec, result[sec][i])
+    return result
 
 
 @autos_app.command("llm-models")
@@ -485,7 +710,7 @@ def autos_show(
     subcommands take. They are synthesized deterministically from the live
     step order, so re-running `show` after any change gives the fresh set.
     """
-    with cli_errors(LookupError, PlanError):
+    with cli_errors(LookupError, PlanError, auto_tools.UntranslatedAutomation):
         result = auto_tools.show_automation(api_name)
 
     print_warnings(result)

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 import typer
+from rich.markup import escape
 
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import (
@@ -20,6 +21,7 @@ from kizen_builder.cli._shared import (
     MUTATION_JSON_OPTION,
     cli_errors,
     console,
+    err_console,
 )
 from kizen_builder.cli.automations import autos_app, print_warnings
 from kizen_builder.tools import automations as auto_tools
@@ -71,6 +73,11 @@ def autos_create(
     ),
 )
 def autos_update(
+    api_name: str | None = typer.Argument(
+        None,
+        help="Automation api_name. Fills in a spec that leaves it out; must "
+        "match one that has it.",
+    ),
     spec_file: str = typer.Option(
         "",
         "--spec-file",
@@ -93,6 +100,17 @@ def autos_update(
     show automation`.
     """
     spec_dict, from_stdin = _read_spec(spec_file)
+    if api_name and isinstance(spec_dict, dict):
+        given = spec_dict.get("api_name")
+        if given is None:
+            spec_dict = {**spec_dict, "api_name": api_name}
+        elif given != api_name:
+            err_console.print(
+                f"[red]error:[/red] the spec's api_name '{escape(str(given))}' "
+                f"doesn't match '{escape(api_name)}'",
+                emoji=False,
+            )
+            raise typer.Exit(code=2)
     _run_mutation(
         lambda: auto_planners.plan_update_automation(spec_dict),
         dry_run=dry_run,

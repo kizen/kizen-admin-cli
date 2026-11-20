@@ -260,6 +260,8 @@ class OperationResult(BaseModel):
     server_uuid: str | None = None
     message: str | None = None
     raw: dict[str, Any] | None = None
+    # Automation create/update: each spec step key → the key a read gives it.
+    step_keys: dict[str, str] | None = Field(default=None, exclude_if=lambda v: not v)
 
 
 class ApplyResult(BaseModel):
@@ -486,6 +488,15 @@ def apply_plan(plan: Plan) -> ApplyResult:
                             f"requested {requested_name}, server normalized to "
                             f"{returned_name}" + (f" ({detail})" if detail else "")
                         )
+            step_keys = None
+            if (
+                op.kind == "automation"
+                and op.action in ("create", "update")
+                and isinstance(resp, dict)
+            ):
+                from kizen_builder.translate import written_step_keys
+
+                step_keys = written_step_keys(op.payload.get("steps") or [], resp)
             results.append(
                 OperationResult(
                     key=op.key,
@@ -495,6 +506,7 @@ def apply_plan(plan: Plan) -> ApplyResult:
                     server_uuid=server_uuid,
                     message=message,
                     raw=resp if isinstance(resp, dict) else None,
+                    step_keys=step_keys,
                 )
             )
 

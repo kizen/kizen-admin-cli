@@ -191,6 +191,26 @@ def dumps_json(data: Any, *, prune: bool = False) -> str:
     )
 
 
+def json_size(value: Any) -> int:
+    """Characters in ``value`` as compact JSON, for sizing output."""
+    return len(json.dumps(value, default=str))
+
+
+def entry_per_line(value: Any, indent: str = "") -> str:
+    """Indented JSON with each object in a list of objects on one line."""
+    inner = indent + "  "
+    if isinstance(value, dict) and value:
+        body = ",\n".join(
+            f"{inner}{json.dumps(k)}: {entry_per_line(v, inner)}"
+            for k, v in value.items()
+        )
+        return f"{{\n{body}\n{indent}}}"
+    if isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
+        body = ",\n".join(inner + json.dumps(v, default=str) for v in value)
+        return f"[\n{body}\n{indent}]"
+    return json.dumps(value, default=str)
+
+
 def emit_json(data: Any, *, prune: bool = False) -> None:
     """Print :func:`dumps_json` to stdout."""
     typer.echo(dumps_json(data, prune=prune))

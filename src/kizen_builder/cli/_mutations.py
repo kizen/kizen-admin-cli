@@ -56,9 +56,22 @@ def _render_plan(
     table.add_column("key")
     table.add_column("preview")
     for i, op in enumerate(plan.operations, 1):
-        preview = ", ".join(f"{k}={v}" for k, v in op.preview.items() if k != "env")
+        preview = ", ".join(
+            f"{k}={v}" for k, v in op.preview.items() if k not in ("env", "step_keys")
+        )
         table.add_row(str(i), op.action, op.kind, op.key, preview)
     target.print(table)
+    for op in plan.operations:
+        _print_changed_keys(op.preview.get("step_keys"), target)
+
+
+def _print_changed_keys(step_keys: dict[str, str] | None, target: Console) -> None:
+    """The spec step keys a read won't give back, and what it gives instead."""
+    changed = [f"{k} → {v}" for k, v in (step_keys or {}).items() if k != v]
+    if changed:
+        target.print(
+            f"step keys after the write: {escape(', '.join(changed))}", emoji=False
+        )
 
 
 _STATUS_SYMBOLS = {"ok": "✓", "skipped": "·", "failed": "✗", "adjusted": "~"}
@@ -81,6 +94,8 @@ def _render_result(result: plan_tools.ApplyResult) -> None:
             r.message or "",
         )
     console.print(table)
+    for r in result.results:
+        _print_changed_keys(r.step_keys, console)
     archived = [
         r for r in result.results if r.kind == "record_archive" and r.status == "ok"
     ]

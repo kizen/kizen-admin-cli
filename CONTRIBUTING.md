@@ -345,8 +345,8 @@ rename a flag, keep the old spelling as a hidden option and call
 
 **Doc size.** `tests/test_docs.py::test_every_topic_fits_its_size_cap` caps
 `docs show automation` at 12 KB, `operating` at 8 KB and every other topic at
-34 KB. An in-app agent's tool response is cut at 64,000 characters, so the
-rules go first. A topic that outgrows its cap moves per-type facts onto the
+34 KB. The in-app agent cuts `docs show` at 64,000 characters (every other
+command at 20,000), so the rules go first. A topic that outgrows its cap moves per-type facts onto the
 step-type cards or splits off a topic; it doesn't drop them.
 
 **Printing text the CLI didn't write.** `console.print` parses its string as

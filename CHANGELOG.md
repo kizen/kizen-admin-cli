@@ -134,6 +134,24 @@ called out explicitly under **Changed** or **Removed**.
   check in the browser after a write to `docs show verifying`. The
   merge-field namespaces are in `step-types concepts`, and the `step-types
   show` footer now reads "See also".
+- **`automations get` shows step keys and, with `--json`, each step's
+  settings. Writes print the keys steps end up with. `automations update`
+  accepts the api_name as an argument.** `get` leads each step row with the
+  key the `steps` verbs take, and `get --json` prints an outline of every
+  trigger and step, then each one with its config block, in place of the
+  old summary. Strings over 2,000 characters and filter-rule view_models
+  print as `<N chars elided; kizen automations steps get <api> <key>>`.
+  When the read would still pass 20,000 characters (where the in-app agent
+  cuts a command's output), whole config blocks, then whole steps, print
+  that way too, largest first; the outline always keeps every step. A spec
+  or step patch that still holds a stand-in fails its dry run. An
+  automation the CLI can't translate still reads: `get` warns and prints the
+  old summary, by step id. Kizen stores no step keys, so a
+  read renames steps `s<NN>_<type>`: `automations create|update` now print
+  `step keys after the write: wait → s00_delay` in the plan and after
+  applying (`step_keys` with `--json`), and `steps add|edit|remove` name the
+  step's new key and list every key when the write shifted any. `automations update <api_name>`
+  fills in a spec that leaves `api_name` out and refuses one that disagrees.
 
 - **A new `update_variable` step on an array variable appends by default.**
   When a spec or a `steps add` block leaves `value_resolution` out, the CLI now

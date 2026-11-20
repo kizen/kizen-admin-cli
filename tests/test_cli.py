@@ -28,9 +28,11 @@ from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.planners import forms as form_planners
 from kizen_builder.tools.planners import objects as object_planners
 from kizen_builder.tools.planners import records as record_planners
+from kizen_builder.translate import live_to_payload
 from tests.conftest import (
     FAKE_BASE_URL,
     FAKE_BUSINESS_ID,
+    FIXTURES,
     OTHER_BUSINESS_ID,
     load_fixture,
     mock_automation_lookup,
@@ -383,6 +385,210 @@ def test_automations_get_shows_webhook_auth_type():
     assert "auth_type" not in rows[0]
     assert result.exit_code == 0, result.output
     assert "auth" in result.stdout and "basic_auth" in result.stdout
+
+
+def _get_branching(*args):
+    raw = load_fixture("automations/branching_test.raw.json")
+    with respx.mock:
+        mock_automation_lookup(raw)
+        result = runner.invoke(cli.app, ["automations", "get", raw["api_name"], *args])
+    assert result.exit_code == 0, result.output
+    return raw, result
+
+
+def test_automations_get_leads_step_rows_with_the_step_key():
+    raw, result = _get_branching()
+    step_ids = [s["id"] for s in raw["steps"]]
+    assert (
+        "s02_branch" in result.stdout and "s18_create_related_entity" in result.stdout
+    )
+    assert not any(i[:8] in result.stdout for i in step_ids)
+    assert raw["id"] in result.stdout
+
+
+def test_automations_get_json_carries_each_steps_config_block():
+    raw, result = _get_branching("--json")
+    data = json.loads(result.stdout)
+    assert list(data) == [
+        "api_name",
+        "name",
+        "id",
+        "revision",
+        "active",
+        "type",
+        "target_object",
+        "user_description",
+        "skip_non_working_days",
+        "priority_rank",
+        "variables",
+        "outline",
+        "triggers",
+        "steps",
+    ]
+    assert data["id"] == raw["id"]
+    assert data["type"] == raw["type"]
+    payload = live_to_payload(raw)
+    assert data["variables"] == payload["variables"]
+    assert [s["key"] for s in data["outline"]["steps"]] == [
+        s["key"] for s in payload["steps"]
+    ]
+    assert all(list(s)[0] == "key" and "prefix" not in s for s in data["steps"])
+    assert all("key" not in t for t in data["triggers"])
+    (trigger,) = data["triggers"]
+    assert trigger["trigger_manual"] == payload["triggers"][0]["trigger_manual"]
+    s12 = next(s for s in data["steps"] if s["key"] == "s12_search_records")
+    assert s12["action_search_records"] == next(
+        s["action_search_records"]
+        for s in payload["steps"]
+        if s["key"] == "s12_search_records"
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted((FIXTURES / "automations").glob("*.raw.json")),
+    ids=lambda p: p.name.split(".")[0],
+)
+def test_automations_get_json_fits_the_agent_cap_with_the_outline_first(path):
+    """The in-app agent cuts a command's output at 20,000 characters: the
+    whole read must fit, outline included, with the outline before any config
+    block."""
+    raw = json.loads(path.read_text())
+    with respx.mock:
+        mock_automation_lookup(raw)
+        result = runner.invoke(
+            cli.app, ["automations", "get", raw["api_name"], "--json"]
+        )
+    assert result.exit_code == 0, result.output
+    assert len(result.stdout) < 20_000
+    assert list(json.loads(result.stdout))[-3:] == ["outline", "triggers", "steps"]
+
+
+def _long_string(step: dict) -> tuple[str, str, str] | None:
+    """The first config field in ``step`` holding a string over 2,000 chars."""
+    for block, value in step.items():
+        if isinstance(value, dict):
+            for field, inner in value.items():
+                if isinstance(inner, str) and len(inner) > 2000:
+                    return block, field, inner
+    return None
+
+
+def test_automations_get_json_elides_long_strings_that_steps_get_prints_whole():
+    raw = load_fixture("automations/llm_comparison.raw.json")
+    step, (block, field, text) = next(
+        (s, found) for s in live_to_payload(raw)["steps"] if (found := _long_string(s))
+    )
+    with respx.mock:
+        mock_automation_lookup(raw)
+        got = runner.invoke(cli.app, ["automations", "get", raw["api_name"], "--json"])
+        one = runner.invoke(
+            cli.app, ["automations", "steps", "get", raw["api_name"], step["key"]]
+        )
+    elided = next(s for s in json.loads(got.stdout)["steps"] if s["key"] == step["key"])
+    assert elided[block][field] == (
+        f"<{len(text):,} chars elided; "
+        f"kizen automations steps get {raw['api_name']} {step['key']}>"
+    )
+    assert json.loads(one.stdout)[block][field] == text
+
+
+def test_automations_get_json_over_the_cap_keeps_every_key_and_points_at_the_rest():
+    """A read too big for the cap cuts config blocks, then whole steps, to a
+    stand-in naming the `steps get` that prints them; the outline keeps every
+    step."""
+    raw = load_fixture("automations/on_or_around_date_goto.raw.json")
+    keys = [s["key"] for s in live_to_payload(raw)["steps"]]
+    with respx.mock:
+        mock_automation_lookup(raw)
+        got = json.loads(
+            runner.invoke(
+                cli.app, ["automations", "get", raw["api_name"], "--json"]
+            ).stdout
+        )
+    assert [s["key"] for s in got["outline"]["steps"]] == keys
+    assert [s["key"] for s in got["steps"]] == keys
+    cut = 0
+    for step in got["steps"]:
+        for value in step.values():
+            if isinstance(value, str) and value.endswith(
+                " chars elided; "
+                f"kizen automations steps get {raw['api_name']} {step['key']}>"
+            ):
+                cut += 1
+    assert cut
+
+
+def _untranslatable(monkeypatch):
+    import kizen_builder.translate as translate
+
+    def broken(raw):
+        raise KeyError("step_new_kind")
+
+    monkeypatch.setattr(translate, "live_to_payload", broken)
+    return load_fixture("automations/two_code_steps.raw.json")
+
+
+def test_automations_get_falls_back_to_the_summary_when_translation_fails(
+    monkeypatch,
+):
+    """`get` is the first read before any change, so a translator gap warns
+    and prints the summary instead of failing."""
+    raw = _untranslatable(monkeypatch)
+    with respx.mock:
+        mock_automation_lookup(raw)
+        result = runner.invoke(
+            cli.app, ["automations", "get", raw["api_name"], "--json"]
+        )
+    assert result.exit_code == 0, result.output
+    assert "couldn't translate this automation ('step_new_kind')" in plain(
+        result.stderr
+    )
+    got = json.loads(result.stdout)
+    assert got["api_name"] == raw["api_name"]
+    assert [s["id"] for s in got["steps"]] == [
+        s["id"] for s in sorted(raw["steps"], key=lambda s: s["order"])
+    ]
+
+
+def test_automations_steps_get_reports_a_failed_translation(monkeypatch):
+    raw = _untranslatable(monkeypatch)
+    with respx.mock:
+        mock_automation_lookup(raw)
+        result = runner.invoke(
+            cli.app, ["automations", "steps", "get", raw["api_name"], "s00_code_step"]
+        )
+    assert result.exit_code == 1
+    assert "step_new_kind" in plain(result.stderr)
+
+
+@pytest.mark.parametrize("verb", ["create", "update"])
+def test_automation_spec_with_a_get_json_stand_in_fails_the_dry_run(verb):
+    marker = "<4,812 chars elided; kizen automations steps get x s00_code_step>"
+    spec = {
+        "name": "X",
+        "api_name": "x",
+        "type": "global",
+        "steps": [
+            {
+                "key": "s00_code_step",
+                "step_type": "code_step",
+                "order": 0,
+                "action_code_step": {"script": marker, "inputs": [], "outputs": []},
+            }
+        ],
+    }
+
+    result = runner.invoke(
+        cli.app, ["automations", verb, "--dry-run"], input=json.dumps(spec)
+    )
+
+    assert result.exit_code == 1, result.output
+    assert (
+        "step 's00_code_step' action_code_step.script: this is the stand-in "
+        "`automations get --json` prints for a long value; fetch the full value "
+        "with `kizen automations steps get x s00_code_step`"
+    ) in plain(result.stderr)
 
 
 def test_records_list_csv_flattens_fields(monkeypatch):
@@ -1977,6 +2183,116 @@ def test_update_with_no_diff_skips_without_prompting(monkeypatch):
     )
     assert result.exit_code == 0, result.output
     assert "no changes" in result.output
+
+
+def _automation_plan(step_keys):
+    from kizen_builder.tools.plans import Plan, PlanOperation
+
+    return Plan.build(
+        env="testenv",
+        summary="test plan",
+        operations=[
+            PlanOperation(
+                action="create",
+                kind="automation",
+                key="x",
+                preview={"api_name": "x", "step_keys": step_keys},
+                payload={"name": "X"},
+            )
+        ],
+    )
+
+
+def test_automation_dry_run_prints_the_keys_a_read_will_give(monkeypatch):
+    keys = {"wait": "s00_delay", "s01_condition": "s01_condition"}
+    monkeypatch.setattr(
+        auto_planners, "plan_create_automation", lambda spec: _automation_plan(keys)
+    )
+    spec = json.dumps({"api_name": "x", "name": "X", "steps": []})
+
+    text = runner.invoke(cli.app, ["automations", "create", "--dry-run"], input=spec)
+    as_json = runner.invoke(
+        cli.app, ["automations", "create", "--dry-run", "--json"], input=spec
+    )
+
+    assert text.exit_code == as_json.exit_code == 0, text.output
+    assert "step keys after the write: wait → s00_delay\n" in text.stdout
+    assert "step_keys=" not in text.stdout
+    (op,) = json.loads(as_json.stdout)["operations"]
+    assert op["preview"]["step_keys"] == keys
+
+
+def test_automation_apply_prints_the_keys_the_server_gave(monkeypatch):
+    from kizen_builder.tools.plans import ApplyResult, OperationResult
+
+    monkeypatch.setattr(
+        auto_planners, "plan_create_automation", lambda spec: _automation_plan({})
+    )
+    monkeypatch.setattr(
+        plan_tools,
+        "apply_plan",
+        lambda plan: ApplyResult(
+            plan_id=plan.id,
+            env=plan.env,
+            results=[
+                OperationResult(
+                    key="x",
+                    kind="automation",
+                    action="create",
+                    status="ok",
+                    step_keys={"wait": "s00_delay", "still_open": "s01_condition"},
+                )
+            ],
+        ),
+    )
+    spec = json.dumps({"api_name": "x", "name": "X", "steps": []})
+
+    result = runner.invoke(cli.app, ["automations", "create", "--yes"], input=spec)
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "step keys after the write: wait → s00_delay, still_open → s01_condition"
+        in result.stdout
+    )
+
+
+@pytest.mark.parametrize(
+    "spec_api_name, expect",
+    [(None, "x"), ("x", "x")],
+    ids=["fills", "matches"],
+)
+def test_automations_update_takes_the_api_name(monkeypatch, spec_api_name, expect):
+    seen = {}
+
+    def fake_planner(spec):
+        seen["spec"] = spec
+        return _fake_plan(action="update")
+
+    monkeypatch.setattr(auto_planners, "plan_update_automation", fake_planner)
+    spec = {"name": "X", "type": "global", "steps": []}
+    if spec_api_name:
+        spec["api_name"] = spec_api_name
+    result = runner.invoke(
+        cli.app,
+        ["automations", "update", "x", "--dry-run"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["spec"]["api_name"] == expect
+
+
+def test_automations_update_refuses_an_api_name_the_spec_contradicts(monkeypatch):
+    monkeypatch.setattr(
+        auto_planners,
+        "plan_update_automation",
+        lambda spec: pytest.fail("planned a mismatched update"),
+    )
+    spec = json.dumps({"api_name": "y", "name": "X", "steps": []})
+    result = runner.invoke(
+        cli.app, ["automations", "update", "x", "--dry-run"], input=spec
+    )
+    assert result.exit_code == 2
+    assert "error: the spec's api_name 'y' doesn't match 'x'" in result.stderr
 
 
 def test_automations_update_from_stdin_requires_yes(monkeypatch):
