@@ -188,6 +188,18 @@ def test_selector_findings_accept_the_live_read_spelling():
     assert finding["path"] == "assigned_to.employee_id"
 
 
+def test_selector_findings_accept_the_write_spelling_of_a_plural_key():
+    block = {
+        "record_source": "related_object_field",
+        "relationship_field_ids": ["0129127c-0000-0000-0000-000000000000"],
+    }
+    assert step_catalog.selector_findings("archive_record", block) == []
+    (finding,) = step_catalog.selector_findings(
+        "archive_record", {"record_source": "related_object_field"}
+    )
+    assert finding["path"] == "relationship_fields"
+
+
 def test_an_id_key_without_its_selector_names_the_options_it_fits():
     block = {"assigned_to": {"role_id": "x"}, "schedule": {"type": "immediately"}}
     (finding,) = step_catalog.selector_findings("schedule_activity", block)

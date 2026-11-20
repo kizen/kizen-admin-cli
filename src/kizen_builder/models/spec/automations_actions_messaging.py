@@ -88,11 +88,21 @@ class ActionSendEmailConfig(BaseModel):
     cc_team_member: TeamMemberConfig | None = None
 
 
+_SEND_TO_CONTACT_FIELD = (
+    "Required: the relationship field to Contacts, on the automation's "
+    "object, that names the recipient, as 'object.field' or a UUID. Resolved "
+    "to a UUID at apply time."
+)
+
+
 class ActionSendRelatedContactEmailConfig(BaseModel):
     """Config for `step_type: send_related_contact_email`."""
 
     model_config = ConfigDict(extra="allow")
 
+    send_to_contact_field: str | None = Field(
+        default=None, description=_SEND_TO_CONTACT_FIELD
+    )
     email: str | dict[str, Any] | None = Field(
         default=None,
         description=(
@@ -164,13 +174,17 @@ class ActionSendRelatedContactTextConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    relationship_field_ref: str | None = Field(
-        default=None,
-        description="'object.field' for the relationship field pointing to the contact.",
+    send_to_contact_field: str | None = Field(
+        default=None, description=_SEND_TO_CONTACT_FIELD
     )
-    relationship_field_id: str | None = None
-    message: str | None = None
-    html_message: str | None = None
+    text: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "A text AutomationMessage id (bare UUID or {id: uuid}), which the "
+            "CLI can't create yet: add the step in the Kizen UI. A message "
+            "belongs to one automation."
+        ),
+    )
 
 
 class ActionRequestInfoViaTextConfig(BaseModel):

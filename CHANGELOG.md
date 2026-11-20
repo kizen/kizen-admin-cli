@@ -134,6 +134,21 @@ called out explicitly under **Changed** or **Removed**.
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+
+- **`archive_record` can target a related record or a variable's record.**
+  Its card lists `record_source`, `relationship_fields` (field refs) and
+  `automation_variable_name`, and the dry run refuses a source without its
+  key. **`send_related_contact_email`/`_text` take `send_to_contact_field`
+  by name and require it**: a bare name or `object.field` resolves, where it
+  used to fail with *"Must be a valid UUID"*, and a missing one fails the dry
+  run with the candidate fields. The text step's `relationship_field_ref` is
+  an alias. **A variable source's `field_ref` is resolved** to `field`; it
+  used to pass the dry run and fail with *"field is required"*.
+
+- **Pre-wrapped merge-field spans are no longer escaped and wrapped again.**
+  A token already in a `kzn-merge-field` span is sent as written, in message
+  text, AI prompts and webhook headers.
+
 - **`field_ref` in a team-member block (notify, assign, cc, and
   schedule_activity's assignee) now resolves to the field's UUID.** In the
   notify and cc selectors and schedule_activity's assignee it was dropped

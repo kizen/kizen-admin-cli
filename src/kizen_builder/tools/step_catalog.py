@@ -1428,6 +1428,98 @@ _CALL_LLM = Guide(
     notes=(_numbered("AI steps:", *_AI_STEP_ITEMS, _MCP_TOOLS), _MERGE_FIELDS_NOTE),
 )
 _SENDS_TEXT = Guide(notes=(_MERGE_FIELDS_NOTE,))
+_CONTACT_FIELD = "<object>.<relationship field to Contacts>"
+_SEND_TO_CONTACT_FIELD_NOTE = (
+    "`send_to_contact_field` picks the contact: a relationship field to "
+    "Contacts on the automation's object (confirmed live 2026-11-17). It's "
+    "required: a dry run without it refuses and lists the candidates."
+)
+_CONTACT_FIELD_LOOKUP = Lookup(
+    "send_to_contact_field",
+    "kizen objects get <object>",
+    "a relationship field whose target is Contacts",
+)
+_SEND_RELATED_CONTACT_EMAIL = Guide(
+    variants=(
+        Variant(
+            "email_related_contact",
+            "Email the contact a relationship field points at.",
+            {
+                "send_to_contact_field": _CONTACT_FIELD,
+                "email": "<automation message UUID>",
+            },
+        ),
+    ),
+    lookups=(
+        _CONTACT_FIELD_LOOKUP,
+        Lookup(
+            "email",
+            "kizen messages create <automation> --template <name>",
+            "a message belongs to one automation; build order as "
+            "notify_member_via_email's",
+        ),
+    ),
+    notes=(_SEND_TO_CONTACT_FIELD_NOTE, _MERGE_FIELDS_NOTE),
+    doc="kizen docs show email-templates",
+)
+_SEND_RELATED_CONTACT_TEXT = Guide(
+    variants=(
+        Variant(
+            "text_related_contact",
+            "Text the contact a relationship field points at.",
+            {
+                "send_to_contact_field": _CONTACT_FIELD,
+                "text": "<automation message UUID>",
+            },
+        ),
+    ),
+    lookups=(_CONTACT_FIELD_LOOKUP,),
+    notes=(_SEND_TO_CONTACT_FIELD_NOTE, _MERGE_FIELDS_NOTE),
+)
+_ARCHIVE_RECORD = Guide(
+    variants=(
+        Variant(
+            "this_record",
+            "Archive the record the automation runs on.",
+            {"record_source": "this_record"},
+        ),
+        Variant(
+            "related_record",
+            "Archive the record a relationship field points at.",
+            {
+                "record_source": "related_object_field",
+                "relationship_fields": ["<object>.<relationship field>"],
+            },
+        ),
+    ),
+    selectors=(
+        Selector(
+            "record_source",
+            (
+                Option("this_record"),
+                Option("related_object_field", ("relationship_fields",)),
+                Option(
+                    "automation_variable",
+                    ("automation_variable_name",),
+                    "an entity variable",
+                ),
+            ),
+            default="this_record",
+        ),
+    ),
+    lookups=(
+        Lookup(
+            "relationship_fields",
+            "kizen objects get <object>",
+            "a relationship field on the automation's object",
+        ),
+    ),
+    notes=(
+        "`record_source` picks the record to archive: this one, the one "
+        "`relationship_fields` points at, or the one the entity variable "
+        "`automation_variable_name` holds (confirmed live 2026-11-17).",
+    ),
+)
 _NOTIFY_MEMBER_VIA_EMAIL = Guide(
     notes=(
         _numbered(
@@ -1517,6 +1609,7 @@ _EXIT_LOOP = Guide(
 )
 
 _STEP_GUIDES: dict[str, Guide] = {
+    "archive_record": _ARCHIVE_RECORD,
     "assign_team_member": _ASSIGN_TEAM_MEMBER,
     "audio_transcription": _EXTRACTION,
     "call_llm": _CALL_LLM,
@@ -1535,8 +1628,8 @@ _STEP_GUIDES: dict[str, Guide] = {
     "plugin_code_step": _PLUGIN_CODE_STEP,
     "schedule_activity": _SCHEDULE_ACTIVITY,
     "search_records": _SEARCH_RECORDS,
-    "send_related_contact_email": _SENDS_TEXT,
-    "send_related_contact_text": _SENDS_TEXT,
+    "send_related_contact_email": _SEND_RELATED_CONTACT_EMAIL,
+    "send_related_contact_text": _SEND_RELATED_CONTACT_TEXT,
     "start_automation": Guide(doc=_PATTERNS_DOC),
     "stop_execution": _STOP_EXECUTION,
     "update_variable": _VARIABLE_SOURCES,
@@ -2056,9 +2149,13 @@ def lookup_command(type_name: str, path: str) -> str | None:
 
 def _has(node: dict[str, Any], key: str) -> bool:
     """Whether a block carries ``key``, under that name or the one a live
-    read gives it (`employee_id` reads back as `employee`)."""
+    read gives it (`employee_id` reads back as `employee`). A plural key
+    also matches its write spelling (`relationship_fields` is sent as
+    `relationship_field_ids`, which `steps get` returns)."""
     base = re.sub(r"_(id|ref)(s?)$", r"\2", key)
     names = {key, base, f"{base}_id", f"{base}_ref"}
+    if base.endswith("s"):
+        names |= {f"{base[:-1]}_ids", f"{base[:-1]}_refs"}
     return any(node.get(k) not in (None, [], "") for k in names)
 
 

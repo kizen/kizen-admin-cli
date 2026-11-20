@@ -184,9 +184,45 @@ class ActionStopExecutionConfig(BaseModel):
 
 
 class ActionArchiveRecordConfig(BaseModel):
-    """Config for `step_type: archive_record` (no required fields)."""
+    """Config for `step_type: archive_record`. `record_source` picks the
+    record: the automation's own, the one a relationship field points at, or
+    the one an entity variable holds (confirmed live 2026-11-17)."""
 
     model_config = ConfigDict(extra="allow")
+
+    record_source: Literal[
+        "this_record", "related_object_field", "automation_variable"
+    ] = "this_record"
+    relationship_fields: list[str] | None = Field(
+        default=None,
+        description=(
+            "With related_object_field: the relationship field to follow, as "
+            "'object.field' or a UUID. Resolved to UUIDs at apply time."
+        ),
+    )
+    automation_variable_name: str | None = Field(
+        default=None,
+        description="With automation_variable: the entity variable's name.",
+    )
+
+    @model_validator(mode="after")
+    def _source_has_its_key(self) -> Self:
+        extra = self.model_extra or {}
+        if self.record_source == "related_object_field" and not (
+            self.relationship_fields or extra.get("relationship_field_ids")
+        ):
+            raise ValueError(
+                "record_source related_object_field needs relationship_fields: "
+                "the relationship field that points at the record to archive"
+            )
+        if self.record_source == "automation_variable" and not (
+            self.automation_variable_name or extra.get("automation_variable")
+        ):
+            raise ValueError(
+                "record_source automation_variable needs automation_variable_name: "
+                "the entity variable holding the record to archive"
+            )
+        return self
 
 
 class ActionModifyAutomationConfig(BaseModel):

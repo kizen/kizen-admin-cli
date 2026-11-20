@@ -3534,20 +3534,28 @@ def _api_name_of(value: Any) -> str | None:
     return None
 
 
-def _normalize_variable_sources(sources: list[Any]) -> list[dict[str, Any]]:
+def _normalize_variable_sources(
+    sources: list[Any], auto: AutomationDef, ctx: LiveContext
+) -> list[dict[str, Any]]:
     """Normalize variable source items to wire form.
 
     Read shape includes every possible key with null for the unused ones
     (``value_category``, ``field``, ``relationship_field``, ``variable``) —
     the API rejects those nulls on write ("This field may not be null").
     Reference objects come back expanded; writes take bare UUIDs, and a
-    ``variable`` reference takes the plain name string.
+    ``variable`` reference takes the plain name string. The wire takes the
+    field only as ``field``: a ``field_ref`` or ``field_id`` beside it is a
+    400, "field is required" (confirmed live 2026-11-17).
     """
     out: list[dict[str, Any]] = []
     for src in _strip(sources or []):
         if not isinstance(src, dict):
             out.append(src)
             continue
+        src = _with_field_id(src, auto, ctx)
+        field_id = src.pop("field_id", None)
+        if field_id and not src.get("field"):
+            src["field"] = field_id
         item: dict[str, Any] = {}
         for k, v in src.items():
             if v is None:
@@ -3585,7 +3593,7 @@ def _variable_step_extras(block: dict[str, Any]) -> dict[str, Any]:
 
 @honours_all
 def _step_initialize_variable(
-    block: dict[str, Any], _auto: AutomationDef, ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     # The server accepts it here and silently drops it (confirmed live 2026-10-14).
     if block.get("value_resolution") is not None:
@@ -3601,7 +3609,7 @@ def _step_initialize_variable(
             variable["data_subtype"] = ctx.object_uuid(api_name)
     return {
         **_variable_step_extras(block),
-        "sources": _normalize_variable_sources(block.get("sources") or []),
+        "sources": _normalize_variable_sources(block.get("sources") or [], auto, ctx),
         "variable": variable,
         "is_required": block.get("is_required", False),
     }
@@ -3609,7 +3617,7 @@ def _step_initialize_variable(
 
 @honours_all
 def _step_update_variable(
-    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
     # update_variable.variable must be a plain name string (not a definition dict)
     var = block.get("variable")
@@ -3620,7 +3628,7 @@ def _step_update_variable(
     )
     return {
         **_variable_step_extras(block),
-        "sources": _normalize_variable_sources(block.get("sources") or []),
+        "sources": _normalize_variable_sources(block.get("sources") or [], auto, ctx),
         "variable": var_name,
         "is_required": block.get("is_required", False),
     }
@@ -3803,7 +3811,9 @@ def _step_file_content_extraction(
     # Same wire conventions as variable sources: bare UUIDs, variable by name.
     source = None
     if block.get("input_value_source"):
-        (source,) = _normalize_variable_sources([block.get("input_value_source")])
+        (source,) = _normalize_variable_sources(
+            [block.get("input_value_source")], auto, ctx
+        )
         for key in ("field", "relationship_field"):
             ref = source.get(key)
             if isinstance(ref, str) and "." in ref:
@@ -4085,6 +4095,34 @@ def _normalize_assigned_to(
     return {k: v for k, v in out.items() if v is not None}
 
 
+def _send_to_contact_field(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> str | None:
+    """The recipient's relationship field as a UUID. Without it the server
+    500s, so a missing one names the candidates instead."""
+    ref = block.get("send_to_contact_field")
+    if ref is not None:
+        return _resolve_field(ref, auto, ctx)
+    if not auto.target_object:
+        # A live read (translate has no target object): keep what it stored
+        # rather than block show and the steps verbs on the automation.
+        return None
+    candidates = [
+        f["api_name"]
+        for f in ctx.object_data(auto.target_object)["fields"]
+        if "client_client"
+        in (
+            f.get("relation_target"),
+            (f.get("relation") or {}).get("related_object_object_name"),
+        )
+    ]
+    raise PlanError(
+        "send_to_contact_field is required: the relationship field that "
+        f"points at the contact. Candidates on {auto.target_object}: "
+        f"{', '.join(candidates) or 'none'}."
+    )
+
+
 @honours("send_to_contact_field", "send_from_owner", "email", "cc_team_member")
 def _step_send_related_contact_email(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -4092,9 +4130,9 @@ def _step_send_related_contact_email(
     """Reads expand send_to_contact_field (field object) and email (full
     message resource); writes take the bare field UUID and an {id}
     association."""
-    out: dict[str, Any] = {}
-    if block.get("send_to_contact_field") is not None:
-        out["send_to_contact_field"] = _unwrap_id(block["send_to_contact_field"])
+    out: dict[str, Any] = {
+        "send_to_contact_field": _send_to_contact_field(block, auto, ctx)
+    }
     if block.get("send_from_owner") is not None:
         out["send_from_owner"] = block["send_from_owner"]
     email = block.get("email")
@@ -4110,18 +4148,23 @@ def _step_send_related_contact_email(
 
 @honours_all
 def _step_send_related_contact_text(
-    block: dict[str, Any], _auto: AutomationDef, _ctx: LiveContext
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    if block.get("send_to_contact_field") is not None:
-        out["send_to_contact_field"] = _unwrap_id(block["send_to_contact_field"])
+    # The model's old names for send_to_contact_field.
+    aliases = ("relationship_field_ref", "relationship_field_id")
+    if block.get("send_to_contact_field") is None:
+        alias = next((block[a] for a in aliases if block.get(a)), None)
+        block = {**block, "send_to_contact_field": alias}
+    out: dict[str, Any] = {
+        "send_to_contact_field": _send_to_contact_field(block, auto, ctx)
+    }
     text = block.get("text")
     if isinstance(text, str):
         out["text"] = {"id": text}
     elif isinstance(text, dict) and text.get("id"):
         out["text"] = {"id": text["id"]}
     for k, v in block.items():
-        if k in ("send_to_contact_field", "text") or v is None:
+        if k in ("send_to_contact_field", "text", *aliases) or v is None:
             continue
         if not isinstance(v, (dict, list)):
             out[k] = v

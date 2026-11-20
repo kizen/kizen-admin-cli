@@ -7828,7 +7828,11 @@ def test_notify_email_sends_one_employee_as_employees(patch_live_lookups, key):
         ),
         (
             "send_related_contact_email",
-            {"email": _MESSAGE_ID, "cc_team_member": _BY_OWNER},
+            {
+                "send_to_contact_field": _MESSAGE_ID,
+                "email": _MESSAGE_ID,
+                "cc_team_member": _BY_OWNER,
+            },
             "cc_team_member",
         ),
     ],
@@ -8173,3 +8177,129 @@ def test_live_build_reports_every_step_it_cannot_build(patch_live_lookups, monke
         ("first", 0, "no such field 'missing_first'"),
         ("third", 2, "no such field 'missing_third'"),
     ]
+
+
+# document_sets fixture: a many_to_one to Contacts and one to Deals.
+_CONTACT_REL = "d93b2ec4-42a6-4772-af2f-f922b10cc12d"
+_DEAL_REL = "9e3788f0-1889-4ab5-bf86-4a01e07ee7c4"
+
+
+def _document_set_step(step_type: str, block: dict) -> dict:
+    spec = _one_step_spec(step_type, block)
+    spec["target_object"] = "document_sets"
+    action = _build(spec)["steps"][0]
+    return action[_block_field_for(step_type)]
+
+
+def test_archive_record_resolves_relationship_field_refs(patch_live_lookups):
+    action = _document_set_step(
+        "archive_record",
+        {
+            "record_source": "related_object_field",
+            "relationship_fields": ["document_sets.primary_deal_record"],
+        },
+    )
+    assert action == {
+        "record_source": "related_object_field",
+        "relationship_field_ids": [_DEAL_REL],
+    }
+
+
+def test_archive_record_from_a_variable(patch_live_lookups):
+    action = _document_set_step(
+        "archive_record",
+        {"record_source": "automation_variable", "automation_variable_name": "rec"},
+    )
+    assert action == {
+        "record_source": "automation_variable",
+        "relationship_field_ids": [],
+        "automation_variable_name": "rec",
+    }
+
+
+@pytest.mark.parametrize(
+    ("source", "needs"),
+    [
+        ("related_object_field", "relationship_fields"),
+        ("automation_variable", "automation_variable_name"),
+    ],
+)
+def test_archive_record_source_needs_its_key(source, needs):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=needs):
+        AutomationDef.model_validate(
+            _one_step_spec("archive_record", {"record_source": source})
+        )
+
+
+@pytest.mark.parametrize(
+    ("step_type", "message_key"),
+    [("send_related_contact_email", "email"), ("send_related_contact_text", "text")],
+)
+@pytest.mark.parametrize(
+    "contact_field",
+    ["document_sets.primary_contact_record", "primary_contact_record", _CONTACT_REL],
+)
+def test_send_to_contact_field_resolves_to_a_uuid(
+    patch_live_lookups, step_type, message_key, contact_field
+):
+    action = _document_set_step(
+        step_type,
+        {"send_to_contact_field": contact_field, message_key: _MESSAGE_ID},
+    )
+    assert action["send_to_contact_field"] == _CONTACT_REL
+    assert action[message_key] == {"id": _MESSAGE_ID}
+
+
+@pytest.mark.parametrize(
+    ("step_type", "message_key"),
+    [("send_related_contact_email", "email"), ("send_related_contact_text", "text")],
+)
+def test_send_to_contact_field_is_required(patch_live_lookups, step_type, message_key):
+    with pytest.raises(PlanError) as e:
+        _document_set_step(step_type, {message_key: _MESSAGE_ID})
+    assert str(e.value) == (
+        "step 'only': send_to_contact_field is required: the relationship field "
+        "that points at the contact. Candidates on document_sets: "
+        "primary_contact_record."
+    )
+
+
+def test_send_related_contact_text_takes_relationship_field_ref(patch_live_lookups):
+    action = _document_set_step(
+        "send_related_contact_text",
+        {"relationship_field_ref": "primary_contact_record", "text": _MESSAGE_ID},
+    )
+    assert action == {
+        "send_to_contact_field": _CONTACT_REL,
+        "text": {"id": _MESSAGE_ID},
+    }
+
+
+@pytest.mark.parametrize("step_type", ["initialize_variable", "update_variable"])
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"field_ref": "document_sets.primary_deal_record"},
+        {"field_ref": "primary_deal_record"},
+        {"field_id": _DEAL_REL},
+    ],
+)
+def test_field_value_source_sends_field(patch_live_lookups, step_type, source):
+    block = {
+        "variable": {"name": "deal", "data_type": "string"},
+        "sources": [
+            {
+                "source_type": "field_value",
+                "source_subtype": "this_record_field",
+                **source,
+            }
+        ],
+    }
+    (wire,) = _document_set_step(step_type, block)["sources"]
+    assert wire == {
+        "source_type": "field_value",
+        "source_subtype": "this_record_field",
+        "field": _DEAL_REL,
+    }

@@ -300,7 +300,9 @@ table: `kizen automations step-types concepts`, merge-fields.
 **A `paragraphs`-based `Text` block is one of the places this format is
 authored**: a `{{ ns.field }}` token inline in a `ParagraphDef.text` string is
 rendered into the span above, with the same rules as an automation step's
-merge fields. `automation_variable.*` is rejected at
+merge fields. A token already wrapped in the span, with only its
+`data-merge-field-*` attributes, is kept as written, here and in automation
+prompts and webhook headers; the text around it is still escaped. `automation_variable.*` is rejected at
 spec-validation time for a `Text` block's paragraphs — that namespace only
 exists in an automation-scoped message, not a portable library template.
 

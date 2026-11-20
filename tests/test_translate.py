@@ -743,6 +743,17 @@ def test_cc_team_member_normalized_to_id_dialect(kitchen: dict) -> None:
     assert "employees" not in by_type["employees"]  # read key
 
 
+@pytest.mark.parametrize(
+    "step_type", ["send_related_contact_email", "send_related_contact_text"]
+)
+def test_a_null_send_to_contact_field_reads_through(step_type: str) -> None:
+    raw = load_fixture("automations/kitchen_sink_triggers.raw.json")
+    step = next(s for s in raw["steps"] if s["step_type"] == step_type)
+    step[f"action_{step_type}"]["send_to_contact_field"] = None
+    block = _step_block(live_to_payload(raw), step_type)
+    assert block["send_to_contact_field"] is None
+
+
 def test_message_steps_reference_message_by_id(kitchen: dict) -> None:
     email = _step_block(kitchen, "send_related_contact_email")
     assert set(email["email"]) == {"id"}
