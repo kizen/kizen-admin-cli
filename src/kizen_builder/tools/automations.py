@@ -423,6 +423,20 @@ def list_subfolders(identifier: str) -> list[dict[str, Any]]:
         return auto_api.list_subfolders(client, match["id"])
 
 
+def check_step_spec(step: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    """Run ``automations create``'s per-step checks on a step for ``steps
+    add``/``edit``, against the variables the live automation declares.
+    Raises `SpecProblems` listing every error; returns the warnings as
+    lines for the report."""
+    from kizen_builder.tools.automation_check import check_step, declared_variables
+    from kizen_builder.tools.findings import SpecProblems
+
+    errors, warnings = check_step(step, declared_variables(payload["steps"]))
+    if errors:
+        raise SpecProblems(errors, warnings)
+    return [f.text() + (f" (see: {f.hint})" if f.hint else "") for f in warnings]
+
+
 def build_wire_step(
     spec: dict[str, Any], payload: dict[str, Any], target_object: str | None
 ) -> dict[str, Any]:

@@ -354,7 +354,12 @@ def validate_payload(payload: dict[str, Any]) -> list[str]:
         if pk and pk not in key_set:
             problems.append(f"step '{s.get('key')}' has dangling parent_key '{pk}'")
         branch = s.get("parent_yes_no") or ""
-        if branch:
+        if branch and not pk:
+            problems.append(
+                f"step '{s.get('key')}' sets parent_yes_no='{branch}' but has no "
+                "parent_key; a branch needs the condition or goal it hangs off"
+            )
+        elif branch:
             parent = by_key.get(pk)
             if parent is not None and parent.get("type") not in ("condition", "goal"):
                 problems.append(
@@ -405,10 +410,23 @@ def validate_payload(payload: dict[str, Any]) -> list[str]:
             "automation, before every other step (server 400s otherwise)"
         )
 
-    orders = [t.get("order") for t in payload.get("triggers") or []]
-    if sorted(orders) != list(range(len(orders))):
-        problems.append(f"trigger orders must be sequential from 0: got {orders}")
+    problem = trigger_order_problem(
+        [t.get("order") for t in payload.get("triggers") or []]
+    )
+    if problem:
+        problems.append(problem)
     return problems
+
+
+def trigger_order_problem(orders: list[Any]) -> str | None:
+    """Trigger orders must be exactly 0..N-1 (the server 400s otherwise).
+    An unset order is sent as 0, so two unordered triggers collide."""
+    if sorted(o or 0 for o in orders) == list(range(len(orders))):
+        return None
+    return (
+        f"trigger orders must be sequential from 0 to {len(orders) - 1}, got "
+        f"{orders}; set an explicit, unique `order` on each trigger"
+    )
 
 
 def _branch_group_problems(steps: list[dict[str, Any]]) -> list[str]:

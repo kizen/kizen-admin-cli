@@ -47,7 +47,7 @@ import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kizen_builder.config import load_env_config
 from kizen_builder.filtering import VariableReferenceError
@@ -62,9 +62,13 @@ from kizen_builder.models.spec.automations_triggers import (
 )
 from kizen_builder.tools import merge_fields
 from kizen_builder.tools.automations import get_automation, list_automations
+from kizen_builder.tools.findings import Finding, SpecProblems
 from kizen_builder.tools.objects import get_object
 from kizen_builder.tools.plans import Plan, PlanError, PlanOperation
 from kizen_builder.utils import is_uuid, match_option
+
+if TYPE_CHECKING:
+    from kizen_builder.tools.automation_check import CheckedSpec
 
 # ---------------------------------------------------------------------------
 # Live-context cache (fetched once per plan call)
@@ -353,11 +357,8 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     references, and refuses if an automation with the same api_name is
     already present.
     """
-    auto = (
-        automation
-        if isinstance(automation, AutomationDef)
-        else AutomationDef.model_validate(automation)
-    )
+    checked = _checked(automation)
+    auto = checked.auto
     ctx = LiveContext()
     env = ctx.env
 
@@ -377,7 +378,7 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     if auto.active is None:
         auto = auto.model_copy(update={"active": False})
 
-    payload = _build_automation_payload(auto, ctx)
+    payload = _build_automation_payload(auto, ctx, checked.warnings)
     return Plan.build(
         env=env,
         summary=f"Create automation '{auto.api_name}'",
@@ -387,7 +388,7 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
                 kind="automation",
                 key=auto.api_name,
                 preview={
-                    **_automation_preview(env, auto, payload, ctx),
+                    **_automation_preview(env, auto, payload, ctx, checked),
                     **_folder_preview(auto, ctx),
                 },
                 payload=payload,
@@ -398,11 +399,8 @@ def plan_create_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
 
 def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     """Plan an update to an existing automation."""
-    auto = (
-        automation
-        if isinstance(automation, AutomationDef)
-        else AutomationDef.model_validate(automation)
-    )
+    checked = _checked(automation)
+    auto = checked.auto
     ctx = LiveContext()
     env = ctx.env
 
@@ -428,8 +426,10 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     resolved_active = auto.active if auto.active is not None else live_active
     auto = auto.model_copy(update={"active": resolved_active})
 
-    payload, keeps_live = _update_payload(auto, ctx, current)
-    preview = _automation_preview(env, auto, payload, ctx, live_active=live_active)
+    payload, keeps_live = _update_payload(auto, ctx, current, checked.warnings)
+    preview = _automation_preview(
+        env, auto, payload, ctx, checked, live_active=live_active
+    )
     preview.update(_folder_preview(auto, ctx, current))
     preview["current_revision"] = current.get("revision")
     if keeps_live:
@@ -448,6 +448,14 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
             )
         ],
     )
+
+
+def _checked(automation: dict[str, Any] | AutomationDef) -> CheckedSpec:
+    """The spec parsed, after the offline checks: a malformed spec raises
+    `SpecProblems` with every problem, before any live call."""
+    from kizen_builder.tools.automation_check import check_automation
+
+    return check_automation(automation)
 
 
 def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any]:
@@ -472,11 +480,7 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     """
     from kizen_builder.translate import diff_wire_payloads, live_to_payload
 
-    auto = (
-        automation
-        if isinstance(automation, AutomationDef)
-        else AutomationDef.model_validate(automation)
-    )
+    auto = _checked(automation).auto
     ctx = LiveContext()
     env = ctx.env
 
@@ -517,10 +521,15 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
 
 
 def _update_payload(
-    auto: AutomationDef, ctx: LiveContext, current: dict[str, Any]
+    auto: AutomationDef,
+    ctx: LiveContext,
+    current: dict[str, Any],
+    warnings: list[Finding] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """The PUT body `update` sends and `diff` compares against live."""
-    payload = _merge_server_state(_build_automation_payload(auto, ctx), current)
+    payload = _merge_server_state(
+        _build_automation_payload(auto, ctx, warnings), current
+    )
     _keep_rule_descriptions(payload, current)
     # The model defaults this to False, which a PUT would write over a live
     # true (confirmed live 2026-10-30).
@@ -972,6 +981,7 @@ def _automation_preview(
     auto: AutomationDef,
     payload: dict[str, Any],
     ctx: LiveContext,
+    checked: CheckedSpec,
     *,
     live_active: bool | None = None,
 ) -> dict[str, Any]:
@@ -996,7 +1006,7 @@ def _automation_preview(
     from kizen_builder.translate import exit_loop_dead_end_warnings
 
     warnings = [
-        *_fan_out_warnings(auto),
+        *(_warning_line(f) for f in checked.warnings),
         *_unlaid_rule_warnings(auto, payload, ctx),
         *exit_loop_dead_end_warnings(payload["steps"]),
     ]
@@ -1009,8 +1019,13 @@ def _automation_preview(
         "active": active_display,
         "trigger_count": len(auto.triggers),
         "step_count": len(auto.steps),
+        **({"defaults": checked.defaults} if checked.defaults else {}),
         **({"warnings": warnings} if warnings else {}),
     }
+
+
+def _warning_line(f: Finding) -> str:
+    return f"{f.text()} (see: {f.hint})" if f.hint else f.text()
 
 
 def _folder_preview(
@@ -1140,7 +1155,11 @@ def _rule_field(
 # ---------------------------------------------------------------------------
 
 
-def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str, Any]:
+def _build_automation_payload(
+    auto: AutomationDef, ctx: LiveContext, warnings: list[Finding] | None = None
+) -> dict[str, Any]:
+    """The wire payload. Every graph problem `validate_payload` finds is
+    raised at once, with ``warnings`` riding along."""
     payload: dict[str, Any] = {
         "name": auto.name,
         "api_name": auto.api_name,
@@ -1160,42 +1179,37 @@ def _build_automation_payload(auto: AutomationDef, ctx: LiveContext) -> dict[str
     if auto.priority_rank is not None:
         payload["priority_rank"] = auto.priority_rank
 
-    triggers = list(auto.triggers)
-    if not any(t.trigger_type == "manual" for t in triggers):
-        from kizen_builder.models.spec import AutomationTriggerDef
-
-        manual = AutomationTriggerDef(trigger_type="manual", order=0)
-        triggers = [manual] + [
-            t.model_copy(update={"order": i + 1}) for i, t in enumerate(triggers)
-        ]
-    payload["triggers"] = [_build_trigger_payload(t, auto, ctx) for t in triggers]
-    _validate_trigger_orders(payload["triggers"])
-    payload["steps"] = [_build_step_payload(s, auto, ctx) for s in auto.steps]
+    payload["triggers"] = [
+        _build_trigger_payload(t, auto, ctx) for t in triggers_with_manual(auto)
+    ]
+    payload["steps"] = _build_step_payloads(auto, ctx, warnings)
 
     from kizen_builder.translate import resolve_exit_loop_targets, validate_payload
 
     resolve_exit_loop_targets(payload["steps"])
     problems = validate_payload(payload)
     if problems:
-        raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
+        raise SpecProblems(
+            [
+                Finding(p, path="triggers" if p.startswith("trigger") else "steps")
+                for p in dict.fromkeys(problems)
+            ],
+            warnings,
+        )
     return payload
 
 
-def _validate_trigger_orders(triggers: list[dict[str, Any]]) -> None:
-    """Trigger orders must be exactly {0, ..., N-1} — the server rejects
-    anything else with `HTTP 400: triggers: Trigger orders must be
-    sequential from 0 to N-1`. A static, purely arithmetic rule, so
-    --dry-run can catch it here instead of requiring a live apply-and-fail.
-    Left-unset trigger orders all default to 0 (see `_build_trigger_payload`),
-    so two-or-more triggers with no explicit `order` in the spec collide.
-    """
-    orders = sorted(t["order"] for t in triggers)
-    if orders != list(range(len(triggers))):
-        seen = ", ".join(f"{t['type']}(order={t['order']})" for t in triggers)
-        raise PlanError(
-            f"trigger orders must be sequential from 0 to {len(triggers) - 1}, "
-            f"got: {seen} — set an explicit, unique `order` on each trigger"
-        )
+def triggers_with_manual(auto: AutomationDef) -> list[AutomationTriggerDef]:
+    """The spec's triggers as they are sent: every automation carries a
+    `manual` trigger, so one is put first when the spec has none, and the
+    others renumber after it."""
+    triggers = list(auto.triggers)
+    if any(t.trigger_type == "manual" for t in triggers):
+        return triggers
+    manual = AutomationTriggerDef(trigger_type="manual", order=0)
+    return [manual] + [
+        t.model_copy(update={"order": i + 1}) for i, t in enumerate(triggers)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1936,12 +1950,52 @@ def _block_field_for(step_type: str) -> str:
     return f"action_{step_type}"
 
 
+NO_MOVE_STAGE_STEP = (
+    "Kizen's automation builder has no move-stage step. Move the record with a "
+    "change_field_value step on the stage field: "
+    '{"step_type": "change_field_value", "action_change_field_value": '
+    '{"field_ref": "stage", "specific_field_value": "<stage name>"}}'
+)
+
 # Kizen saves a stop without an action, but a run that reaches it never
 # finishes (confirmed live 2026-10-30), so the spec path never sends one.
 _STOP_EXECUTION_DEFAULT_ACTION = "stop_and_complete"
 
 # The builder's Append or Replace default for a new array update (2026-11-10).
 _ARRAY_UPDATE_DEFAULT_RESOLUTION = "add_only"
+
+
+def _build_step_payloads(
+    auto: AutomationDef, ctx: LiveContext, warnings: list[Finding] | None
+) -> list[dict[str, Any]]:
+    """Every step's payload. When steps can't be built, one error carries
+    them all, so one dry run reports every step; a lone failure raises as
+    it is."""
+    built: list[dict[str, Any]] = []
+    failed: list[tuple[int, AutomationStepDef, PlanError]] = []
+    for i, step in enumerate(auto.steps):
+        try:
+            built.append(_build_step_payload(step, auto, ctx))
+        except PlanError as e:
+            failed.append((i, step, e))
+    if not failed:
+        return built
+    if len(failed) == 1 and not isinstance(failed[0][2], SpecProblems):
+        raise failed[0][2]
+    errors: list[Finding] = []
+    warnings = list(warnings or [])
+    for i, step, problem in failed:
+        if isinstance(problem, SpecProblems):
+            errors.extend(problem.errors)
+            warnings.extend(problem.warnings)
+            continue
+        prefix = f"step '{step.key}': "
+        message = str(problem)
+        if message.startswith(prefix):
+            errors.append(Finding(message[len(prefix) :], step=step.key, index=i))
+        else:
+            errors.append(Finding(message))
+    raise SpecProblems(errors, warnings)
 
 
 def _build_step_payload(
@@ -1982,12 +2036,7 @@ def _build_step_payload(
     if step.step_type in _CONFIGLESS_STEP_TYPES:
         return p
     if step.step_type == "update_pipeline_status":
-        raise PlanError(
-            f"step '{step.key}': Kizen's automation builder has no move-stage "
-            "step. Move the record with a change_field_value step on the stage "
-            'field: {"step_type": "change_field_value", "action_change_field_value": '
-            '{"field_ref": "stage", "specific_field_value": "<stage name>"}}'
-        )
+        raise PlanError(f"step '{step.key}': {NO_MOVE_STAGE_STEP}")
     builder = _STEP_BUILDERS.get(step.step_type)
     if builder is None:
         raise PlanError(

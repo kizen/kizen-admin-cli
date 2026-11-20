@@ -14,6 +14,7 @@ import pytest
 
 from kizen_builder.models.spec import AutomationDef
 from kizen_builder.models.spec.automations_triggers import trigger_config_field
+from kizen_builder.tools.findings import SpecProblems
 from kizen_builder.tools.planners.automations import (
     _STEP_BUILDERS,
     _TRIGGER_BUILDERS,
@@ -4095,6 +4096,43 @@ def test_diff_automation_reproduced_spec_is_empty(patch_live_lookups):
     assert result["diff"] == []
 
 
+def test_diff_automation_fills_left_out_orders_like_update(patch_live_lookups):
+    """`diff` parses the spec the way `update --dry-run` does, so a spec
+    that leaves `order` out (as step-types tells authors to) diffs instead
+    of failing with "Field required"."""
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    steps = sorted(raw["steps"], key=lambda s: s["order"])
+    spec = {
+        "api_name": "test_two_code_steps",
+        "name": "Test Two Code Steps",
+        "type": "global",
+        "triggers": [
+            {
+                "trigger_type": "manual",
+                "id": raw["triggers"][0]["id"],
+                "description": raw["triggers"][0]["description"],
+            }
+        ],
+        "steps": [
+            {
+                "key": key,
+                "id": live["id"],
+                "step_type": "code_step",
+                "parent_key": parent,
+                "description": live["description"],
+                "user_description": live["user_description"],
+                "action_on_failure": "notify_pause",
+                "action_code_step": live["action_code_step"],
+            }
+            for key, parent, live in (
+                ("step0", None, steps[0]),
+                ("step1", "step0", steps[1]),
+            )
+        ],
+    }
+    assert diff_automation(spec)["diff"] == []
+
+
 def test_diff_automation_surfaces_active_flip(patch_live_lookups):
     """`active` is diffed like any other top-level field — no special-casing
     for the BCLI-016 bug beyond reusing `plan_update_automation`'s own
@@ -4395,6 +4433,25 @@ def test_preview_warns_about_rules_saved_without_the_editor_layout(
                 "destination_variable": "found",
             },
         }
+    )
+    spec["steps"][0].update(parent_key="init", order=1)
+    spec["steps"][1]["order"] = 2
+    spec["steps"].insert(
+        0,
+        {
+            "key": "init",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "action_initialize_variable": {
+                "sources": [],
+                "variable": {
+                    "name": "found",
+                    "data_type": "entity",
+                    "data_subtype": patients["id"],
+                    "is_array": True,
+                },
+            },
+        },
     )
     assert plan_create_automation(spec).operations[0].preview["warnings"] == [
         "step 'check': the rule on 'mrn' (text, starts_with) is saved without the "
@@ -5913,9 +5970,9 @@ _LOOPS_AROUND = "(loops around it: l1, l0)"
 def test_exit_loop_aimed_at_no_loop_around_it_fails_plan(patch_live_lookups, target):
     spec = _authored_loop_spec(_nested_loops(2), record_based=False)
     _exit(spec)["action_exit_loop"] = {"loop_to_exit": target}
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(spec)
-    assert str(e.value).split("\n  - ")[1:] == [
+    assert [f.message for f in e.value.errors] == [
         f"exit_loop step 'leave' exits '{target}', which is not a loop around it "
         + _LOOPS_AROUND
     ]
@@ -5934,9 +5991,9 @@ def test_exit_loop_aimed_at_a_loop_it_is_not_inside_fails_plan(patch_live_lookup
     steps[2]["parent_key"] = "item2"
     spec = _authored_loop_spec(steps, record_based=False)
     _exit(spec)["action_exit_loop"] = {"loop_to_exit": "again"}
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(spec)
-    assert str(e.value).split("\n  - ")[1:] == [
+    assert [f.message for f in e.value.errors] == [
         "exit_loop step 'leave' exits 'again', which is not a loop around it "
         "(loops around it: each)"
     ]
@@ -5944,9 +6001,9 @@ def test_exit_loop_aimed_at_a_loop_it_is_not_inside_fails_plan(patch_live_lookup
 
 def test_exit_loop_outside_a_loop_fails_plan(patch_live_lookups):
     steps = [*_string_loop_steps(), _s("leave", "after", "exit_loop", 0)]
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(_authored_loop_spec(steps, record_based=False))
-    assert str(e.value).split("\n  - ")[1:] == [
+    assert [f.message for f in e.value.errors] == [
         "exit_loop step 'leave' is not inside a loop body (server 400s otherwise)"
     ]
 
@@ -6108,10 +6165,9 @@ def test_loop_nested_past_three_is_refused(patch_live_lookups):
     """Kizen's builder holds three levels. The API accepts more, so this is
     the CLI's own rule, checked at plan time."""
     assert "warnings" not in _preview(_authored_loop_spec(_nested_loops(3), False))
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(_authored_loop_spec(_nested_loops(5), False))
-    problems = str(e.value).split("\n  - ")[1:]
-    assert problems == [
+    assert [f.message for f in e.value.errors] == [
         f"loop 'l{n}' is nested {n + 1} levels deep; Kizen's builder allows at "
         "most three. The API accepts deeper loops, but the CLI refuses them so "
         "the automation stays editable in the UI."
@@ -6152,9 +6208,9 @@ def test_nested_loop_over_an_array_already_iterated_is_refused(
     patch_live_lookups, arrays, problem
 ):
     spec = _authored_loop_spec(_nested_loops(len(arrays), arrays=arrays), False)
-    with pytest.raises(PlanError) as e:
+    with pytest.raises(SpecProblems) as e:
         _build(spec)
-    assert str(e.value).split("\n  - ")[1:] == [_same_array_problem(*problem)]
+    assert [f.message for f in e.value.errors] == [_same_array_problem(*problem)]
 
 
 def test_loops_over_one_array_in_sequence_build(patch_live_lookups):
@@ -6396,20 +6452,30 @@ def test_pass_through_builders_accept_any_key(patch_live_lookups):
     assert payload["steps"][0]["step_delay"]["not_a_delay_key"] == 2
 
 
-@pytest.mark.parametrize("flags", [["--dry-run"], ["--dry-run", "--json"]])
-def test_unread_key_fails_before_the_plan_renders(patch_live_lookups, flags):
+def test_unread_key_fails_before_the_plan_renders(patch_live_lookups):
     from typer.testing import CliRunner
 
     import kizen_builder.cli as cli
 
     spec = _one_step_spec("create_related_entity", _CRE_WITH_FIELDS_TO_SET)
     result = CliRunner().invoke(
-        cli.app, ["automations", "create", *flags], input=json.dumps(spec)
+        cli.app, ["automations", "create", "--dry-run"], input=json.dumps(spec)
     )
     assert result.exit_code == 1
-    assert "plan error:" in result.stderr
-    assert "fields_to_set" in result.stderr
+    assert (
+        "spec error: step 'only' action_create_related_entity.fields_to_set: "
+        "unknown key"
+    ) in result.stderr
     assert result.stdout == ""
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["automations", "create", "--dry-run", "--json"],
+        input=json.dumps(spec),
+    )
+    assert result.exit_code == 1
+    (error,) = json.loads(result.stdout)["errors"]
+    assert error["path"] == "action_create_related_entity.fields_to_set"
 
 
 def test_create_related_entity_reads_target_object_as_target_custom_object(
@@ -7656,3 +7722,34 @@ def test_read_back_verbs_warn_about_an_inactive_start_target():
     for result in results:
         [warning] = result["warnings"]
         assert "start_automation target 'the_target' is inactive." in warning
+
+
+def test_live_build_reports_every_step_it_cannot_build(patch_live_lookups, monkeypatch):
+    """A step the live build refuses doesn't hide the steps after it."""
+    from kizen_builder.tools.planners import automations as planner
+
+    real = planner._build_step_payload
+
+    def refuse_two(step, auto, ctx):
+        if step.key in ("first", "third"):
+            raise PlanError(f"step '{step.key}': no such field 'missing_{step.key}'")
+        return real(step, auto, ctx)
+
+    monkeypatch.setattr(planner, "_build_step_payload", refuse_two)
+    spec = {
+        "api_name": "x",
+        "name": "X",
+        "type": "global",
+        "triggers": [{"trigger_type": "manual", "order": 0}],
+        "steps": [
+            _s("first", None, "delay", 0),
+            _s("second", "first", "delay", 0),
+            _s("third", "second", "delay", 0),
+        ],
+    }
+    with pytest.raises(SpecProblems) as e:
+        _build(spec)
+    assert [(f.step, f.index, f.message) for f in e.value.errors] == [
+        ("first", 0, "no such field 'missing_first'"),
+        ("third", 2, "no such field 'missing_third'"),
+    ]

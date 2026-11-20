@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from kizen_builder.models.spec._base import ApiName
 from kizen_builder.models.spec.automations_actions_code import (
@@ -304,12 +304,16 @@ class AutomationDef(BaseModel):
     steps: list[AutomationStepDef] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _validate_automation(self) -> Self:
+    def _validate_automation(self, info: ValidationInfo) -> Self:
         if self.type == "record_based" and self.target_object is None:
             raise ValueError(
                 "record_based automations require 'target_object' (the api_name of "
                 "the custom object this automation runs against)"
             )
+        # The planner passes `graph: False` and lists every graph problem
+        # from `translate.validate_payload` on the built payload instead.
+        if (info.context or {}).get("graph") is False:
+            return self
 
         # Step keys must be unique
         keys = [s.key for s in self.steps]

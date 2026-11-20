@@ -30,7 +30,7 @@ from kizen_builder.tools.planners import fields as field_planners
 from kizen_builder.tools.plans import ApplyResult, OperationResult, Plan, PlanOperation
 from tests.conftest import load_fixture, mock_automation_lookup
 from tests.test_first_build_examples_plan import (  # noqa: F401  (fixture)
-    EXAMPLES,
+    _example,
     first_build_business,
 )
 
@@ -183,20 +183,22 @@ def piped_commands(monkeypatch, first_build_business):  # noqa: F811
     )
 
 
-DRY_RUN = [
-    "automations",
-    "create",
-    "--spec-file",
-    str(EXAMPLES / "closing_soon.automation.json"),
-    "--dry-run",
-]
+@pytest.fixture
+def dry_run(tmp_path):
+    """`automations create --dry-run` of a first-build example, its
+    placeholders filled in."""
+    spec = tmp_path / "closing_soon.automation.json"
+    spec.write_text(json.dumps(_example("closing_soon.automation.json")))
+    return ["automations", "create", "--spec-file", str(spec), "--dry-run"]
 
 
 @pytest.mark.usefixtures("piped_commands")
 @pytest.mark.parametrize(
-    "argv", [["objects", "get", "patients"], ["records", "list", "tax_lot"], DRY_RUN]
+    "argv", [["objects", "get", "patients"], ["records", "list", "tax_lot"], "dry_run"]
 )
-def test_piped_commands_print_no_box_drawing(argv):
+def test_piped_commands_print_no_box_drawing(argv, request):
+    if argv == "dry_run":
+        argv = request.getfixturevalue("dry_run")
     result = runner.invoke(cli.app, argv)
     assert result.exit_code == 0, result.output
     assert "| " in result.stdout
@@ -216,12 +218,12 @@ def test_piped_automations_get_prints_no_box_drawing(monkeypatch):
 
 
 @pytest.mark.usefixtures("piped_commands")
-def test_piped_dry_run_is_at_least_40_percent_shorter(monkeypatch):
+def test_piped_dry_run_is_at_least_40_percent_shorter(monkeypatch, dry_run):
     """The measurement the change was made for: the same plan, terminal form
     against piped form."""
-    piped = runner.invoke(cli.app, DRY_RUN)
+    piped = runner.invoke(cli.app, dry_run)
     monkeypatch.setenv(out.OUTPUT_ENV, "terminal")
-    terminal = runner.invoke(cli.app, DRY_RUN)
+    terminal = runner.invoke(cli.app, dry_run)
     assert piped.exit_code == terminal.exit_code == 0, terminal.output
     print(f"terminal {len(terminal.stdout)} chars, piped {len(piped.stdout)} chars")
     assert len(piped.stdout) <= 0.6 * len(terminal.stdout)

@@ -10,12 +10,22 @@ the keys each choice needs; `step-types list` names every wired type. This
 page holds what those don't: the graph rules, worked patterns, and how the
 API behaves.
 
+**Checking one:** `--dry-run` reports every spec problem at once, before any
+live call: a wrong choice or unknown key (with a "did you mean"), a
+placeholder left in, a variable no `initialize_variable` declares, and every
+graph rule broken. Each finding names the step key, the dotted path and the
+`kizen` command that lists the allowed values. Warnings (a choice missing the
+key it usually needs, step orders with gaps) print with the plan and don't
+block it. Leave out `api_name` and it defaults to the name, slugified; leave
+out a step's or trigger's `order` and it defaults to its position. The plan
+preview lists what was defaulted. `steps add` and `steps edit` run the same
+per-step checks against the automation's live variables.
+
 > This is the richest spec. The graph rules below (one root, `parent_key`
-> chaining, `parent_branch` on branch entries) are enforced at plan time — a
-> violation fails the dry-run with a specific message. This file covers the
-> shape, the wired types, and the common patterns; if a step or trigger's
-> field list isn't fully covered here, `--dry-run` reports the exact field
-> Kizen rejected.
+> chaining, `parent_branch` on branch entries) are enforced at plan time.
+> This file covers the shape, the wired types, and the common patterns; if a
+> step or trigger's field list isn't fully covered here, `--dry-run` reports
+> the exact field Kizen rejected.
 
 ---
 
@@ -65,7 +75,7 @@ kizen automations create --spec-file auto.json --dry-run
 | Key | Type | Notes |
 |-----|------|-------|
 | `name` | string | **Required.** |
-| `api_name` | string | **Required.** `^[A-Za-z0-9_]+$`. |
+| `api_name` | string | `^[A-Za-z0-9_]+$`. Left out, it defaults to `name` slugified (`Follow Up` → `follow_up`). |
 | `type` | enum | `record_based` (default) or `global`. |
 | `target_object` | api_name | **Required for `record_based`.** Resolved to `custom_object_id`. |
 | `active` | bool \| null | On create, an omitted/`null` value resolves to `false` — prefer authoring inactive, then `automations activate`. On update, an omitted/`null` value **preserves whatever the live automation already is**; only an explicit `true`/`false` changes it. |
@@ -85,10 +95,11 @@ kizen automations create --spec-file auto.json --dry-run
 - For the **first** step inside a YES/NO branch under a `condition` (or `goal`),
   set **`parent_branch: "yes"`** (or `"no"`). Linear successors *inside* a branch
   leave `parent_branch` unset.
-- `order` (int ≥ 0) orders steps for display. **Triggers need this too** — a
-  gap the skeleton above used to leave implicit: `HTTP 400: triggers: Trigger
-  orders must be sequential from 0 to 1` if omitted. Sequential `0..N` on
-  both `triggers` and `steps`, no gaps or duplicates.
+- `order` (int ≥ 0) orders steps for display, across the whole automation,
+  not per branch; leave it out and the CLI numbers by position in `steps`.
+  `step-types` entries leave it out. Triggers number the same way, by
+  position in `triggers`. Given orders must run `0..N` on both `triggers` and
+  `steps`, with no gaps or duplicates.
 - Cycles are rejected; `go_to_automation_step.step_key` must reference a real key.
 - To rejoin branches, use a branch group (below) rather than duplicating the
   tail of each branch.
@@ -864,8 +875,8 @@ Creates one record on another object and links it to the triggering record.
   `variable_field_resolution` and `context_entity_field_resolution`
   (default `overwrite`), `existing_record_found_action` (default
   `error_do_not_create`) and `archived_record_found_action` (default
-  `overwrite`). Any other key is a plan error on `automations create`/`update`,
-  `steps add` and `steps edit`.
+  `overwrite`). Any other key is a `spec error:` on `automations
+  create`/`update`, `steps add` and `steps edit`.
 - **Field values can't be set at creation.** The step has no key for them:
   `field_values` used to be forwarded, and Kizen accepted it and stored
   nothing (confirmed live 2026-10-05). Create the record empty, then set its
@@ -1711,7 +1722,7 @@ Why a translator is mandatory rather than nice-to-have:
   in a step or trigger config block that the type's builder doesn't read
   fails `create`/`update`/`steps add`/`steps edit` before the plan renders,
   even under `--dry-run --json`, naming the key and every key that block does
-  read (`plan error:` from `create`/`update`, `error:` from `steps`). One
+  read (`spec error:`; a trigger block's is a `plan error:`). One
   limit: keys *inside* nested items (`change_field_value.actions[]`,
   `code_step.inputs`/`outputs`, `plugin_code_step.inputs`/`outputs`,
   `schedule_activity.schedule`) aren't checked.
@@ -2108,7 +2119,13 @@ The reliable way to set an owner today is `kizen records update <object> <id>
 
 ### A 400 from plan-apply
 
-The error is nested: `{step_key: {action_block_name: {field_name: [message]}}}`.
+Most spec mistakes never get this far: `--dry-run` lists them first, as
+`spec error:` lines on stderr, or with `--json` as
+`{"ok": false, "errors": [...], "warnings": [...]}` on stdout. Each finding
+has `message`, `path`, and where they apply `step`, `index`, `got`,
+`allowed`, `suggestion` and `hint` (the command to run).
+
+The server's error is nested: `{step_key: {action_block_name: {field_name: [message]}}}`.
 Work inside-out — which step, which config block, which wire field. A
 "not a valid choice" rejection for `create_related_entity`,
 `notify_member_via_text`, `schedule_activity`'s `schedule`, or
