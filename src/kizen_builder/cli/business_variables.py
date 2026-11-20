@@ -9,6 +9,7 @@ from rich.text import Text
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
     OUTPUT_OPTION,
     app,
@@ -82,6 +83,7 @@ def bv_set(
     dry_run: bool = _DRY_RUN,
     yes: bool = _YES,
     json_out: bool = _JSON_WRITE,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create a business variable, or change its value or name.
 
@@ -97,6 +99,7 @@ def bv_set(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -106,6 +109,7 @@ def bv_delete(
     dry_run: bool = _DRY_RUN,
     yes: bool = _YES,
     json_out: bool = _JSON_WRITE,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete one business variable. Merge fields that use it stop resolving."""
     _run_mutation(
@@ -113,4 +117,5 @@ def bv_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )

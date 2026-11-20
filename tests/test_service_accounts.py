@@ -405,7 +405,8 @@ def test_cli_create_resolves_groups_by_name():
 
 
 @respx.mock
-def test_cli_list_json_emits_the_api_rows():
+def test_cli_list_json_emits_the_api_rows(monkeypatch):
+    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     _mock_reads()
     result = runner.invoke(cli.app, ["service-accounts", "list", "--json"])
     assert result.exit_code == 0, result.output

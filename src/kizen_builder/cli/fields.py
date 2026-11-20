@@ -7,7 +7,13 @@ from typing import Any
 import typer
 
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
-from kizen_builder.cli._shared import app, err_console, warn_renamed_flag
+from kizen_builder.cli._shared import (
+    FULL_OPTION,
+    MUTATION_JSON_OPTION,
+    app,
+    err_console,
+    warn_renamed_flag,
+)
 from kizen_builder.tools.planners import fields as field_planners
 
 fields_app = typer.Typer(
@@ -115,9 +121,8 @@ def fields_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create one field, or many at once from a JSON spec (--spec-file/stdin).
 
@@ -146,6 +151,7 @@ def fields_create(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
             stdin_consumed=from_stdin,
         )
         return
@@ -202,6 +208,7 @@ def fields_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -225,9 +232,8 @@ def fields_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update one field. Only the flags you set are changed.
 
@@ -252,6 +258,7 @@ def fields_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -265,9 +272,8 @@ def fields_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete one custom field. This removes the field's data across all records."""
     _run_mutation(
@@ -275,6 +281,7 @@ def fields_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -299,9 +306,8 @@ def field_options_add(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Add one or more options to a select-type field. Existing names are skipped."""
     if option_short:
@@ -317,6 +323,7 @@ def field_options_add(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -336,9 +343,8 @@ def field_options_remove(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Remove one option from a select-type field.
 
@@ -352,4 +358,5 @@ def field_options_remove(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )

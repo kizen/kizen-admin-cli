@@ -4,18 +4,23 @@ flips (activate/deactivate/move), and duplicate/delete.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
 import typer
 
+from kizen_builder import output as out
 from kizen_builder.cli._mutations import (
     _confirm_or_abort,
     _read_spec,
     _run_mutation,
 )
-from kizen_builder.cli._shared import cli_errors, console
+from kizen_builder.cli._shared import (
+    FULL_OPTION,
+    MUTATION_JSON_OPTION,
+    cli_errors,
+    console,
+)
 from kizen_builder.cli.automations import autos_app, print_warnings
 from kizen_builder.tools import automations as auto_tools
 from kizen_builder.tools.planners import automations as auto_planners
@@ -42,9 +47,8 @@ def autos_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create one automation from a JSON AutomationDef (--spec-file or stdin)."""
     spec_dict, from_stdin = _read_spec(spec_file)
@@ -53,6 +57,7 @@ def autos_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -77,9 +82,8 @@ def autos_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update an existing automation from a JSON AutomationDef (--spec-file or stdin).
 
@@ -94,6 +98,7 @@ def autos_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -135,14 +140,14 @@ def _run_field_patch(
 
     if dry_run:
         if json_out:
-            typer.echo(json.dumps(preview, indent=2, default=list))
+            out.emit_json(preview)
         else:
             console.print("[green]validated[/green] — dry run, nothing applied")
         return
 
     if preview["no_op"]:
         if json_out:
-            typer.echo(json.dumps(preview, indent=2, default=list))
+            out.emit_json(preview)
         return
 
     _confirm_or_abort(
@@ -155,7 +160,7 @@ def _run_field_patch(
         result = call(True)
 
     if json_out:
-        typer.echo(json.dumps(result, indent=2, default=list))
+        out.emit_json(result)
         return
     before, after = _before_after(result)
     console.print(f"[green]done[/green] — {result['field']}: {before} → {after}")
@@ -213,9 +218,8 @@ def autos_duplicate(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Duplicate one automation. The copy is named/numbered by the server."""
     _run_mutation(
@@ -223,6 +227,7 @@ def autos_duplicate(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -235,9 +240,8 @@ def autos_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete one automation. Irreversible."""
     _run_mutation(
@@ -245,6 +249,7 @@ def autos_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 

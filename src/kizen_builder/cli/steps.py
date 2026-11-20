@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
@@ -10,6 +9,7 @@ import typer
 from pydantic import ValidationError
 from rich.markup import escape
 
+from kizen_builder import output as out
 from kizen_builder.cli._mutations import _confirm_or_abort, _read_spec
 from kizen_builder.cli._shared import (
     cli_errors,
@@ -119,7 +119,7 @@ def _run_step_patch(
             f"{len(preview['payload']['steps'])} steps after patch)[/dim]"
         )
         console.print(
-            json.dumps(preview["report"], indent=2, default=list),
+            out.dumps_json(preview["report"]),
             markup=False,
             emoji=False,
             soft_wrap=True,
@@ -132,12 +132,12 @@ def _run_step_patch(
                 console.print(f"  [red]-[/red] {p}")
     if preview["validation_problems"]:
         if json_out:
-            typer.echo(json.dumps(preview, indent=2, default=list))
+            out.emit_json(preview)
         raise typer.Exit(code=1)
 
     if dry_run:
         if json_out:
-            typer.echo(json.dumps(preview, indent=2, default=list))
+            out.emit_json(preview)
         else:
             console.print("[green]validated[/green] — dry run, nothing applied")
         return
@@ -152,7 +152,7 @@ def _run_step_patch(
     result = patch(execute=True)
 
     if json_out:
-        typer.echo(json.dumps(result, indent=2, default=list))
+        out.emit_json(result)
         return
     if not result["executed"]:
         console.print("[red]graph invalid at apply time:[/red]")
@@ -196,7 +196,7 @@ def steps_get(
     with cli_errors(LookupError, PlanError):
         result = auto_tools.show_automation(api_name)
         step = step_tools.find_step(result["payload"], key)
-    typer.echo(json.dumps(step, indent=2))
+    out.emit_json(step)
 
 
 @steps_app.command(

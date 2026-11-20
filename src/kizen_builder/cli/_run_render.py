@@ -7,7 +7,6 @@ other: `runs.py` needs these for `runs view`/`runs logs`, and
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from rich.markup import escape
@@ -108,7 +107,7 @@ def print_step_log(index: int, entry: dict[str, Any]) -> None:
                 "print() is not captured)[/dim]"
             )
     else:
-        dumped = json.dumps(log, indent=2, default=str)
+        dumped = out.dumps_json(log)
         console.print(
             "  " + dumped.replace("\n", "\n  "),
             markup=False,
