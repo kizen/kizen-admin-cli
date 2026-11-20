@@ -19,6 +19,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from kizen_builder.models.spec import AutomationDef, AutomationStepDef
+from kizen_builder.models.spec.automations_shared import UNION_TAGS
 from kizen_builder.tools import step_catalog
 from kizen_builder.tools.findings import Finding, SpecProblems
 from kizen_builder.tools.planners.automations import (
@@ -246,7 +247,7 @@ def _suggest_key(key: str, allowed: list[str]) -> str | None:
 
 
 def _from_pydantic(err: Any, spec: dict[str, Any]) -> Finding | None:
-    loc = tuple(err["loc"])
+    loc = tuple(p for p in err["loc"] if p not in UNION_TAGS)
     message = str(err["msg"]).removeprefix("Value error, ")
     if message.startswith(("unknown step_type", "unknown trigger_type")):
         return None  # `_unwired_types` says it, with the wired list

@@ -1151,3 +1151,352 @@ def test_a_bare_related_field_ref_is_refused(patch_live_lookups):
     }
     with pytest.raises(PlanError, match="must be `object.field` or a field UUID"):
         plan_create_automation(_encounter_spec(_code([dob])))
+
+
+# --- filter_config ------------------------------------------------------------
+
+
+def _filter_step(step_type, filter_config):
+    if step_type == "condition":
+        return {
+            "key": "check",
+            "step_type": "condition",
+            "step_condition": {"type": "custom_filter", "filter_config": filter_config},
+        }
+    return {
+        "key": "check",
+        "step_type": "search_records",
+        "action_search_records": {
+            "custom_object": "deals",
+            "filter_type": "custom_filter",
+            "filter_config": filter_config,
+            "destination_variable": "found",
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("step_type", "block"),
+    [("condition", "step_condition"), ("search_records", "action_search_records")],
+)
+def test_a_bare_filter_clause_prints_the_wrapped_form(step_type, block):
+    clause = {"field": "status", "op": "=", "value": "Won"}
+    errors = _errors(_spec(_filter_step(step_type, clause)))
+    f = _only(errors, path=f"{block}.filter_config")
+    assert f.message == (
+        "a clause needs a group around it: "
+        '{"all": [{"field": "status", "op": "=", "value": "Won"}]}'
+    )
+    assert f.step == "check"
+
+
+def test_a_wrong_op_in_a_nested_group_names_its_path():
+    fc = {"any": [{"all": [{"field": "status", "op": "equal", "value": 1}]}]}
+    f = _only(
+        _errors(_spec(_filter_step("condition", fc))),
+        path="step_condition.filter_config.any.0.all.0.op",
+    )
+    assert f.got == "equal" and "=" in f.allowed
+
+
+@pytest.mark.parametrize(
+    ("fc", "message"),
+    [
+        ({"query": "x"}, "Input should be a valid list"),
+        ({"filters": []}, 'filter_config is a group, {"all": [...]} or {"any": [...]}'),
+        ({"all": [], "any": []}, "List should have at least 1 item"),
+    ],
+    ids=["query-not-a-list", "neither-shape", "empty-group"],
+)
+def test_a_malformed_filter_is_a_finding(fc, message):
+    errors = _errors(_spec(_filter_step("condition", fc)))
+    assert any(message in f.message for f in errors), errors
+
+
+def test_the_wire_filter_form_and_unknown_clause_keys_pass():
+    fc = {
+        "and": True,
+        "invalid": False,
+        "query": [
+            {
+                "id": "query-0",
+                "and": True,
+                "filters": [{"type": "variable", "lhs_variable_name": "score"}],
+            }
+        ],
+    }
+    check_automation(_spec(_filter_step("condition", fc)))
+
+
+def test_the_filter_ops_are_the_ones_the_compiler_takes():
+    from typing import get_args
+
+    from kizen_builder import filtering
+    from kizen_builder.models.spec.automations_shared import FilterOp
+
+    assert sorted(get_args(FilterOp)) == filtering.VALID_SPEC_OPS
+
+
+def _related(**block):
+    return {
+        "key": "make",
+        "step_type": "create_related_entity",
+        "action_create_related_entity": {
+            "target_custom_object": "accounts",
+            "new_entity_name": "n",
+            "new_entity_name_html": "<p>n</p>",
+            "new_entity_owner_type": "assign_from_context_record",
+            **block,
+        },
+    }
+
+
+def _math(subtype="addition", **arg):
+    return {
+        "key": "sum",
+        "step_type": "math_operator",
+        "action_math_operator": {
+            "subtype": subtype,
+            "variable": "total",
+            "simple_builder_arguments": [
+                {
+                    "argument_type": "constant",
+                    "operation_type": "regular",
+                    "constant": 1,
+                },
+                {"argument_type": "constant", "operation_type": "regular", **arg},
+            ],
+        },
+    }
+
+
+def _notify(step_type, **block):
+    return {"key": "tell", "step_type": step_type, f"action_{step_type}": block}
+
+
+_TEXT = ("owner", "last_active", "last_active_role", "team_selector_field", "employee")
+
+_WRONG_CHOICES = [
+    *(
+        (
+            _notify("notify_member_via_text", team_member={"type": t}, content="hi"),
+            "action_notify_member_via_text.team_member.type",
+            "employee",
+        )
+        for t in ("employees", "team_member")
+    ),
+    (
+        _notify(
+            "notify_member_via_email",
+            team_member={"type": "owner"},
+            cc_team_member={"type": "team_member"},
+        ),
+        "action_notify_member_via_email.cc_team_member.type",
+        "employees",
+    ),
+    (
+        {
+            "key": "give",
+            "step_type": "assign_team_member",
+            "action_assign_team_member": {"type": "owner"},
+        },
+        "action_assign_team_member.type",
+        "team_selector_field",
+    ),
+    (
+        _math(subtype="subtraction"),
+        "action_math_operator.subtype",
+        "multiplication",
+    ),
+    (
+        _math(argument_type="number", constant=2),
+        "action_math_operator.simple_builder_arguments.1.argument_type",
+        "constant",
+    ),
+    (
+        _related(new_entity_owner_type="owner"),
+        "action_create_related_entity.new_entity_owner_type",
+        "newly_assigned_owner",
+    ),
+    (
+        _related(new_entity_owner_sub_type="round_robin"),
+        "action_create_related_entity.new_entity_owner_sub_type",
+        "round_robin_any_role",
+    ),
+    (
+        _related(context_entity_field_resolution="replace"),
+        "action_create_related_entity.context_entity_field_resolution",
+        "update_if_blank",
+    ),
+    (
+        _related(existing_record_found_action="unarchive"),
+        "action_create_related_entity.existing_record_found_action",
+        "create_append_suffix",
+    ),
+]
+
+
+@pytest.mark.parametrize(("step", "path", "allowed"), _WRONG_CHOICES)
+def test_a_wrong_choice_in_a_typed_block_names_the_choices(step, path, allowed):
+    f = _only(_errors(_spec(step)), path=path)
+    assert allowed in f.allowed and f.step == step["key"]
+
+
+@pytest.mark.parametrize(
+    ("fixture", "step_type"),
+    [
+        ("create_and_modify_related.raw.json", "create_related_entity"),
+        ("kitchen_sink_triggers.raw.json", "math_operator"),
+    ],
+)
+def test_a_typed_block_takes_every_key_a_read_gives(fixture, step_type):
+    """A read's expanded objects and lists check clean, so a roundtrip
+    spec needs no edits."""
+    read = json.loads((FIXTURES / "automations" / fixture).read_text())
+    cfg = f"action_{step_type}"
+    blocks = [s[cfg] for s in read["steps"] if s["step_type"] == step_type]
+    assert blocks
+    for block in blocks:
+        step = {"key": "s", "step_type": step_type, cfg: block}
+        check_automation(_spec(step))
+
+
+@pytest.mark.parametrize(
+    ("subtype", "operation", "message"),
+    [
+        ("addition", "inverse", "addition takes operation_type regular or negative"),
+        (
+            "multiplication",
+            "negative",
+            "multiplication takes operation_type regular or inverse",
+        ),
+    ],
+)
+def test_a_math_operation_its_subtype_refuses_is_a_finding(subtype, operation, message):
+    step = _math(subtype, constant=2)
+    step["action_math_operator"]["simple_builder_arguments"][1]["operation_type"] = (
+        operation
+    )
+    f = _only(
+        _errors(_spec(step)), path="action_math_operator.simple_builder_arguments"
+    )
+    assert f.message.startswith(message)
+    assert f.message.endswith("(argument 1)")
+
+
+def test_a_math_argument_needs_its_type_and_operation():
+    step = _math(constant=2)
+    del step["action_math_operator"]["simple_builder_arguments"][1]["operation_type"]
+    _only(
+        _errors(_spec(step)),
+        path="action_math_operator.simple_builder_arguments.1.operation_type",
+    )
+
+
+def _bound(inputs=(), outputs=(), step_type="code_step"):
+    block = {"inputs": list(inputs), "outputs": list(outputs)}
+    if step_type == "code_step":
+        block["script"] = "pass"
+    else:
+        block |= {"plugin_app_api_name": "p", "action_step_api_name": "s"}
+    return {"key": "run", "step_type": step_type, f"action_{step_type}": block}
+
+
+def test_a_wrong_input_type_names_the_types_and_the_nearest():
+    step = _bound([{"name": "score", "input_type": "varible", "variable_name": "v"}])
+    f = _only(_errors(_spec(step)), path="action_code_step.inputs.0.input_type")
+    assert f.suggestion == "variable"
+    assert f.allowed == ["field", "variable", "related_field", "static_value"]
+
+
+@pytest.mark.parametrize(
+    ("step", "path", "got"),
+    [
+        (
+            _bound(outputs=[{"name": "out", "output_type": "static_value"}]),
+            "action_code_step.outputs.0.output_type",
+            "static_value",
+        ),
+        (
+            _bound([{"name": "cfg", "input_type": "business_plugin_config"}]),
+            "action_code_step.inputs.0.input_type",
+            "business_plugin_config",
+        ),
+        (
+            _bound(outputs=[{"name": "out", "conflict_resolution": "replace"}]),
+            "action_code_step.outputs.0.conflict_resolution",
+            "replace",
+        ),
+        (
+            _bound([{"name": "n", "data_type": "text"}]),
+            "action_code_step.inputs.0.data_type",
+            "text",
+        ),
+    ],
+    ids=["static-output", "plugin-config-on-code", "resolution", "data-type"],
+)
+def test_a_wrong_code_binding_choice_is_a_finding(step, path, got):
+    assert _only(_errors(_spec(step)), path=path).got == got
+
+
+def test_a_code_binding_that_is_not_an_object_is_a_finding():
+    f = _only(_errors(_spec(_bound(["score"]))), path="action_code_step.inputs.0")
+    assert f.message == "each entry is an object with a name and an input_type"
+
+
+def test_a_plugin_step_takes_the_install_config_input():
+    step = _bound(
+        [{"name": "settings", "input_type": "business_plugin_config"}],
+        step_type="plugin_code_step",
+    )
+    check_automation(_spec(step))
+
+
+def test_each_notify_step_offers_its_own_recipient_types():
+    from kizen_builder.tools import step_catalog
+
+    def choices(step_type, path):
+        rows = step_catalog.describe(step_type)["fields"]
+        return next(r["choices"] for r in rows if r["path"] == path)
+
+    assert choices("notify_member_via_text", "team_member.type") == list(_TEXT)
+    assert "employees" in choices("notify_member_via_email", "team_member.type")
+    rows = step_catalog.describe("notify_member_via_email")["fields"]
+    cc = next(r for r in rows if r["path"] == "cc_team_member")
+    assert cc["same_as"] == "team_member"
+
+
+_NEW = {"a_key_kizen_added_later": 1}
+
+
+@pytest.mark.parametrize(
+    "step",
+    [
+        _math(constant=2, **_NEW),
+        _bound(
+            [{"name": "xy", "input_type": "static_value", "static_value": 1, **_NEW}]
+        ),
+        _notify(
+            "notify_member_via_email",
+            team_member={"type": "owner", **_NEW},
+            email_template_id="m",
+        ),
+        _filter_step("condition", {"all": [{"field": "s", "op": "=", "value": 1}]}),
+    ],
+    ids=["math_argument", "code_input", "recipient", "filter"],
+)
+def test_a_typed_block_still_passes_a_key_it_does_not_declare(step):
+    """extra="allow" stays: a key the server accepts but the model doesn't
+    know yet is passed through, not refused. A step block's own top-level
+    keys are still held to what its planner reads."""
+    check_automation(_spec(step))
+    trigger = {
+        "trigger_type": "field_updated",
+        "trigger_field_updated": {
+            "field_ref": "deals.status",
+            "to_match_mode": "specific_value",
+            "to_value": {"id": "1", **_NEW},
+            **_NEW,
+        },
+    }
+    check_automation(_spec(step, triggers=[trigger]))

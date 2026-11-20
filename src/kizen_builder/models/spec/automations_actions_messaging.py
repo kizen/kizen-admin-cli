@@ -9,8 +9,59 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from kizen_builder.models.spec.automations_shared import (
     DAYS_OFFSET_MESSAGE,
     DAYS_OFFSETS,
+    RawFilterConfig,
     TeamMemberConfig,
 )
+
+_RECIPIENT_KEYS = (
+    "last_active_role takes role_id, team_selector_field takes field_ref "
+    "('object.field'), and owner and last_active nothing else"
+)
+
+
+# One create per value, 2026-11-16: employees and team_member are refused on
+# a text step.
+class TextRecipient(TeamMemberConfig):
+    """Who `notify_member_via_text` texts."""
+
+    type: (  # type: ignore[assignment]
+        Literal[
+            "owner",
+            "last_active",
+            "last_active_role",
+            "team_selector_field",
+            "employee",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description=f"employee takes employee_id, {_RECIPIENT_KEYS}.",
+    )
+
+
+# Confirmed live 2026-11-16: employee is refused on an email step, the
+# others aren't. The planner sends employee as employees, so a spec written
+# for a text step works here too.
+class EmailRecipient(TeamMemberConfig):
+    """Who `notify_member_via_email` emails, or copies."""
+
+    type: (  # type: ignore[assignment]
+        Literal[
+            "owner",
+            "last_active",
+            "last_active_role",
+            "team_selector_field",
+            "employees",
+            "employee",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description=(
+            f"employees takes employee_ids, {_RECIPIENT_KEYS}. employee "
+            "with employee_id is sent as employees."
+        ),
+    )
 
 
 class ActionSendEmailConfig(BaseModel):
@@ -65,13 +116,13 @@ class ActionNotifyMemberViaEmailConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    team_member: TeamMemberConfig
+    team_member: EmailRecipient
     id: str | None = Field(
         default=None,
         description="UUID of the email message/template to send (see `kizen messages templates`).",
     )
     email_template_id: str | None = Field(default=None, description="Alias for `id`.")
-    cc_team_member: TeamMemberConfig | None = None
+    cc_team_member: EmailRecipient | None = None
 
 
 class ActionNotifyMemberViaTextConfig(BaseModel):
@@ -85,7 +136,7 @@ class ActionNotifyMemberViaTextConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    team_member: TeamMemberConfig
+    team_member: TextRecipient
     content: str | None = None
     html_content: str | None = None
     base_message_id: str | None = None
@@ -188,7 +239,7 @@ class ActionAssignTeamMemberConfig(BaseModel):
     field_ref: str | None = Field(
         default=None,
         description=(
-            "'object.field' reference, resolved to `field_id` at apply time. "
+            "'object.field' reference, resolved to `field_id` at plan time. "
             "For `related_team_selector_field`, qualify it with the far "
             "object: a bare name resolves against the automation's own object."
         ),
@@ -539,4 +590,5 @@ class ActionDeleteScheduledActivityConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    filter_config: dict[str, Any] | None = None
+    # Not wired; nothing compiles the DSL here.
+    filter_config: RawFilterConfig | None = None

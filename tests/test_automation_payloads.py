@@ -7165,6 +7165,69 @@ def test_trigger_bare_field_ref_needs_a_target_object(
         _build(spec)
 
 
+def _field_updated_values(block: dict, *, goal: bool = False) -> dict:
+    spec = _field_ref_trigger_spec(
+        "field_updated",
+        {"fire_on_create": False, **block},
+        goal=goal,
+        target="encounters",
+    )
+    return _field_ref_trigger_block(_build(spec), "field_updated", goal)
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_option_label_resolves(patch_live_lookups, goal):
+    block = _field_updated_values(
+        {
+            "field_ref": "encounter_priority",
+            "from_match_mode": "specific_value",
+            "from_value": "routine",
+            "to_match_mode": "specific_value",
+            "to_value": "Urgent",
+        },
+        goal=goal,
+    )
+    assert block["to_value"] == _option_id("encounters", "encounter_priority", "Urgent")
+    assert block["from_value"] == _option_id(
+        "encounters", "encounter_priority", "Routine"
+    )
+
+
+def test_field_updated_checkbox_labels_resolve(patch_live_lookups):
+    wheelchair = _option_id("encounters", "special_arrangements", "Wheelchair")
+    block = _field_updated_values(
+        {"field_ref": "special_arrangements", "to_value": ["Wheelchair"]}
+    )
+    assert block["to_value"] == [wheelchair]
+
+
+@pytest.mark.parametrize("goal", [False, True], ids=["trigger", "goal"])
+def test_field_updated_unknown_option_lists_the_options(patch_live_lookups, goal):
+    with pytest.raises(PlanError) as e:
+        _field_updated_values(
+            {"field_ref": "special_arrangements", "to_value": "Cane"}, goal=goal
+        )
+    assert str(e.value).endswith(
+        "'Cane' isn't an option of 'special_arrangements' on 'encounters'. "
+        "Options: Wheelchair, Walker / Crutches, Interpreter, Oxygen, Other"
+    )
+    where = (
+        "step 'g0': goal trigger 'goal_trigger_0'"
+        if goal
+        else "trigger 'trigger.field_updated.1'"
+    )
+    assert str(e.value).startswith(where)
+
+
+def test_field_updated_ids_and_reads_need_no_lookup(patch_live_lookups):
+    urgent = _option_id("encounters", "encounter_priority", "Urgent")
+    read = {"id": urgent, "name": "Urgent", "deleted": False}
+    block = _field_updated_values(
+        {"field_ref": "encounter_priority", "from_value": urgent, "to_value": read}
+    )
+    assert block["from_value"] == block["to_value"] == urgent
+
+
 @pytest.mark.parametrize(
     "ref",
     [
@@ -7377,16 +7440,28 @@ def test_notify_team_member_selector_not_checked(patch_live_lookups):
         "order": 0,
         "parent_key": None,
         "action_notify_member_via_text": {
-            "team_member": {"type": "team_member"},
+            "team_member": {"type": "employee"},
             "content": "hi",
         },
     }
     action = _build(spec)["steps"][0]["action_notify_member_via_text"]
-    assert action["team_member"] == {"type": "team_member"}
+    assert action["team_member"] == {"type": "employee"}
 
 
 _BY_OWNER = {"type": "team_selector_field", "field_ref": "owner"}
 _MESSAGE_ID = "11111111-1111-1111-1111-111111111111"
+
+
+@pytest.mark.parametrize("key", ["team_member", "cc_team_member"])
+def test_notify_email_sends_one_employee_as_employees(patch_live_lookups, key):
+    """Kizen refuses `employee` on an email step (confirmed live
+    2026-11-16), the text step's spelling for one team member."""
+    block = {"team_member": {"type": "owner"}, "id": _MESSAGE_ID}
+    block[key] = {"type": "employee", "employee_id": "e-1"}
+    wire = _build(_one_step_spec("notify_member_via_email", block))["steps"][0][
+        "action_notify_member_via_email"
+    ]
+    assert wire[key] == {"type": "employees", "employee_ids": ["e-1"]}
 
 
 @pytest.mark.parametrize(

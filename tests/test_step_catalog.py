@@ -4,6 +4,7 @@ planner registries and the spec models."""
 from __future__ import annotations
 
 import json
+import uuid
 from typing import get_args
 
 import pytest
@@ -91,7 +92,7 @@ def test_skeleton_and_variants_check_with_no_order_warning():
     activity["parent_key"] = "delay"
     activity["action_schedule_activity"]["activity_type"] = "follow_up"
     auto["steps"] += [wait, activity]
-    changed = step_catalog.variant_spec("field_updated", "minimal")
+    changed = step_catalog.variant_spec("field_updated", "any_change")
     changed["trigger_field_updated"]["field_ref"] = "deals.name"
     auto["triggers"].append(changed)
     checked = automation_check.check_automation(auto)
@@ -213,6 +214,35 @@ def test_guide_selectors_match_the_model_choices():
     )
 
 
+_GUIDES = {**step_catalog._STEP_GUIDES, **step_catalog._TRIGGER_GUIDES}
+
+
+@pytest.mark.parametrize("type_name", sorted(_GUIDES))
+def test_every_guide_selector_matches_the_model(type_name):
+    """Where the model types a selector, the guide offers exactly its
+    choices, and every key an option needs is a key of the block."""
+    fields = {f["path"]: f for f in step_catalog.describe(type_name)["fields"]}
+    for selector in _GUIDES[type_name].selectors:
+        choices = fields[selector.path].get("choices")
+        if choices:
+            assert {o.value for o in selector.options} == set(choices), selector.path
+        parent = selector.path.rpartition(".")[0]
+        for option in selector.options:
+            for need in option.needs:
+                key = f"{parent}.{need}" if parent else need
+                assert key in fields, (selector.path, need)
+
+
+def test_condition_lists_the_filter_keys_and_ops():
+    from kizen_builder import filtering
+
+    fields = {f["path"]: f for f in step_catalog.describe("condition")["fields"]}
+    assert fields["filter_config.all[].op"]["choices"] == filtering.VALID_SPEC_OPS
+    assert fields["filter_config.any"]["same_as"] == "filter_config.all"
+    assert "filter_config.query[].filters" in fields
+    assert "filter_config.all[].variable" in fields
+
+
 def test_schedule_activity_variants_build_a_payload(patch_live_lookups):
     """The blocks the CLI hands out go through the real builder once their
     placeholders name things the fixture env has."""
@@ -240,6 +270,96 @@ def test_schedule_activity_variants_build_a_payload(patch_live_lookups):
         ]
         assert block["schedule"]["type"] == variant.block["schedule"]["type"]
         assert "field_ref" not in json.dumps(block), variant.name
+
+
+_FILLS = {
+    "<object api_name>": "encounters",
+    "<object>.<relationship field>": "patients.encounters",
+    "<employee UUID>": "22222222-2222-4222-8222-222222222222",
+    "<role UUID>": "33333333-3333-4333-8333-333333333333",
+    "<stage UUID>": "44444444-4444-4444-8444-444444444444",
+    "<variable name>": "made",
+    "<number field UUID>": "55555555-5555-4555-8555-555555555555",
+}
+
+
+def _built_variants(type_name, target="patients", **fills):
+    """Each variant of ``type_name`` built by the real builder on a
+    ``target`` automation, once its placeholders name things the fixture
+    env has."""
+    block_key = step_catalog.describe(type_name)["block"]
+    for variant in step_catalog._STEP_GUIDES[type_name].variants:
+        text = json.dumps(step_catalog.variant_spec(type_name, variant.name))
+        for placeholder, value in {**_FILLS, **fills}.items():
+            text = text.replace(placeholder, value)
+        auto = AutomationDef.model_validate(
+            _with_orders(
+                {
+                    "name": "t",
+                    "api_name": "t",
+                    "target_object": target,
+                    "steps": [json.loads(text)],
+                }
+            )
+        )
+        payload = _build_automation_payload(auto, LiveContext())
+        yield variant, payload["steps"][0][block_key]
+
+
+def test_create_related_entity_variants_build_a_payload(patch_live_lookups):
+    for variant, block in _built_variants("create_related_entity"):
+        assert set(variant.block) <= set(block), variant.name
+        for key in ("new_entity_owner_type", "new_entity_owner_sub_type"):
+            assert block.get(key) == variant.block.get(key), variant.name
+        uuid.UUID(block["target_custom_object"])
+
+
+def test_math_operator_variants_build_a_payload(patch_live_lookups):
+    for variant, block in _built_variants("math_operator"):
+        assert block["subtype"] == variant.block["subtype"]
+        if "variable" in variant.block:
+            assert block["variable"] == {"name": "made"}
+        for arg in block["simple_builder_arguments"]:
+            assert arg["argument_type"] in arg or (
+                arg["argument_type"] == "field" and "field_id" in arg
+            )
+            if arg["argument_type"] == "variable":
+                assert arg["variable"] == {"name": "made"}
+
+
+def test_code_step_variants_build_a_payload(patch_live_lookups):
+    fills = {
+        "<object>.<field>": "encounters.encounter_priority",
+        "<object>.<relationship field>": "encounters.patient_rel",
+        "<related object>.<field>": "patients.mrn",
+    }
+    for variant, block in _built_variants("code_step", "encounters", **fills):
+        spec = variant.block
+        assert [i["name"] for i in block["inputs"]] == [
+            i["name"] for i in spec["inputs"]
+        ]
+        for built, given in zip(block["inputs"], spec["inputs"], strict=True):
+            assert built["input_type"] == given.get("input_type", "field")
+            source = {
+                "field": "field",
+                "variable": "variable",
+                "related_field": "related_field",
+                "static_value": "static_value",
+            }[built["input_type"]]
+            assert built[source], (variant.name, built)
+        for built in block["outputs"]:
+            assert built.get("field") or built.get("variable"), variant.name
+
+
+def test_assign_team_member_variants_build_a_payload(patch_live_lookups):
+    fills = {
+        "<object>.<team selector field>": "encounters.owner",
+        "<related object>.<team selector field>": "patients.owner",
+        "<relationship field UUID>": "889f65e2-dd31-42f0-a088-c3c1dd8ea484",
+    }
+    for variant, block in _built_variants("assign_team_member", "encounters", **fills):
+        assert block["type"] == variant.block["type"]
+        assert "field_ref" not in block
 
 
 # --- CLI ------------------------------------------------------------------
@@ -350,11 +470,10 @@ def test_trigger_cards_say_a_trigger_has_no_key():
 
 def test_condition_card_leads_with_llm_decision():
     variants = step_catalog.describe("condition")["variants"]
-    assert [v["name"] for v in variants] == ["llm_decision", "minimal"]
+    assert variants[0]["name"] == "llm_decision"
     block = variants[0]["spec"]["step_condition"]
     assert block["type"] == "llm_decision"
     assert set(block["llm_decision"]) == {"model_name", "prompt"}
-    assert variants[1]["spec"]["step_condition"] == {}
 
 
 def test_schedule_activity_has_a_round_robin_variant():

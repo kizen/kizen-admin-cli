@@ -1461,6 +1461,23 @@ def _qualify_trigger_field_ref(
     return {**block, "field_ref": ".".join(_split_field_ref(ref, auto))}
 
 
+def _resolve_trigger_option_labels(
+    trigger_type: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """A `field_updated` block with option names in `from_value`/`to_value`
+    resolved to option UUIDs, as `change_field_value` resolves them. An
+    unknown name lists the field's options. Other trigger types pass
+    through."""
+    if trigger_type != "field_updated":
+        return block
+    field = block.get("field_ref") or block.get("field_id") or block.get("field")
+    out = dict(block)
+    for k in ("from_value", "to_value"):
+        if out.get(k) is not None:
+            out[k] = _option_labels_to_ids(field, out[k], auto.target_object, auto, ctx)
+    return out
+
+
 # The server's default and the UI's text. A description in either form names
 # no user intent, only (possibly old) stages, so it is rewritten from the
 # stages being sent: a spec copied from a read would otherwise label a changed
@@ -1581,6 +1598,12 @@ def _build_trigger_payload(
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
     block_dict = _qualify_trigger_field_ref(t.trigger_type, block_dict, auto)
+    try:
+        block_dict = _resolve_trigger_option_labels(
+            t.trigger_type, block_dict, auto, ctx
+        )
+    except PlanError as e:
+        raise PlanError(f"trigger '{p['key']}': {e}") from e
     block_dict, description = _resolve_trigger_stages(
         t.trigger_type, p["key"], block_dict, p.get("description"), auto, ctx
     )
@@ -2510,6 +2533,10 @@ def _step_goal(
         nested = _qualify_trigger_field_ref(
             trigger_type, dict(t.get(cfg_field) or {}), auto
         )
+        try:
+            nested = _resolve_trigger_option_labels(trigger_type, nested, auto, ctx)
+        except PlanError as e:
+            raise PlanError(f"goal trigger '{p['key']}': {e}") from e
         builder = _TRIGGER_BUILDERS.get(trigger_type)
         p[cfg_field] = builder(nested, ctx) if builder else _strip(nested)
         triggers.append(p)
@@ -3966,12 +3993,9 @@ def _step_notify_member_via_email(
     `email: {id}`).
     """
     out: dict[str, Any] = {}
-    team_member = block.get("team_member")
-    if isinstance(team_member, dict):
-        out["team_member"] = _team_member_selector(team_member, auto, ctx)
-    cc = block.get("cc_team_member")
-    if isinstance(cc, dict):
-        out["cc_team_member"] = _team_member_selector(cc, auto, ctx)
+    for key in ("team_member", "cc_team_member"):
+        if isinstance(block.get(key), dict):
+            out[key] = _email_recipient(_team_member_selector(block[key], auto, ctx))
     message_id = (
         block.get("id")
         or block.get("email_template_id")
@@ -3979,6 +4003,18 @@ def _step_notify_member_via_email(
     )
     if message_id:
         out["id"] = message_id
+    return out
+
+
+def _email_recipient(selector: dict[str, Any]) -> dict[str, Any]:
+    """An email step names one team member as `employees`. It refuses the
+    text step's `employee` (confirmed live 2026-11-16), so that is sent as
+    `employees` with the one id."""
+    if selector.get("type") != "employee":
+        return selector
+    out = {k: v for k, v in selector.items() if k != "employee_id"}
+    ids = [*selector.get("employee_ids", []), selector.get("employee_id")]
+    out |= {"type": "employees", "employee_ids": [i for i in ids if i]}
     return out
 
 
@@ -4105,6 +4141,8 @@ def _step_math_operator(
         v = item.get("variable")
         if isinstance(v, dict) and v.get("name"):
             item["variable"] = {"name": v["name"]}
+        elif isinstance(v, str):
+            item["variable"] = {"name": v}
         args.append(item)
     out["simple_builder_arguments"] = args
     return {k: v for k, v in out.items() if v is not None}
@@ -4525,11 +4563,14 @@ KNOWN_ENUM_CHOICES: dict[str, dict[str, KnownChoices]] = {
     },
     "notify_member_via_text": {
         "team_member.type": KnownChoices(
-            values=("employee",),
-            source=(
-                "First-Use-Feedback session, confirmed live 2026-08-11 "
-                "(00-inbox/First-Use-Feedback.md); no repo fixture yet"
+            values=(
+                "owner",
+                "last_active",
+                "last_active_role",
+                "team_selector_field",
+                "employee",
             ),
+            source="a create per value on cli-testing, 2026-11-16",
         ),
     },
 }

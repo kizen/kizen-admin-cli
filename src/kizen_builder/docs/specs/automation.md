@@ -310,7 +310,7 @@ none. It is the search-and-link pattern above, with three differences:
   field into a string variable and compare with `"variable"` (see
   `kizen docs show filters`).
 - **The Contact is created in a code step.** `create_related_entity` can't
-  create a Contact (see [`create_related_entity`](#create_related_entity)).
+  create a Contact: Kizen refuses it with a 400 (confirmed live 2026-10-30).
   The script posts to `/records/client_client/add`, and its `field` output
   links the new Contact.
 - **Kizen refuses a second Contact with the same email**, with a 400 "Entity
@@ -749,25 +749,7 @@ are covered under [Branch groups](#branch-groups) and [Loops](#loops), and
 where `initialize_variable` goes under
 [Key quirks](#key-quirks-the-ones-that-bite).
 
-`search_records` (the automation-builder equivalent of `records list
---filter`) needs its own `custom_object` — independent of the automation's
-own `target_object` (global automations have none) — plus `filter_type`
-(`all_records`/`in_group`/`not_in_group`/`custom_filter`),
-`destination_variable` (an array-type automation variable, by name), and
-`destination_variable_resolution` (`overwrite`/`overwrite_except_null`/
-`add_only`/`remove_only`/`update_if_blank`). For `in_group`/`not_in_group`,
-`filter_groups` names/ids one or more saved filter groups on `custom_object`
-(same resource as `kizen filter-groups`). For `custom_filter`, `filter_config`
-is the same DSL shape as a condition step's, resolved against `custom_object`
-instead of the automation's target_object. A filter value doesn't take merge
-fields: to search on a value from the record, copy it into a string variable
-and compare with `"variable"` (`kizen docs show filters`, and
-[Find or create a Contact by email](#find-or-create-a-contact-by-email)).
-Confirmed live 2026-07-22 — see
-the "four fields that break the bare-scalar convention" section below for the wire
-quirks (custom_object/filter_groups/destination_variable are each
-`{"id"|"name": ...}` objects on write, unlike most other action steps' bare
-scalars).
+`search_records`: `kizen automations step-types show search_records`.
 
 Other step types exist in Kizen (`send_email`, `change_tags`,
 `http_request`, `modify_automation`, `request_info_via_text`, `delete_scheduled_activity`,
@@ -777,31 +759,10 @@ try to spec them.
 
 ### `code_step` input/output shapes
 
-Each entry in `action_code_step.inputs`/`.outputs` picks its shape via
-`input_type`/`output_type`:
-
-| `input_type` | Wire shape | Notes |
-|---|---|---|
-| `field` (default) | `{"field": {"id": <uuid>}}` | From `field_ref` (`"object.field"`, resolved at apply time), `field_id`, or a raw `field` UUID — first one present wins. |
-| `variable` | `{"variable": {"name": <name>}}` | From `variable_name` or a `variable` dict/string. |
-| `static_value` | `{"static_value": {"value": ..., "entity_record": ..., "employee": ...}}` | `static_value` may be the literal value directly, or a dict with those three keys for the richer forms. |
-| `related_field` | `{"field": {"id": <uuid>}, "related_field": {"id": <uuid>}}` | **Both required**: `field` is the relationship field on the automation's own object (the hop), from `field_ref`, `field_id` or `field`; `related_field` (or `related_field_ref`) is the field on the object it points to, as a UUID or `"object.field"`. The hop must be single-value (`many_to_one` or `one_to_one`); a to-many hop is a 400 and the dry-run refuses it. Confirmed live 2026-11-16. |
-
-`output_type` is the same enum minus `static_value` (an output can't be a
-literal): `field` (default), `variable`, `related_field` — same wire shapes
-as their `input_type` counterparts. `inputs`/`outputs` entries also accept
-`data_type` and `is_list` when the script needs to declare a type/array
-explicitly rather than inferring it from the bound field.
-
-To read the records on a to-many relationship, bind the relationship itself:
-`{"name": "conditions", "input_type": "field", "field_ref":
-"encounters.conditions", "data_type": "entity", "is_list": true}`. The script
-gets the related records' ids. To write to them, use a
-`modify_related_entities` step. Confirmed live 2026-11-16.
-
-For the Python side — the `inputs.` / `outputs.` / `secrets[…]` / `kizen.api`
-namespace, how each `data_type` arrives inside the script, and unit-testing a
-script before wiring it in — see `kizen docs show code-steps`.
+Every input and output type, with the keys each takes: `kizen automations
+step-types show code_step`. The Python side (`inputs.` / `outputs.` /
+`secrets[…]` / `kizen.api`, how each `data_type` arrives, and unit-testing a
+script) is in `kizen docs show code-steps`.
 
 ### `plugin_code_step`
 
@@ -835,8 +796,9 @@ the example leaves out the optional `preview_user_id`:
   plugin doesn't ship are each a 400 naming the key. It also checks the
   bindings against the manifest, and a required input or output that's
   missing is a 400 naming it (all confirmed live 2026-10-14).
-- `inputs` and `outputs` take the `code_step` shapes above. `inputs` also
-  takes `input_type: business_plugin_config`, for plugin steps only. On the
+- `inputs` and `outputs` take the `code_step` shapes (`kizen automations
+  step-types show plugin_code_step`). `inputs` also takes `input_type:
+  business_plugin_config`, for plugin steps only. On the
   wire it's `{name, input_type, data_type?, is_list?}` with no source key. A
   UI-built step reads back in that shape (seen 2026-10-14), bound to a
   parameter the manifest declares `static_value`. Kizen's 2026-10-13 release
@@ -858,50 +820,7 @@ the example leaves out the optional `preview_user_id`:
 
 ### `create_related_entity`
 
-Creates one record on another object and links it to the triggering record.
-
-```json
-{ "step_type": "create_related_entity", "key": "create_followup",
-  "parent_key": null,
-  "action_create_related_entity": {
-    "target_custom_object": "service_tickets",
-    "new_entity_name": "Follow-up for {{ entity_record.name }}",
-    "new_entity_name_html": "<p>Follow-up for {{ entity_record.name }}</p>",
-    "new_entity_owner_type": "assign_from_context_record",
-    "context_entity_field": "accounts.followup_ticket"
-  } }
-```
-
-- **`target_custom_object`** is the object the record is created on: an
-  api_name, a UUID, or an `{id}`/`{name}` dict. **`target_object`** is an
-  alias for it. Give one; `target_custom_object` wins when both are set.
-- **`new_entity_name`**, **`new_entity_name_html`** and
-  **`new_entity_owner_type`** (`assign_from_context_record` or
-  `newly_assigned_owner`) are required by the write schema. The owner can be
-  narrowed with `new_entity_owner_sub_type`, `new_entity_owner_role`,
-  `new_entity_owner_variable` or `new_entity_owner_employees`.
-- **`context_entity_field`** is a field on the automation's own
-  `target_object` that is set to point at the new record: after the step
-  runs, it holds the new record's id (confirmed live 2026-08-13). A bare or
-  `"object.field"` ref resolves at plan time. **`target_variable`** names a
-  variable that receives the new record.
-- The other keys it reads are `new_entity_stage`, `automations_to_start`,
-  `variable_field_resolution` and `context_entity_field_resolution`
-  (default `overwrite`), `existing_record_found_action` (default
-  `error_do_not_create`) and `archived_record_found_action` (default
-  `overwrite`). Any other key is a `spec error:` on `automations
-  create`/`update`, `steps add` and `steps edit`.
-- **Field values can't be set at creation.** The step has no key for them:
-  `field_values` used to be forwarded, and Kizen accepted it and stored
-  nothing (confirmed live 2026-10-05). Create the record empty, then set its
-  values in a following
-  [`modify_related_entities`](#modify_related_entities--field-shape) step
-  whose hop is the same `context_entity_field`.
-- **It can't create a Contact.** Kizen rejects the step at create with a 400,
-  "contact creation not supported", so the CLI refuses a `target_custom_object`
-  of `client_client` at plan time. Create the Contact in a `code_step` instead:
-  see [Find or create a Contact by email](#find-or-create-a-contact-by-email).
-  Confirmed live 2026-10-30.
+Every key, choice and common shape: `kizen automations step-types show create_related_entity`.
 
 ### Moving a record to a stage
 
@@ -1300,65 +1219,11 @@ run started by hand on a Contact with no inbound email completed. The code step
 logged that it found no inbound email, and `reply_summary` was set to "No
 reply to summarize."
 
-### Variable-comparison condition step
+### Condition filters
 
-A `condition` step's `filter_config` normally uses the record-field filter
-DSL (see `kizen docs show filters`), but comparing
-an **automation variable** to a static value is a different clause shape,
-`type: "variable"`, wrapped inside the same `query`/`filters` envelope:
-
-```json
-{ "step_type": "condition", "key": "check_score", "parent_key": null,
-  "step_condition": {
-    "type": "custom_filter",
-    "filter_config": { "and": true, "query": [
-      { "id": "query-0", "and": true, "filters": [
-        { "type": "variable", "subtype": "automation_variable",
-          "lhs_variable_name": "score", "condition": ">=",
-          "rhs_value": "5.5", "rhs_value_type": "static",
-          "description": "Variable Value 'score' More Than Or Equal To Static Value 5.5",
-          "view_model": [
-            ["filter_type", { "vars": [
-                ["fields_settings_search", true],
-                ["custom_object_id", "<object-uuid>"],
-                ["object_type", "standard"],
-                ["client_tag_field_id", "<client-tag-field-uuid>"]
-              ], "filter_type": "variable" }],
-            ["lhs_variable", { "name": "score", "data_type": "number" }],
-            ["condition", "more_than_or_equal_to"],
-            ["value_type", "static"],
-            ["value", "5.5"]
-          ] }
-      ] }
-    ], "invalid": false }
-  } }
-```
-
-The clause's rules — `view_model`, the operator mapping, blank checks,
-`client_tag_field_id` — are in `kizen docs show filters`, 'Variable-comparison
-clauses'.
-
-### Field compared to a variable
-
-To test a record field against a variable, put `"variable"` in place of
-`"value"` in a condition's or `search_records` step's filter spec. The
-variable must be declared in the same automation. A text or email field takes
-a single string variable, with `=` or `contains`. The other field types take
-an array (a team-member field also takes a single `employee` variable). For a
-dropdown the array holds option names or option UUIDs; a test run matched
-with each.
-
-```json
-{ "key": "allowed", "parent_key": null, "step_type": "initialize_variable",
-  "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
-    "variable": { "name": "allowed_statuses", "data_type": "string", "is_array": true } } },
-{ "key": "check", "parent_key": "allowed", "step_type": "condition",
-  "step_condition": { "type": "custom_filter", "filter_config": { "all": [
-    { "field": "status", "op": "is_any_of", "variable": "allowed_statuses" } ] } } }
-```
-
-The field types, ops and variable kinds this takes are in
-`kizen docs show filters`.
+A condition's `filter_config`, a variable compared to a static value or a
+field compared to a variable included: `kizen automations step-types show
+condition`.
 
 ### Reading a related record's field into a variable
 
@@ -1698,8 +1563,8 @@ Confirmed live 2026-10-30, in this order.
   `is_any_of`/`not_any_of`, numbers use `>=`/`between` — *not* `in`/`gte`). Run
   `kizen filters ops [<field_type>]` for the authoritative list. Use a raw filter
   dict for clause types the DSL doesn't cover (a variable compared to a static
-  value — see "Variable-comparison condition step" above). A field compared to
-  a variable is in the DSL ("Field compared to a variable" above). A filter
+  value — see [Condition filters](#condition-filters)). A field compared to
+  a variable is in the DSL. A filter
   value can't hold a `{{ … }}` merge field: Kizen stores it as text and
   matches nothing (confirmed live 2026-11-02), so the CLI refuses it. **A condition needs at least one
   rule.** An empty `query`, a group with no `filters`, or an `in_group`/
@@ -1895,7 +1760,7 @@ Beyond the step/trigger tables above:
 
 | where | the key |
 |---|---|
-| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. **`from_value`/`to_value` write as bare UUIDs** — an expanded dict is silently stored as null |
+| `field_updated` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it: `"object.field"`, or a bare field name resolved against `target_object`. `from_value`/`to_value` write as bare UUIDs; the builder sends an option name, or a read's `{id, …}`, as its UUID. Keys and modes: `kizen automations step-types show field_updated` |
 | `on_or_around_date` trigger | `field_id` (UUID). This spec's `field_ref` resolves to it. The other keys: [Date trigger](#date-trigger-on_or_around_date) |
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}`; the spec takes an api_name or UUID |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
@@ -2072,21 +1937,9 @@ smaller enum with no variable-based options, so it doesn't share this quirk.
 
 ### `assign_team_member.type`
 
-A **third**, six-value enum — not the `assigned_to.assignment_type` set above
-and not the `team_member` selector's set on notify/send steps. Confirmed live
-2026-08-06, one create per value:
-
-| `type` | needs |
-|---|---|
-| `team_member` | `employee_id` — the **singular** key; `employee_ids` 400s with *"employee_id … is required"* |
-| `round_robin_role` | `role_id` |
-| `round_robin_team_members` | `employee_ids` |
-| `round_robin_all` | — |
-| `team_selector_field` | `field_id` (or `field_ref`): a team-selector field on the automation's own object |
-| `related_team_selector_field` | **Both required**: `related_field_id` is a single-value relationship field on the automation's own object (the hop); `field_id` is the team-selector field on the object it points to. A `field_ref` here must name that object (`<far_object>.<field>`); a bare name resolves against the automation's own object |
-
-`owner`, `last_active`, `last_active_role` and `employees` are all valid on
-*other* selectors and all 400 here with *"… is not a valid choice"*.
+A **third** enum, not the `assigned_to.assignment_type` set above and not
+the notify steps' `team_member` set. Every choice and the keys each needs:
+`kizen automations step-types show assign_team_member`.
 
 The planner checks these keys per `type` and fails the plan if one is missing.
 The read spellings (`employee`, `role`, `field`, `related_field`, `employees`)

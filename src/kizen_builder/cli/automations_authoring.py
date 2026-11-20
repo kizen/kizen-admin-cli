@@ -85,6 +85,8 @@ def _print_type(info: dict[str, Any]) -> None:
                 line += "  " + " | ".join(f["choices"])
             elif f.get("known_choices"):
                 line += "  seen: " + " | ".join(f["known_choices"])
+            if f.get("same_as"):
+                line += f"  same keys as {f['same_as']}"
             echo(line)
             if f.get("description"):
                 echo(f"      {_first_sentence(f['description'])}")
