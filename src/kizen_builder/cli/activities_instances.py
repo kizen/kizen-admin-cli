@@ -6,15 +6,15 @@ by users. Scheduled instances can be read, created, changed and deleted.
 
 from __future__ import annotations
 
-import json
-
 import typer
 from rich.table import Table
 
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     _short,
     cli_errors,
@@ -72,7 +72,7 @@ def act_logged_get(
             t.add_row(
                 f.get("display_name") or f.get("api_name") or "",
                 f.get("field_type") or "",
-                json.dumps(val) if isinstance(val, (dict, list)) else str(val),
+                out.inline_json(val) if isinstance(val, (dict, list)) else str(val),
             )
         console.print(t)
 
@@ -85,7 +85,7 @@ def act_logged_get(
             out.Column("api_name", "api_name"),
             out.Column("display_name", "display_name"),
             out.Column("field_type", "field_type"),
-            out.Column("value", lambda f: json.dumps(f.get("value"))),
+            out.Column("value", lambda f: out.inline_json(f.get("value"))),
         ],
     )
 
@@ -224,9 +224,7 @@ def act_scheduled_get(
 
     def table() -> None:
         console.print(f"[bold]scheduled activity[/bold] [dim]{result.get('id')}[/dim]")
-        console.print_json(
-            json.dumps({k: v for k, v in result.items() if k != "env"}, default=str)
-        )
+        out.emit_json({k: v for k, v in result.items() if k != "env"})
 
     out.render(
         fmt,
@@ -275,9 +273,8 @@ def act_scheduled_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Schedule one activity for a team member or a role, on one or more records."""
     records = _parse_record_flags(record)
@@ -294,6 +291,7 @@ def act_scheduled_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -330,9 +328,8 @@ def act_scheduled_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Change one scheduled activity. Only the options you pass are sent."""
     records = _parse_record_flags(record) if record else None
@@ -350,6 +347,7 @@ def act_scheduled_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -362,9 +360,8 @@ def act_scheduled_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Permanently delete one scheduled activity. It can't be restored."""
     _run_mutation(
@@ -372,4 +369,5 @@ def act_scheduled_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )

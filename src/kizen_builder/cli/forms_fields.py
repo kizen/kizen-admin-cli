@@ -15,7 +15,9 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     cli_errors,
     console,
@@ -128,9 +130,8 @@ def add_field_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Add one field, or many at once from a JSON spec, to a form/survey."""
         if spec_file and display_name:
@@ -156,6 +157,7 @@ def add_field_commands(
                 dry_run=dry_run,
                 yes=yes,
                 json_out=json_out,
+                full=full,
                 stdin_consumed=from_stdin,
             )
             return
@@ -189,6 +191,7 @@ def add_field_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )
 
     @fields_app.command("update")
@@ -213,9 +216,8 @@ def add_field_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Update one field on a form/survey. Only the flags you set are changed."""
         changes: dict[str, Any] = {}
@@ -243,6 +245,7 @@ def add_field_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )
 
     @fields_app.command("delete")
@@ -255,9 +258,8 @@ def add_field_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Delete one field from a form/survey."""
         _run_mutation(
@@ -267,6 +269,7 @@ def add_field_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )
 
     _add_field_option_commands(fields_app, base_path=base_path, kind=kind)
@@ -298,9 +301,8 @@ def _add_field_option_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Add options to a select-type form/survey field. Existing names are skipped."""
         if option_short:
@@ -316,6 +318,7 @@ def _add_field_option_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )
 
     @field_options_app.command("remove")
@@ -336,9 +339,8 @@ def _add_field_option_commands(
         yes: bool = typer.Option(
             False, "--yes", "-y", help="Skip the y/N confirmation prompt."
         ),
-        json_out: bool = typer.Option(
-            False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-        ),
+        json_out: bool = MUTATION_JSON_OPTION,
+        full: bool = FULL_OPTION,
     ) -> None:
         """Remove one option from a select-type form/survey field."""
         _run_mutation(
@@ -353,4 +355,5 @@ def _add_field_option_commands(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
         )

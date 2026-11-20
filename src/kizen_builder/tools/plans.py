@@ -27,6 +27,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from kizen_builder import output as out
 from kizen_builder.api import activities as act_api
 from kizen_builder.api import automations as auto_api
 from kizen_builder.api import business as business_api
@@ -1415,12 +1416,30 @@ def _execute_saved_view(client: KizenClient, op: PlanOperation, base: str) -> An
 
 
 def plan_to_json(plan: Plan) -> str:
-    return plan.model_dump_json(indent=2)
+    return out.dumps_json(plan.model_dump(mode="json"))
 
 
 def plan_from_json(text: str) -> Plan:
     return Plan.model_validate_json(text)
 
 
-def result_to_json(result: ApplyResult) -> str:
-    return result.model_dump_json(indent=2)
+_RAW_SCALARS = (str, int, float, bool, type(None))
+
+
+def result_to_json(result: ApplyResult, *, full: bool = False) -> str:
+    """The apply result as JSON. Unless ``full``, each ``raw`` keeps only the
+    server response's top-level scalar values, and a result that lost any
+    nested value says so with ``raw_trimmed: true``. A failed result keeps its
+    whole ``raw``: that's the error body, and its field-level errors are often
+    nested. ``full`` keeps every key, empty ones included."""
+    data = result.model_dump(mode="json")
+    if not full:
+        for r in data["results"]:
+            raw = r["raw"]
+            if raw is None or r["status"] == "failed":
+                continue
+            kept = {k: v for k, v in raw.items() if isinstance(v, _RAW_SCALARS)}
+            if len(kept) < len(raw):
+                r["raw"] = kept
+                r["raw_trimmed"] = True
+    return out.dumps_json(data, prune=not full)

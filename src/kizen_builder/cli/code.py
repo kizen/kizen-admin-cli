@@ -13,6 +13,7 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
+from kizen_builder import output as out
 from kizen_builder.api.client import KizenAPIError
 from kizen_builder.cli._mutations import _confirm_or_abort
 from kizen_builder.cli._shared import (
@@ -164,15 +165,15 @@ def _fmt_http_body(body: Any, limit: int = 4000) -> Text:
     if body is None or body == "":
         return Text("(empty)", style="dim")
     if isinstance(body, (dict, list)):
-        text = json.dumps(body, indent=2)
+        text = out.dumps_json(body)
     else:
         text = str(body)
         with contextlib.suppress(ValueError, TypeError):
-            text = json.dumps(json.loads(text), indent=2)
-    out = Text(text[:limit])
+            text = out.dumps_json(json.loads(text))
+    shown = Text(text[:limit])
     if len(text) > limit:
-        out.append(f"\n… (truncated at {limit} chars — --json for full)", style="dim")
-    return out
+        shown.append(f"\n… (truncated at {limit} chars — --json for full)", style="dim")
+    return shown
 
 
 def _print_http_body(body: Any) -> None:
@@ -497,7 +498,7 @@ def code_test(
             raise typer.Exit(code=1) from e
 
     if json_out:
-        typer.echo(json.dumps(result.get("raw"), indent=2))
+        out.emit_json(result.get("raw"))
     else:
         _render_coderunner_result(result, http_detail=http_detail)
     # A script that raised is a completed-but-failed run — exit non-zero so it

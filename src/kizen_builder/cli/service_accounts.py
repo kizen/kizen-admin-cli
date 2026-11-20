@@ -15,7 +15,9 @@ from kizen_builder import output as out
 from kizen_builder.api.client import KizenClient
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
@@ -41,9 +43,6 @@ app.add_typer(sa_app, name="service-accounts")
 _REF_HELP = "Service account name, api_name or UUID."
 _DRY_RUN = typer.Option(False, "--dry-run", help="Show the plan without applying.")
 _YES = typer.Option(False, "--yes", "-y", help="Skip the y/N confirmation prompt.")
-_JSON_WRITE = typer.Option(
-    False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-)
 
 
 def _resolve_id(ref: str) -> str:
@@ -212,7 +211,8 @@ def sa_create(
     ),
     dry_run: bool = _DRY_RUN,
     yes: bool = _YES,
-    json_out: bool = _JSON_WRITE,
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create an integration service account. Its API key is never shown."""
     group_ids = [_resolve_group_id(g) for g in (group or [])]
@@ -221,6 +221,7 @@ def sa_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -245,7 +246,8 @@ def sa_update(
     ),
     dry_run: bool = _DRY_RUN,
     yes: bool = _YES,
-    json_out: bool = _JSON_WRITE,
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Update an integration service account. Only the flags you pass change."""
     if group and clear_groups:
@@ -266,6 +268,7 @@ def sa_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -274,7 +277,8 @@ def sa_delete(
     account: str = typer.Argument(..., help=_REF_HELP),
     dry_run: bool = _DRY_RUN,
     yes: bool = _YES,
-    json_out: bool = _JSON_WRITE,
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete (archive) an integration service account. This is permanent."""
     account_id = _resolve_id(account)
@@ -283,4 +287,5 @@ def sa_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
