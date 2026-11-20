@@ -83,7 +83,7 @@ def _print_type(info: dict[str, Any]) -> None:
             star = "*" if f["required"] else " "
             line = f"  {star} {f['path']}  [{f['type']}]"
             if f.get("choices"):
-                line += "  " + " | ".join(f["choices"])
+                line += "  " + " | ".join(c or '""' for c in f["choices"])
             elif f.get("known_choices"):
                 line += "  seen: " + " | ".join(f["known_choices"])
             if f.get("same_as"):

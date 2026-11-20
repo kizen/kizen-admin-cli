@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from kizen_builder.models.spec.automations import AutomationStepDef
+from kizen_builder.models.spec.automations_shared import SOURCE_SUBTYPES
 from kizen_builder.models.spec.automations_triggers import (
     AutomationTriggerDef,
     trigger_config_field,
@@ -1461,6 +1462,21 @@ _CHANGE_FIELD_VALUE = Guide(
         "2026-10-30). To react to a move, use the `stage_updated` trigger.",
     ),
 )
+_VARIABLE_SOURCES = Guide(
+    notes=(
+        _numbered(
+            "A source's `source_subtype` depends on its `source_type` "
+            "(confirmed live 2026-11-17):",
+            *(
+                f"`{source_type}`: {', '.join(subtypes)}."
+                for source_type, subtypes in SOURCE_SUBTYPES.items()
+            ),
+            "`field_value`: `this_record_field`, "
+            "`primary_related_object_field` for a related record's field, or "
+            "`record_association`.",
+        ),
+    ),
+)
 _STOP_EXECUTION = Guide(
     notes=(
         "Two of `stop_execution`'s five `action`s don't stop the run: "
@@ -1511,6 +1527,7 @@ _STEP_GUIDES: dict[str, Guide] = {
     "exit_loop": _EXIT_LOOP,
     "file_content_extraction": _EXTRACTION,
     "goal": _GOAL,
+    "initialize_variable": _VARIABLE_SOURCES,
     "math_operator": _MATH_OPERATOR,
     "modify_related_entities": _MODIFY_RELATED_ENTITIES,
     "notify_member_via_email": _NOTIFY_MEMBER_VIA_EMAIL,
@@ -1522,6 +1539,7 @@ _STEP_GUIDES: dict[str, Guide] = {
     "send_related_contact_text": _SENDS_TEXT,
     "start_automation": Guide(doc=_PATTERNS_DOC),
     "stop_execution": _STOP_EXECUTION,
+    "update_variable": _VARIABLE_SOURCES,
 }
 
 _ACTIVITY_TRIGGER = Guide(
