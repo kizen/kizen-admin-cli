@@ -148,8 +148,8 @@ class LlmDestinationConfig(BaseModel):
       `field`/`field_ref` are also accepted as the hop for this shape (the
       confirmed wire dialect repurposes `field` as the hop whenever
       `related_object_field` is present) but `relationship_field_ref` reads
-      clearer — see automation.md's "LLM & extraction destinations" section
-      for a worked example.
+      clearer — see `kizen automations step-types show call_llm` for the
+      destinations a step can write.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -196,8 +196,8 @@ class LlmDestinationConfig(BaseModel):
     options: list[str] = Field(
         default_factory=list,
         description=(
-            "Option UUIDs for a choice-type destination field. Auto-populated "
-            "from field metadata when omitted and field_ref names a choice field."
+            "Option UUIDs for a choice-type destination field; the CLI fills "
+            "them from the field's options when omitted."
         ),
     )
     is_required: bool = False

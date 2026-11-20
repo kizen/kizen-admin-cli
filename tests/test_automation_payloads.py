@@ -226,7 +226,7 @@ def test_stop_execution_without_an_action_sends_stop_and_complete(
 def test_stop_execution_all_five_action_options(patch_live_lookups, action):
     """All 5 values are real, confirmed-live wire shapes (captured from one
     automation with one stop_execution step per UI dropdown option — see
-    automation.md's stop_execution section) — each must round-trip through
+    the stop_execution card in `step-types show`) — each must round-trip through
     the planner rather than being silently dropped to {} or rejected by the
     (previously too-narrow) Literal type."""
     spec = dict(BRANCHING_SPEC)
@@ -312,8 +312,8 @@ def test_modify_related_entities_context_entity_field_dotted_ref_resolves(
     patch_live_lookups,
 ):
     """Regression: context_entity_field only ran through `_unwrap_id`, so a
-    dotted 'object.field' ref (which automation.md's general field_ref rule
-    says should work) was sent to the API as a literal string and 400'd
+    dotted 'object.field' ref (which the `field` concept in `step-types
+    concepts` says should work) was sent to the API as a literal string and 400'd
     ("Must be a valid UUID"). Now resolved via `_resolve_field` like
     field_to_modify/related_object_field already were.
     """
@@ -1539,7 +1539,7 @@ def test_create_related_entity_on_contacts_refused(patch_live_lookups, target):
         "step 'only': Kizen can't create a Contact from create_related_entity "
         '("contact creation not supported"). Create it in a code_step with POST '
         '/records/client_client/add — see "Find or create a Contact by email" in '
-        "kizen docs show automation."
+        "kizen docs show automation-patterns."
     )
 
 

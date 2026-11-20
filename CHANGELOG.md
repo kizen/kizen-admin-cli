@@ -106,6 +106,18 @@ called out explicitly under **Changed** or **Removed**.
   leaves `context_entity_field_resolution` out, the CLI now sends `add_only`.
   Before, it sent `overwrite`, which left the new record as the field's only
   link. A step with an `id` keeps its live value.
+- **The automation spec page is now a short guide; per-step detail is in
+  `kizen automations step-types show`.** `kizen docs show automation` opens
+  with the build order and keeps the step graph, variables and what an update
+  keeps; `kizen docs show operating` leads with the approval gate. Per-step
+  notes print with `step-types show <type>`, and the rules `--dry-run`
+  enforces and the API wire detail are no longer repeated. Worked examples
+  moved to `kizen docs show automation-patterns` (the AI-reads-a-reply and
+  knowledge-catalog ones to `docs show code-steps` and `docs show
+  mcp-server`), environment setup to `docs show environments`, and what to
+  check in the browser after a write to `docs show verifying`. The
+  merge-field namespaces are in `step-types concepts`, and the `step-types
+  show` footer now reads "See also".
 
 - **A new `update_variable` step on an array variable appends by default.**
   When a spec or a `steps add` block leaves `value_resolution` out, the CLI now

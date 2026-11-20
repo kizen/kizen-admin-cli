@@ -448,7 +448,7 @@ def _placeholders(
 # ---------------------------------------------------------------------------
 
 # Variables only these types hold: `schedule_activity.target_variable` takes
-# the new activity's id (see `kizen docs show automation`).
+# the new activity's id (see `kizen automations step-types show schedule_activity`).
 _ID_VARIABLE_TYPES = frozenset({"string", "uuid"})
 
 # step_type -> (dotted path to a variable reference, requirement). The

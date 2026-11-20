@@ -90,8 +90,8 @@ def list_automations(folder: str | None = None) -> list[dict[str, Any]]:
 def list_llm_models() -> list[dict[str, Any]]:
     """Flatten the automations metadata endpoint's LLM catalog into one row
     per (provider, model) — the live source for `call_llm`'s `model_name` +
-    `business_plugin_app_id` pairing (see automation.md "LLM & extraction
-    destinations").
+    `business_plugin_app_id` pairing (see `kizen automations step-types show
+    call_llm`).
     """
     config = load_env_config()
     with KizenClient(config) as client:

@@ -847,8 +847,8 @@ def _diff(a: Any, b: Any, path: str) -> list[tuple[str, Any, Any]]:
 # Per-side synthetic naming, not automation content — excluded from
 # comparison so a spec that changes nothing produces an empty diff even
 # though `key` is resynthesized from live order on one side and authored by
-# hand on the other (see `automation.md`'s "GET and PUT are different
-# dialects").
+# hand on the other (see docs/automations-wire.md, "Previewing an update
+# before you send it").
 _WIRE_DIFF_EXCLUDED = {"key", "parent_key", "prefix"}
 
 # Step-level keys the live side always carries and a spec-built payload may

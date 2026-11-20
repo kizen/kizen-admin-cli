@@ -190,7 +190,8 @@ def autos_llm_models(
     """List this business's enabled LLM models for call_llm/file_content_extraction/
     audio_transcription/condition llm_decision steps, with each provider's
     business_plugin_app_id. The CLI fills a step's business_plugin_app_id
-    from this list, so a spec needs only model_name — see automation.md.
+    from this list, so a spec needs only model_name — see `kizen automations
+    step-types show call_llm`.
     """
     fmt = out.resolve_format(output, json_out)
     with cli_errors():
@@ -351,13 +352,12 @@ def autos_diff(
     Triggers/steps are matched by `id` first (regardless of `key`/order),
     position among the rest as a fallback for a spec with no `id`s at all.
     `key`/`parent_key`/`prefix` are excluded from the comparison — they're
-    per-side synthetic naming (see `kizen docs show automation`), not
-    automation content — but a genuine reparenting still shows, compared by
-    matched identity rather than raw key. Each line is labelled with the
-    first octet of the step/trigger's `id` so it can be matched to what's
-    visible in the UI; it is unique within one automation. Under `--json`, an
-    added or removed step/trigger also carries its full `id` in the leaf
-    value.
+    per-side synthetic naming, not automation content — but a genuine
+    reparenting still shows, compared by matched identity rather than raw
+    key. Each line is labelled with the first octet of the step/trigger's
+    `id` so it can be matched to what's visible in the UI; it is unique
+    within one automation. Under `--json`, an added or removed step/trigger
+    also carries its full `id` in the leaf value.
     """
     spec_dict, _from_stdin = _read_spec(spec_file)
     spec_api_name = spec_dict.get("api_name")

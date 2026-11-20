@@ -97,6 +97,7 @@ def _check_destinations(block: Any) -> Any:
 
 
 _IS_ADVANCED_DESCRIPTION = "Must be true for more than one destination."
+_HTML_PROMPT_DESCRIPTION = "Leave it out: the CLI derives it from prompt."
 
 
 class ActionLlmCallConfig(BaseModel):
@@ -117,7 +118,7 @@ class ActionLlmCallConfig(BaseModel):
         )
     )
     prompt: str | None = None
-    html_prompt: str | None = None
+    html_prompt: str | None = Field(default=None, description=_HTML_PROMPT_DESCRIPTION)
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = Field(default=False, description=_IS_ADVANCED_DESCRIPTION)
     business_plugin_app_id: str | None = Field(
@@ -205,7 +206,7 @@ class ActionAudioTranscriptionConfig(BaseModel):
 
     model_name: str
     prompt: str | None = None
-    html_prompt: str | None = None
+    html_prompt: str | None = Field(default=None, description=_HTML_PROMPT_DESCRIPTION)
     input_field_ref: str | None = Field(
         default=None,
         description="'object.field' for the audio file field. Resolved to UUID at apply time.",
@@ -248,7 +249,7 @@ class ActionFileContentExtractionConfig(BaseModel):
 
     model_name: str
     prompt: str | None = None
-    html_prompt: str | None = None
+    html_prompt: str | None = Field(default=None, description=_HTML_PROMPT_DESCRIPTION)
     input_field_ref: str | None = Field(
         default=None,
         description="'object.field' for the file field. Resolved to UUID at apply time.",

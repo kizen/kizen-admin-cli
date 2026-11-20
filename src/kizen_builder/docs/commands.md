@@ -13,7 +13,7 @@ each entity — `kizen docs list` for the surface topics.
 
 ```
 kizen envs list                              # show env this directory resolves to
-kizen docs show <topic>                      # rendered in a terminal; raw markdown when piped (--rendered/--raw or KIZEN_OUTPUT force either)
+kizen docs show <topic>                      # rendered in a terminal, raw when piped (--rendered/--raw or KIZEN_OUTPUT force either)
 kizen objects list                           # list objects, custom and built-in (e.g. Contacts)
 kizen objects get <api_name>                 # one object incl. categories, fields, option UUIDs; full stage detail for pipelines
 kizen objects stages list <pipeline>         # a pipeline's stages: name, status, chance-to-close, order
@@ -28,7 +28,7 @@ kizen automations step-types show <type>     # one type's config block: entries 
 kizen automations step-types show <type> --variant <name>   # just that entry as JSON, for a spec file or `steps add`
 kizen automations step-types skeleton [--object <api_name>] # a minimal automation spec to build on
 kizen automations step-types concepts        # ideas most steps share: who, when, variables, fields, value sources
-kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen docs show automation)
+kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen automations step-types show call_llm)
 kizen automations runs list <api_name>       # recent runs for an automation
 kizen automations runs view <exec_uuid>      # one run: summary + step-by-step trace (per-step status/duration)
 kizen automations runs view <exec_uuid> --no-steps   # summary only (status + record + start/finish)
@@ -353,8 +353,7 @@ kizen messages create <api> --template <name|uuid>          # UUID → step's em
 Step keys come from `kizen automations show` and re-synthesize after every
 apply — always re-run `show` before the next step operation. The post-apply
 output includes the before/after semantic diff as the audit trail. See
-`kizen docs show automation` / `automation-step` ("GET and PUT are different
-Editing") for the full model.
+`kizen docs show automation-step` for the full model.
 
 The canonical loop:
 

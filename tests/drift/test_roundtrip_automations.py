@@ -475,8 +475,8 @@ def test_automation_branch_linkage_survives_the_roundtrip(drift_automation):
 
 def test_automation_read_shape_keys_the_planner_depends_on(drift_automation):
     """`plan_update_automation` rebuilds a PUT body from the read response, so
-    these keys are load-bearing (see the normalization notes in
-    ``docs/specs/automation.md``)."""
+    these keys are load-bearing (see the read→write transforms in
+    ``docs/automations-wire.md``)."""
     live = drift_automation["live"]
     for key in (
         "id",
@@ -1118,8 +1118,8 @@ def drift_control_flow(
 
     The two ``initialize_variable`` steps sit on the un-branched root chain on
     purpose — the server rejects a new-variable declaration anywhere else (see
-    automation.md's root-chain rule), and this is the only automated check that
-    the rule still holds.
+    the root-chain rule in docs/automations-wire.md), and this is the only
+    automated check that the rule still holds.
     """
     spec = _base_spec("ctrl", drift_object)
     spec["steps"] = [
@@ -2684,8 +2684,8 @@ def test_schedule_activity_auto_adds_its_own_context_record_association(
 ):
     """The server fills `association_configs` in itself, and the entry for the
     automation's own target_object comes back as `context_record` even though
-    the spec sent an empty list. If this stops happening, automation.md's
-    association_configs section is wrong. (The activity type here is `all_objects_associated`, so the server
+    the spec sent an empty list. If this stops happening, the
+    association_configs note on `step-types show schedule_activity` is wrong. (The activity type here is `all_objects_associated`, so the server
     also emits a `none` entry per other object in the business — hence
     filtering rather than comparing the whole list.)"""
     sent = next(
