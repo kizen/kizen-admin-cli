@@ -2995,12 +2995,16 @@ def test_init_stores_profile_and_pins_directory(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "alpha", "--skip-validation"],
-        input="apikey\nAAAA\nuser1\ngo\n",
+        input="apikey\nuser1\nAAAA\ngo\n",
     )
     assert result.exit_code == 0, result.output
+    # Same order as the Kizen UI lists a service account's credentials.
+    out = result.output
+    assert out.index("API_KEY") < out.index("USER_ID") < out.index("BUSINESS_ID")
 
     stored = profiles.get_profile("alpha")
     assert stored is not None and stored.business_id == "AAAA"
+    assert stored.user_id == "user1"
     assert stored.base_url == "https://app.go.kizen.com"
 
     # Read the pin file directly (autouse fixture stubs find_pin to None).
@@ -3024,7 +3028,7 @@ def test_init_banner_absent_when_not_interactive(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "banner-off", "--skip-validation"],
-        input="apikey\nCCCC\nuser1\ngo\n",
+        input="apikey\nuser1\nCCCC\ngo\n",
     )
     assert result.exit_code == 0, result.output
     assert init_cli._BANNER_TAGLINE not in result.stdout
@@ -3051,7 +3055,7 @@ def test_init_banner_shows_full_art_on_a_wide_terminal(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "banner-wide", "--skip-validation"],
-        input="apikey\nDDDD\nuser1\ngo\n",
+        input="apikey\nuser1\nDDDD\ngo\n",
     )
     assert result.exit_code == 0, result.output
     assert init_cli._BANNER_TAGLINE in result.stdout
@@ -3075,7 +3079,7 @@ def test_init_banner_degrades_to_compact_form_on_narrow_terminal(monkeypatch, tm
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "banner-narrow", "--skip-validation"],
-        input="apikey\nEEEE\nuser1\ngo\n",
+        input="apikey\nuser1\nEEEE\ngo\n",
     )
     assert result.exit_code == 0, result.output
     assert init_cli._BANNER_TAGLINE in result.stdout
@@ -3099,7 +3103,7 @@ def test_init_banner_shows_tagline_only_on_tiny_terminal(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "banner-tiny", "--skip-validation"],
-        input="apikey\nFFFF\nuser1\ngo\n",
+        input="apikey\nuser1\nFFFF\ngo\n",
     )
     assert result.exit_code == 0, result.output
     assert init_cli._BANNER_TAGLINE in result.stdout
@@ -3146,7 +3150,7 @@ def test_init_api_key_prompt_has_no_empty_default(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "epsilon", "--skip-validation"],
-        input="apikey\nEEEE\nuser1\ngo\n",
+        input="apikey\nuser1\nEEEE\ngo\n",
     )
     assert result.exit_code == 0, result.output
     assert "API_KEY: " in result.output
@@ -3161,7 +3165,7 @@ def test_init_environment_picker_resolves_named_host(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "beta", "--skip-validation"],
-        input="apikey\nBBBB\nuser1\nfmo\n",
+        input="apikey\nuser1\nBBBB\nfmo\n",
     )
     assert result.exit_code == 0, result.output
 
@@ -3177,7 +3181,7 @@ def test_init_environment_picker_rejects_bare_enter(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "zeta", "--skip-validation"],
-        input="apikey\nZZZZ\nuser1\n\nintegration\n",
+        input="apikey\nuser1\nZZZZ\n\nintegration\n",
     )
     assert result.exit_code == 0, result.output
 
@@ -3193,7 +3197,7 @@ def test_init_environment_picker_free_text_url(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "gamma", "--skip-validation"],
-        input="apikey\nCCCC\nuser1\nurl\nhttps://self-hosted.example.com\n",
+        input="apikey\nuser1\nCCCC\nurl\nhttps://self-hosted.example.com\n",
     )
     assert result.exit_code == 0, result.output
 
@@ -3213,7 +3217,7 @@ def test_init_environment_picker_is_case_insensitive(monkeypatch, tmp_path):
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "epsilon", "--skip-validation"],
-        input="apikey\nEEEE\nuser1\nGo\n",
+        input="apikey\nuser1\nEEEE\nGo\n",
     )
     assert result.exit_code == 0, result.output
 
@@ -3233,7 +3237,7 @@ def test_init_environment_picker_mistyped_name_shows_url_hint(monkeypatch, tmp_p
     result = runner.invoke(
         cli.app,
         ["init", "--profile", "delta", "--skip-validation"],
-        input="apikey\nDDDD\nuser1\ndzcf.example.com\nurl\nhttps://dzcf.example.com\n",
+        input="apikey\nuser1\nDDDD\ndzcf.example.com\nurl\nhttps://dzcf.example.com\n",
     )
     assert result.exit_code == 0, result.output
     assert 'Type "url" to enter a custom address instead' in result.output
@@ -3257,7 +3261,7 @@ def test_init_base_url_flag_accepts_named_host(monkeypatch, tmp_path):
             "--base-url",
             "staging",
         ],
-        input="apikey\nDDDD\nuser1\n",
+        input="apikey\nuser1\nDDDD\n",
     )
     assert result.exit_code == 0, result.output
 
@@ -3280,7 +3284,7 @@ def test_init_base_url_flag_rejects_unknown_name(monkeypatch, tmp_path):
             "--base-url",
             "not-a-real-env",
         ],
-        input="apikey\nEEEE\nuser1\n",
+        input="apikey\nuser1\nEEEE\n",
     )
     assert result.exit_code == 2, result.output
     assert "unknown environment" in result.stderr

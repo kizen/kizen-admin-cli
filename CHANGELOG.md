@@ -56,6 +56,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- `kizen init` now asks for the API key, then the user id, then the business
+  id. That is the order the Kizen UI lists a service account's credentials, so
+  values copied across in sequence land in the right prompt. Before, it asked
+  for the business id before the user id. `kizen init --help` lists the flags
+  in the same order. Flag names, env vars and stored profiles are unchanged.
+
 - **`kizen docs show` prints the raw markdown when piped or captured.** The
   output is the shipped file byte for byte, so `grep`, `head` and an agent's
   capture see the source instead of rich's column-padded rendering. A

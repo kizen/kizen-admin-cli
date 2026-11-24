@@ -265,14 +265,14 @@ def init(
     api_key_opt: str = typer.Option(
         None, "--api-key", envvar="KIZEN_API_KEY", help="API key (else prompts)."
     ),
+    user_id_opt: str = typer.Option(
+        None, "--user-id", envvar="KIZEN_USER_ID", help="User id (else prompts)."
+    ),
     business_id_opt: str = typer.Option(
         None,
         "--business-id",
         envvar="KIZEN_BUSINESS_ID",
         help="Business id (else prompts).",
-    ),
-    user_id_opt: str = typer.Option(
-        None, "--user-id", envvar="KIZEN_USER_ID", help="User id (else prompts)."
     ),
     base_url: str | None = typer.Option(
         None,
@@ -322,22 +322,23 @@ def init(
         flag="--api-key",
         password=True,
     )
-    business_id = business_id_opt or _ask(
-        "BUSINESS_ID",
-        existing.business_id if existing else "",
-        flag="--business-id",
-    )
+    # Same order as the Kizen UI shows a service account's credentials.
     user_id = user_id_opt or _ask(
         "USER_ID",
         existing.user_id if existing else "",
         flag="--user-id",
     )
+    business_id = business_id_opt or _ask(
+        "BUSINESS_ID",
+        existing.business_id if existing else "",
+        flag="--business-id",
+    )
     # Each is sent as a header. Refuse a bad one before the live check or the
     # store sees it; the message names the flag, never the value.
     for value, flag in (
         (api_key, "--api-key"),
-        (business_id, "--business-id"),
         (user_id, "--user-id"),
+        (business_id, "--business-id"),
     ):
         if not value:
             raise typer.BadParameter("is required.", param_hint=flag)
