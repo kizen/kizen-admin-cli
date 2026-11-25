@@ -127,15 +127,21 @@ def _plan(name: str) -> dict[str, Any]:
 
 
 def test_find_contact_automation_plans(support_desk):
-    text = (EXAMPLE / "find_contact.automation.json").read_text()
-    text = text.replace('"<client_client_object_uuid>"', json.dumps(CONTACTS_ID))
-    spec = json.loads(text)
+    spec = json.loads((EXAMPLE / "find_contact.automation.json").read_text())
     payload = _build_automation_payload(
         AutomationDef.model_validate(spec), LiveContext()
     )
     assert [s["key"] for s in payload["steps"]] == [s["key"] for s in spec["steps"]]
     find = next(s for s in payload["steps"] if s["key"] == "find")
-    (clause,) = find["action_search_records"]["filter_config"]["query"][0]["filters"]
+    block = find["action_find_single_record"]
+    assert block["custom_object"] == {"id": CONTACTS_ID}
+    assert block["sort_field"] == EMAIL_FIELD
+    assert block["when_no_records_found"] == "blank"
+    assert block["destination"] == {
+        "type": "context_entity_field",
+        "field": "5d000000-0000-4000-8000-000000000002",
+    }
+    (clause,) = block["filter_config"]["query"][0]["filters"]
     assert {k: v for k, v in clause.items() if k != "view_model"} == {
         "type": "fields",
         "subtype": "non_custom",

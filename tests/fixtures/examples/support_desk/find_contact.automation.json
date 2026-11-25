@@ -14,42 +14,10 @@
   ],
   "steps": [
     {
-      "key": "found",
+      "key": "email",
       "parent_key": null,
       "step_type": "initialize_variable",
       "order": 0,
-      "description": "found_contacts = []",
-      "action_initialize_variable": {
-        "sources": [],
-        "array_aggregation_mode": "add_all",
-        "variable": {
-          "name": "found_contacts",
-          "data_type": "entity",
-          "is_array": true,
-          "data_subtype": "<client_client_object_uuid>"
-        }
-      }
-    },
-    {
-      "key": "found_item",
-      "parent_key": "found",
-      "step_type": "initialize_variable",
-      "order": 1,
-      "description": "Item Reference Variable",
-      "action_initialize_variable": {
-        "sources": [],
-        "variable": {
-          "name": "found_contacts_item",
-          "data_type": "entity",
-          "data_subtype": "<client_client_object_uuid>"
-        }
-      }
-    },
-    {
-      "key": "email",
-      "parent_key": "found_item",
-      "step_type": "initialize_variable",
-      "order": 2,
       "action_initialize_variable": {
         "sources": [
           {
@@ -67,9 +35,9 @@
     {
       "key": "find",
       "parent_key": "email",
-      "step_type": "search_records",
-      "order": 3,
-      "action_search_records": {
+      "step_type": "find_single_record",
+      "order": 1,
+      "action_find_single_record": {
         "custom_object": "client_client",
         "filter_type": "custom_filter",
         "filter_config": {
@@ -81,43 +49,20 @@
             }
           ]
         },
-        "destination_variable": "found_contacts",
-        "destination_variable_resolution": "overwrite"
+        "sort_field": "email",
+        "sort_direction": "asc",
+        "when_no_records_found": "blank",
+        "destination": {
+          "type": "context_entity_field",
+          "field": "support_requests.customer"
+        }
       }
-    },
-    {
-      "key": "each",
-      "parent_key": "find",
-      "step_type": "loop",
-      "order": 4,
-      "description": "For each item in 'found_contacts'",
-      "step_loop": {
-        "array_variable": "found_contacts",
-        "item_variable": "found_contacts_item"
-      }
-    },
-    {
-      "key": "link",
-      "parent_key": "each",
-      "step_type": "change_field_value",
-      "order": 5,
-      "action_change_field_value": {
-        "field_ref": "support_requests.customer",
-        "change_type": "variable",
-        "variable": "found_contacts_item"
-      }
-    },
-    {
-      "key": "next",
-      "parent_key": "each",
-      "step_type": "next_or_finish",
-      "order": 6
     },
     {
       "key": "no_customer",
-      "parent_key": "next",
+      "parent_key": "find",
       "step_type": "condition",
-      "order": 7,
+      "order": 2,
       "step_condition": {
         "type": "custom_filter",
         "filter_config": {
@@ -135,7 +80,7 @@
       "parent_key": "no_customer",
       "parent_branch": "yes",
       "step_type": "code_step",
-      "order": 8,
+      "order": 3,
       "action_code_step": {
         "script": "# Create a Contact for an email no Contact has yet; the output links it.\nemail = (inputs.customer_email or \"\").strip()\nif not email:\n    raise Exception(\"customer_email is blank: no Contact to create\")\nresp = kizen.api.post(\n    \"/records/client_client/add\", json={\"fields\": [{\"name\": \"email\", \"value\": email}]}\n)\nif resp.status_code != 201:\n    raise Exception(\n        f\"creating a Contact for {email} failed: {resp.status_code} {resp.text[:200]}\"\n    )\noutputs.customer = resp.json()[\"id\"]",
         "inputs": [

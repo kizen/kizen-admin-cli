@@ -4,20 +4,28 @@ Worked automations that combine several steps. The graph rules are in `kizen
 docs show automation`; each step's own rules print with `kizen automations
 step-types show <type>`.
 
-## Working with the records a search found
+## Finding one record, or every record a search finds
 
-Use this when a step needs a record that `search_records` found.
+Use this when a step needs a record on another object.
 
-`search_records` writes an **entity array**, even when one record matches. An
-array can be written only into a to-many relationship field: into a to-one it's
-a 400 ("Variable can't be cased to a field"), and no step turns an array into
-one record. To use a found record, loop over the array and use the item
-variable in the body. `change_field_value` with `change_type: variable` sets a
-relationship field to it, and `change_type: entity_variable_field` with
-`related_object_field` (a field UUID on the found record's object) copies one
-of its fields. Each pass sets the field again, so the last record wins: narrow
-the filter to one record. Confirmed live 2026-11-02: a search that found two
-records ran the loop twice, and the record ended linked to the second.
+**One record:** `find_single_record` searches, sorts by `sort_field`, and
+writes the first match to a variable or a field: a relationship field on the
+record, on a related record, or on a record variable's record.
+With `when_no_records_found: blank` the run continues when nothing matches,
+and under the default `conflict_resolution: overwrite` it clears the
+destination; `update_if_blank` and `overwrite_except_null` keep what was there.
+`when_multiple_records_found` picks between the first match, an error and a
+blank. `kizen automations step-types show find_single_record` has
+the shapes.
+
+**Every record:** `search_records` writes an **entity array**, even when one
+record matches. An array can be written only into a to-many relationship
+field: into a to-one it's a 400 ("Variable can't be cased to a field"). To act
+on each record, loop over the array and use the item variable in the body.
+`change_field_value` with `change_type: variable` sets a relationship field to
+it, and `change_type: entity_variable_field` with `related_object_field` (a
+field UUID on the found record's object) copies one of its fields. Confirmed
+live 2026-11-02: a search that found two records ran the loop twice.
 
 ## Find or create a Contact by email
 
@@ -29,12 +37,13 @@ fields are in `kizen docs show form`.
 
 - A filter value takes no merge fields, so the search compares the Contact's
   `email` to a string variable copied from the request.
+- `find_single_record` links the Contact it finds through the request's
+  `customer` field. With `when_no_records_found: blank` a request with a new
+  email continues with `customer` blank.
 - `create_related_entity` can't create a Contact (confirmed live 2026-10-30),
-  so a code step posts to `/records/client_client/add`, and its `field`
-  output links the new Contact.
-- After the loop, `customer` is blank only when nothing was found. The
-  condition's yes branch creates the Contact, and its empty no branch ends the
-  run.
+  so on the condition's yes branch a code step posts to
+  `/records/client_client/add`, and its `field` output links the new Contact.
+  The empty no branch ends the run.
 
 <!-- fixture: examples/support_desk/find_contact.automation.json#/triggers -->
 ```json
@@ -44,40 +53,23 @@ fields are in `kizen docs show form`.
 
 <!-- fixture: examples/support_desk/find_contact.automation.json#/steps -->
 ```json
-[ { "key": "found", "parent_key": null, "step_type": "initialize_variable", "order": 0,
-    "description": "found_contacts = []",
-    "action_initialize_variable": { "sources": [], "array_aggregation_mode": "add_all",
-      "variable": { "name": "found_contacts", "data_type": "entity", "is_array": true,
-                    "data_subtype": "<client_client_object_uuid>" } } },
-  { "key": "found_item", "parent_key": "found", "step_type": "initialize_variable",
-    "order": 1, "description": "Item Reference Variable",
-    "action_initialize_variable": { "sources": [],
-      "variable": { "name": "found_contacts_item", "data_type": "entity",
-                    "data_subtype": "<client_client_object_uuid>" } } },
-  { "key": "email", "parent_key": "found_item", "step_type": "initialize_variable",
-    "order": 2,
+[ { "key": "email", "parent_key": null, "step_type": "initialize_variable", "order": 0,
     "action_initialize_variable": {
       "sources": [ { "source_type": "static", "source_subtype": "string",
                      "value": "{{ custom_objects.customer_email }}" } ],
       "variable": { "name": "customer_email", "data_type": "string" } } },
-  { "key": "find", "parent_key": "email", "step_type": "search_records", "order": 3,
-    "action_search_records": { "custom_object": "client_client",
+  { "key": "find", "parent_key": "email", "step_type": "find_single_record", "order": 1,
+    "action_find_single_record": { "custom_object": "client_client",
       "filter_type": "custom_filter",
       "filter_config": { "all": [ { "field": "email", "op": "=", "variable": "customer_email" } ] },
-      "destination_variable": "found_contacts",
-      "destination_variable_resolution": "overwrite" } },
-  { "key": "each", "parent_key": "find", "step_type": "loop", "order": 4,
-    "description": "For each item in 'found_contacts'",
-    "step_loop": { "array_variable": "found_contacts", "item_variable": "found_contacts_item" } },
-  { "key": "link", "parent_key": "each", "step_type": "change_field_value", "order": 5,
-    "action_change_field_value": { "field_ref": "support_requests.customer",
-      "change_type": "variable", "variable": "found_contacts_item" } },
-  { "key": "next", "parent_key": "each", "step_type": "next_or_finish", "order": 6 },
-  { "key": "no_customer", "parent_key": "next", "step_type": "condition", "order": 7,
+      "sort_field": "email", "sort_direction": "asc",
+      "when_no_records_found": "blank",
+      "destination": { "type": "context_entity_field", "field": "support_requests.customer" } } },
+  { "key": "no_customer", "parent_key": "find", "step_type": "condition", "order": 2,
     "step_condition": { "type": "custom_filter",
       "filter_config": { "all": [ { "field": "customer", "op": "is_blank" } ] } } },
   { "key": "create_contact", "parent_key": "no_customer", "parent_branch": "yes",
-    "step_type": "code_step", "order": 8,
+    "step_type": "code_step", "order": 3,
     "action_code_step": {
       "script": "# Create a Contact for an email no Contact has yet; the output links it.\nemail = (inputs.customer_email or \"\").strip()\nif not email:\n    raise Exception(\"customer_email is blank: no Contact to create\")\nresp = kizen.api.post(\n    \"/records/client_client/add\", json={\"fields\": [{\"name\": \"email\", \"value\": email}]}\n)\nif resp.status_code != 201:\n    raise Exception(\n        f\"creating a Contact for {email} failed: {resp.status_code} {resp.text[:200]}\"\n    )\noutputs.customer = resp.json()[\"id\"]",
       "inputs": [ { "name": "customer_email", "input_type": "field",
@@ -86,15 +78,13 @@ fields are in `kizen docs show form`.
                      "field_ref": "support_requests.customer" } ] } } ]
 ```
 
-`<client_client_object_uuid>` is the `id` from `kizen objects get client_client
---json`. Kizen refuses a second Contact with the same email (400
-"Entity record email must be unique", confirmed live 2026-10-30), so a run that
-races another fails the step instead of linking a duplicate.
+Kizen refuses a second Contact with the same email (400 "Entity record email
+must be unique", confirmed live 2026-10-30), so a run that races another fails
+the step instead of linking a duplicate.
 
-Confirmed live 2026-11-02, on a copy with the object renamed: a request whose
-email matched a Contact was linked to it (the search found 1), and a new email
-got a new Contact, linked (found 0, the create answered 201). Activate the
-automation after creating it.
+Confirmed live 2026-11-25, on a copy with the object renamed: a request whose
+email matched a Contact was linked to it, and a new email got a new Contact,
+linked. Activate the automation after creating it.
 
 ## Reading a related record's field into a variable
 
