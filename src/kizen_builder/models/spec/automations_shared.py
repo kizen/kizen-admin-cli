@@ -158,7 +158,13 @@ class VariableSourceConfig(BaseModel):
     field_id: str | None = Field(
         default=None, description="The field's UUID, sent as `field`."
     )
-    value: Any = None
+    value: Any = Field(
+        default=None,
+        description=(
+            "On a string static source the CLI writes the `value_html` the "
+            "builder's editor reads."
+        ),
+    )
     variable: str | None = Field(
         default=None,
         description=(

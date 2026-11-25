@@ -460,7 +460,7 @@ rule.
 | The plan warns about each compiled rule without a `view_model` | `_unlaid_rule_warnings` | — |
 | Webhook `headers` only with `http_header`, `secret` only with `basic_auth` (Kizen drops them silently); retired `auth_header_name`/`auth_header_value` refused | `TriggerWebhookConfig._validate_auth` | 2026-10-27 |
 | Webhook header names are 2-100 characters | `WebhookAuthHeader` | 2026-10-27 |
-| Each webhook header's `html_value` is filled the way the UI does | `_webhook_auth` | 2026-10-27 |
+| Each webhook header's `html_value` is filled the way the UI does, and re-rendered on create/update when stale | `_webhook_auth` | 2026-10-27 |
 | On update, a webhook trigger that leaves out `auth_type` keeps its live auth | `_carry_webhook_auth` | 2026-10-27 |
 | A date trigger's `time` and `period` are required unless `on_day_and_time`; either missing is a 400 ("This field is required.") | `TriggerOnOrAroundDateConfig._time_unless_from_field` | 2026-11-16 |
 | A schedule's `time` is required with a left-out or `specific_time` `time_offset` | `ScheduleOnOrAroundDateConfig._time_when_specific` | 2026-11-16 |
@@ -476,7 +476,7 @@ rule.
 | An LLM destination's relationship hop is auto-detected when exactly one exists, else refused; a choice destination's `options` fill from the field | `_resolve_llm_destinations` | 2026-07-27 |
 | LLM `business_plugin_app_id` fills from the catalog; a model the catalog doesn't list is refused without an explicit id; an id of another provider is refused | `_resolve_llm_plugin_app`, `ActionLlmCallConfig` | 2026-10-30 |
 | More than one destination on `call_llm`, `file_content_extraction` or `audio_transcription` needs `is_advanced: true` | `_check_destinations` | 2026-11-17 |
-| `html_prompt` is derived from `prompt` | `_step_call_llm` | — |
+| Each step text's HTML side (`html_prompt`, `value_html`, `html_content`, `new_entity_name_html`, a `schedule_activity` `note`) is rendered from the plain text when left out or stale | `merge_fields.render_html`, `_text_html`, `_render_text_html` | 2026-11-25 |
 | `mcp_server` and `run_tools_as` are set together or not at all | `_llm_tools_pairing_problem` | 2026-10-27 |
 | A `start_automation` target must be active | `inactive_start_targets`, `_built_block_problem` | 2026-10-30 |
 | A `create_related_entity` can't create a Contact | `_contact_creation_problem` | 2026-10-30 |
@@ -520,9 +520,11 @@ needs them. Each keeps its date here.
 - **Array variables in the builder.** `array_aggregation_mode` is "Choose
   Source Handling" (*Add All Sources* / *First Non-Blank Source Only*) and
   `deduplicate_array` is "Unique Values Only". Confirmed live 2026-10-14.
-- **`schedule_activity.note` and `html_note`.** Kizen stores them separately,
-  and a PUT without `html_note` clears it while `note` survives (the
-  `step-types show schedule_activity` note). Confirmed live 2026-10-06.
+- **`schedule_activity.note` and `html_note`.** The builder stores the note
+  as HTML in `note` and leaves `html_note` null. `html_note` doesn't reach
+  the scheduled activity: a step's `html_note` comes back null on the
+  activity, `note` filled, and merge fields render from a plain `note` and a
+  spanned one alike. Confirmed live 2026-11-25.
 - **`schedule_activity` times.** A `specific_time` takes `time` on a 24-hour
   clock: `"21:00"` saves, unlike the date trigger's 12-hour `time`.
   Confirmed live 2026-10-30.
