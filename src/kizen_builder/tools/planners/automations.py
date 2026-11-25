@@ -1517,8 +1517,9 @@ def honours(
     real ``block.get(...)`` calls.
 
     ``unsent_on_read`` names keys a live read carries that must not be sent
-    back (derived linkage, read-side mirrors), so `translate` lets them
-    through rather than refusing the read.
+    back (derived linkage, read-side mirrors, and settings the CLI doesn't
+    model that Kizen keeps when a PUT leaves them out), so `translate` lets
+    them through rather than refusing the read.
     """
 
     def mark(builder: _Builder) -> _Builder:
@@ -1785,7 +1786,14 @@ def _trigger_new_entity_created(
     return {"action": block.get("action", "create_only")}
 
 
-@honours("activity_type", "activity_type_id")
+@honours(
+    "activity_type",
+    "activity_type_id",
+    # The UI sets it only on a goal's trigger, which the read check doesn't
+    # reach. Kizen refuses it on an automation's own trigger (400 "only
+    # supported on goals"), so a top-level read is always null.
+    unsent_on_read=("scheduled_activity_variable",),
+)
 def _trigger_activity_logged(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
     activity_id = _resolve_activity_type(
         block.get("activity_type") or block.get("activity_type_id"), ctx
@@ -2299,14 +2307,17 @@ def _to_dict(block: Any) -> dict[str, Any]:
 def _normalize_llm_decision(ld: Any) -> Any:
     """llm_decision conditions read business_plugin_app expanded (including
     obfuscated secret values — never echo back); write takes
-    business_plugin_app_id."""
+    business_plugin_app_id. The fallback pair is never sent: it's API-only,
+    its app reads expanded the same way, and a PUT that leaves it out keeps
+    it (confirmed live 2026-11-25)."""
     if not isinstance(ld, dict):
         return ld
-    out = {
-        k: v
-        for k, v in _strip(ld).items()
-        if k != "business_plugin_app" and v is not None
-    }
+    unsent = (
+        "business_plugin_app",
+        "fallback_model_name",
+        "fallback_business_plugin_app",
+    )
+    out = {k: v for k, v in _strip(ld).items() if k not in unsent and v is not None}
     bpa_id = ld.get("business_plugin_app_id") or _unwrap_id(
         ld.get("business_plugin_app")
     )
@@ -3373,6 +3384,13 @@ def _step_modify_related_entities(
     "automations_to_start",
     "existing_record_found_action",
     "archived_record_found_action",
+    # API-only, and a PUT that leaves them out keeps them (confirmed live
+    # 2026-11-25).
+    unsent_on_read=(
+        "new_entity_fields",
+        "new_entity_owner_resolution",
+        "new_entity_stage_resolution",
+    ),
 )
 def _step_create_related_entity(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -3670,6 +3688,14 @@ def _normalize_variable(v: Any) -> Any:
     "run_tools_as_id",
     "max_sequential_turns",
     "tool_failure_policy",
+    # API-only, and a PUT that leaves them out keeps them (confirmed live
+    # 2026-11-25).
+    unsent_on_read=(
+        "fallback_model_name",
+        "fallback_business_plugin_app",
+        "output_format",
+        "input_value_source",
+    ),
 )
 def _step_call_llm(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
@@ -3784,6 +3810,13 @@ def _normalize_destinations(destinations: list[dict[str, Any]]) -> list[dict[str
     "is_advanced",
     "data_type",
     "merge_field_validation",
+    # API-only, and a PUT that leaves them out keeps them (confirmed live
+    # 2026-11-25).
+    unsent_on_read=(
+        "fallback_model_name",
+        "fallback_business_plugin_app",
+        "output_format",
+    ),
 )
 def _step_file_content_extraction(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext

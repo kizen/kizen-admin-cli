@@ -170,6 +170,11 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Automations with a Create Related Record step can be updated, shown,
+  diffed and round-tripped again.** Since Kizen's 2026-11-23 release the CLI
+  refused them, and it refused AI steps with a fallback model set. It now
+  leaves those settings as they are.
+
 - **Automations with a plugin step pinned to a preview can be edited.** The
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set

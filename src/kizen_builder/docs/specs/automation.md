@@ -169,7 +169,8 @@ server, a stop's `action`, a plugin step's `preview_user_id`, an
 `schedule_activity`'s `target_variable`.
 `--dry-run` names them as `keeps_live=[<key>, …]`. An explicit value always
 wins, `""` and `false` included; `description: ""` gets the type's default
-text.
+text. Settings the CLI doesn't model, such as an AI step's fallback model or
+Create Related Record's owner and stage resolution, are left as they are.
 
 ## Debugging
 

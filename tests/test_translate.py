@@ -730,6 +730,52 @@ def test_refused_read_is_a_cli_error(monkeypatch, verb: str) -> None:
     assert "new_setting would be lost on PUT" in result.stderr
 
 
+# Keys Kizen's 2026-11-23 release added, in the shapes read live 2026-11-25.
+# API-only, and a PUT that leaves them out keeps them, so they're never sent.
+_FALLBACK_APP = {
+    "id": "0b6f8f53-6f0e-4c39-9d5a-3f1c2a7e9b10",
+    "plugin_app_api_name": "openai",
+    "plugin_app_name": "OpenAI",
+    "disabled": False,
+    "secrets": [{"name": "api_key", "value": "sk-****"}],
+}
+_RELEASE_KEYS = {
+    "create_related_entity": {
+        "new_entity_owner_resolution": "update_if_blank",
+        "new_entity_stage_resolution": "update_if_blank",
+        "new_entity_fields": [
+            {
+                "id": "5d1e2f3a-4b5c-4d6e-8f70-81a2b3c4d5e6",
+                "field_to_modify": {"id": "e7f1ddd1-7861-4328-94b3-1f9008c81f24"},
+                "field_resolution": "overwrite",
+                "value_source": {"type": "specific_value", "value": "zz"},
+                "specific_field_value": "zz",
+                "field_value_mappings": [],
+            }
+        ],
+    },
+    "call_llm": {
+        "fallback_model_name": "openai/gpt-5.4-mini",
+        "fallback_business_plugin_app": _FALLBACK_APP,
+    },
+}
+
+
+def test_release_keys_are_read_and_never_sent() -> None:
+    raw = load_fixture("automations/branching_test.raw.json")
+    for step in raw["steps"]:
+        if step["step_type"] in _RELEASE_KEYS:
+            step[_block_field(step["step_type"])].update(
+                _RELEASE_KEYS[step["step_type"]]
+            )
+    payload = live_to_payload(raw)
+    for step in payload["steps"]:
+        keys = _RELEASE_KEYS.get(step["type"])
+        if keys:
+            assert not set(keys) & set(step[_block_field(step["type"])])
+    assert "sk-****" not in json.dumps(payload)
+
+
 def test_go_to_trigger_becomes_its_trigger_key() -> None:
     raw = load_fixture("automations/update_variable_goto_branching.raw.json")
     go_to = next(s for s in raw["steps"] if s["step_type"] == "go_to_automation_step")

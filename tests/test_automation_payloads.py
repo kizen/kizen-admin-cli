@@ -1088,6 +1088,31 @@ def test_update_explicit_extraction_prompt_settings_win(live_extraction_automati
     assert not {"extract", "transcribe"} & set(keeps_live)
 
 
+def test_llm_decision_fallback_is_never_sent():
+    """Its app reads expanded with obfuscated secrets, like
+    business_plugin_app, and Kizen keeps the pair when a PUT leaves it out
+    (confirmed live 2026-11-25)."""
+    from kizen_builder.tools.planners.automations import _normalize_llm_decision
+
+    app = {
+        "id": "0b6f8f53-6f0e-4c39-9d5a-3f1c2a7e9b10",
+        "plugin_app_api_name": "openai",
+        "plugin_app_name": "OpenAI",
+        "disabled": False,
+        "secrets": [{"name": "api_key", "value": "sk-****"}],
+    }
+    block = _normalize_llm_decision(
+        {
+            "model_name": "kizen/pro",
+            "prompt": "Is this urgent?",
+            "fallback_model_name": "openai/gpt-5.4-mini",
+            "fallback_business_plugin_app": app,
+        }
+    )
+    assert block == {"model_name": "kizen/pro", "prompt": "Is this urgent?"}
+    assert "secrets" not in json.dumps(block)
+
+
 @pytest.fixture
 def live_llm_decision(monkeypatch, patch_live_lookups):
     """The kitchen-sink automation, whose first llm_decision condition is set
@@ -6648,6 +6673,46 @@ def test_create_related_entity_field_values_is_a_plan_error(patch_live_lookups):
         _build(spec)
     with pytest.raises(PlanError, match="field_values would be silently dropped"):
         build_wire_step(spec["steps"][0], _LIVE_PAYLOAD, "patients")
+
+
+@pytest.mark.parametrize(
+    "step_type, block, key",
+    [
+        (
+            "create_related_entity",
+            {"target_custom_object": "patients", "new_entity_name": "Follow-up"},
+            "new_entity_owner_resolution",
+        ),
+        (
+            "create_related_entity",
+            {"target_custom_object": "patients", "new_entity_name": "Follow-up"},
+            "new_entity_fields",
+        ),
+        (
+            "call_llm",
+            {"model_name": "kizen/pro", "prompt": "Hi"},
+            "fallback_model_name",
+        ),
+        (
+            "file_content_extraction",
+            {"model_name": "kizen/pro", "prompt": "Hi"},
+            "fallback_model_name",
+        ),
+    ],
+)
+def test_a_spec_setting_a_release_key_is_refused(
+    patch_live_lookups, step_type, block, key
+):
+    """Read but never sent (API-only, kept by Kizen), so a spec or `steps
+    edit` that sets one would change nothing."""
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    block = {**block, key: "update_if_blank"}
+    with pytest.raises(PlanError, match=f"{key} would be silently dropped"):
+        _build(_one_step_spec(step_type, block))
+    patch = {_block_field_for(step_type): block}
+    with pytest.raises(PlanError, match=f"{key} would be silently dropped"):
+        normalize_step_patch(patch, "edited", step_type, _LIVE_PAYLOAD, "patients")
 
 
 def test_create_related_entity_needs_only_target_custom_object(patch_live_lookups):
