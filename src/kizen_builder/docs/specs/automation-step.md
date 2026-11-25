@@ -92,9 +92,11 @@ Consequences worth knowing:
   keys it leaves (`keys now:`); use those, or re-run `show`, before the next
   step operation.
 - **`edit` is a merge patch, but config blocks replace wholesale.** Send a
-  complete config block, not a partial one. One exception: a
+  complete config block, not a partial one. Two exceptions: a
   `stop_execution` block keeps the live `action` and `notify` it leaves
-  out, and gets `stop_and_complete` when the step has no action.
+  out, and gets `stop_and_complete` when the step has no action; an
+  `initialize_variable` keeps its variable's live `is_return_variable`,
+  which the CLI can't change.
 - **`add` inserts into the chain by default** — the parent's children move under
   the new step. `--leaf` appends without adopting them, `--branch yes|no` targets
   a condition/goal branch, `--root` puts the new step first. A

@@ -389,7 +389,8 @@ exit 1 from any command, and anything else into `error: internal: …`.
    `test_declared_keys_match_what_the_builder_reads` fails if the declaration
    and the builder's `block.get(...)` calls disagree. Read-dialect aliases the
    builder accepts count as read. A key a live read carries that must never be
-   sent back (derived linkage, an expanded mirror) goes in
+   sent back (derived linkage, an expanded mirror, or an API-only setting
+   Kizen keeps when a PUT leaves it out) goes in
    `@honours(..., unsent_on_read=("key",))`; any other unread key in a live
    read makes `translate` refuse the automation, and
    `test_every_captured_read_key_is_classified` fails on a fixture that has
@@ -474,7 +475,7 @@ Fixtures shared by more than one round-trip module (`drift_object`,
 fixture defined in a test module is invisible to every other module.
 
 You need both halves. `GET /api/docs/schema` returns a real OpenAPI 3.0
-document (~619 paths, ~1,490 component schemas), but it doesn't match the live
+document (~621 paths, ~1,520 component schemas), but it doesn't match the live
 API: it declares `PermissionGroupRequest` as having exactly one field
 while the live endpoint takes a ~35 KB body, documents the automation step
 envelope in the read dialect rather than the write one, and leaves `pipeline`

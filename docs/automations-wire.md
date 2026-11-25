@@ -63,9 +63,12 @@ Why a translator is mandatory rather than nice-to-have:
   Derived read-only keys are expected and never sent: `yes_steps`/`no_steps`
   on a condition, and the message fields (`subject`, `content`, `name`, …) a
   `notify_member_via_email`/`_text` read flattens into the block (confirmed
-  live 2026-10-16). A whole non-empty `step_*`/`action_*` block the CLI
-  doesn't read for that step's type stops the same verbs, forwarding types
-  included.
+  live 2026-10-16). The AI steps' fallback model and `output_format` are
+  never sent either, nor Create Related Record's owner and stage resolution
+  and `new_entity_fields`: Kizen keeps them when a PUT leaves them out
+  (confirmed live 2026-11-25). A whole non-empty `step_*`/`action_*` block
+  the CLI doesn't read for that step's type stops the same verbs, forwarding
+  types included.
 
 Also: **automation updates need PUT, not PATCH.** PATCH refuses step/trigger
 changes, and PUT requires the current `revision` as `last_revision`.

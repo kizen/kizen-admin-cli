@@ -919,14 +919,18 @@ _DERIVED_VARIABLE_KEYS = frozenset({"is_array_item_variable", "source_array_vari
 
 def _diffable_variable(var: Any) -> Any:
     """A variable definition as `diff` compares it: without the keys the
-    server derives from a loop, and with a null key the same as an absent
-    one, since a spec can't send null and an omitted key reads back null."""
+    server derives from a loop, with a null key the same as an absent one,
+    since a spec can't send null and an omitted key reads back null, and with
+    an absent `is_return_variable` as the false Kizen stores for it."""
     if not isinstance(var, dict):
         return var
     return {
-        k: v
-        for k, v in var.items()
-        if k not in _DERIVED_VARIABLE_KEYS and v is not None
+        "is_return_variable": False,
+        **{
+            k: v
+            for k, v in var.items()
+            if k not in _DERIVED_VARIABLE_KEYS and v is not None
+        },
     }
 
 
