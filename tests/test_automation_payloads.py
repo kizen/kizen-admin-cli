@@ -1088,6 +1088,77 @@ def test_update_explicit_extraction_prompt_settings_win(live_extraction_automati
     assert not {"extract", "transcribe"} & set(keeps_live)
 
 
+def _set_live_return_variable(raw: dict) -> None:
+    (step,) = [s for s in raw["steps"] if s["order"] == 0]
+    step["action_initialize_variable"]["variable"]["is_return_variable"] = True
+
+
+def _return_variable(payload: dict) -> object:
+    variable = payload["steps"][0]["action_initialize_variable"]["variable"]
+    return variable.get("is_return_variable")
+
+
+def test_update_keeps_a_live_return_variable(live_extraction_automation):
+    """Variables are rebuilt on every PUT, so before 2026-11-25 an update
+    reset a live `true` to false, ids or not."""
+    _set_live_return_variable(live_extraction_automation)
+    payload, keeps_live = _planned(_extraction_update_spec(live_extraction_automation))
+    assert _return_variable(payload) is True
+    assert "v" in keeps_live
+
+
+def test_update_step_without_an_id_keeps_no_return_variable(
+    live_extraction_automation,
+):
+    _set_live_return_variable(live_extraction_automation)
+    spec = _extraction_update_spec(live_extraction_automation)
+    del spec["steps"][0]["id"]
+    payload, keeps_live = _planned(spec)
+    assert _return_variable(payload) is None
+    assert "v" not in keeps_live
+
+
+def test_explicit_return_variable_false_wins():
+    """The spec model has no field for it (API-only), so an explicit value
+    reaches the built block only from a wire-shaped one."""
+    from kizen_builder.models.spec import AutomationStepDef
+    from kizen_builder.tools.planners.automations import _kept_return_variable
+
+    variable = {"name": "v", "data_type": "string"}
+    spec = AutomationStepDef.model_validate(
+        {
+            "key": "v",
+            "step_type": "initialize_variable",
+            "order": 0,
+            "action_initialize_variable": {"variable": variable},
+        }
+    )
+    live = {"action_initialize_variable": {"variable": {"is_return_variable": True}}}
+
+    def kept(**extra: object) -> bool:
+        built = {"action_initialize_variable": {"variable": {**variable, **extra}}}
+        return _kept_return_variable(spec, built, live)[2]
+
+    assert kept()
+    assert not kept(is_return_variable=False)
+
+
+def test_diff_unchanged_spec_shows_no_return_variable_change(
+    live_extraction_automation,
+):
+    """Every read carries `is_return_variable: false` since 2026-11-23; a
+    spec can't, and that used to diff as a removal."""
+    (step,) = [s for s in live_extraction_automation["steps"] if s["order"] == 0]
+    step["action_initialize_variable"]["variable"]["is_return_variable"] = False
+    for v in live_extraction_automation.get("variables") or []:
+        v["is_return_variable"] = False
+    diff = diff_automation(_extraction_update_spec(live_extraction_automation))["diff"]
+    assert [d for d in diff if "is_return_variable" in d["path"]] == []
+    _set_live_return_variable(live_extraction_automation)
+    diff = diff_automation(_extraction_update_spec(live_extraction_automation))["diff"]
+    assert [d for d in diff if "is_return_variable" in d["path"]] == []
+
+
 def test_llm_decision_fallback_is_never_sent():
     """Its app reads expanded with obfuscated secrets, like
     business_plugin_app, and Kizen keeps the pair when a PUT leaves it out
@@ -6986,8 +7057,12 @@ def _edit_variable(variable: dict) -> dict:
     from kizen_builder.tools.automations import normalize_step_patch
 
     patch = {"action_initialize_variable": {"variable": variable, "sources": []}}
+    payload = {
+        **_LIVE_PAYLOAD,
+        "steps": [{"key": "init", "type": "initialize_variable"}],
+    }
     return normalize_step_patch(
-        patch, "init", "initialize_variable", _LIVE_PAYLOAD, "patients"
+        patch, "init", "initialize_variable", payload, "patients"
     )
 
 
@@ -7966,6 +8041,61 @@ def test_steps_edit_checks_value_resolution_on_a_scalar_variable(patch_live_look
     }
     with pytest.raises(PlanError, match="isn't an array variable"):
         normalize_step_patch(patch, "bump", "update_variable", payload, "patients")
+
+
+def _edit_return_variable(live: bool, patched: dict) -> object:
+    """`steps edit` on a variable whose live `is_return_variable` is `live`,
+    with `patched` merged into the variable `steps get` would print."""
+    from kizen_builder.tools.automations import normalize_step_patch
+
+    variable = {"name": "genders", "data_type": "string", "is_array": True}
+    step = _GENDERS_DECLARED["steps"][0]
+    payload = {
+        **_GENDERS_DECLARED,
+        "steps": [
+            {
+                **step,
+                "action_initialize_variable": {
+                    "sources": [],
+                    "variable": {**variable, "is_return_variable": live},
+                },
+            }
+        ],
+    }
+    patch = {
+        "action_initialize_variable": {
+            "sources": [],
+            "variable": {**variable, **patched},
+            "array_aggregation_mode": "append",
+        }
+    }
+    out = normalize_step_patch(
+        patch, "declare", "initialize_variable", payload, "patients"
+    )
+    return out["action_initialize_variable"]["variable"].get("is_return_variable")
+
+
+@pytest.mark.parametrize(
+    ("live", "patched", "sent"),
+    [
+        (True, {"is_return_variable": True}, True),  # `steps get` output, pasted
+        (False, {"is_return_variable": False}, None),
+        (True, {}, True),
+        (False, {}, None),
+    ],
+)
+def test_steps_edit_keeps_the_live_return_variable(
+    patch_live_lookups, live, patched, sent
+):
+    """Every read carries it since Kizen's 2026-11-23 release; the spec model
+    has no field for it, and a variable rebuilt without it resets to false."""
+    assert _edit_return_variable(live, patched) is sent
+
+
+@pytest.mark.parametrize("live", [True, False])
+def test_steps_edit_refuses_a_return_variable_change(patch_live_lookups, live):
+    with pytest.raises(PlanError, match="is_return_variable is API-only"):
+        _edit_return_variable(live, {"is_return_variable": not live})
 
 
 # ---------------------------------------------------------------------------

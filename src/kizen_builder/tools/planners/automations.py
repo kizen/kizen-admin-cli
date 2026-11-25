@@ -737,6 +737,33 @@ def _kept_match_modes(
     return "step_goal", block, block != goal
 
 
+def _kept_return_variable(
+    spec: AutomationStepDef | AutomationTriggerDef,
+    built: dict[str, Any],
+    live: dict[str, Any],
+) -> tuple[str | None, dict[str, Any], bool]:
+    """`_kept_block` for an initialize_variable: a live `is_return_variable:
+    true` the built variable leaves out is kept. Variables are rebuilt on
+    every PUT, so a left-out one resets to false (confirmed live 2026-11-25).
+    The spec has no field for it: it's API-only."""
+    if (
+        not isinstance(spec, AutomationStepDef)
+        or spec.step_type != "initialize_variable"
+    ):
+        return None, {}, False
+    field = _block_field_for(spec.step_type)
+    block = built.get(field) or {}
+    variable = block.get("variable")
+    live_variable = (live.get(field) or {}).get("variable") or {}
+    if (
+        not isinstance(variable, dict)
+        or "is_return_variable" in variable
+        or live_variable.get("is_return_variable") is not True
+    ):
+        return None, {}, False
+    return field, {**block, "variable": {**variable, "is_return_variable": True}}, True
+
+
 def _keep_live_match_modes(
     spec: dict[str, Any], built: dict[str, Any], live: dict[str, Any]
 ) -> dict[str, Any]:
@@ -788,6 +815,8 @@ def _carry_omitted_step_keys(
         field, block, block_kept = _kept_block(spec, built, live)
         if field is None:
             field, block, block_kept = _kept_match_modes(spec, built, live)
+        if field is None:
+            field, block, block_kept = _kept_return_variable(spec, built, live)
         if block_kept or any(built.get(k) != v for k, v in values.items()):
             kept.append(built["key"])
         out = {**built, **values}

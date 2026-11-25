@@ -615,7 +615,9 @@ def normalize_step_patch(
     `automations create`/`update` and `steps add` apply
     (`_resolve_llm_plugin_app`, `_built_block_problem`). A `stop_execution`
     block keeps the live step's `action` and `notify` where it leaves them
-    out, and gets `stop_and_complete` when neither has an action.
+    out, and gets `stop_and_complete` when neither has an action. An
+    initialize_variable keeps the live `is_return_variable`; a patch that
+    changes it is refused.
     """
     from pydantic import ValidationError
     from pydantic_core import InitErrorDetails
@@ -642,7 +644,25 @@ def normalize_step_patch(
         # unsent_on_read key here is one the author set and the edit would drop.
         _reject_unhonoured_keys(builder, patch[cfg_key], f"step '{key}' {cfg_key}")
         variable = patch[cfg_key].get("variable")
+        keep_return_variable = False
         if step_type == "initialize_variable" and isinstance(variable, dict):
+            # API-only, but every read carries it since Kizen's 2026-11-23
+            # release, so `steps get` prints it. A PUT without it resets the
+            # variable to false, so the live value is kept, as `update` keeps it.
+            live_variable = (find_step(payload, key).get(cfg_key) or {}).get(
+                "variable"
+            ) or {}
+            keep_return_variable = live_variable.get("is_return_variable") is True
+            if (
+                variable.get("is_return_variable", keep_return_variable)
+                != keep_return_variable
+            ):
+                raise PlanError(
+                    f"step '{key}': is_return_variable is API-only and the CLI "
+                    "can't change it. Leave it out to keep the live value."
+                )
+            variable = {k: v for k, v in variable.items() if k != "is_return_variable"}
+            patch[cfg_key] = {**patch[cfg_key], "variable": variable}
             try:
                 AutomationVariableConfig.model_validate(variable)
             except ValidationError as e:
@@ -673,6 +693,8 @@ def normalize_step_patch(
             }
             built = {**kept, **built}
             built.setdefault("action", _STOP_EXECUTION_DEFAULT_ACTION)
+        if keep_return_variable:
+            built["variable"] = {**built["variable"], "is_return_variable": True}
         patch[cfg_key] = built
         _resolve_llm_plugin_app(step_type, key, patch[cfg_key], ctx)
         problem = _built_block_problem(step_type, key, patch[cfg_key], auto, ctx)

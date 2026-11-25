@@ -173,7 +173,10 @@ called out explicitly under **Changed** or **Removed**.
 - **Automations with a Create Related Record step can be updated, shown,
   diffed and round-tripped again.** Since Kizen's 2026-11-23 release the CLI
   refused them, and it refused AI steps with a fallback model set. It now
-  leaves those settings as they are.
+  leaves those settings as they are. `automations update` and `steps edit`
+  keep a variable's `is_return_variable`, and `diff` no longer reports it as
+  removed. `steps get` output for an `initialize_variable` step can be passed
+  back to `steps edit` again.
 
 - **Automations with a plugin step pinned to a preview can be edited.** The
   CLI used to refuse them. `automations update` now keeps the step's
