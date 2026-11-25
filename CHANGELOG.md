@@ -170,6 +170,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **A field reference or merge field on an object that doesn't exist fails the
+  dry run with the step and the reference.** It used to print only *"HTTP 404:
+  No CustomObject matches the given query."* A merge-field namespace used as a
+  `field_ref`, such as `custom_objects.email` or `entity_record.email`, is
+  called out as one, with the api_name form to use instead
+  (`client_client.email`).
+
 - **Automations with a Create Related Record step can be updated, shown,
   diffed and round-tripped again.** Since Kizen's 2026-11-23 release the CLI
   refused them, and it refused AI steps with a fallback model set. It now

@@ -182,6 +182,21 @@ class LiveContext:
         return self.object_data(api_name)["id"]
 
     def field_uuid(self, object_api_name: str, field_api_name: str) -> str:
+        try:
+            self.object_data(object_api_name)
+        except PlanError as e:
+            ref = f"{object_api_name}.{field_api_name}"
+            if object_api_name in merge_fields.RESERVED_NAMESPACES:
+                problem = (
+                    f"'{object_api_name}' is a merge-field namespace, not an object"
+                )
+            else:
+                problem = f"no object '{object_api_name}' in '{self.env}'"
+            raise PlanError(
+                f"field '{ref}': {problem}. A field reference names the object "
+                f"by its api_name, e.g. 'client_client.{field_api_name}' for "
+                "Contacts; kizen objects list shows them."
+            ) from e
         return self._field(object_api_name, field_api_name)["id"]
 
     def field_data(self, object_api_name: str, field_api_name: str) -> dict[str, Any]:
@@ -341,7 +356,9 @@ class LiveContext:
         if api_name not in self._objects_by_api:
             try:
                 self._objects_by_api[api_name] = get_object(api_name)
-            except LookupError as e:
+            except (LookupError, KizenAPIError) as e:
+                if isinstance(e, KizenAPIError) and e.status_code != 404:
+                    raise
                 raise PlanError(f"object '{api_name}' not found: {e}") from e
         return self._objects_by_api[api_name]
 
@@ -4318,6 +4335,18 @@ def _merge_field_resolvers(
     """
 
     def resolve_label(namespace: str, field_path: str) -> str | None:
+        if namespace not in merge_fields.RESERVED_NAMESPACES:
+            # An unknown object fails the plan; an unknown field on a real
+            # one falls back to the title-cased label below.
+            try:
+                ctx.object_data(namespace)
+            except PlanError as e:
+                raise PlanError(
+                    f"merge field '{{{{ {namespace}.{field_path} }}}}': no object "
+                    f"'{namespace}' in '{ctx.env}'. A merge field starts with a "
+                    "merge-field namespace (entity_record, custom_objects, …) or "
+                    "an object's api_name; kizen objects list shows them."
+                ) from e
         if "." in field_path:
             return None
         if namespace in ("entity_record", "custom_objects"):
@@ -4335,10 +4364,8 @@ def _merge_field_resolvers(
         return data.get("display_name") or field_path
 
     def resolve_objectname(namespace: str) -> str | None:
-        try:
-            return ctx.object_data(namespace).get("display_name")
-        except PlanError:
-            return None
+        # resolve_label has already refused an unknown object.
+        return ctx.object_data(namespace).get("display_name")
 
     return resolve_label, resolve_objectname
 
