@@ -105,7 +105,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
 | `value_html` on an `update_variable` source | `''` |
-| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
+| `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Find Single Record`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ## Read→write transforms
 
@@ -201,6 +201,7 @@ strips volatile keys. Some survive it — `http_request` round-trips clean. A
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
 | `stage_updated` trigger | `from_stage`/`to_stage` (bare stage UUIDs, both required, null = any); the spec's stage name resolves; `stage_field` is ignored by Kizen and never sent |
 | `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see `kizen automations step-types show file_content_extraction` |
+| `find_single_record` | `sort_field` a bare UUID (a spec api_name on `custom_object` or `"object.field"` resolves); `destination` a value source, written as extraction's `input_value_source` — see [find_single_record](#find_single_record) |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string, or a list of them for checkboxes; a spec label resolves to it |
 | `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record`. Every target must be active, or Kizen 400s "Automation not found" for any record source; the CLI refuses it at plan time (`inactive_start_targets`) |
@@ -309,6 +310,27 @@ step type, check the schema before assuming.**
 string most other steps use (contrast `modify_related_entities`'s
 `object_to_modify`, `archive_record`'s `automation_variable_name`). **Sending
 bare strings 500s.**
+
+### `find_single_record`
+
+Confirmed live 2026-11-25. **Write:** `custom_object` and `filter_groups[]` as
+`search_records` takes them (`{"id"}` or `{"name"}`); `sort_field` a **bare
+UUID** (a `{"id"}` dict 400s "Must be a valid UUID."); `destination` a value
+source: `{type, variable | field | relationship_field}` with bare field UUIDs
+and the variable by name (a dict 400s "Not a valid string."); `filter_config`
+as `search_records` sends it. **Read:** `custom_object`, `sort_field`,
+`filter_groups[]` and the destination's `field`/`relationship_field`/`variable`
+come back expanded, and `destination` carries `value_custom_object`,
+`value_datatype` and `value` as nulls; the CLI collapses them. Unused,
+`filter_groups` reads `[]` and `filter_config` null.
+
+Required: `sort_field`, `sort_direction`, `destination`, and `filter_groups`
+for `in_group`/`not_in_group`. `custom_filter` with no `filter_config` is
+accepted; the CLI refuses it. A PUT that leaves out `when_no_records_found`,
+`when_multiple_records_found` or `conflict_resolution` resets it to `error`,
+`use_first` or `overwrite`, so `update` keeps the live value. Kizen refuses a
+sort field on another object, a variable of another object, and on a global
+automation a `context_entity_field` destination.
 
 ### `schedule_activity.association_configs`
 
@@ -472,6 +494,7 @@ rule.
 | `update_pipeline_status` and other unwired types are refused | `_unwired_types`, `_build_step_payload` | — |
 | `business_plugin_app_id` in a `plugin_code_step` block is refused | `_unread_block_keys` | — |
 | Extraction input takes exactly one of `input_field_ref` and `input_value_source` | `_step_file_content_extraction` | 2026-10-14 |
+| A `find_single_record` with `custom_filter` and no `filter_config`, a group filter type and no `filter_groups`, a destination on the record or a related record in a global automation, or a destination variable that isn't an entity variable of the searched object is refused | `_find_single_record_problem` | 2026-11-25 |
 | An LLM destination's relationship hop is auto-detected when exactly one exists, else refused; a choice destination's `options` fill from the field | `_resolve_llm_destinations` | 2026-07-27 |
 | LLM `business_plugin_app_id` fills from the catalog; a model the catalog doesn't list is refused without an explicit id; an id of another provider is refused | `_resolve_llm_plugin_app`, `ActionLlmCallConfig` | 2026-10-30 |
 | More than one destination on `call_llm`, `file_content_extraction` or `audio_transcription` needs `is_advanced: true` | `_check_destinations` | 2026-11-17 |

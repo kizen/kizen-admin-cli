@@ -832,6 +832,127 @@ _SEARCH_RECORDS = Guide(
 )
 
 
+_FIND_SINGLE_RECORD = Guide(
+    variants=(
+        Variant(
+            "variable",
+            "The first record on another object that matches a filter, into "
+            "an entity variable.",
+            {
+                "custom_object": "<object api_name>",
+                "filter_type": "custom_filter",
+                "filter_config": {
+                    "all": [
+                        {"field": "<field api_name>", "op": "=", "value": "<value>"}
+                    ]
+                },
+                "sort_field": "<field api_name on custom_object>",
+                "sort_direction": "asc",
+                "destination": {
+                    "type": "automation_variable",
+                    "variable": "<entity variable of custom_object>",
+                },
+            },
+        ),
+        Variant(
+            "this_record_field",
+            "The first record in a saved filter group, linked through a "
+            "relationship field on the automation's record.",
+            {
+                "custom_object": "<object api_name>",
+                "filter_type": "in_group",
+                "filter_groups": ["<filter group name or uuid>"],
+                "sort_field": "<field api_name on custom_object>",
+                "sort_direction": "desc",
+                "destination": {
+                    "type": "context_entity_field",
+                    "field": "<object>.<relationship field to custom_object>",
+                },
+            },
+        ),
+    ),
+    selectors=(
+        Selector(
+            "filter_type",
+            (
+                Option("all_records"),
+                Option("custom_filter", ("filter_config",)),
+                Option("in_group", ("filter_groups",)),
+                Option("not_in_group", ("filter_groups",)),
+            ),
+        ),
+        Selector(
+            "destination.type",
+            (
+                Option("automation_variable", ("variable",), "Variable"),
+                Option("context_entity_field", ("field",), "Field on this Record"),
+                Option(
+                    "related_object_field",
+                    ("relationship_field", "field"),
+                    "Field on Related Object",
+                ),
+                Option(
+                    "automation_entity_variable_field",
+                    ("variable", "field"),
+                    "Record Variable Field",
+                ),
+            ),
+        ),
+        Selector(
+            "when_no_records_found",
+            (Option("error"), Option("blank", note="continue with a blank result")),
+            default="error",
+        ),
+        Selector(
+            "when_multiple_records_found",
+            (
+                Option("use_first", note="the first in sort order"),
+                Option("error"),
+                Option("blank", note="continue with a blank result"),
+            ),
+            default="use_first",
+        ),
+        Selector(
+            "conflict_resolution",
+            (
+                Option("overwrite", note="Overwrite (Clear if Blank)"),
+                Option("update_if_blank", note="Only Update Blank"),
+                Option("add_only", note="Only Add Options, multi-value fields"),
+                Option("overwrite_except_null", note="Overwrite (But Skip if Blank)"),
+            ),
+            default="overwrite",
+        ),
+    ),
+    lookups=(
+        *_SEARCH_RECORDS.lookups,
+        Lookup(
+            "sort_field",
+            "kizen objects get <object>",
+            "a field on custom_object: api_name, 'object.field' or UUID",
+        ),
+    ),
+    notes=(
+        "`custom_object` is the object searched, independent of the "
+        "automation's own target_object; filter fields, filter groups and "
+        "`sort_field` resolve against it.",
+        "A variable destination is an entity variable of `custom_object`, "
+        "declared by an initialize_variable step.",
+        "A global automation can write only to a variable or a record "
+        "variable's field (`automation_variable`, "
+        "`automation_entity_variable_field`).",
+        "`sort_direction` asc takes the oldest or A first, desc the newest or "
+        "Z. With `error`, no match or many matches pause the run with "
+        '"No records matched the search." or "More than one record matched '
+        'the search."; `blank` continues and, under `overwrite`, clears the '
+        "destination (confirmed live 2026-11-25).",
+        "A text-field destination gets the record's display name.",
+        *_FILTER_NOTES,
+    ),
+    concepts=("filter", "variable"),
+    doc=_PATTERNS_DOC,
+)
+
+
 def _match_modes(value_key: str) -> tuple[Option, ...]:
     return (
         Option("any_including_blank", note="any value, blank too"),
@@ -1606,8 +1727,8 @@ _EXIT_LOOP = Guide(
         'on to its next item. The step logs "Loop ended early by an Exit Loop '
         'step". Confirmed live 2026-11-11.',
         "Steps hung under an exit_loop never run: Kizen saves them, and "
-        "`create`, `update` and `show` warn. To stop a search's loop at the "
-        "first record, end the body with an exit_loop.",
+        "`create`, `update` and `show` warn. To act on one record, use "
+        "find_single_record instead of a search and a loop.",
         "The CLI sends the loop's key. Kizen reads it back as the loop's id, "
         "and `steps get` and `roundtrip` show the key again; `diff` counts "
         "the two as no change.",
@@ -1625,6 +1746,7 @@ _STEP_GUIDES: dict[str, Guide] = {
     "create_related_entity": _CREATE_RELATED_ENTITY,
     "exit_loop": _EXIT_LOOP,
     "file_content_extraction": _EXTRACTION,
+    "find_single_record": _FIND_SINGLE_RECORD,
     "goal": _GOAL,
     "initialize_variable": _VARIABLE_SOURCES,
     "math_operator": _MATH_OPERATOR,

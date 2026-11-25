@@ -69,7 +69,7 @@ These sources, in this order — don't guess, and don't grep `src/` for any of t
 | **Command syntax** — what flags a command takes, what it does | `kizen <group> <cmd> --help`. Authoritative and always current (generated from the code). Start here for any command. |
 | **Everything about one kind of entity** — the spec shape a `--spec-file` wants, its wire formats, endpoints and quirks | `kizen docs show <surface>`. Each command's `--help` names its topic. |
 | **One automation step or trigger type** | `kizen automations step-types show <type>` |
-| **Filters** — the DSL, the wire format, per-type operators | `kizen docs show filters`. One shape shared by `records list --filter`, saved views, condition steps, `search_records`, and dashlets. |
+| **Filters** — the DSL, the wire format, per-type operators | `kizen docs show filters`. One shape shared by `records list --filter`, saved views, condition steps, search steps, and dashlets. |
 | **Writing a `code_step` script** | `kizen docs show code-steps`. Write → `kizen code test` → wire into an automation. |
 | **A first build, start to finish** | `kizen docs show examples` |
 | **Profiles, credentials, app-builder variables** | `kizen docs show environments` |

@@ -378,9 +378,9 @@ def test_variable_needs_the_declarations_only_a_condition_step_passes():
         from_spec({"field": "fdropdown", "op": "is_any_of", "variable": "allowed"})
     assert str(e.value) == (
         '"variable" compares to an automation variable and only works in a '
-        "condition or search_records step's filter_config"
+        "condition, search_records or find_single_record step's filter_config"
     )
-    with pytest.raises(ValueError, match="only works in a condition or"):
+    with pytest.raises(ValueError, match="only works in a condition, search_records"):
         render_search_filters(
             {"all": [{"field": "fdropdown", "op": "is_any_of", "variable": "x"}]},
             "policies_policy",

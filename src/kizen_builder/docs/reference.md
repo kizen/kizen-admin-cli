@@ -54,8 +54,11 @@ values: a bare scalar on write, often `{value: …}` on read.
 **This is a strong prior, not a law.** Several fields genuinely want an
 `{"id"|"name": …}` object on write, and sending a bare string 400s or 500s —
 `search_records`'s `custom_object`/`filter_groups`/`destination_variable` and
-`schedule_activity`'s `assigned_to.variable` are the confirmed cases. Others
-want the *flat* form where a read is nested (`association_configs`). When wiring
+`schedule_activity`'s `assigned_to.variable` are the confirmed cases
+(`find_single_record` takes the same objects for `custom_object` and
+`filter_groups`). Others want the *flat* form where a read is nested
+(`association_configs`), and `find_single_record`'s `sort_field` is a bare UUID
+on write but expanded on read, like most references. When wiring
 anything new, check the schema first.
 
 ### `GET /api/docs/schema` is the authority

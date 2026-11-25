@@ -5222,6 +5222,340 @@ def test_step_search_records_unknown_object_errors(patch_live_lookups):
 
 
 # ---------------------------------------------------------------------------
+# find_single_record step — wire shapes confirmed live 2026-11-25: sort_field
+# and the destination's fields are bare UUIDs, the destination variable a
+# name; custom_object and filter_groups as search_records sends them.
+# ---------------------------------------------------------------------------
+
+_FSR_GROUP = "18fea0cc-7ecd-4085-a7ad-dc8337782abd"
+
+
+def _fields(api_name: str) -> dict[str, str]:
+    return {
+        f["api_name"]: f["id"]
+        for f in load_fixture(f"objects/{api_name}.json")["fields"]
+    }
+
+
+def _fsr_spec(block, *, kind="record_based", variable=None):
+    steps = []
+    if variable:
+        name, subtype = variable
+        steps.append(
+            {
+                "key": "v",
+                "step_type": "initialize_variable",
+                "order": 0,
+                "parent_key": None,
+                "action_initialize_variable": {
+                    "variable": {
+                        "name": name,
+                        "data_type": "entity",
+                        "data_subtype": subtype,
+                    },
+                    "sources": [],
+                },
+            }
+        )
+    steps.append(
+        {
+            "key": "find",
+            "step_type": "find_single_record",
+            "order": len(steps),
+            "parent_key": "v" if variable else None,
+            "action_find_single_record": {
+                "custom_object": "patients",
+                "filter_type": "all_records",
+                "sort_field": "mrn",
+                "sort_direction": "asc",
+                **block,
+            },
+        }
+    )
+    spec = {"api_name": "fsr_test", "name": "FSR Test", "type": kind, "steps": steps}
+    if kind == "record_based":
+        spec["target_object"] = "encounters"
+    return spec
+
+
+def _fsr(spec) -> dict:
+    step = next(s for s in _build(spec)["steps"] if s["key"] == "find")
+    return step["action_find_single_record"]
+
+
+def test_find_single_record_into_a_variable_with_a_custom_filter(
+    patch_live_lookups, patients_filter_schema
+):
+    patients = load_fixture("objects/patients.json")
+    mrn = _fields("patients")["mrn"]
+    block = _fsr(
+        _fsr_spec(
+            {
+                "filter_type": "custom_filter",
+                "filter_config": {"all": [{"field": "mrn", "op": "=", "value": "A-1"}]},
+                "destination": {"type": "automation_variable", "variable": "found"},
+            },
+            variable=("found", "patients"),
+        )
+    )
+    (clause,) = block.pop("filter_config")["query"][0]["filters"]
+    assert clause["field"] == f'"custom"::{mrn}'
+    assert block == {
+        "custom_object": {"id": patients["id"]},
+        "filter_type": "custom_filter",
+        "filter_groups": [],
+        "sort_field": mrn,
+        "sort_direction": "asc",
+        "destination": {"type": "automation_variable", "variable": "found"},
+    }
+
+
+def test_find_single_record_into_this_record_field_from_a_group(patch_live_lookups):
+    block = _fsr(
+        _fsr_spec(
+            {
+                "filter_type": "in_group",
+                "filter_groups": [_FSR_GROUP],
+                "sort_field": "patients.mrn",
+                "sort_direction": "desc",
+                "destination": {
+                    "type": "context_entity_field",
+                    "field": "encounters.patient_rel",
+                },
+            }
+        )
+    )
+    assert block["filter_config"] is None
+    assert block["filter_groups"] == [{"id": _FSR_GROUP}]
+    assert block["sort_field"] == _fields("patients")["mrn"]
+    assert block["destination"] == {
+        "type": "context_entity_field",
+        "field": _fields("encounters")["patient_rel"],
+    }
+
+
+def test_find_single_record_into_a_related_record_field(patch_live_lookups):
+    block = _fsr(
+        _fsr_spec(
+            {
+                "filter_type": "not_in_group",
+                "filter_groups": [{"id": _FSR_GROUP, "name": "Mine"}],
+                "destination": {
+                    "type": "related_object_field",
+                    "relationship_field": "encounters.patient_rel",
+                    "field": "patients.encounters",
+                },
+            }
+        )
+    )
+    assert block["filter_groups"] == [{"id": _FSR_GROUP}]
+    assert block["destination"] == {
+        "type": "related_object_field",
+        "relationship_field": _fields("encounters")["patient_rel"],
+        "field": _fields("patients")["encounters"],
+    }
+
+
+def test_find_single_record_into_a_record_variable_field(patch_live_lookups):
+    sort_id = "1111c67d-f9c0-4bab-985e-b6306722dbce"
+    block = _fsr(
+        _fsr_spec(
+            {
+                "sort_field": sort_id,
+                "destination": {
+                    "type": "automation_entity_variable_field",
+                    "variable": "found",
+                    "field": "patients.encounters",
+                },
+            },
+            kind="global",
+            variable=("found", "patients"),
+        )
+    )
+    assert block["sort_field"] == sort_id
+    assert block["destination"] == {
+        "type": "automation_entity_variable_field",
+        "variable": "found",
+        "field": _fields("patients")["encounters"],
+    }
+
+
+def test_find_single_record_sends_the_three_choices_only_when_set(patch_live_lookups):
+    dest = {"type": "context_entity_field", "field": "encounters.patient_rel"}
+    choices = {
+        "when_no_records_found": "blank",
+        "when_multiple_records_found": "error",
+        "conflict_resolution": "update_if_blank",
+    }
+    unset = _fsr(_fsr_spec({"destination": dest}))
+    assert not set(choices) & set(unset)
+    block = _fsr(_fsr_spec({"destination": dest, **choices}))
+    assert {k: block[k] for k in choices} == choices
+
+
+@pytest.mark.parametrize(
+    "block, variable, kind, message",
+    [
+        (
+            {"filter_type": "custom_filter"},
+            None,
+            "record_based",
+            "filter_type custom_filter needs filter_config; use all_records",
+        ),
+        (
+            {"filter_type": "in_group"},
+            None,
+            "record_based",
+            "filter_type in_group needs filter_groups",
+        ),
+        (
+            {"filter_type": "not_in_group"},
+            None,
+            "record_based",
+            "filter_type not_in_group needs filter_groups",
+        ),
+        (
+            {"destination": {"type": "context_entity_field", "field": "patients.mrn"}},
+            None,
+            "global",
+            "a global automation can write the found record only to a variable",
+        ),
+        (
+            {"destination": {"type": "automation_variable", "variable": "nope"}},
+            None,
+            "record_based",
+            "destination variable 'nope' must be an entity variable of patients",
+        ),
+        (
+            {"destination": {"type": "automation_variable", "variable": "found"}},
+            ("found", "encounters"),
+            "record_based",
+            "destination variable 'found' must be an entity variable of patients",
+        ),
+    ],
+    ids=[
+        "custom-filter",
+        "in-group",
+        "not-in-group",
+        "global",
+        "undeclared",
+        "other-object",
+    ],
+)
+def test_find_single_record_refusals(
+    patch_live_lookups, block, variable, kind, message
+):
+    block = {
+        "destination": {"type": "automation_variable", "variable": "found"},
+        **block,
+    }
+    variable = variable or ("found", "patients")
+    if "nope" in str(block):
+        variable = None
+    with pytest.raises(PlanError, match="find_single_record step 'find'") as e:
+        _build(_fsr_spec(block, kind=kind, variable=variable))
+    assert message in str(e.value)
+
+
+def test_find_single_record_read_rebuilds_to_the_write_shape():
+    """The UI-built capture: each block reads expanded and writes bare,
+    without the read's null value keys, and re-plans to itself."""
+    from kizen_builder.models.spec.automations_actions_data import (
+        ActionFindSingleRecordConfig,
+    )
+    from kizen_builder.tools.planners.automations import _step_find_single_record
+    from kizen_builder.translate import _SHIM_AUTO, _SHIM_CTX, live_to_payload
+
+    raw = load_fixture("automations/find_single_record.raw.json")
+    reads = [s for s in raw["steps"] if s["step_type"] == "find_single_record"]
+    written = [
+        s["action_find_single_record"]
+        for s in live_to_payload(raw)["steps"]
+        if s["type"] == "find_single_record"
+    ]
+    assert {w["destination"]["type"] for w in written} == {
+        "automation_variable",
+        "context_entity_field",
+        "related_object_field",
+        "automation_entity_variable_field",
+    }
+    for read, block in zip(reads, written, strict=True):
+        read = read["action_find_single_record"]
+        ActionFindSingleRecordConfig.model_validate(block)
+        assert block["sort_field"] == read["sort_field"]["id"]
+        assert block["custom_object"] == {"id": read["custom_object"]["id"]}
+        assert block["filter_groups"] == [
+            {"id": g["id"]} for g in read["filter_groups"]
+        ]
+        dest = block["destination"]
+        assert not {"value", "value_custom_object", "value_datatype"} & set(dest)
+        assert all(isinstance(v, str) for v in dest.values())
+        assert _step_find_single_record(block, _SHIM_AUTO, _SHIM_CTX) == block
+
+
+@pytest.fixture
+def fsr_live(patch_live_lookups, monkeypatch):
+    """The UI-built find_single_record capture as the live automation, its
+    target served by the patients fixture."""
+    import kizen_builder.tools.planners.automations as ma
+
+    raw = load_fixture("automations/find_single_record.raw.json")
+    patients = load_fixture("objects/patients.json")
+    raw["custom_object"].update(id=patients["id"], name="patients")
+    listing = [*ma.list_automations(), {"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _fsr_capture_spec(raw: dict) -> dict:
+    spec = _capture_spec(raw)
+    spec["target_object"] = "patients"
+    for step in spec["steps"]:
+        if step["step_type"] == "initialize_variable":
+            # API-only; the spec can't set it.
+            step["action_initialize_variable"]["variable"].pop("is_return_variable")
+    return spec
+
+
+def test_diff_of_the_unchanged_find_single_record_capture_is_empty(fsr_live):
+    assert diff_automation(_fsr_capture_spec(fsr_live))["diff"] == []
+
+
+def test_update_omitting_find_single_record_choices_keeps_live(fsr_live):
+    """A PUT that leaves them out resets them to error/use_first/overwrite
+    (confirmed live 2026-11-25)."""
+    spec = _fsr_capture_spec(fsr_live)
+    choices = (
+        "when_no_records_found",
+        "when_multiple_records_found",
+        "conflict_resolution",
+    )
+    for step in spec["steps"]:
+        if step["step_type"] == "find_single_record":
+            for key in choices:
+                step["action_find_single_record"].pop(key)
+    payload, keeps_live = _planned(spec)
+    sent = {
+        s["key"]: tuple(s["action_find_single_record"].get(k) for k in choices)
+        for s in payload["steps"]
+        if s["type"] == "find_single_record"
+    }
+    assert sent == {
+        "s01_find_single_record": ("blank", "error", "add_only"),
+        "s02_find_single_record": ("error", "blank", "overwrite_except_null"),
+        "s03_find_single_record": ("error", "use_first", "overwrite"),
+        "s04_find_single_record": ("error", "use_first", "update_if_blank"),
+    }
+    assert "s03_find_single_record" not in keeps_live
+    assert {
+        "s01_find_single_record",
+        "s02_find_single_record",
+        "s04_find_single_record",
+    } <= set(keeps_live)
+
+
+# ---------------------------------------------------------------------------
 # schedule_activity — association_configs (ticket 20260720-173206) and
 # assigned_to (ticket 20260722-153607) write-dialect fixes.
 # ---------------------------------------------------------------------------

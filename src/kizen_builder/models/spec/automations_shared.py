@@ -541,8 +541,8 @@ class FilterClause(BaseModel):
     variable: str | None = Field(
         default=None,
         description=(
-            "An automation variable in place of `value`, on a condition or "
-            "search_records step: is_any_of or not_any_of with an array "
+            "An automation variable in place of `value`, on a condition, "
+            "search_records or find_single_record step: is_any_of or not_any_of with an array "
             "variable, = or contains with a string one."
         ),
     )

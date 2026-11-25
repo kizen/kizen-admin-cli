@@ -233,8 +233,8 @@ _STAGE_CONDITIONS = {
 }
 
 
-# Comparing a field to an automation variable (condition and search_records
-# steps). The field types the Kizen UI offers "Variable" on, and the variable
+# Comparing a field to an automation variable (condition, search_records and
+# find_single_record steps). The field types the Kizen UI offers "Variable" on, and the variable
 # kinds (data_type, is_array) its picker lists for each, as captured from the
 # UI 2026-10-14 (email: 2026-10-30). An entity array must hold the
 # relationship's related object.
@@ -1885,7 +1885,7 @@ def as_custom_filters(expr):
 # Field names, option labels, and tag names resolve to UUIDs exactly as in
 # the DSL (the spec compiles TO the DSL). Ops with no value (is_blank,
 # is_me, ...) omit "value"; list ops (is_any_of, between, ...) take a list.
-# "variable" (condition and search_records steps only) compares the field to
+# "variable" (condition and search steps only) compares the field to
 # an automation variable instead of a literal, with the ops in _VARIABLE_OPS.
 # ---------------------------------------------------------------------------
 
@@ -2016,7 +2016,7 @@ def from_spec(spec, variables=None):
 
     ``variables`` maps the automation's declared variable names to their
     ``{data_type, is_array[, data_subtype]}``. Only condition and
-    search_records steps pass it; without it a ``"variable"`` key is
+    search steps pass it; without it a ``"variable"`` key is
     rejected."""
     if not isinstance(spec, dict):
         raise ValueError(
@@ -2112,7 +2112,8 @@ def _variable_condition(spec, variables):
     if variables is None:
         raise ValueError(
             '"variable" compares to an automation variable and only works in a '
-            "condition or search_records step's filter_config"
+            "condition, search_records or find_single_record step's "
+            "filter_config"
         )
     if "value" in spec:
         raise ValueError('a condition takes "value" or "variable", not both')

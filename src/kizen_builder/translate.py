@@ -901,6 +901,7 @@ _DEFAULT_DESCRIPTIONS = {
     "condition": "Condition",
     "delay": "Delay",
     "exit_loop": "Exit Loop",
+    "find_single_record": "Action: Find Single Record",
     "initialize_variable": "Initialize Variable",
     "loop": "Loop",
     "manual": "Manual",
