@@ -475,7 +475,7 @@ Fixtures shared by more than one round-trip module (`drift_object`,
 fixture defined in a test module is invisible to every other module.
 
 You need both halves. `GET /api/docs/schema` returns a real OpenAPI 3.0
-document (~619 paths, ~1,490 component schemas), but it doesn't match the live
+document (~621 paths, ~1,520 component schemas), but it doesn't match the live
 API: it declares `PermissionGroupRequest` as having exactly one field
 while the live endpoint takes a ~35 KB body, documents the automation step
 envelope in the read dialect rather than the write one, and leaves `pipeline`

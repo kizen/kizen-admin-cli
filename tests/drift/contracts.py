@@ -394,6 +394,12 @@ KNOWN_SCHEMA_OMISSIONS: dict[str, dict[str, str]] = {
     },
 }
 
+_FALLBACK_APP_ID = (
+    "write spelling of the read's `fallback_business_plugin_app`, which is "
+    "`unsent_on_read`. API-only, and a PUT that leaves it out keeps it "
+    "(confirmed live 2026-11-25)"
+)
+
 #: Write-schema properties of a declared config block that its builder
 #: neither honours nor declares ``unsent_on_read``, each with the reason the
 #: CLI never sends it. Checked by
@@ -413,6 +419,15 @@ KNOWN_UNSENT_SCHEMA_KEYS: dict[str, dict[str, str]] = {
             "accepted and ignored, even a non-stage field's UUID, and never read "
             "back; the target's stages are what match (confirmed live 2026-10-30)"
         ),
+    },
+    "schema:WriteStepRequest.action_call_llm": {
+        "fallback_business_plugin_app_id": _FALLBACK_APP_ID,
+    },
+    "schema:WriteStepRequest.action_file_content_extraction": {
+        "fallback_business_plugin_app_id": _FALLBACK_APP_ID,
+    },
+    "schema:WriteStepRequest.action_audio_transcription": {
+        "fallback_business_plugin_app_id": _FALLBACK_APP_ID,
     },
 }
 
@@ -577,7 +592,7 @@ def match_endpoint(
 def extract(schema: dict[str, Any]) -> dict[str, Any]:
     """Reduce a live OpenAPI document to just the tracked contracts.
 
-    The full document is ~1.7 MB / 619 paths / 1487 component schemas; this
+    The full document is ~1.7 MB / 621 paths / 1520 component schemas; this
     keeps only what the CLI writes to, so the committed snapshot is reviewable
     and the diff is about something. ``operationId`` is left out: the CLI
     never sends it, and the schema generator renames it whenever a sibling

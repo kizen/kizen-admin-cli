@@ -1,7 +1,7 @@
 {
   "_meta": {
     "base_url": "https://app.go.kizen.com",
-    "captured": "2026-11-11",
+    "captured": "2026-11-25",
     "contracts_tracked": 78,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
@@ -365,6 +365,8 @@
         "properties": {
           "active": "boolean",
           "api_name": "string",
+          "concurrency_limit": "ConcurrencyLimitEnum{no_limit,only_one_active_per_record}",
+          "concurrent_execution_behavior": "ConcurrentExecutionBehaviorEnum{cancel,queue}?",
           "custom_object_id": "string<uuid>?",
           "debug_next_n_executions": "integer",
           "error_notification_email": "string<email>?",
@@ -374,6 +376,7 @@
           "last_revision": "integer",
           "name": "string",
           "priority_rank": "integer",
+          "repeated_return_behavior": "RepeatedReturnBehaviorEnum{skip,fail}",
           "skip_non_working_days": "boolean",
           "steps": "array[WriteStepRequest] (writeOnly)",
           "trigger_throttle_seconds": "number<double>",
@@ -890,6 +893,8 @@
         "properties": {
           "active": "boolean",
           "api_name": "string",
+          "concurrency_limit": "ConcurrencyLimitEnum{no_limit,only_one_active_per_record}",
+          "concurrent_execution_behavior": "ConcurrentExecutionBehaviorEnum{cancel,queue}?",
           "custom_object_id": "string<uuid>?",
           "debug_next_n_executions": "integer",
           "error_notification_email": "string<email>?",
@@ -899,6 +904,7 @@
           "last_revision": "integer",
           "name": "string",
           "priority_rank": "integer",
+          "repeated_return_behavior": "RepeatedReturnBehaviorEnum{skip,fail}",
           "skip_non_working_days": "boolean",
           "steps": "array[WriteStepRequest] (writeOnly)",
           "trigger_throttle_seconds": "number<double>",
@@ -927,6 +933,7 @@
         "data_type": "ExecutionVariableDataTypeEnum{string,number,boolean,date,datetime,phone_number,email,uuid,employee,entity}",
         "input_format": "string?",
         "is_array": "boolean",
+        "is_return_variable": "boolean",
         "name": "string",
         "output_format": "string?"
       },
@@ -943,6 +950,8 @@
       "properties": {
         "active": "boolean",
         "api_name": "string",
+        "concurrency_limit": "ConcurrencyLimitEnum{no_limit,only_one_active_per_record}",
+        "concurrent_execution_behavior": "ConcurrentExecutionBehaviorEnum{cancel,queue}?",
         "custom_object_id": "string<uuid>?",
         "debug_next_n_executions": "integer",
         "error_notification_email": "string<email>?",
@@ -952,6 +961,7 @@
         "last_revision": "integer",
         "name": "string",
         "priority_rank": "integer",
+        "repeated_return_behavior": "RepeatedReturnBehaviorEnum{skip,fail}",
         "skip_non_working_days": "boolean",
         "steps": "array[WriteStepRequest] (writeOnly)",
         "trigger_throttle_seconds": "number<double>",
@@ -972,6 +982,7 @@
         "action_archive_record": "WriteActionArchiveRecordRequest?",
         "action_assign_team_member": "AssignTeamMemberWriteRequest?",
         "action_audio_transcription": "WriteActionAudioTranscriptionRequest?",
+        "action_call_automation": "WriteActionCallAutomationRequest?",
         "action_call_llm": "WriteActionLLMCallRequest?",
         "action_change_field_value": "WriteActionChangeFieldValuesRequest?",
         "action_change_tags": "WriteActionChangeTagsRequest?",
@@ -993,6 +1004,7 @@
         "action_on_failure": "ActionOnFailureEnum{notify_continue,notify_pause,silent_continue}",
         "action_plugin_code_step": "ActionPluginCodeStepRequest?",
         "action_request_info_via_text": "WriteActionRequestInfoViaTextRequest?",
+        "action_return_values": "WriteActionReturnValuesRequest?",
         "action_schedule_activity": "ActionScheduleActivityRequest?",
         "action_search_records": "SearchRecordsRequest?",
         "action_send_email": "WriteActionSendEmailRequest?",
@@ -1004,7 +1016,7 @@
         "action_update_variable": "ActionUpdateVariableRequest?",
         "continue_with_branch": "ContinueWithBranchEnum{yes,no}?",
         "description": "string",
-        "error_notification_severity_level": "WriteStepErrorNotificationSeverityLevelEnum{error,warning,info,inherit}",
+        "error_notification_severity_level": "ErrorNotificationSeverityLevelFb2Enum{error,warning,info,inherit}",
         "is_branch_group_initiator": "boolean",
         "order": "integer",
         "should_skip_execution": "boolean",
@@ -1012,7 +1024,7 @@
         "step_delay": "WriteStepDelayRequest?",
         "step_goal": "WriteStepGoalRequest?",
         "step_loop": "StepLoopRequest?",
-        "step_type": "AutomationStepTypeEnum{archive_record,assign_team_member,audio_transcription,call_llm,change_field_value,change_tags,code_step,condition,create_related_entity,delay,delete_scheduled_activity,file_content_extraction,find_single_record,goal,go_to_automation_step,http_request,initialize_variable,math_operator,modify_automation,modify_related_entities,modify_related_entities_automation,notify_member_via_email,notify_member_via_text,plugin_code_step,request_info_via_text,schedule_activity,search_records,send_email,send_related_contact_email,send_related_contact_text,send_text,start_automation,stop_execution,update_pipeline_status,update_variable,noop,branch,merge_branches,loop,next_or_finish,exit_loop}",
+        "step_type": "AutomationStepTypeEnum{archive_record,assign_team_member,audio_transcription,call_automation,call_llm,change_field_value,change_tags,code_step,condition,create_related_entity,delay,delete_scheduled_activity,file_content_extraction,find_single_record,goal,go_to_automation_step,http_request,initialize_variable,math_operator,modify_automation,modify_related_entities,modify_related_entities_automation,notify_member_via_email,notify_member_via_text,plugin_code_step,request_info_via_text,return_values,schedule_activity,search_records,send_email,send_related_contact_email,send_related_contact_text,send_text,start_automation,stop_execution,update_pipeline_status,update_variable,noop,branch,merge_branches,loop,next_or_finish,exit_loop}",
         "user_description": "string"
       },
       "required": [
@@ -1057,12 +1069,15 @@
         "business_plugin_app_id": "string<uuid>?",
         "data_type": "MediaContentDataTypeEnum{image,text,doc,audio,video,message}",
         "destinations": "array[ActionDestinationRequest]",
+        "fallback_business_plugin_app_id": "string<uuid>?",
+        "fallback_model_name": "string?",
         "html_prompt": "string?",
         "input_field": "string<uuid>?",
         "input_value_source": "WriteValueSourceRequest?",
         "is_advanced": "boolean",
         "merge_field_validation": "MergeFieldValidationEnum{error_if_required,default_to_unknown,blank}",
         "model_name": "string",
+        "output_format": "any?",
         "prompt": "string"
       },
       "required": [
@@ -1079,12 +1094,16 @@
       "properties": {
         "business_plugin_app_id": "string<uuid>?",
         "destinations": "array[ActionDestinationRequest]",
+        "fallback_business_plugin_app_id": "string<uuid>?",
+        "fallback_model_name": "string?",
         "html_prompt": "string?",
+        "input_value_source": "WriteValueSourceRequest?",
         "is_advanced": "boolean",
         "max_sequential_turns": "integer",
         "mcp_server_id": "string<uuid>?",
         "merge_field_validation": "MergeFieldValidationEnum{error_if_required,default_to_unknown,blank}",
         "model_name": "string",
+        "output_format": "any?",
         "prompt": "string",
         "run_tools_as_id": "string<uuid>?",
         "tool_failure_policy": "ToolFailurePolicyEnum{never_fail}"
@@ -1134,14 +1153,17 @@
         "context_entity_field": "string<uuid>?",
         "context_entity_field_resolution": "ContextEntityFieldResolutionEnum{overwrite,update_if_blank,add_only}?",
         "existing_record_found_action": "ExistingRecordFoundActionEnum{create_append_suffix,error_do_not_create}",
+        "new_entity_fields": "array[WriteNewEntityFieldRequest]",
         "new_entity_name": "string",
         "new_entity_name_html": "string",
         "new_entity_owner_employees": "array[string<uuid>]",
+        "new_entity_owner_resolution": "NewEntityStageResolutionEnum{overwrite,update_if_blank}",
         "new_entity_owner_role": "string<uuid>?",
         "new_entity_owner_sub_type": "NewEntityOwnerSubTypeEnum{round_robin_any_role,round_robin_specific_role,round_robin_choose_team_members,specific_team_member,assign_from_variable}?",
         "new_entity_owner_type": "NewEntityOwnerTypeEnum{assign_from_context_record,newly_assigned_owner}",
         "new_entity_owner_variable": "string?",
         "new_entity_stage": "string<uuid>?",
+        "new_entity_stage_resolution": "NewEntityStageResolutionEnum{overwrite,update_if_blank}",
         "target_custom_object": "string<uuid>",
         "target_variable": "string?",
         "variable_field_resolution": "VariableFieldResolutionFb0Enum{overwrite,update_if_blank,add_only}?"
@@ -1172,12 +1194,15 @@
         "business_plugin_app_id": "string<uuid>?",
         "data_type": "MediaContentDataTypeEnum{image,text,doc,audio,video,message}",
         "destinations": "array[ActionDestinationRequest]",
+        "fallback_business_plugin_app_id": "string<uuid>?",
+        "fallback_model_name": "string?",
         "html_prompt": "string?",
         "input_field": "string<uuid>?",
         "input_value_source": "WriteValueSourceRequest?",
         "is_advanced": "boolean",
         "merge_field_validation": "MergeFieldValidationEnum{error_if_required,default_to_unknown,blank}",
         "model_name": "string",
+        "output_format": "any?",
         "prompt": "string"
       },
       "required": [
@@ -1313,7 +1338,7 @@
         "notifications": "array[ActionScheduleActivityNotificationRequest] (writeOnly)",
         "schedule": "ActionScheduleActivityScheduleDetailRequest",
         "target_variable": "string? (writeOnly)",
-        "variable_field_resolution": "ActionScheduleActivityVariableFieldResolutionEnum{overwrite,update_if_blank}?"
+        "variable_field_resolution": "NewEntityStageResolutionEnum{overwrite,update_if_blank}?"
       },
       "required": [
         "activity_type_id",
@@ -1399,7 +1424,7 @@
         "deduplicate_array": "boolean",
         "is_required": "boolean",
         "sources": "array[VariableSourceRequest]",
-        "value_resolution": "ValueResolutionEnum{add_only,overwrite,overwrite_except_null}?",
+        "value_resolution": "ActionUpdateVariableValueResolutionEnum{add_only,overwrite,overwrite_except_null}?",
         "variable": "string"
       },
       "required": [
@@ -1520,7 +1545,8 @@
       "label": "trigger config: activity_logged",
       "present": true,
       "properties": {
-        "activity_type_id": "string<uuid>"
+        "activity_type_id": "string<uuid>",
+        "scheduled_activity_variable": "string?"
       },
       "required": [
         "activity_type_id"
