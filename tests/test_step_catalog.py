@@ -309,6 +309,7 @@ def test_source_subtypes_per_source_type_are_on_the_card(type_name):
     for source_type, subtypes in SOURCE_SUBTYPES.items():
         assert f"`{source_type}`: {', '.join(subtypes)}." in notes
     assert "`primary_related_object_field`" in notes
+    assert "`record_variable_field`" in notes
 
 
 def test_schedule_activity_variants_build_a_payload(patch_live_lookups):

@@ -1570,8 +1570,12 @@ _VARIABLE_SOURCES = Guide(
                 for source_type, subtypes in SOURCE_SUBTYPES.items()
             ),
             "`field_value`: `this_record_field`, "
-            "`primary_related_object_field` for a related record's field, or "
-            "`record_association`.",
+            "`primary_related_object_field` for a related record's field, "
+            "`record_association`, or `record_variable_field` for a field of a "
+            "record held in a single-record entity variable: `variable` is its "
+            "name, `field_ref` is `<that variable's object>.<field>`, and the "
+            "variable's `initialize_variable` step must come first (confirmed "
+            "live 2026-11-25).",
         ),
     ),
 )

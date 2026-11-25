@@ -104,7 +104,7 @@ value on either side still shows. Confirmed live 2026-10-27:
 | `error_notification_email` | `''` |
 | `deduplicate_array` on `initialize_variable`/`update_variable` | `false` |
 | `array_separator` on a static source whose `value` is a list | `'comma'` |
-| `value_html` on an `update_variable` source | `''` |
+| `value_html` on an `initialize_variable` or `update_variable` source | `''` |
 | `description` on a step or trigger | the live description, for a step or trigger whose `id` matches. For one the spec adds, a fixed text per type: `Initialize Variable`, `Update Variable`, `Action: Search Records`, `Action: Schedule Activity`, `Loop`, `Next/Finish`, `Exit Loop`, `Condition`, `Branch`, `Merge Branches`, `Delay`, `Stop Execution`, and `Manual` for the manual trigger. Other types compare as sent |
 
 ## Read→write transforms
@@ -206,7 +206,7 @@ strips volatile keys. Some survive it — `http_request` round-trips clean. A
 | `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record`. Every target must be active, or Kizen 400s "Automation not found" for any record source; the CLI refuses it at plan time (`inactive_start_targets`) |
 | `archive_record` | `relationship_field_ids` (the spec's `relationship_fields`, `"object.field"` refs, resolve to it), `automation_variable_name`. `record_source` is `this_record`, `related_object_field` or `automation_variable`; `this_record` stores relationship fields sent beside it (confirmed live 2026-11-17) |
 | `send_related_contact_email` / `_text` | `send_to_contact_field` (bare UUID; a ref resolves, and a missing one is a plan-time error naming the Contacts relationship fields), `email` / `text` as `{"id": uuid}` |
-| variable sources (`initialize_variable`, `update_variable`, extraction `input_value_source`) | `field` (bare UUID); the CLI sends a `field_ref` or `field_id` as `field`. A source with `field_id` and no `field` is a 400, "field is required" (confirmed live 2026-11-17) |
+| variable sources (`initialize_variable`, `update_variable`, extraction `input_value_source`) | `field` (bare UUID); the CLI sends a `field_ref` or `field_id` as `field`. A source with `field_id` and no `field` is a 400, "field is required" (confirmed live 2026-11-17). A `record_variable_field` source takes `variable` (the name) and `field` on that variable's object (confirmed live 2026-11-25) |
 | `assign_team_member` | the `*_id` dialect: `role_id`, `employee_id`, `employee_ids`, `field_id`, `related_field_id`. Its `type` is its own six-value enum (`kizen automations step-types show assign_team_member`) |
 | `go_to_automation_step` | `step_key`, pointing at a synthesized key |
 
