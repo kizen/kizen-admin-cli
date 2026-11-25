@@ -440,6 +440,20 @@ def test_mirrored_context_source_collapses_to_input_field(
     assert "input_value_source" not in blk
 
 
+def test_a_doc_extraction_translates_to_image() -> None:
+    """A step saved as 'doc' fails when it runs; every write sends 'image'."""
+    raw = load_fixture("automations/extraction_input_sources.raw.json")
+    for step in raw["steps"]:
+        if step["step_type"] == "file_content_extraction":
+            step["action_file_content_extraction"]["data_type"] = "doc"
+    payload = live_to_payload(raw)
+    blocks = [
+        _step_block(payload, "file_content_extraction", i)
+        for i in range(len(_steps_by_type(payload, "file_content_extraction")))
+    ]
+    assert {blk["data_type"] for blk in blocks} == {"image"}
+
+
 def _extraction_step(block: dict):
     from kizen_builder.models.spec import AutomationDef, AutomationStepDef
 

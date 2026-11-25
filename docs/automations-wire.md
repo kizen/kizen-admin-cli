@@ -197,7 +197,7 @@ strips volatile keys. Some survive it — `http_request` round-trips clean. A
 | `scheduled_activity_overdue` trigger | `activity` writes as `{"id": uuid}`; the spec takes an api_name or UUID |
 | `schedule` trigger | `trigger_schedule: {rrule, is_advanced}` — matches a live read exactly, nothing to unwrap |
 | `stage_updated` trigger | `from_stage`/`to_stage` (bare stage UUIDs, both required, null = any); the spec's stage name resolves; `stage_field` is ignored by Kizen and never sent |
-| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see `kizen automations step-types show file_content_extraction` |
+| `file_content_extraction` | input key is `input_field` (UUID); `input_field_ref` resolves; or `input_value_source` (`field`/`relationship_field` bare UUIDs, `variable` the name); never both — see `kizen automations step-types show file_content_extraction`. `data_type` is always `image` (`audio_transcription`: `audio`); the CLI sends it |
 | `business_plugin_app_id` | a bare UUID string — **do not** wrap in `{id: …}` |
 | `change_field_value` (choice/status) | `specific_field_value` is the bare option UUID string, or a list of them for checkboxes; a spec label resolves to it |
 | `start_automation` | `automation_ids`, `relationship_field_ids`. Each `relationship_field_ids` entry accepts an `"object.field"` ref (or a bare name on `target_object`), as with `archive_record`. Every target must be active, or Kizen 400s "Automation not found" for any record source; the CLI refuses it at plan time (`inactive_start_targets`) |
@@ -468,7 +468,8 @@ rule.
 | `stage_updated` stage names resolve to UUIDs; an unknown stage, or a non-pipeline target, is a plan error; the description defaults to the UI's text | `_resolve_trigger_stages`, `_resolve_goal_trigger_stages` | 2026-10-30 |
 | `update_pipeline_status` and other unwired types are refused | `_unwired_types`, `_build_step_payload` | — |
 | `business_plugin_app_id` in a `plugin_code_step` block is refused | `_unread_block_keys` | — |
-| Extraction input takes exactly one of `input_field_ref` and `input_value_source` | `_step_file_content_extraction` | 2026-10-14 |
+| Extraction input takes exactly one of `input_field_ref` and `input_value_source` | `_llm_file_step` | 2026-10-14 |
+| Extraction `data_type` other than `image` (transcription: `audio`) is refused | `ActionFileContentExtractionConfig`, `ActionAudioTranscriptionConfig` | 2026-11-25 |
 | An LLM destination's relationship hop is auto-detected when exactly one exists, else refused; a choice destination's `options` fill from the field | `_resolve_llm_destinations` | 2026-07-27 |
 | LLM `business_plugin_app_id` fills from the catalog; a model the catalog doesn't list is refused without an explicit id; an id of another provider is refused | `_resolve_llm_plugin_app`, `ActionLlmCallConfig` | 2026-10-30 |
 | More than one destination on `call_llm`, `file_content_extraction` or `audio_transcription` needs `is_advanced: true` | `_check_destinations` | 2026-11-17 |

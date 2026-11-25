@@ -21,7 +21,11 @@ from kizen_builder.models.spec.automations_triggers import trigger_config_field
 # a direct argument, so the scanner is told about them.
 DERIVED_BLOCK_HELPERS = {"_step_change_field_value": ("_change_field_value_action",)}
 # Declared without being read, each with its reason at the declaration.
-DECLARED_NOT_READ = {"_step_go_to_automation_step": {"type"}}
+DECLARED_NOT_READ = {
+    "_step_go_to_automation_step": {"type"},
+    "_step_file_content_extraction": {"data_type"},
+    "_step_audio_transcription": {"data_type"},
+}
 
 _FUNCS = {
     n.name: n

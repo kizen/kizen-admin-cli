@@ -170,6 +170,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **Extraction steps always use the builder's data type.** A
+  `file_content_extraction` spec with `data_type: doc` saved a step that failed
+  when it ran. The CLI now always sends `image` (`audio` for
+  `audio_transcription`), refuses any other value, and rewrites a `doc` step on
+  any write to its automation (`automations diff` shows the change).
+
 - **Automations with a plugin step pinned to a preview can be edited.** The
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set

@@ -1088,6 +1088,43 @@ def test_update_explicit_extraction_prompt_settings_win(live_extraction_automati
     assert not {"extract", "transcribe"} & set(keeps_live)
 
 
+def _data_types(payload: dict) -> dict[str, str]:
+    return {
+        step["key"]: step[_block_field_for(step["type"])]["data_type"]
+        for step in payload["steps"]
+        if step["key"] in ("extract", "transcribe")
+    }
+
+
+def test_llm_file_steps_send_the_builders_data_type(live_extraction_automation):
+    payload = _build(_extraction_update_spec(live_extraction_automation))
+    assert _data_types(payload) == {"extract": "image", "transcribe": "audio"}
+
+
+def test_update_rewrites_a_doc_extraction_and_diff_shows_it(
+    live_extraction_automation,
+):
+    """A step saved as 'doc' fails when it runs (confirmed live 2026-11-25)."""
+    (extract,) = [s for s in live_extraction_automation["steps"] if s["order"] == 1]
+    extract["action_file_content_extraction"]["data_type"] = "doc"
+    spec = _extraction_update_spec(live_extraction_automation)
+    payload, _ = _planned(spec)
+    assert _data_types(payload) == {"extract": "image", "transcribe": "audio"}
+    lines = [
+        (d["before"], d["after"])
+        for d in diff_automation(spec)["diff"]
+        if d["path"].endswith(".data_type")
+    ]
+    assert lines == [("doc", "image")]
+
+
+def test_diff_of_ui_saved_data_types_shows_no_data_type_line(
+    live_extraction_automation,
+):
+    diff = diff_automation(_extraction_update_spec(live_extraction_automation))
+    assert [d for d in diff["diff"] if d["path"].endswith(".data_type")] == []
+
+
 @pytest.fixture
 def live_llm_decision(monkeypatch, patch_live_lookups):
     """The kitchen-sink automation, whose first llm_decision condition is set
