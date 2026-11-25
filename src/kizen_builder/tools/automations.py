@@ -625,13 +625,13 @@ def normalize_step_patch(
     idempotent on wire shapes (enforced by
     `test_builders_rebuild_wire_blocks_unchanged`). A block key the builder
     doesn't read is refused, and an initialize_variable's `variable` must pass
-    `AutomationVariableConfig`. The patched block then gets the same checks
-    `automations create`/`update` and `steps add` apply
-    (`_resolve_llm_plugin_app`, `_built_block_problem`). A `stop_execution`
-    block keeps the live step's `action` and `notify` where it leaves them
-    out, and gets `stop_and_complete` when neither has an action. An
-    initialize_variable keeps the live `is_return_variable`; a patch that
-    changes it is refused.
+    `AutomationVariableConfig`. The patched block then gets the same HTML
+    sides and checks `automations create`/`update` and `steps add` apply
+    (`_render_text_html`, `_resolve_llm_plugin_app`, `_built_block_problem`).
+    A `stop_execution` block keeps the live step's `action` and `notify`
+    where it leaves them out, and gets `stop_and_complete` when neither has
+    an action. An initialize_variable keeps the live `is_return_variable`; a
+    patch that changes it is refused.
     """
     from pydantic import ValidationError
     from pydantic_core import InitErrorDetails
@@ -645,6 +645,7 @@ def normalize_step_patch(
         _block_field_for,
         _built_block_problem,
         _reject_unhonoured_keys,
+        _render_text_html,
         _resolve_goal_trigger_stages,
         _resolve_llm_plugin_app,
     )
@@ -696,6 +697,7 @@ def normalize_step_patch(
         try:
             block = _resolve_goal_trigger_stages(step_type, patch[cfg_key], auto, ctx)
             built = builder(dict(block), auto, ctx)
+            _render_text_html(step_type, built, auto, ctx)
         except (PlanError, VariableReferenceError) as e:
             raise PlanError(f"step '{key}': {e}") from e
         if step_type == "stop_execution":

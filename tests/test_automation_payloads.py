@@ -455,29 +455,28 @@ def test_call_llm_derives_html_prompt_from_plain_prompt(patch_live_lookups):
     )
 
 
-def test_call_llm_preserves_explicit_html_prompt(patch_live_lookups):
-    spec = {
-        "api_name": "call_llm_explicit_html_test",
-        "name": "Call LLM Explicit HTML Test",
-        "type": "record_based",
-        "target_object": "patients",
-        "steps": [
-            {
-                "key": "llm",
-                "step_type": "call_llm",
-                "order": 0,
-                "parent_key": None,
-                "action_call_llm": {
-                    "model_name": "kizen/pro",
-                    "prompt": "plain",
-                    "html_prompt": "<p>custom <b>markup</b></p>",
-                },
-            }
-        ],
-    }
-    payload = _build(spec)
-    action = payload["steps"][0]["action_call_llm"]
-    assert action["html_prompt"] == "<p>custom <b>markup</b></p>"
+@pytest.mark.parametrize(
+    ("prompt", "html_prompt", "sent"),
+    [
+        # Same text: the builder's formatting is kept byte for byte.
+        ("custom markup", "<p>custom <b>markup</b></p>", "<p>custom <b>markup</b></p>"),
+        # The plain side was edited: the HTML follows it.
+        ("plain", "<p>custom <b>markup</b></p>", "<p>plain</p>"),
+        # Only HTML: kept.
+        (None, "<p>custom <b>markup</b></p>", "<p>custom <b>markup</b></p>"),
+        # The plain side was cleared: so is the HTML.
+        ("", "<p>custom <b>markup</b></p>", "<p></p>"),
+    ],
+    ids=["matching", "mismatched", "only-html", "cleared"],
+)
+def test_call_llm_keeps_html_prompt_only_while_it_matches(
+    patch_live_lookups, prompt, html_prompt, sent
+):
+    block = {"model_name": "kizen/pro", "html_prompt": html_prompt}
+    if prompt is not None:
+        block["prompt"] = prompt
+    action = _build(_one_step_spec("call_llm", block))["steps"][0]["action_call_llm"]
+    assert action["html_prompt"] == sent
 
 
 def test_call_llm_rejects_data_type(patch_live_lookups):
@@ -1731,7 +1730,7 @@ def test_notify_member_via_text_normalizes_team_member(patch_live_lookups):
     assert "base_message_id" not in action
 
 
-def test_notify_member_via_text_preserves_explicit_html_content(patch_live_lookups):
+def test_notify_member_via_text_rerenders_stale_html_content(patch_live_lookups):
     spec = {
         "api_name": "notify_text_html_test",
         "name": "Notify Text HTML Test",
@@ -1753,7 +1752,7 @@ def test_notify_member_via_text_preserves_explicit_html_content(patch_live_looku
     }
     payload = _build(spec)
     action = payload["steps"][0]["action_notify_member_via_text"]
-    assert action["html_content"] == "<p>custom <b>markup</b></p>"
+    assert action["html_content"] == "<p>plain</p>"
 
 
 def test_notify_member_via_text_renders_merge_field_span(patch_live_lookups):
@@ -4101,17 +4100,14 @@ def test_webhook_header_html_value_matches_the_ui_byte_for_byte():
         "auth_type": "http_header",
         "headers": [{"name": live["name"], "value": live["value"]}],
     }
-    out = _webhook_auth(
-        block,
-        lambda ns, path: (
-            _SECRET_DESCRIPTIONS[path] if ns == "integration_secret" else None
-        ),
-    )
+    ctx = LiveContext()
+    ctx._secret_descriptions = _SECRET_DESCRIPTIONS
+    out = _webhook_auth(block, ctx)
     assert out["headers"][0]["html_value"] == live["html_value"]
 
 
 @pytest.mark.parametrize("html_value", ["<p>kept</p>", "", None])
-def test_webhook_header_present_html_value_is_kept(html_value):
+def test_webhook_header_html_value_is_kept_without_lookups(html_value):
     from kizen_builder.tools.planners.automations import _webhook_auth
 
     header = {
@@ -4120,11 +4116,55 @@ def test_webhook_header_present_html_value_is_kept(html_value):
         "html_value": html_value,
     }
 
-    def no_lookup(ns, path):
-        raise AssertionError("a present html_value must not be derived")
-
-    out = _webhook_auth({"auth_type": "http_header", "headers": [header]}, no_lookup)
+    out = _webhook_auth(
+        {"auth_type": "http_header", "headers": [header]}, _NoLookupContext()
+    )
     assert out["headers"] == [header]
+
+
+@pytest.mark.parametrize(
+    ("html_value", "sent"),
+    [
+        (_LIVE_HTTP_HEADER["headers"][0]["html_value"], None),
+        ("<p>stale</p>", None),
+        ("", None),
+        ("<p>  {{ integration_secret.partner_token }}\n -merge field</p>", "kept"),
+    ],
+    ids=["current", "stale", "empty", "matching"],
+)
+def test_webhook_header_html_value_follows_its_value(
+    patch_live_lookups, html_value, sent
+):
+    """With live lookups, a header's `html_value` follows `value` as a step
+    text's HTML does: kept while the text matches, else re-rendered."""
+    from kizen_builder.tools.planners.automations import _webhook_auth
+
+    live = _LIVE_HTTP_HEADER["headers"][0]
+    ctx = LiveContext()
+    ctx._secret_descriptions = _SECRET_DESCRIPTIONS
+    header = {"name": live["name"], "value": live["value"], "html_value": html_value}
+    out = _webhook_auth({"auth_type": "http_header", "headers": [header]}, ctx)
+    expected = html_value if sent == "kept" else live["html_value"]
+    assert out["headers"][0]["html_value"] == expected
+
+
+def test_webhook_header_namespace_that_is_no_object_keeps_its_fallback_label(
+    patch_live_lookups,
+):
+    """Header tokens looked up only an integration secret before 2026-11-25.
+    One whose namespace is no object, on a plan or in translate (no lookups),
+    still gets the title-cased fallback label instead of failing."""
+    from kizen_builder.tools.planners.automations import _webhook_auth
+
+    header = {"name": "X-A", "value": "{{ nope.token }}"}
+    expected = (
+        '<p><span class="kzn-merge-field" '
+        'data-merge-field-fallback-label="Token" '
+        'data-merge-field-relationship="nope.token">{{ nope.token }}</span></p>'
+    )
+    for ctx in (LiveContext(), _NoLookupContext()):
+        out = _webhook_auth({"auth_type": "http_header", "headers": [header]}, ctx)
+        assert out["headers"][0]["html_value"] == expected
 
 
 def test_live_to_payload_reduces_webhook_auth_without_lookups():
@@ -5246,19 +5286,41 @@ def _schedule_activity_spec(action_config, target_object="patients"):
     }
 
 
-def test_step_schedule_activity_sends_note_and_html_note(patch_live_lookups):
+def test_step_schedule_activity_sends_a_plain_note_as_html(patch_live_lookups):
+    """The builder stores the note as HTML in `note`; `html_note` reaches
+    nothing but is passed through (confirmed live 2026-11-25)."""
     payload = _build(
         _schedule_activity_spec(
             {
                 "activity_type_id": "11111111-1111-4111-8111-111111111111",
-                "note": "Plain note",
+                "note": "Plain note\n\nFor {{ custom_objects.mrn }}",
                 "html_note": "<p><strong>Rich</strong> note</p>",
             }
         )
     )
     action = payload["steps"][0]["action_schedule_activity"]
-    assert action["note"] == "Plain note"
+    assert action["note"] == (
+        '<p>Plain note</p><p></p><p>For <span class="kzn-merge-field" '
+        'data-merge-field-fallback-label="Medical Record Number (MRN)" '
+        'data-merge-field-relationship="custom_objects.mrn">'
+        "{{ custom_objects.mrn }}</span></p>"
+    )
     assert action["html_note"] == "<p><strong>Rich</strong> note</p>"
+
+
+def test_step_schedule_activity_keeps_an_html_note_byte_for_byte(patch_live_lookups):
+    raw = load_fixture("automations/activity_logged_schedule_activity.raw.json")
+    (note,) = [
+        s["action_schedule_activity"]["note"]
+        for s in raw["steps"]
+        if s["step_type"] == "schedule_activity"
+    ]
+    payload = _build(
+        _schedule_activity_spec(
+            {"activity_type_id": "11111111-1111-4111-8111-111111111111", "note": note}
+        )
+    )
+    assert payload["steps"][0]["action_schedule_activity"]["note"] == note
 
 
 def test_step_schedule_activity_resolves_field_refs_to_field_ids(patch_live_lookups):
@@ -8640,3 +8702,144 @@ def test_field_value_source_sends_field(patch_live_lookups, step_type, source):
         "source_subtype": "this_record_field",
         "field": _DEAL_REL,
     }
+
+
+# ---------------------------------------------------------------------------
+# The HTML side of a step text, which the builder's editor opens (confirmed
+# live 2026-11-25)
+# ---------------------------------------------------------------------------
+
+_MRN_SPAN = (
+    '<span class="kzn-merge-field" '
+    'data-merge-field-fallback-label="Medical Record Number (MRN)" '
+    'data-merge-field-relationship="custom_objects.mrn">{{ custom_objects.mrn }}</span>'
+)
+
+
+def _static(value: object, subtype: str = "string", **extra: object) -> dict:
+    return {
+        "source_type": "static",
+        "source_subtype": subtype,
+        "value": value,
+        **extra,
+    }
+
+
+def _variable_block(source: dict) -> dict:
+    return {"variable": {"name": "note", "data_type": "string"}, "sources": [source]}
+
+
+@pytest.mark.parametrize("step_type", ["initialize_variable", "update_variable"])
+def test_a_string_static_source_gets_the_value_html_the_editor_reads(
+    patch_live_lookups, step_type
+):
+    """A newline is a new paragraph and an empty line an empty one, as in
+    the kitchen-sink fixture's static source."""
+    block = _variable_block(_static("For\n{{ custom_objects.mrn }}\n\nend"))
+    payload = _build(_one_step_spec(step_type, block))
+    (source,) = payload["steps"][0][_block_field_for(step_type)]["sources"]
+    assert source["value_html"] == f"<p>For</p><p>{_MRN_SPAN}</p><p></p><p>end</p>"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [_static("True", "boolean"), _static("4", "number"), _static(["a", "b"])],
+    ids=["boolean", "number", "list"],
+)
+def test_other_static_sources_get_no_value_html(patch_live_lookups, source):
+    block = _variable_block(source)
+    payload = _build(_one_step_spec("initialize_variable", block))
+    (sent,) = payload["steps"][0]["action_initialize_variable"]["sources"]
+    assert "value_html" not in sent
+
+
+def test_a_ui_saved_static_source_keeps_its_value_html_byte_for_byte(
+    patch_live_lookups,
+):
+    """The builder's HTML ends in an empty paragraph the plain value lacks;
+    their text still matches."""
+    raw = load_fixture("automations/kitchen_sink_triggers.raw.json")
+    (ui,) = [
+        src
+        for s in raw["steps"]
+        if s["step_type"] == "initialize_variable"
+        for src in s["action_initialize_variable"]["sources"]
+        if (src.get("value_html") or "").startswith("<p>text with merge fields")
+    ]
+    source = _static(ui["value"], value_html=ui["value_html"])
+    payload = _build(_one_step_spec("initialize_variable", _variable_block(source)))
+    (sent,) = payload["steps"][0]["action_initialize_variable"]["sources"]
+    assert sent["value_html"] == ui["value_html"]
+
+
+def test_a_ui_saved_extraction_prompt_keeps_its_paragraphs(patch_live_lookups):
+    """The plain prompt drops the paragraph breaks its HTML keeps."""
+    raw = load_fixture("automations/llm_comparison.raw.json")
+    ui = next(
+        s["action_file_content_extraction"]
+        for s in raw["steps"]
+        if s["step_type"] == "file_content_extraction"
+        and "</p><p>" in s["action_file_content_extraction"]["html_prompt"]
+    )
+    assert ui["prompt"] not in ui["html_prompt"]
+    block = {
+        "model_name": "kizen/pro",
+        "prompt": ui["prompt"],
+        "html_prompt": ui["html_prompt"],
+        "input_field_ref": "patients.mrn",
+    }
+    payload = _build(_one_step_spec("file_content_extraction", block))
+    sent = payload["steps"][0]["action_file_content_extraction"]
+    assert sent["html_prompt"] == ui["html_prompt"]
+
+
+def test_an_llm_decision_prompt_gets_html_prompt(patch_live_lookups):
+    block = {
+        "type": "llm_decision",
+        "llm_decision": {
+            "model_name": "kizen/pro",
+            "prompt": "Is {{ custom_objects.mrn }} urgent?\nAnswer yes or no.",
+        },
+    }
+    payload = _build(_one_step_spec("condition", block))
+    decision = payload["steps"][0]["step_condition"]["llm_decision"]
+    assert decision["html_prompt"] == (
+        f"<p>Is {_MRN_SPAN} urgent?</p><p>Answer yes or no.</p>"
+    )
+
+
+def test_a_new_entity_name_gets_its_html(patch_live_lookups):
+    block = {
+        "target_object": "patients",
+        "context_entity_field": "patients.mrn",
+        "new_entity_name": "Follow-up for {{ entity_record.mrn }}",
+    }
+    payload = _build(_one_step_spec("create_related_entity", block))
+    sent = payload["steps"][0]["action_create_related_entity"]
+    assert sent["new_entity_name_html"] == (
+        '<p>Follow-up for <span class="kzn-merge-field" '
+        'data-merge-field-fallback-label="Medical Record Number (MRN)" '
+        'data-merge-field-relationship="entity_record.mrn">{{ entity_record.mrn }}'
+        "</span></p>"
+    )
+
+
+def test_steps_add_and_edit_follow_an_edited_prompt(patch_live_lookups):
+    """A `steps get` block whose plain prompt was edited: the HTML follows."""
+    from kizen_builder.tools.automations import build_wire_step, normalize_step_patch
+
+    block = {
+        "model_name": "kizen/lite",
+        "prompt": "Repeat {{ custom_objects.mrn }}",
+        "html_prompt": f"<p>Echo {_MRN_SPAN}</p>",
+    }
+    added = build_wire_step(
+        {"step_type": "call_llm", "action_call_llm": dict(block)},
+        _LIVE_PAYLOAD,
+        "patients",
+    )
+    edited = normalize_step_patch(
+        {"action_call_llm": dict(block)}, "llm", "call_llm", _LIVE_PAYLOAD, "patients"
+    )
+    for step in (added, edited):
+        assert step["action_call_llm"]["html_prompt"] == f"<p>Repeat {_MRN_SPAN}</p>"
