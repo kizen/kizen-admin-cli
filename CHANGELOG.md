@@ -53,6 +53,12 @@ called out explicitly under **Changed** or **Removed**.
   and `steps` refuse an exit loop outside a loop body, one aimed at a loop it
   isn't inside, or one that sets both `loop_to_exit` and `step`. `show` draws
   the target and warns about steps hung under it, which never run.
+- **Automations can find one record with a `find_single_record` step.** It
+  searches an object by filter, group or all records, sorts, and writes the
+  first match to a variable or a relationship field.
+  `when_no_records_found` and `when_multiple_records_found` choose between an
+  error and a blank result. `kizen automations step-types show
+  find_single_record` lists the choices.
 
 ### Changed
 
@@ -219,6 +225,10 @@ called out explicitly under **Changed** or **Removed**.
   no longer fails** with "Exit Loop step references a loop that does not
   exist." `steps`, `roundtrip --execute` and `update` now send the loop's key
   instead of echoing the id read back.
+- **Editing an automation that has a Find Single Record step built in Kizen's
+  builder no longer fails** with "Must be a valid UUID." `steps`,
+  `roundtrip --execute` and `update` now send the step in the form Kizen
+  accepts.
 - **A code step's `related_field` input or output on a to-many relationship
   fails the dry-run.** The server refused it with *"The field must not allow
   multiple values"*. The finding says to read the relationship with

@@ -25,6 +25,7 @@ re-run through the DSL.
 | Filter groups (segments) | `config` | `kizen docs show saved-views` |
 | Automation `condition` step | `step_condition.filter_config` | `kizen automations step-types show condition` |
 | Automation `search_records` step | `filter_config` | resolved against the step's **own** `custom_object`, not the automation's `target_object` |
+| Automation `find_single_record` step | `filter_config` | resolved against the step's own `custom_object`, as `search_records` |
 | Dashlets (`dashboards dashlet-config --filter`, or a dashboard spec) | `config.filters.custom_filters` | a spec in `config.filters` compiles against the dashlet's object; an empty filter is a specific literal, not `{}` — `kizen docs show dashboard` |
 
 ## The DSL
@@ -49,12 +50,13 @@ re-run through the DSL.
   condition step.
 - A variable compared to a static value is a clause type the DSL doesn't
   cover (below): pass a raw wire dict. A **field compared to a variable** is
-  in the DSL: give `"variable"` instead of `"value"`, in a condition or
-  `search_records` step only (below).
+  in the DSL: give `"variable"` instead of `"value"`, in a condition,
+  `search_records` or `find_single_record` step only (below).
 - **A value can't be a merge field.** A condition or `search_records` step
   stores `{{ … }}` in a filter value as text and matches nothing (confirmed
-  live 2026-10-30 and 2026-11-02), so the CLI refuses one in a filter spec.
-  Copy the value into a string variable and compare to that.
+  live 2026-10-30 and 2026-11-02), so the CLI refuses one in a filter spec,
+  and in a `find_single_record` step's too. Copy the value into a string
+  variable and compare to that.
 - A pipeline's `stage` field also takes `time_in_stage`, `entered_stage` and
   `left_stage`, which test how long a record has been in a stage and when it
   entered or left one. See [Pipeline stage conditions](#pipeline-stage-conditions).
@@ -92,8 +94,8 @@ Rules:
   `subtype: "non_custom"`.
 - **`value` may never be null** — use `false` for a blank check, `""` for an
   empty-text check.
-- **Automation rules carry the editor's layout.** A condition or
-  `search_records` rule the CLI compiles from a filter spec also carries a
+- **Automation rules carry the editor's layout.** A condition or search
+  step rule the CLI compiles from a filter spec also carries a
   `view_model`: the layout the Kizen workflow editor reads to show the rule.
   Other surfaces don't use it; UI-built filter groups carry none (confirmed
   live 2026-10-30). [The table below](#which-automation-rules-carry-the-editors-layout)
@@ -302,9 +304,9 @@ with no `view_model` still executes, so a wrong value in a raw clause probably
 changes only how the builder UI shows it (not tested). A rule the CLI compiles
 from a filter spec doesn't need it: the CLI writes the layout itself and
 resolves the id per business (see [Comparing a field to an array
-variable](#comparing-a-field-to-a-variable-condition-and-search_records-steps)).
+variable](#comparing-a-field-to-a-variable-condition-search_records-and-find_single_record-steps)).
 
-## Comparing a field to a variable (condition and search_records steps)
+## Comparing a field to a variable (condition, search_records and find_single_record steps)
 
 The UI's "Variable" option on a rule compares a record field to an
 automation variable instead of a literal. In the DSL, name the variable:
@@ -323,7 +325,8 @@ automation variable instead of a literal. In the DSL, name the variable:
   "Contains Any Of" / "Contains None Of".
 - The variable must be declared in the same automation, by an
   `initialize_variable` step or as a `search_records` destination (an entity
-  array of the searched object). The planner checks its kind against the
+  array of the searched object). A `find_single_record` destination isn't a
+  declaration: Kizen refuses an undeclared one. The planner checks its kind against the
   field. The CLI writes the UI's full `view_model`; without it the UI can't
   open the step.
 - For a dropdown, the array can hold option names or option UUIDs: a test
@@ -350,7 +353,8 @@ The string-variable layout was saved in the editor for email `contains`, in
 a condition step. The editor's token for `=` (`equals`), text fields, and the
 same rule in a `search_records` step are inferred from the literal rules and
 the shared clause shape. A `search_records` email `=` rule built this way ran
-and matched (confirmed live 2026-11-02).
+and matched (confirmed live 2026-11-02), and so did one in a
+`find_single_record` step (confirmed live 2026-11-25).
 
 ## Writing a condition step's filter, start to finish
 

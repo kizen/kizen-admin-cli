@@ -1,0 +1,564 @@
+{
+ "id": "34bfc063-62e6-4f12-a22c-ee5f3fccbe2d",
+ "name": "Find Single Record",
+ "api_name": "find_single_record",
+ "ai_description": null,
+ "active": false,
+ "type": "record_based",
+ "custom_object": {
+  "id": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+  "name": "claims",
+  "description": null,
+  "entity_name": "claims",
+  "object_name": "claims",
+  "object_class": "custom_objects",
+  "object_type": "pipeline",
+  "default_on_activities": true,
+  "deleted": false
+ },
+ "user_description": "",
+ "folder": {
+  "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+  "name": "<business_root>"
+ },
+ "triggers": [
+  {
+   "id": "5b0c2a0e-6f0e-4f3e-9a63-2f1c0d6c8b11",
+   "description": "Manual",
+   "user_description": "",
+   "trigger_type": "manual",
+   "stats": {
+    "number_completed": 0
+   }
+  }
+ ],
+ "steps": [
+  {
+   "id": "61337be6-a74a-411a-9585-e13e72601a98",
+   "step_type": "initialize_variable",
+   "order": 0,
+   "description": "found_policy = <i>empty</i>",
+   "user_description": "",
+   "stats": {
+    "number_completed": 0,
+    "number_failed": 0,
+    "number_pending": 0
+   },
+   "parent_step_id": null,
+   "parent_condition": "",
+   "action_initialize_variable": {
+    "sources": [],
+    "variable": {
+     "id": "64a7c197-5f5d-4331-8a7a-1020688d2e93",
+     "name": "found_policy",
+     "data_type": "entity",
+     "data_subtype": {
+      "id": "b2d4c620-f837-4451-bf9f-29376172338c",
+      "name": "policies",
+      "description": null,
+      "entity_name": "policies",
+      "object_name": "policies",
+      "object_class": "custom_objects",
+      "object_type": "standard",
+      "default_on_activities": true,
+      "deleted": false
+     },
+     "input_format": null,
+     "output_format": null,
+     "created": "2026-11-25T13:58:53.779442Z",
+     "deleted": false,
+     "is_array": false,
+     "is_return_variable": false,
+     "is_array_item_variable": false,
+     "source_array_variable": null
+    },
+    "is_required": false,
+    "array_aggregation_mode": "add_all",
+    "deduplicate_array": false
+   },
+   "action_on_failure": "notify_pause",
+   "should_skip_execution": false,
+   "error_notification_severity_level": "inherit",
+   "is_branch_group_initiator": false
+  },
+  {
+   "id": "80e47f5c-523c-4319-ab45-6c52a162ea6a",
+   "step_type": "find_single_record",
+   "order": 1,
+   "description": "Add policies record to 'Related Policies' Where policies Fields 'Policy Name' Isn't Blank",
+   "user_description": "",
+   "stats": {
+    "number_completed": 0,
+    "number_failed": 0,
+    "number_pending": 0
+   },
+   "parent_step_id": "61337be6-a74a-411a-9585-e13e72601a98",
+   "parent_condition": "",
+   "action_find_single_record": {
+    "custom_object": {
+     "id": "b2d4c620-f837-4451-bf9f-29376172338c",
+     "name": "policies",
+     "object_name": "policies",
+     "entity_name": "policies",
+     "deleted": false
+    },
+    "filter_type": "custom_filter",
+    "filter_config": {
+     "and": false,
+     "query": [
+      {
+       "id": "query-0",
+       "and": false,
+       "filters": [
+        {
+         "type": "fields",
+         "field": "name",
+         "value": false,
+         "subtype": "non_custom",
+         "condition": "is_blank",
+         "view_model": [
+          [
+           "filter_type",
+           {
+            "vars": [
+             [
+              "fields_settings_search",
+              true
+             ],
+             [
+              "custom_object_id",
+              "b2d4c620-f837-4451-bf9f-29376172338c"
+             ],
+             [
+              "object_type",
+              "standard"
+             ],
+             [
+              "client_tag_field_id",
+              "f6a89dd0-7e37-42fb-92f6-eef59ddade10"
+             ]
+            ],
+            "filter_type": "fields"
+           }
+          ],
+          [
+           "field_id",
+           {
+            "url": "/custom-objects/b2d4c620-f837-4451-bf9f-29376172338c/fields/bdb5efc0-5621-4fbe-925d-9cb08e8cdf3c",
+            "method": "GET",
+            "error_message": {
+             "404": "The field has been deleted"
+            },
+            "error_response": {
+             "name": "name",
+             "relation": {},
+             "field_type": "text"
+            }
+           }
+          ],
+          [
+           "condition",
+           "is_not_blank"
+          ]
+         ],
+         "description": "Fields 'Policy Name' Isn't Blank"
+        }
+       ]
+      }
+     ],
+     "invalid": false
+    },
+    "filter_groups": [],
+    "sort_field": {
+     "id": "bdb5efc0-5621-4fbe-925d-9cb08e8cdf3c",
+     "name": "name",
+     "display_name": "Policy Name",
+     "deleted": false,
+     "field_type": "text",
+     "options": [],
+     "relation": null,
+     "rating": null
+    },
+    "sort_direction": "desc",
+    "when_no_records_found": "blank",
+    "when_multiple_records_found": "error",
+    "destination": {
+     "type": "context_entity_field",
+     "value_custom_object": null,
+     "value_datatype": null,
+     "value": null,
+     "field": {
+      "id": "a60c6500-2a52-47b7-b04d-167359887c89",
+      "name": "related_policies",
+      "display_name": "Related Policies",
+      "deleted": false,
+      "field_type": "relationship",
+      "options": [],
+      "relation": {
+       "id": "0f55c70a-c07c-4f82-b582-8cc3cedf40be",
+       "related_field": "6bcb88aa-08e3-43e5-ab83-e4840250709c",
+       "related_object": "b2d4c620-f837-4451-bf9f-29376172338c",
+       "related_object_name": "policies",
+       "related_object_object_name": "policies",
+       "related_entity_name": "policies",
+       "related_category": "725bf607-0933-4934-adf6-aa6420f78536",
+       "related_name": "Related Claims",
+       "relation_type": "additional",
+       "cardinality": "many_to_many",
+       "fetch_url": "standard"
+      },
+      "rating": null
+     },
+     "relationship_field": null,
+     "variable": null
+    },
+    "conflict_resolution": "add_only"
+   },
+   "action_on_failure": "notify_pause",
+   "should_skip_execution": false,
+   "error_notification_severity_level": "inherit",
+   "is_branch_group_initiator": false
+  },
+  {
+   "id": "ba5d6073-946a-4656-82bd-5b4576b7cf17",
+   "step_type": "find_single_record",
+   "order": 2,
+   "description": "Overwrite 'found_policy' with policies record Where policies is All Records",
+   "user_description": "",
+   "stats": {
+    "number_completed": 0,
+    "number_failed": 0,
+    "number_pending": 0
+   },
+   "parent_step_id": "80e47f5c-523c-4319-ab45-6c52a162ea6a",
+   "parent_condition": "",
+   "action_find_single_record": {
+    "custom_object": {
+     "id": "b2d4c620-f837-4451-bf9f-29376172338c",
+     "name": "policies",
+     "object_name": "policies",
+     "entity_name": "policies",
+     "deleted": false
+    },
+    "filter_type": "all_records",
+    "filter_config": null,
+    "filter_groups": [],
+    "sort_field": {
+     "id": "1111c67d-f9c0-4bab-985e-b6306722dbce",
+     "name": "created",
+     "display_name": "Date Created",
+     "deleted": false,
+     "field_type": "datetime",
+     "options": [],
+     "relation": null,
+     "rating": null
+    },
+    "sort_direction": "asc",
+    "when_no_records_found": "error",
+    "when_multiple_records_found": "blank",
+    "destination": {
+     "type": "automation_variable",
+     "value_custom_object": null,
+     "value_datatype": null,
+     "value": null,
+     "field": null,
+     "relationship_field": null,
+     "variable": {
+      "id": "64a7c197-5f5d-4331-8a7a-1020688d2e93",
+      "name": "found_policy",
+      "data_type": "entity",
+      "data_subtype": "b2d4c620-f837-4451-bf9f-29376172338c",
+      "deleted": false,
+      "is_array": false,
+      "is_return_variable": false
+     }
+    },
+    "conflict_resolution": "overwrite_except_null"
+   },
+   "action_on_failure": "notify_pause",
+   "should_skip_execution": false,
+   "error_notification_severity_level": "inherit",
+   "is_branch_group_initiator": false
+  },
+  {
+   "id": "57f43443-50e1-4b16-8078-2d548cfa863e",
+   "step_type": "find_single_record",
+   "order": 3,
+   "description": "Overwrite 'found_policy: Related Claims' with claims record Where claims In Group(s) ‘My Records’",
+   "user_description": "",
+   "stats": {
+    "number_completed": 0,
+    "number_failed": 0,
+    "number_pending": 0
+   },
+   "parent_step_id": "ba5d6073-946a-4656-82bd-5b4576b7cf17",
+   "parent_condition": "",
+   "action_find_single_record": {
+    "custom_object": {
+     "id": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+     "name": "claims",
+     "object_name": "claims",
+     "entity_name": "claims",
+     "deleted": false
+    },
+    "filter_type": "in_group",
+    "filter_config": null,
+    "filter_groups": [
+     {
+      "id": "f1ef3364-a6cd-4c5c-a524-2034640007cb",
+      "name": "My Records",
+      "config": {
+       "and": null,
+       "query": [
+        {
+         "id": "query-0",
+         "and": false,
+         "filters": [
+          {
+           "type": "fields_v2",
+           "field": "owner",
+           "value": "is_me",
+           "subtype": "non_custom",
+           "condition": "=",
+           "overwrite": {
+            "type": "owner"
+           }
+          }
+         ]
+        }
+       ]
+      },
+      "deleted": false,
+      "invalid": false
+     }
+    ],
+    "sort_field": {
+     "id": "28548924-eac7-452b-be16-c12a24ee35fb",
+     "name": "stage",
+     "display_name": "Stage",
+     "deleted": false,
+     "field_type": "dropdown",
+     "options": [
+      {
+       "id": "d24dad28-e667-4507-978b-790785812c62",
+       "name": "Open",
+       "order": 0,
+       "percentage_chance_to_close": 0,
+       "chance_to_close_percentage": 0,
+       "status": "open"
+      }
+     ],
+     "relation": null,
+     "rating": null
+    },
+    "sort_direction": "asc",
+    "when_no_records_found": "error",
+    "when_multiple_records_found": "use_first",
+    "destination": {
+     "type": "automation_entity_variable_field",
+     "value_custom_object": null,
+     "value_datatype": null,
+     "value": null,
+     "field": {
+      "id": "6bcb88aa-08e3-43e5-ab83-e4840250709c",
+      "name": "related_claims",
+      "display_name": "Related Claims",
+      "deleted": false,
+      "field_type": "relationship",
+      "options": [],
+      "relation": {
+       "id": "1c658235-2db4-42fb-a974-81ac01907735",
+       "related_field": "a60c6500-2a52-47b7-b04d-167359887c89",
+       "related_object": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+       "related_object_name": "claims",
+       "related_object_object_name": "claims",
+       "related_entity_name": "claims",
+       "related_category": "cd4a1cea-fe7f-4afb-b440-e671d9e43432",
+       "related_name": "Related Policies",
+       "relation_type": "additional_for",
+       "cardinality": "many_to_many",
+       "fetch_url": "pipeline"
+      },
+      "rating": null
+     },
+     "relationship_field": null,
+     "variable": {
+      "id": "64a7c197-5f5d-4331-8a7a-1020688d2e93",
+      "name": "found_policy",
+      "data_type": "entity",
+      "data_subtype": "b2d4c620-f837-4451-bf9f-29376172338c",
+      "deleted": false,
+      "is_array": false,
+      "is_return_variable": false
+     }
+    },
+    "conflict_resolution": "overwrite"
+   },
+   "action_on_failure": "notify_pause",
+   "should_skip_execution": false,
+   "error_notification_severity_level": "inherit",
+   "is_branch_group_initiator": false
+  },
+  {
+   "id": "a53e12ad-bd10-40d2-bcb0-dc8dd40e4b6e",
+   "step_type": "find_single_record",
+   "order": 4,
+   "description": "Set 'Policy: Policy Claims' to claims record if Blank, Where claims Not In Group(s) ‘My Records’",
+   "user_description": "",
+   "stats": {
+    "number_completed": 0,
+    "number_failed": 0,
+    "number_pending": 0
+   },
+   "parent_step_id": "57f43443-50e1-4b16-8078-2d548cfa863e",
+   "parent_condition": "",
+   "action_find_single_record": {
+    "custom_object": {
+     "id": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+     "name": "claims",
+     "object_name": "claims",
+     "entity_name": "claims",
+     "deleted": false
+    },
+    "filter_type": "not_in_group",
+    "filter_config": null,
+    "filter_groups": [
+     {
+      "id": "f1ef3364-a6cd-4c5c-a524-2034640007cb",
+      "name": "My Records",
+      "config": {
+       "and": null,
+       "query": [
+        {
+         "id": "query-0",
+         "and": false,
+         "filters": [
+          {
+           "type": "fields_v2",
+           "field": "owner",
+           "value": "is_me",
+           "subtype": "non_custom",
+           "condition": "=",
+           "overwrite": {
+            "type": "owner"
+           }
+          }
+         ]
+        }
+       ]
+      },
+      "deleted": false,
+      "invalid": false
+     }
+    ],
+    "sort_field": {
+     "id": "fd6da7cb-8ce8-48c6-985e-8c3fbc37f632",
+     "name": "display_name",
+     "display_name": "Display Name",
+     "deleted": false,
+     "field_type": "text",
+     "options": [],
+     "relation": null,
+     "rating": null
+    },
+    "sort_direction": "desc",
+    "when_no_records_found": "error",
+    "when_multiple_records_found": "use_first",
+    "destination": {
+     "type": "related_object_field",
+     "value_custom_object": null,
+     "value_datatype": null,
+     "value": null,
+     "field": {
+      "id": "e5187bfe-1fe8-404c-a3c0-27163f9582e6",
+      "name": "policy_claims",
+      "display_name": "Policy Claims",
+      "deleted": false,
+      "field_type": "relationship",
+      "options": [],
+      "relation": {
+       "id": "e6f6947a-0bf8-4952-9128-b15995be2d14",
+       "related_field": "b1561707-d434-47de-8320-7f7f70f8ccfc",
+       "related_object": "cc7d418b-329b-4fd3-9324-c6673b6f34a8",
+       "related_object_name": "claims",
+       "related_object_object_name": "claims",
+       "related_entity_name": "claims",
+       "related_category": "cd4a1cea-fe7f-4afb-b440-e671d9e43432",
+       "related_name": "Policy",
+       "relation_type": "primary_for",
+       "cardinality": "one_to_many",
+       "fetch_url": "pipeline"
+      },
+      "rating": null
+     },
+     "relationship_field": {
+      "id": "b1561707-d434-47de-8320-7f7f70f8ccfc",
+      "name": "policy",
+      "display_name": "Policy",
+      "deleted": false,
+      "field_type": "relationship",
+      "options": [],
+      "relation": {
+       "id": "2cd6dde1-8d6a-4a00-a947-7abccf3e0a5b",
+       "related_field": "e5187bfe-1fe8-404c-a3c0-27163f9582e6",
+       "related_object": "b2d4c620-f837-4451-bf9f-29376172338c",
+       "related_object_name": "policies",
+       "related_object_object_name": "policies",
+       "related_entity_name": "policies",
+       "related_category": "725bf607-0933-4934-adf6-aa6420f78536",
+       "related_name": "Policy Claims",
+       "relation_type": "primary",
+       "cardinality": "many_to_one",
+       "fetch_url": "standard"
+      },
+      "rating": null
+     },
+     "variable": null
+    },
+    "conflict_resolution": "update_if_blank"
+   },
+   "action_on_failure": "notify_pause",
+   "should_skip_execution": false,
+   "error_notification_severity_level": "inherit",
+   "is_branch_group_initiator": false
+  }
+ ],
+ "variables": [
+  {
+   "id": "64a7c197-5f5d-4331-8a7a-1020688d2e93",
+   "name": "found_policy",
+   "data_type": "entity",
+   "data_subtype": {
+    "id": "b2d4c620-f837-4451-bf9f-29376172338c",
+    "name": "policies",
+    "description": null,
+    "entity_name": "policies",
+    "object_name": "policies",
+    "object_class": "custom_objects",
+    "object_type": "standard",
+    "default_on_activities": true,
+    "deleted": false
+   },
+   "input_format": null,
+   "output_format": null,
+   "created": "2026-11-25T13:58:53.779442Z",
+   "deleted": false,
+   "is_array": false,
+   "is_return_variable": false,
+   "is_array_item_variable": false,
+   "source_array_variable": null
+  }
+ ],
+ "revision": 10,
+ "error_notification_email": "",
+ "skip_non_working_days": false,
+ "number_active": 0,
+ "number_paused": 0,
+ "number_completed": 0,
+ "priority_rank": 10,
+ "trigger_throttle_seconds": 0.5,
+ "created": "2026-11-25T08:10:00.000000-06:00",
+ "updated": "2026-11-25T08:10:00.000000-06:00",
+ "debug_next_n_executions": 0,
+ "error_notification_severity_level": "error"
+}

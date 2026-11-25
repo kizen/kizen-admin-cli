@@ -30,6 +30,13 @@ automation steps).
   renumbered. Re-capture from the drift tier's `drift_loops` spec.
 - `automations/nested_loops.raw.json` — built in Kizen's builder 2026-11-11,
   read back unchanged; its exit loop targets the outer loop.
+- `automations/find_single_record.raw.json` — four find_single_record steps
+  built in Kizen's builder 2026-11-25, one per destination type and filter
+  type. Trimmed to those steps and the `found_policy` variable they write: the
+  steps between them were removed and `order` and `parent_step_id` renumbered
+  into a chain, and the manual trigger, `revision`, timestamps and the
+  remaining top-level keys come from `extraction_input_sources.raw.json`.
+  Object and field names were renamed to `claims`/`policies`.
 - `records/`, `executions/`, `team/` — tool-level `--json` output.
   Exceptions: `executions/detail_form_submission.json` and
   `executions/history_form_submission.json` are hand-authored to the OpenAPI

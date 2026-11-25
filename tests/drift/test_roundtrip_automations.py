@@ -69,6 +69,7 @@ CONTROL_FLOW_STEPS = frozenset(
     {
         "initialize_variable",
         "search_records",
+        "find_single_record",
         "delay",
         "code_step",
         "goal",
@@ -1161,10 +1162,24 @@ def drift_control_flow(
             },
         },
         {
-            "key": "search",
-            "step_type": "search_records",
+            "key": "init_one",
+            "step_type": "initialize_variable",
             "order": 2,
             "parent_key": "init_found",
+            "action_initialize_variable": {
+                "variable": {
+                    "name": "drift_one",
+                    "data_type": "entity",
+                    "data_subtype": drift_object["uuid"],
+                },
+                "sources": [],
+            },
+        },
+        {
+            "key": "search",
+            "step_type": "search_records",
+            "order": 3,
+            "parent_key": "init_one",
             "action_search_records": {
                 "custom_object": drift_object["api_name"],
                 "filter_type": "all_records",
@@ -1173,16 +1188,30 @@ def drift_control_flow(
             },
         },
         {
+            "key": "find",
+            "step_type": "find_single_record",
+            "order": 4,
+            "parent_key": "search",
+            "action_find_single_record": {
+                "custom_object": drift_object["api_name"],
+                "filter_type": "custom_filter",
+                "filter_config": {"all": [{"field": "name", "op": "not_blank"}]},
+                "sort_field": "name",
+                "sort_direction": "asc",
+                "destination": {"type": "automation_variable", "variable": "drift_one"},
+            },
+        },
+        {
             "key": "wait",
             "step_type": "delay",
-            "order": 3,
-            "parent_key": "search",
+            "order": 5,
+            "parent_key": "find",
             "step_delay": {"days": 1, "value_origin": "static"},
         },
         {
             "key": "code",
             "step_type": "code_step",
-            "order": 4,
+            "order": 6,
             "parent_key": "wait",
             "action_code_step": {
                 "script": "outputs.drift_note = str(inputs.drift_note or '')",
@@ -1206,7 +1235,7 @@ def drift_control_flow(
         {
             "key": "goal",
             "step_type": "goal",
-            "order": 5,
+            "order": 7,
             "parent_key": "code",
             "step_goal": {
                 "wait_type": "delay",
@@ -1230,7 +1259,7 @@ def drift_control_flow(
         {
             "key": "check",
             "step_type": "condition",
-            "order": 6,
+            "order": 8,
             "parent_key": "goal",
             "step_condition": {
                 "type": "custom_filter",
@@ -1240,7 +1269,7 @@ def drift_control_flow(
         {
             "key": "kick",
             "step_type": "start_automation",
-            "order": 7,
+            "order": 9,
             "parent_key": "check",
             "parent_branch": "yes",
             "action_start_automation": {
@@ -1251,7 +1280,7 @@ def drift_control_flow(
         {
             "key": "stop",
             "step_type": "stop_execution",
-            "order": 8,
+            "order": 10,
             "parent_key": "check",
             "parent_branch": "no",
             "action_stop_execution": {"action": "stop_and_complete"},
@@ -1260,7 +1289,7 @@ def drift_control_flow(
             # Converging the YES branch back onto the NO branch's tail.
             "key": "merge",
             "step_type": "go_to_automation_step",
-            "order": 9,
+            "order": 11,
             "parent_key": "kick",
             "action_go_to_automation_step": {"step_key": "stop"},
         },
@@ -1300,6 +1329,22 @@ def test_search_records_reference_fields_are_objects_not_bare_scalars(
     assert sent["custom_object"] == {"id": drift_object["uuid"]}
     assert sent["destination_variable"] == {"name": "drift_found"}
     assert sent["filter_groups"] == []
+
+
+def test_find_single_record_reads_back_what_was_sent(drift_control_flow, drift_object):
+    """`sort_field` goes as a bare UUID and the destination variable by name;
+    the read expands both."""
+    (sent,) = (
+        s["action_find_single_record"]
+        for s in drift_control_flow["sent"]["steps"]
+        if s["type"] == "find_single_record"
+    )
+    (live,) = _live_steps_by_type(drift_control_flow)["find_single_record"]
+    block = live["action_find_single_record"]
+    assert block["custom_object"]["id"] == drift_object["uuid"]
+    assert block["sort_field"]["id"] == sent["sort_field"]
+    assert block["sort_field"]["name"] == "name"
+    assert block["destination"]["variable"]["name"] == "drift_one"
 
 
 def test_go_to_automation_step_resolves_its_target_key(drift_control_flow):

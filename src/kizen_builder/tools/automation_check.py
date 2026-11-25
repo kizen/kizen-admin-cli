@@ -520,6 +520,7 @@ _VARIABLE_REFS: dict[str, tuple[tuple[str, str], ...]] = {
         ("assigned_to.variable", ""),
     ),
     "search_records": (("destination_variable", "array"),),
+    "find_single_record": (("destination.variable", ""),),
     "update_variable": (("variable", ""), ("sources[].variable", "")),
     "initialize_variable": (("sources[].variable", ""),),
     "call_llm": (("destinations[].variable", ""),),

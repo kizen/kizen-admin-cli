@@ -344,6 +344,90 @@ class ActionSearchRecordsConfig(BaseModel):
     )
 
 
+class FindSingleRecordDestination(BaseModel):
+    """Where a find_single_record step writes the record it found."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal[
+        "automation_variable",
+        "context_entity_field",
+        "related_object_field",
+        "automation_entity_variable_field",
+    ]
+    variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description="The variable's name: automation_variable, automation_entity_variable_field.",
+    )
+    field: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The field written, as 'object.field' or a UUID: on the record, the "
+            "related record, or the variable's record."
+        ),
+    )
+    relationship_field: str | dict[str, Any] | None = Field(
+        default=None,
+        description="related_object_field: the record's relationship field to hop.",
+    )
+
+
+class ActionFindSingleRecordConfig(BaseModel):
+    """Config for `step_type: find_single_record`.
+
+    Searches `custom_object` as `search_records` does, sorts the matches and
+    writes one to `destination`. Choices: `GET /api/docs/schema`, 2026-11-25
+    (`FindSingleRecordRequest`).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    custom_object: str | dict[str, Any] = Field(
+        description="Object being searched — api_name, UUID, or an {id}/{name} dict."
+    )
+    filter_type: Literal["all_records", "custom_filter", "in_group", "not_in_group"]
+    filter_config: FilterConfig | None = Field(
+        default=None,
+        description=(
+            "As search_records: a filter spec with field names resolved "
+            "against `custom_object`, or a raw filter_config. Needed with "
+            "filter_type 'custom_filter'."
+        ),
+    )
+    filter_groups: list[Any] = Field(
+        default_factory=list,
+        description=(
+            "Saved filter group(s) on `custom_object` — name, UUID, or an "
+            "{id}/{name} dict. Needed with filter_type 'in_group'/'not_in_group'."
+        ),
+    )
+    sort_field: str | dict[str, Any] = Field(
+        description=(
+            "Field the matches are sorted by: an api_name on `custom_object`, "
+            "'object.field' or a UUID."
+        )
+    )
+    sort_direction: Literal["asc", "desc"] = Field(
+        description="'asc' takes the oldest or A first, 'desc' the newest or Z."
+    )
+    when_no_records_found: Literal["error", "blank"] | None = Field(
+        default=None, description="Kizen's default: 'error'."
+    )
+    when_multiple_records_found: Literal["use_first", "error", "blank"] | None = Field(
+        default=None, description="Kizen's default: 'use_first'."
+    )
+    conflict_resolution: (
+        Literal[
+            "overwrite",
+            "add_only",
+            "update_if_blank",
+            "overwrite_except_null",
+        ]
+        | None
+    ) = Field(default=None, description="Kizen's default: 'overwrite'.")
+    destination: FindSingleRecordDestination
+
+
 ArrayAggregationMode = Literal["add_first_non_blank", "add_all"]
 
 _ARRAY_AGGREGATION_MODE_DESCRIPTION = (

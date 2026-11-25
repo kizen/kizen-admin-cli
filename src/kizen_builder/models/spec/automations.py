@@ -30,6 +30,7 @@ from kizen_builder.models.spec.automations_actions_control import (
 from kizen_builder.models.spec.automations_actions_data import (
     ActionChangeFieldValueConfig,
     ActionCreateRelatedEntityConfig,
+    ActionFindSingleRecordConfig,
     ActionInitializeVariableConfig,
     ActionMathOperatorConfig,
     ActionModifyRelatedEntitiesAutomationConfig,
@@ -89,6 +90,7 @@ _STEP_TYPE_TO_CONFIG_FIELD: dict[str, str | None] = {
     "update_variable": "action_update_variable",
     "archive_record": "action_archive_record",
     "search_records": "action_search_records",
+    "find_single_record": "action_find_single_record",
     "branch": None,
     "merge_branches": None,
     "next_or_finish": None,
@@ -114,6 +116,7 @@ _STEPS_REQUIRING_CONFIG = {
     "start_automation",
     "update_variable",
     "search_records",
+    "find_single_record",
 }
 
 
@@ -242,6 +245,7 @@ class AutomationStepDef(BaseModel):
     action_update_variable: ActionUpdateVariableConfig | None = None
     action_archive_record: ActionArchiveRecordConfig | None = None
     action_search_records: ActionSearchRecordsConfig | None = None
+    action_find_single_record: ActionFindSingleRecordConfig | None = None
 
     @model_validator(mode="after")
     def _validate_step_config(self) -> Self:

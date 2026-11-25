@@ -2,7 +2,7 @@
   "_meta": {
     "base_url": "https://app.go.kizen.com",
     "captured": "2026-11-25",
-    "contracts_tracked": 78,
+    "contracts_tracked": 79,
     "how_to_refresh": "KIZEN_DRIFT_PROFILE=<profile> KIZEN_DRIFT_UPDATE_SNAPSHOT=1 uv run pytest -m drift",
     "info": {
       "title": "Kizen API",
@@ -1209,6 +1209,31 @@
         "destinations",
         "model_name",
         "prompt"
+      ],
+      "surface": "automations",
+      "type": "object"
+    },
+    "schema:WriteStepRequest.action_find_single_record": {
+      "label": "step config: find_single_record",
+      "present": true,
+      "properties": {
+        "conflict_resolution": "DestinationVariableResolutionEnum{overwrite,add_only,remove_only,update_if_blank,overwrite_except_null}",
+        "custom_object": "_CustomObjectRequest",
+        "destination": "WriteValueSourceRequest",
+        "filter_config": "any?",
+        "filter_groups": "array[_FilterGroupRequest]?",
+        "filter_type": "FilterTypeD9dEnum{in_group,not_in_group,custom_filter,all_records}",
+        "sort_direction": "SortDirectionEnum{asc,desc}",
+        "sort_field": "string<uuid> (writeOnly)",
+        "when_multiple_records_found": "WhenMultipleRecordsFoundEnum{error,use_first,blank}",
+        "when_no_records_found": "WhenNoRecordsFoundEnum{error,blank}"
+      },
+      "required": [
+        "custom_object",
+        "destination",
+        "filter_type",
+        "sort_direction",
+        "sort_field"
       ],
       "surface": "automations",
       "type": "object"

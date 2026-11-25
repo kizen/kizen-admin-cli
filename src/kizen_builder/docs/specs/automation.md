@@ -166,8 +166,9 @@ matches, its descriptions, skip and failure settings, and per-type settings a
 Kizen PUT would reset, such as an LLM step's `merge_field_validation` and MCP
 server, a stop's `action`, a plugin step's `preview_user_id`, an
 `update_variable`'s `value_resolution`, an `initialize_variable`'s
-`is_return_variable`, an `exit_loop`'s target loop, and a
-`schedule_activity`'s `target_variable`.
+`is_return_variable`, an `exit_loop`'s target loop, a
+`schedule_activity`'s `target_variable`, and a `find_single_record`'s
+no-match, many-match and conflict choices.
 `--dry-run` names them as `keeps_live=[<key>, …]`. An explicit value always
 wins, `""` and `false` included; `description: ""` gets the type's default
 text. Settings the CLI doesn't model, such as an AI step's fallback model or
@@ -192,7 +193,7 @@ repair, so escalate to Kizen.
 - `kizen docs show automation-patterns`: worked multi-step automations.
 - `kizen docs show automation-step`: editing or adding **one** step.
 - `kizen docs show automation-runtime`: starting, watching and pausing runs.
-- `kizen docs show filters`: condition and `search_records` filter shapes.
+- `kizen docs show filters`: condition and search-step filter shapes.
 - `kizen docs show code-steps`: writing and testing a `code_step`'s Python.
 - `kizen docs show email-templates`: the message resource and merge fields.
 - `kizen docs show activity`: activity types and branching on what was logged.

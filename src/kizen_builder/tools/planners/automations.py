@@ -629,6 +629,12 @@ _KEPT_BLOCK_KEYS: dict[str, tuple[_KeptBlockKeys, ...]] = {
     # The planner always sends this one. Carried so its add_only default
     # for a to-many field doesn't replace a live overwrite.
     "create_related_entity": (_KeptBlockKeys(("context_entity_field_resolution",)),),
+    # A PUT that leaves them out resets them (confirmed live 2026-11-25).
+    "find_single_record": (
+        _KeptBlockKeys(("when_no_records_found",), default="error"),
+        _KeptBlockKeys(("when_multiple_records_found",), default="use_first"),
+        _KeptBlockKeys(("conflict_resolution",), default="overwrite"),
+    ),
 }
 
 
@@ -1278,7 +1284,7 @@ def _unlaid_rule_warnings(
     spec_steps = {s.key: s for s in auto.steps}
     warnings = []
     for step in payload.get("steps") or []:
-        if step["type"] not in ("condition", "search_records"):
+        if step["type"] not in ("condition", "search_records", "find_single_record"):
             continue
         cfg_field = _block_field_for(step["type"])
         fc = (step.get(cfg_field) or {}).get("filter_config")
@@ -2096,6 +2102,7 @@ class KnownChoices:
 
 
 _SCHEMA_2026_10_30 = "GET /api/docs/schema, 2026-10-30"
+_SCHEMA_2026_11_25 = "GET /api/docs/schema, 2026-11-25"
 
 # `KNOWN_ENUM_CHOICES` (steps, next to `_STEP_BUILDERS` below) and
 # `KNOWN_ENUM_CHOICES_TRIGGERS` (triggers, here) are keyed by
@@ -2154,6 +2161,7 @@ _ACTION_STEP_TYPES = {
     "delete_scheduled_activity",
     "archive_record",
     "file_content_extraction",
+    "find_single_record",
     "go_to_automation_step",
     "http_request",
     "initialize_variable",
@@ -2487,6 +2495,47 @@ def _scalar_value_resolution_problem(
     )
 
 
+def _find_single_record_problem(
+    key: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> str | None:
+    """Why a built ``action_find_single_record`` would be refused, or None:
+    a filter type without what it filters by, which Kizen takes for
+    custom_filter, and a destination Kizen refuses with a less useful
+    message (confirmed live 2026-11-25)."""
+    where = f"find_single_record step '{key}'"
+    filter_type = block.get("filter_type")
+    if filter_type == "custom_filter" and not block.get("filter_config"):
+        return (
+            f"{where}: filter_type custom_filter needs filter_config; use "
+            "all_records to search every record"
+        )
+    if filter_type in ("in_group", "not_in_group") and not block.get("filter_groups"):
+        return f"{where}: filter_type {filter_type} needs filter_groups"
+    destination = block.get("destination") or {}
+    kind = destination.get("type")
+    if auto.type == "global" and kind not in (
+        "automation_variable",
+        "automation_entity_variable_field",
+    ):
+        return (
+            f"{where}: a global automation can write the found record only to "
+            "a variable or a record variable's field"
+        )
+    if kind == "automation_variable":
+        name = str(destination.get("variable") or "")
+        searched = block["custom_object"]["id"]
+        subtype = _declared_variables(auto.steps).get(name, {}).get("data_subtype")
+        if isinstance(subtype, str) and not is_uuid(subtype):
+            subtype = ctx.object_uuid(subtype)
+        if subtype != searched:
+            obj = ctx.object_data(searched).get("api_name") or searched
+            return (
+                f"{where}: destination variable '{name}' must be an entity "
+                f"variable of {obj}"
+            )
+    return None
+
+
 def _built_block_problem(
     step_type: str,
     key: str,
@@ -2522,6 +2571,8 @@ def _built_block_problem(
         return _inbox_selection_problem(block["triggers"])
     if step_type == "update_variable":
         return _scalar_value_resolution_problem(key, block, auto)
+    if step_type == "find_single_record":
+        return _find_single_record_problem(key, block, auto, ctx)
     if step_type == "assign_team_member":
         return _assign_team_member_problem(key, block, auto, ctx)
     if step_type == "call_llm":
@@ -2657,15 +2708,15 @@ def _render_filter_config(
     values rejected). Raw is the only form for clause types the DSL doesn't
     cover (e.g. a variable compared to a static value).
 
-    ``variables`` (condition and search_records steps) are the automation's
+    ``variables`` (condition and search steps) are the automation's
     declared variables, which a spec condition's ``"variable"`` may name.
 
     A compiled spec writes the Kizen editor's ``view_model`` on each rule
     whose layout has been captured; see ``filtering._EDITOR_RULES``.
 
     ``object_api_name`` is the condition/search step's own target object —
-    the automation's ``target_object`` for a condition step, but a
-    search_records step's own ``custom_object`` (which may differ, e.g. on a
+    the automation's ``target_object`` for a condition step, but a search
+    step's own ``custom_object`` (which may differ, e.g. on a
     global automation with no target_object of its own).
     """
     from kizen_builder import filtering
@@ -3501,19 +3552,29 @@ def _step_search_records(
     filter_config/filter_groups resolve against it directly rather than
     against auto.target_object, unlike a condition step.
     """
-    object_ref = block.get("custom_object")
-    object_api = _api_name_of(object_ref)
-    object_id = _resolve_object(object_ref, ctx)
-    if not object_id:
-        raise PlanError("search_records step requires a resolvable 'custom_object'")
     var_name = _unwrap_variable_name(block.get("destination_variable"))
-    out: dict[str, Any] = {
-        "custom_object": {"id": object_id},
-        "filter_type": block.get("filter_type"),
+    return {
+        **_searched_records(block, auto, ctx, "search_records"),
         "destination_variable": {"name": var_name} if var_name else None,
         "destination_variable_resolution": block.get(
             "destination_variable_resolution", "overwrite"
         ),
+    }
+
+
+def _searched_records(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext, step_type: str
+) -> dict[str, Any]:
+    """The object, filter type, filter and filter groups of a search step
+    (`search_records`, `find_single_record`), in write dialect."""
+    object_ref = block.get("custom_object")
+    object_api = _api_name_of(object_ref)
+    object_id = _resolve_object(object_ref, ctx)
+    if not object_id:
+        raise PlanError(f"{step_type} step requires a resolvable 'custom_object'")
+    out: dict[str, Any] = {
+        "custom_object": {"id": object_id},
+        "filter_type": block.get("filter_type"),
     }
     fc = block.get("filter_config")
     if fc is not None:
@@ -3543,6 +3604,78 @@ def _step_search_records(
         if gid:
             groups.append({"id": gid})
     out["filter_groups"] = groups
+    return out
+
+
+@honours(
+    "custom_object",
+    "filter_type",
+    "filter_config",
+    "filter_groups",
+    "sort_field",
+    "sort_direction",
+    "when_no_records_found",
+    "when_multiple_records_found",
+    "destination",
+    "conflict_resolution",
+)
+def _step_find_single_record(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """Searches `custom_object` as `search_records` does and writes one
+    record to `destination`. `sort_field` goes as a bare UUID (a `{"id"}`
+    dict 400s), the destination in value-source dialect (confirmed live
+    2026-11-25)."""
+    out = _searched_records(block, auto, ctx, "find_single_record")
+    out["sort_field"] = _sort_field(block, ctx)
+    out["sort_direction"] = block.get("sort_direction")
+    for key in (
+        "when_no_records_found",
+        "when_multiple_records_found",
+        "conflict_resolution",
+    ):
+        if block.get(key) is not None:
+            out[key] = block[key]
+    destination = block.get("destination")
+    out["destination"] = (
+        _value_source(destination, auto, ctx) if destination else destination
+    )
+    return out
+
+
+def _sort_field(block: dict[str, Any], ctx: LiveContext) -> Any:
+    """A find_single_record `sort_field` as a bare UUID: from a read's
+    expanded field, a UUID, 'object.field', or an api_name on the searched
+    object."""
+    ref = block.get("sort_field")
+    if isinstance(ref, dict):
+        return ref.get("id")
+    if not isinstance(ref, str) or is_uuid(ref):
+        return ref
+    if "." in ref:
+        return ctx.field_uuid(*ref.split(".", 1))
+    object_api = _api_name_of(block.get("custom_object"))
+    if not object_api:
+        raise PlanError(
+            f"sort_field '{ref}' needs custom_object as an api_name; or give "
+            "it as 'object.field' or a UUID"
+        )
+    return ctx.field_uuid(object_api, ref)
+
+
+def _value_source(
+    source: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """One value source (an extraction step's `input_value_source`, a
+    find_single_record `destination`) in write dialect: bare UUIDs, the
+    variable by name, and `field`/`relationship_field` given as
+    'object.field' resolved."""
+    (out,) = _normalize_variable_sources([source], auto, ctx)
+    for key in ("field", "relationship_field"):
+        ref = out.get(key)
+        if isinstance(ref, str) and "." in ref:
+            obj_api, fld_api = ref.split(".", 1)
+            out[key] = ctx.field_uuid(obj_api, fld_api)
     return out
 
 
@@ -3877,14 +4010,7 @@ def _step_file_content_extraction(
     # Same wire conventions as variable sources: bare UUIDs, variable by name.
     source = None
     if block.get("input_value_source"):
-        (source,) = _normalize_variable_sources(
-            [block.get("input_value_source")], auto, ctx
-        )
-        for key in ("field", "relationship_field"):
-            ref = source.get(key)
-            if isinstance(ref, str) and "." in ref:
-                obj_api, fld_api = ref.split(".", 1)
-                source[key] = ctx.field_uuid(obj_api, fld_api)
+        source = _value_source(block["input_value_source"], auto, ctx)
     # Kizen takes exactly one of the two, and every read mirrors input_field
     # into a context_entity_field source. Collapse the mirror, so a re-save
     # sends what was written.
@@ -4748,6 +4874,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "notify_member_via_text": _step_notify_member_via_text,
     "math_operator": _step_math_operator,
     "search_records": _step_search_records,
+    "find_single_record": _step_find_single_record,
 }
 
 # One line per wired step type, for `kizen automations step-types list`.
@@ -4784,6 +4911,7 @@ STEP_PURPOSES: dict[str, str] = {
     "notify_member_via_text": "text a team member",
     "math_operator": "arithmetic into a variable or field",
     "search_records": "search an object into an array variable",
+    "find_single_record": "find one record of an object into a variable or field",
     "branch": "run its children in parallel (a branch group)",
     "merge_branches": "rejoin a branch group",
     "next_or_finish": "close a loop body",
@@ -4852,6 +4980,30 @@ KNOWN_ENUM_CHOICES: dict[str, dict[str, KnownChoices]] = {
                 "employee",
             ),
             source="a create per value on cli-testing, 2026-11-16",
+        ),
+    },
+    "find_single_record": {
+        "filter_type": KnownChoices(
+            values=("all_records", "custom_filter", "in_group", "not_in_group"),
+            source=_SCHEMA_2026_11_25,
+        ),
+        "sort_direction": KnownChoices(
+            values=("asc", "desc"), source=_SCHEMA_2026_11_25
+        ),
+        "when_no_records_found": KnownChoices(
+            values=("error", "blank"), source=_SCHEMA_2026_11_25
+        ),
+        "when_multiple_records_found": KnownChoices(
+            values=("use_first", "error", "blank"), source=_SCHEMA_2026_11_25
+        ),
+        "conflict_resolution": KnownChoices(
+            values=(
+                "overwrite",
+                "add_only",
+                "update_if_blank",
+                "overwrite_except_null",
+            ),
+            source=_SCHEMA_2026_11_25,
         ),
     },
 }

@@ -355,8 +355,8 @@ class TriggerScheduledActivityOverdueConfig(BaseModel):
             "expanded {id, ...} a live read returns."
         ),
     )
-    # The builder sends it as given; only a condition or search_records step
-    # compiles the DSL.
+    # The builder sends it as given; only a condition or search step compiles
+    # the DSL.
     filter_config: RawFilterConfig | None = None
 
 
