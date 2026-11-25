@@ -289,6 +289,23 @@ half of each is on its card, `kizen automations step-types show <type>`.
   and the other read-back verbs send both from the live read. Confirmed live
   2026-10-30. The `schedule` values are those in `GET /api/docs/schema` on
   2026-10-30.
+- **A goal's `trigger_activity_logged.scheduled_activity_variable`.** The
+  write takes the variable's name; its id is a 400, `variable '<id>' does not
+  exist.`, as is an unknown name. A single `string` or `uuid` variable is
+  accepted. A read expands it to `{id, name, data_type, data_subtype,
+  deleted, is_array, is_return_variable}`. On an automation's own
+  `activity_logged` trigger it's a 400, `scheduled_activity_variable is only
+  supported on goals.`, and every such trigger reads `null`. A PUT that
+  leaves it out clears it. Confirmed live 2026-11-25.
+- **A goal's trigger ids change on every PUT; the goal step's id doesn't.**
+  Even a PUT that sends the trigger's id back gets a new one (confirmed live
+  2026-11-25). So `update` pairs a goal's triggers by `id`, and a trigger
+  whose `id` matches none pairs with the unmatched live trigger of its type
+  (for `activity_logged`, its `activity_type`) when that kind is unique in
+  the goal on both sides. Never by position. An unpaired trigger keeps
+  nothing (`scheduled_activity_variable`, a `field_updated` trigger's match
+  modes), and `update --dry-run` and `diff` warn about it when live has
+  something to keep.
 - **Kept settings.** A Kizen PUT without the settings `update` keeps resets
   each to its default, except `stop_execution`'s, which Kizen keeps when the
   block is empty, and `value_resolution` (confirmed live 2026-10-30 and
@@ -492,7 +509,7 @@ rule.
 | An `exit_loop` sits in a loop body and targets a loop around it; `loop_to_exit` goes out as the loop's key, a matched step's read-back id is turned back into the key, and an update whose target loop has no spec step by `id` is refused; steps hung under one warn | `exit_loop_problems`, `resolve_exit_loop_targets`, `exit_loop_dead_end_warnings` | 2026-11-11 |
 | `diff` ignores `is_array_item_variable` and `source_array_variable`, which the server adds to an item variable, and reads a null key in a variable definition as absent | `_DERIVED_VARIABLE_KEYS` | 2026-10-27 |
 | `show`, `diff`, `roundtrip`, `activate` and `deactivate` warn, not refuse, about an inactive `start_automation` target, because Kizen also refuses a PUT of an automation whose target was deactivated later | `inactive_start_targets` | 2026-10-30 |
-| What an update keeps: `active`, `folder`, `skip_non_working_days` (a PUT without it turns a live `true` off), webhook auth; on a step whose `id` matches, `description`, `user_description`, `should_skip_execution`, `continue_with_branch` (with a kept skip), `action_on_failure`, `error_notification_severity_level`; on a trigger, `description`, `user_description`, `should_skip_execution`; per type, `schedule_activity` `target_variable`/`variable_field_resolution`, LLM `merge_field_validation`/`is_advanced` (a condition's `llm_decision.merge_field_validation`), `call_llm`'s MCP pair, `max_sequential_turns`, `tool_failure_policy`, a stop's `action`/`notify`, `update_variable`'s `value_resolution`, an `exit_loop`'s target, `create_related_entity`'s resolution, and a `field_updated` trigger's match modes | `_KEPT_STEP_KEYS`, `_KEPT_TRIGGER_KEYS`, `_KEPT_BLOCK_KEYS`, `_carry_omitted_step_keys`, `_kept_match_modes`, `_carry_webhook_auth` | 2026-10-30 |
+| What an update keeps: `active`, `folder`, `skip_non_working_days` (a PUT without it turns a live `true` off), webhook auth; on a step whose `id` matches, `description`, `user_description`, `should_skip_execution`, `continue_with_branch` (with a kept skip), `action_on_failure`, `error_notification_severity_level`; on a trigger, `description`, `user_description`, `should_skip_execution`; per type, `schedule_activity` `target_variable`/`variable_field_resolution`, LLM `merge_field_validation`/`is_advanced` (a condition's `llm_decision.merge_field_validation`), `call_llm`'s MCP pair, `max_sequential_turns`, `tool_failure_policy`, a stop's `action`/`notify`, `update_variable`'s `value_resolution`, an `exit_loop`'s target, `create_related_entity`'s resolution, and a `field_updated` trigger's match modes, a goal's `activity_logged` `scheduled_activity_variable` (goal triggers pair by `id`, else by a kind unique in the goal) | `_KEPT_STEP_KEYS`, `_KEPT_TRIGGER_KEYS`, `_KEPT_BLOCK_KEYS`, `_carry_omitted_step_keys`, `_kept_trigger_settings`, `_carry_webhook_auth` | 2026-10-30 |
 | A step or trigger without `id` gets a fresh one, orphaning its run history | `_carry_omitted_step_keys` (kept only by `id`) | 2026-08-10 |
 
 ## Facts the author guide no longer states

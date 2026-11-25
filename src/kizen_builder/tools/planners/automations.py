@@ -427,10 +427,12 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     resolved_active = auto.active if auto.active is not None else live_active
     auto = auto.model_copy(update={"active": resolved_active})
 
-    payload, keeps_live = _update_payload(auto, ctx, current, checked.warnings)
+    payload, keeps_live, unkept = _update_payload(auto, ctx, current, checked.warnings)
     preview = _automation_preview(
         env, auto, payload, ctx, checked, live_active=live_active, current=current
     )
+    if unkept:
+        preview["warnings"] = [*preview.get("warnings", []), *unkept]
     preview.update(_folder_preview(auto, ctx, current))
     preview["current_revision"] = current.get("revision")
     if keeps_live:
@@ -503,14 +505,17 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
 
     live_payload = live_to_payload(current)
     ctx.refuse_inactive_start_targets = False
-    spec_payload, _ = _update_payload(auto, ctx, current)
+    spec_payload, _, unkept = _update_payload(auto, ctx, current)
     # Neither side carries the live folder, so a spec that names one would
     # always show a change. Compare against the live folder instead.
     if current.get("folder"):
         live_payload["folder_id"] = current["folder"]["id"]
         spec_payload.setdefault("folder_id", live_payload["folder_id"])
 
-    warnings = inactive_start_targets(spec_payload["steps"], ctx.automations())
+    warnings = [
+        *unkept,
+        *inactive_start_targets(spec_payload["steps"], ctx.automations()),
+    ]
     return {
         "env": env,
         "api_name": auto.api_name,
@@ -526,8 +531,10 @@ def _update_payload(
     ctx: LiveContext,
     current: dict[str, Any],
     warnings: list[Finding] | None = None,
-) -> tuple[dict[str, Any], list[str]]:
-    """The PUT body `update` sends and `diff` compares against live."""
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """The PUT body `update` sends and `diff` compares against live, the
+    keys of the steps and triggers that keep live settings, and a warning
+    per goal trigger whose live settings couldn't be paired."""
     payload = _merge_server_state(
         _build_automation_payload(auto, ctx, warnings), current
     )
@@ -539,13 +546,13 @@ def _update_payload(
         and current.get("skip_non_working_days") is not None
     ):
         payload["skip_non_working_days"] = current["skip_non_working_days"]
-    payload, kept = _carry_omitted_step_keys(payload, auto, current)
+    payload, kept, unkept = _carry_omitted_step_keys(payload, auto, current)
     from kizen_builder.translate import exit_loop_problems, resolve_exit_loop_targets
 
     resolve_exit_loop_targets(payload["steps"])
     if problems := exit_loop_problems(payload["steps"], current.get("steps")):
         raise PlanError("invalid automation graph:\n  - " + "\n  - ".join(problems))
-    return payload, kept
+    return payload, kept, unkept
 
 
 # Keys a PUT resets to Kizen's default when they're left out or sent as the
@@ -690,16 +697,19 @@ def _kept_block(
     return field, block, changed
 
 
-def _kept_match_modes(
+def _kept_trigger_settings(
     spec: AutomationStepDef | AutomationTriggerDef,
     built: dict[str, Any],
     live: dict[str, Any],
+    unkept: list[str],
 ) -> tuple[str | None, dict[str, Any], bool]:
-    """`_kept_block` for a field_updated trigger, and for a goal's
-    field_updated triggers matched by id: a side whose value the spec sets
-    without a match mode keeps the live mode when the live side has a value
-    too. Kizen stores a mode for a side with no value, so a value added on
-    update gets the create default instead."""
+    """`_kept_block` for a field_updated trigger, and for each trigger of a
+    goal. Kizen gives a goal's triggers new ids on every PUT, so a goal
+    trigger the spec's id doesn't match pairs with the one unmatched live
+    trigger of its kind, when the kind is unique on both sides. Never by
+    position: an added or reordered trigger would take another's settings.
+    A trigger left unpaired that live settings would have reached gets a
+    line in ``unkept``."""
     field = trigger_config_field("field_updated")
     if isinstance(spec, AutomationTriggerDef):
         if spec.trigger_type != "field_updated":
@@ -713,28 +723,86 @@ def _kept_match_modes(
     if spec.step_type != "goal" or spec.step_goal is None:
         return None, {}, False
     goal = built.get("step_goal") or {}
-    live_goal_triggers = {
-        t["id"]: t
-        for t in (live.get("step_goal") or {}).get("triggers") or []
-        if t.get("id")
-    }
+    pairs = list(zip(spec.step_goal.triggers, goal.get("triggers") or [], strict=True))
+    live_triggers = (live.get("step_goal") or {}).get("triggers") or []
+    by_id = {t["id"]: t for t in live_triggers if t.get("id")}
+    matched = {t_spec.get("id") for t_spec, _ in pairs} & set(by_id)
+    spec_kinds = Counter(
+        _goal_trigger_kind(t_built)
+        for t_spec, t_built in pairs
+        if t_spec.get("id") not in matched
+    )
+    live_by_kind: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for t in live_triggers:
+        if t.get("id") not in matched:
+            live_by_kind.setdefault(_goal_trigger_kind(t), []).append(t)
     triggers = []
-    for t_spec, t_built in zip(
-        spec.step_goal.triggers, goal.get("triggers") or [], strict=True
-    ):
-        t_live = live_goal_triggers.get(t_spec.get("id"))
-        if t_built.get("type") == "field_updated" and t_live:
-            t_built = {
-                **t_built,
-                field: _keep_live_match_modes(
-                    t_spec.get(field) or {},
-                    t_built.get(field) or {},
-                    t_live.get(field) or {},
-                ),
-            }
+    for t_spec, t_built in pairs:
+        t_live = by_id.get(t_spec.get("id"))
+        if t_live is None:
+            kind = _goal_trigger_kind(t_built)
+            candidates = live_by_kind.get(kind, [])
+            if spec_kinds[kind] == 1 and len(candidates) == 1:
+                t_live = candidates[0]
+            elif any(
+                _kept_goal_trigger(t_spec, t_built, c) != t_built for c in candidates
+            ):
+                unkept.append(
+                    f"step '{built['key']}' goal trigger '{t_built['key']}' "
+                    f"({t_built['type']}) matches no live trigger by id, and its "
+                    "kind isn't unique in the goal, so its live settings aren't "
+                    "kept. Give it the live trigger's current id (`automations "
+                    "show`), or set them in the spec."
+                )
+        if t_live is not None:
+            t_built = _kept_goal_trigger(t_spec, t_built, t_live)
         triggers.append(t_built)
     block = {**goal, "triggers": triggers}
     return "step_goal", block, block != goal
+
+
+def _goal_trigger_kind(trigger: dict[str, Any]) -> tuple[Any, ...]:
+    """What pairs a goal trigger, built or live, when ids don't: its type,
+    and an activity_logged trigger's activity type."""
+    trigger_type = trigger.get("trigger_type") or trigger.get("type")
+    if trigger_type != "activity_logged":
+        return (trigger_type,)
+    block = trigger.get(trigger_config_field(trigger_type)) or {}
+    return (
+        trigger_type,
+        _unwrap_id(block.get("activity_type")) or block.get("activity_type_id"),
+    )
+
+
+def _kept_goal_trigger(
+    t_spec: dict[str, Any], t_built: dict[str, Any], t_live: dict[str, Any]
+) -> dict[str, Any]:
+    """A field_updated goal trigger keeps its live match modes, and an
+    activity_logged one the live `scheduled_activity_variable` its spec
+    block leaves out, which a PUT without it clears."""
+    field = trigger_config_field(t_built.get("type") or "")
+    if t_built.get("type") == "field_updated":
+        return {
+            **t_built,
+            field: _keep_live_match_modes(
+                t_spec.get(field) or {},
+                t_built.get(field) or {},
+                t_live.get(field) or {},
+            ),
+        }
+    if t_built.get("type") == "activity_logged":
+        variable = _unwrap_variable_name(
+            (t_live.get(field) or {}).get("scheduled_activity_variable")
+        )
+        if variable and "scheduled_activity_variable" not in (t_spec.get(field) or {}):
+            return {
+                **t_built,
+                field: {
+                    **(t_built.get(field) or {}),
+                    "scheduled_activity_variable": variable,
+                },
+            }
+    return t_built
 
 
 def _kept_return_variable(
@@ -782,11 +850,11 @@ def _keep_live_match_modes(
 
 def _carry_omitted_step_keys(
     payload: dict[str, Any], auto: AutomationDef, current: dict[str, Any]
-) -> tuple[dict[str, Any], list[str]]:
+) -> tuple[dict[str, Any], list[str], list[str]]:
     """Give each spec step and trigger whose `id` matches a live one the live
     value of every kept key, and kept block key, the spec leaves out. Returns
-    the payload and the keys of the steps and triggers whose payload that
-    changed.
+    the payload, the keys of the steps and triggers whose payload that
+    changed, and `_kept_trigger_settings`' unpaired goal triggers.
 
     Matched by id only: a step without one is new to the server, and pairing
     it by position could stamp one step's settings on another."""
@@ -794,6 +862,7 @@ def _carry_omitted_step_keys(
     live_triggers = {t["id"]: t for t in current.get("triggers") or [] if t.get("id")}
     spec_triggers = {t.id: t for t in auto.triggers if t.id}
     kept: list[str] = []
+    unkept: list[str] = []
 
     def carry(
         built: dict[str, Any],
@@ -814,7 +883,7 @@ def _carry_omitted_step_keys(
             values.pop("continue_with_branch", None)
         field, block, block_kept = _kept_block(spec, built, live)
         if field is None:
-            field, block, block_kept = _kept_match_modes(spec, built, live)
+            field, block, block_kept = _kept_trigger_settings(spec, built, live, unkept)
         if field is None:
             field, block, block_kept = _kept_return_variable(spec, built, live)
         if block_kept or any(built.get(k) != v for k, v in values.items()):
@@ -839,7 +908,7 @@ def _carry_omitted_step_keys(
         carry(built, spec, live_steps.get(spec.id or ""), _KEPT_STEP_KEYS)
         for spec, built in zip(auto.steps, payload["steps"], strict=True)
     ]
-    return {**payload, "triggers": triggers, "steps": steps}, kept
+    return {**payload, "triggers": triggers, "steps": steps}, kept, unkept
 
 
 def _merge_server_state(
@@ -1803,6 +1872,12 @@ def _build_trigger_payload(
     spec_block = getattr(t, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"trigger '{p['key']}' {cfg_field}")
+    if block_dict.get("scheduled_activity_variable") is not None:
+        raise PlanError(
+            f"trigger '{p['key']}' {cfg_field}: scheduled_activity_variable "
+            "works only on an Activity Logged trigger inside a goal step "
+            "(step_goal.triggers); Kizen refuses it on an automation's trigger."
+        )
     block_dict = _qualify_trigger_field_ref(t.trigger_type, block_dict, auto)
     try:
         block_dict = _resolve_trigger_option_labels(
@@ -1837,14 +1912,7 @@ def _trigger_new_entity_created(
     return {"action": block.get("action", "create_only")}
 
 
-@honours(
-    "activity_type",
-    "activity_type_id",
-    # The UI sets it only on a goal's trigger, which the read check doesn't
-    # reach. Kizen refuses it on an automation's own trigger (400 "only
-    # supported on goals"), so a top-level read is always null.
-    unsent_on_read=("scheduled_activity_variable",),
-)
+@honours("activity_type", "activity_type_id", "scheduled_activity_variable")
 def _trigger_activity_logged(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
     activity_id = _resolve_activity_type(
         block.get("activity_type") or block.get("activity_type_id"), ctx
@@ -1852,6 +1920,12 @@ def _trigger_activity_logged(block: dict[str, Any], ctx: LiveContext) -> dict[st
     out: dict[str, Any] = {}
     if activity_id:
         out["activity_type_id"] = activity_id
+    # Goals only (`_build_trigger_payload` refuses it on an automation's own
+    # trigger), and by name: the variable's id is a 400 (confirmed live
+    # 2026-11-25).
+    variable = _unwrap_variable_name(block.get("scheduled_activity_variable"))
+    if variable:
+        out["scheduled_activity_variable"] = variable
     return out
 
 

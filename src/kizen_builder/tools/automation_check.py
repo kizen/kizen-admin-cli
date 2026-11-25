@@ -507,7 +507,9 @@ def _placeholders(
 # ---------------------------------------------------------------------------
 
 # Variables only these types hold: `schedule_activity.target_variable` takes
-# the new activity's id (see `kizen automations step-types show schedule_activity`).
+# the new activity's id, and a goal's Activity Logged trigger waits for the
+# activity whose id is in `scheduled_activity_variable` (see `kizen
+# automations step-types show schedule_activity` and `show goal`).
 _ID_VARIABLE_TYPES = frozenset({"string", "uuid"})
 
 # step_type -> (dotted path to a variable reference, requirement). The
@@ -519,6 +521,7 @@ _VARIABLE_REFS: dict[str, tuple[tuple[str, str], ...]] = {
         ("schedule.on_or_around_date.variable", ""),
         ("assigned_to.variable", ""),
     ),
+    "goal": (("triggers[].trigger_activity_logged.scheduled_activity_variable", "id"),),
     "search_records": (("destination_variable", "array"),),
     "update_variable": (("variable", ""), ("sources[].variable", "")),
     "initialize_variable": (("sources[].variable", ""),),

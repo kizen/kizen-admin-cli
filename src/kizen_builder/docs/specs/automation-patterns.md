@@ -273,3 +273,44 @@ run:
     "assigned_to": { "assignment_type": "owner" },
     "note": "Try again. Last call: {{ custom_objects.call_notes }}" } }
 ```
+
+### Waiting for the activity it scheduled
+
+This schedules a Follow Up and waits up to three days for that Follow Up to be
+logged. The `schedule_activity` step saves the new activity's id to a
+`string` variable with `target_variable`, and the goal's Activity Logged
+trigger names the same variable in `scheduled_activity_variable`:
+
+```json
+[ { "key": "follow_up_id", "parent_key": null, "step_type": "initialize_variable",
+    "order": 0,
+    "action_initialize_variable": { "sources": [],
+      "variable": { "name": "follow_up_id", "data_type": "string" } } },
+  { "key": "schedule_follow_up", "parent_key": "follow_up_id",
+    "step_type": "schedule_activity", "order": 1,
+    "action_schedule_activity": {
+      "activity_type": "follow_up",
+      "schedule": { "type": "with_delay",
+                    "with_delay": { "delay_type": "day", "delay_value_type": "static",
+                                    "delay_value": 2 } },
+      "assigned_to": { "assignment_type": "owner" },
+      "target_variable": "follow_up_id" } },
+  { "key": "follow_up_logged", "parent_key": "schedule_follow_up",
+    "step_type": "goal", "order": 2,
+    "step_goal": { "wait_type": "delay", "delay_type": "days", "delay_amount": 3,
+      "triggers": [ { "trigger_type": "activity_logged",
+        "trigger_activity_logged": { "activity_type": "follow_up",
+                                     "scheduled_activity_variable": "follow_up_id" } } ] } } ]
+```
+
+Kizen's 2026-11-23 release notes describe the run: the goal is met only when
+that Follow Up is logged, and other Follow Ups logged on the record are
+ignored. If it was already logged when the run reaches the goal, the goal is
+met at once. If the variable is empty, or the activity was deleted or doesn't
+match, the run takes the Not Met path. The CLI can't log an activity, so no
+run was observed.
+
+The variable must be a single `string` or `uuid` one, and the trigger names
+it: its id is a 400. Kizen refuses the setting on an automation's own
+Activity Logged trigger. Confirmed live 2026-11-25: the goal saved and read
+back with the variable.
