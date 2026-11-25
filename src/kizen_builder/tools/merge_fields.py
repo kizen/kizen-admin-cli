@@ -89,13 +89,20 @@ RESERVED_NAMESPACES = frozenset(
 @dataclass(frozen=True)
 class TextSite:
     """Where a step's text carries merge fields, and how that step's own
-    picker names a field of the trigger record. ``paths`` are dotted from
-    the step, with ``[]`` fanning out over a list."""
+    picker names a field of the trigger record. ``text`` is the plain text
+    and ``html`` the HTML the builder's editor reads, both dotted from the
+    step, with ``[]`` fanning out over a list. They share a parent; a
+    ``schedule_activity`` note is one key holding the HTML."""
 
     step_type: str
-    paths: tuple[str, ...]
+    text: str
+    html: str
     record_namespace: str
     label: str
+
+    @property
+    def paths(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((self.text, self.html)))
 
 
 # Confirmed live 2026-11-25: what each step's picker writes, and runs of
@@ -106,76 +113,64 @@ class TextSite:
 TEXT_SITES: tuple[TextSite, ...] = (
     TextSite(
         "call_llm",
-        ("action_call_llm.prompt", "action_call_llm.html_prompt"),
+        "action_call_llm.prompt",
+        "action_call_llm.html_prompt",
         "custom_objects",
         "a call_llm prompt",
     ),
     TextSite(
         "condition",
-        (
-            "step_condition.llm_decision.prompt",
-            "step_condition.llm_decision.html_prompt",
-        ),
+        "step_condition.llm_decision.prompt",
+        "step_condition.llm_decision.html_prompt",
         "custom_objects",
         "a condition's llm_decision prompt",
     ),
     TextSite(
         "file_content_extraction",
-        (
-            "action_file_content_extraction.prompt",
-            "action_file_content_extraction.html_prompt",
-        ),
+        "action_file_content_extraction.prompt",
+        "action_file_content_extraction.html_prompt",
         "custom_objects",
         "a file_content_extraction prompt",
     ),
     TextSite(
         "audio_transcription",
-        (
-            "action_audio_transcription.prompt",
-            "action_audio_transcription.html_prompt",
-        ),
+        "action_audio_transcription.prompt",
+        "action_audio_transcription.html_prompt",
         "custom_objects",
         "an audio_transcription prompt",
     ),
     TextSite(
         "initialize_variable",
-        (
-            "action_initialize_variable.sources[].value",
-            "action_initialize_variable.sources[].value_html",
-        ),
+        "action_initialize_variable.sources[].value",
+        "action_initialize_variable.sources[].value_html",
         "custom_objects",
         "an initialize_variable source",
     ),
     TextSite(
         "update_variable",
-        (
-            "action_update_variable.sources[].value",
-            "action_update_variable.sources[].value_html",
-        ),
+        "action_update_variable.sources[].value",
+        "action_update_variable.sources[].value_html",
         "custom_objects",
         "an update_variable source",
     ),
     TextSite(
         "schedule_activity",
-        ("action_schedule_activity.note", "action_schedule_activity.html_note"),
+        "action_schedule_activity.note",
+        "action_schedule_activity.note",
         "custom_objects",
         "a schedule_activity note",
     ),
     TextSite(
         "notify_member_via_text",
-        (
-            "action_notify_member_via_text.content",
-            "action_notify_member_via_text.html_content",
-        ),
+        "action_notify_member_via_text.content",
+        "action_notify_member_via_text.html_content",
         "entity_record",
         "a notify_member_via_text message",
     ),
     TextSite(
         "create_related_entity",
-        (
-            "action_create_related_entity.new_entity_name",
-            "action_create_related_entity.new_entity_name_html",
-        ),
+        "action_create_related_entity.new_entity_name",
+        "action_create_related_entity.new_entity_name_html",
         "entity_record",
         "a create_related_entity name",
     ),
@@ -314,3 +309,34 @@ def render(
         )
     out.append(html.escape(text[last:]))
     return "".join(out)
+
+
+_TAG_RE = re.compile(r"<[^>]*>")
+_LINE_RE = re.compile(r"\r?\n")
+
+
+def render_html(
+    text: str,
+    *,
+    resolve_label: ResolveLabel | None = None,
+    resolve_objectname: ResolveObjectName | None = None,
+) -> str:
+    """Plain text as the builder's rich-text editors store it: a ``<p>`` per
+    line, an empty line an empty ``<p></p>``, each line through
+    :func:`render`."""
+    return "".join(
+        "<p>"
+        + render(
+            line, resolve_label=resolve_label, resolve_objectname=resolve_objectname
+        )
+        + "</p>"
+        for line in _LINE_RE.split(text)
+    )
+
+
+def same_text(text: str, html_text: str) -> bool:
+    """Whether ``html_text`` says what ``text`` says: tags stripped, entities
+    decoded and all whitespace dropped. The builder's plain side drops the
+    paragraph breaks its HTML side keeps, so line structure can't count."""
+    plain = "".join(text.split())
+    return plain == "".join(html.unescape(_TAG_RE.sub("", html_text)).split())

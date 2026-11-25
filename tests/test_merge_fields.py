@@ -8,7 +8,13 @@ from __future__ import annotations
 
 import pytest
 
-from kizen_builder.tools.merge_fields import MERGE_FIELD_RE, RESERVED_NAMESPACES, render
+from kizen_builder.tools.merge_fields import (
+    MERGE_FIELD_RE,
+    RESERVED_NAMESPACES,
+    render,
+    render_html,
+    same_text,
+)
 
 
 def test_regex_matches_single_segment_token():
@@ -237,3 +243,44 @@ def test_render_keeps_a_pre_wrapped_span_and_wraps_a_bare_token():
 )
 def test_render_escapes_a_span_it_would_not_write(span):
     assert render(span).startswith("&lt;span")
+
+
+_OWNER_SPAN = (
+    '<span class="kzn-merge-field" data-merge-field-fallback-label="Owner" '
+    'data-merge-field-relationship="entity_record.owner">{{ entity_record.owner }}</span>'
+)
+
+
+def test_render_html_is_a_paragraph_per_line():
+    assert render_html("Hi {{ entity_record.owner }}\n\nBye & thanks") == (
+        f"<p>Hi {_OWNER_SPAN}</p><p></p><p>Bye &amp; thanks</p>"
+    )
+
+
+def test_render_html_keeps_an_existing_span():
+    assert render_html(f"{_OWNER_SPAN}\r\nnext") == f"<p>{_OWNER_SPAN}</p><p>next</p>"
+
+
+def test_render_html_of_nothing_is_one_empty_paragraph():
+    assert render_html("") == "<p></p>"
+
+
+@pytest.mark.parametrize(
+    ("text", "html_text"),
+    [
+        ("Hi {{ entity_record.owner }}", f"<p>Hi {_OWNER_SPAN}</p>"),
+        ("a.b", "<p>a.</p><p>b</p><p></p>"),
+        ("x < y & z", "<p>x &lt; y &amp; z</p>"),
+        ("custom markup", "<p>custom <b>markup</b></p>"),
+    ],
+)
+def test_same_text_ignores_tags_entities_and_whitespace(text, html_text):
+    assert same_text(text, html_text)
+
+
+@pytest.mark.parametrize(
+    ("text", "html_text"),
+    [("plain", "<p>custom</p>"), ("a", ""), ("{{ entity_record.owner }}", "<p></p>")],
+)
+def test_same_text_sees_an_edit(text, html_text):
+    assert not same_text(text, html_text)
