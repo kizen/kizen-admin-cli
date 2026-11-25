@@ -609,6 +609,19 @@ def test_schedule_activity_sends_its_variable_binding_by_name() -> None:
     ]
 
 
+def test_unmodelled_goal_trigger_key_is_refused() -> None:
+    raw = load_fixture("automations/goal_scheduled_activity_variable.raw.json")
+    goal = next(s for s in raw["steps"] if s["step_type"] == "goal")
+    goal["step_goal"]["triggers"][0]["trigger_activity_logged"]["new_setting"] = "on"
+    with pytest.raises(PlanError) as e:
+        live_to_payload(raw)
+    key = synthesize_step_keys(raw)[goal["id"]]
+    assert str(e.value).startswith(
+        f"automation '{raw['name']}' step '{key}' goal trigger 'goal_trigger_0' "
+        "trigger_activity_logged: new_setting would be lost on PUT"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Read keys no builder models: refused rather than dropped on PUT
 # ---------------------------------------------------------------------------

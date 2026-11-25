@@ -7717,6 +7717,58 @@ def test_update_omitting_a_match_mode_keeps_the_live_one(
         ]
 
 
+def _scheduled_goal_spec(**trigger_block) -> dict:
+    """Declares `act_id` and waits in a goal for a Follow Up; the goal's
+    activity_logged block gets `trigger_block`."""
+    return {
+        "api_name": "goal_probe",
+        "name": "Goal Probe",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "v",
+                "order": 0,
+                "parent_key": None,
+                "step_type": "initialize_variable",
+                "action_initialize_variable": {
+                    "variable": {"name": "act_id", "data_type": "string"},
+                    "sources": [],
+                },
+            },
+            {
+                "key": "g",
+                "order": 1,
+                "parent_key": "v",
+                "step_type": "goal",
+                "step_goal": {
+                    "wait_type": "delay",
+                    "delay_type": "days",
+                    "delay_amount": 3,
+                    "triggers": [
+                        {
+                            "trigger_type": "activity_logged",
+                            "trigger_activity_logged": {
+                                "activity_type": "follow_up",
+                                **trigger_block,
+                            },
+                        }
+                    ],
+                },
+            },
+        ],
+    }
+
+
+def test_goal_trigger_key_the_planner_drops_is_refused(patch_live_lookups):
+    with pytest.raises(PlanError) as e:
+        _build(_scheduled_goal_spec(new_setting="on"))
+    assert str(e.value).startswith(
+        "step 'g' goal trigger 'goal_trigger_0' trigger_activity_logged: "
+        "new_setting would be silently dropped"
+    )
+
+
 @pytest.mark.parametrize(
     "ref",
     [

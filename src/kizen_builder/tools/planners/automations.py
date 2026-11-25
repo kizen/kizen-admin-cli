@@ -1726,6 +1726,28 @@ def _goal_trigger_key(t: dict[str, Any], i: int) -> str:
     return t.get("key") or f"goal_trigger_{i}"
 
 
+def _reject_unhonoured_goal_trigger_keys(
+    step_type: str, block: dict[str, Any], where: str, *, live: bool = False
+) -> None:
+    """`_reject_unhonoured_keys` for each wait-until trigger of a goal block.
+    `_step_goal` forwards the goal's own keys, but builds its triggers with
+    the trigger builders, which drop what they don't read."""
+    if step_type != "goal":
+        return
+    for i, t in enumerate(block.get("triggers") or []):
+        trigger_type = t.get("trigger_type") or t.get("type")
+        builder = _TRIGGER_BUILDERS.get(trigger_type)
+        if builder is None:
+            continue
+        cfg_field = trigger_config_field(trigger_type)
+        _reject_unhonoured_keys(
+            builder,
+            dict(t.get(cfg_field) or {}),
+            f"{where} goal trigger '{_goal_trigger_key(t, i)}' {cfg_field}",
+            live=live,
+        )
+
+
 def _resolve_goal_trigger_stages(
     step_type: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
 ) -> dict[str, Any]:
@@ -2290,6 +2312,9 @@ def _build_step_payload(
     spec_block = getattr(step, cfg_field, None)
     block_dict: dict[str, Any] = _to_dict(spec_block)
     _reject_unhonoured_keys(builder, block_dict, f"step '{step.key}' {cfg_field}")
+    _reject_unhonoured_goal_trigger_keys(
+        step.step_type, block_dict, f"step '{step.key}'"
+    )
     try:
         block_dict = _resolve_goal_trigger_stages(step.step_type, block_dict, auto, ctx)
         wire_block = builder(block_dict, auto, ctx)
