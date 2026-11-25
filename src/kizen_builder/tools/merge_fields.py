@@ -19,8 +19,9 @@ value is that object's *display* name, not the api_name) — never for the
 fixed reserved namespaces. Attribute order is always fallback-label,
 relationship, objectname.
 
-This module owns token parsing, span rendering, and namespace
-classification, but it does **not** know how to look up live field or object
+This module owns token parsing, span rendering, namespace classification,
+and :data:`TEXT_SITES`, the form each step's text takes for the trigger
+record's fields. It does **not** know how to look up live field or object
 display names — callers hand that in as small resolver callables, so this
 module has no dependency on any particular caller's types (in particular,
 no dependency on automation types — an email-template emitter can drive it
@@ -34,6 +35,7 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 
 # One or more dot-separated segments after the namespace. The earlier
 # two-segment-only pattern silently failed to match relationship-hop tokens
@@ -81,6 +83,102 @@ RESERVED_NAMESPACES = frozenset(
         "integration_secret",
         "business_variable",
     }
+)
+
+
+@dataclass(frozen=True)
+class TextSite:
+    """Where a step's text carries merge fields, and how that step's own
+    picker names a field of the trigger record. ``paths`` are dotted from
+    the step, with ``[]`` fanning out over a list."""
+
+    step_type: str
+    paths: tuple[str, ...]
+    record_namespace: str
+    label: str
+
+
+# Confirmed live 2026-11-25: what each step's picker writes, and runs of
+# the other forms. In a prompt they fail the step; in a static source or a
+# note they come out blank. The text step's form is the one its editor
+# accepts, and create_related_entity's is what UI-built automations hold.
+# A notify email's body is a message resource, not step text.
+TEXT_SITES: tuple[TextSite, ...] = (
+    TextSite(
+        "call_llm",
+        ("action_call_llm.prompt", "action_call_llm.html_prompt"),
+        "custom_objects",
+        "a call_llm prompt",
+    ),
+    TextSite(
+        "condition",
+        (
+            "step_condition.llm_decision.prompt",
+            "step_condition.llm_decision.html_prompt",
+        ),
+        "custom_objects",
+        "a condition's llm_decision prompt",
+    ),
+    TextSite(
+        "file_content_extraction",
+        (
+            "action_file_content_extraction.prompt",
+            "action_file_content_extraction.html_prompt",
+        ),
+        "custom_objects",
+        "a file_content_extraction prompt",
+    ),
+    TextSite(
+        "audio_transcription",
+        (
+            "action_audio_transcription.prompt",
+            "action_audio_transcription.html_prompt",
+        ),
+        "custom_objects",
+        "an audio_transcription prompt",
+    ),
+    TextSite(
+        "initialize_variable",
+        (
+            "action_initialize_variable.sources[].value",
+            "action_initialize_variable.sources[].value_html",
+        ),
+        "custom_objects",
+        "an initialize_variable source",
+    ),
+    TextSite(
+        "update_variable",
+        (
+            "action_update_variable.sources[].value",
+            "action_update_variable.sources[].value_html",
+        ),
+        "custom_objects",
+        "an update_variable source",
+    ),
+    TextSite(
+        "schedule_activity",
+        ("action_schedule_activity.note", "action_schedule_activity.html_note"),
+        "custom_objects",
+        "a schedule_activity note",
+    ),
+    TextSite(
+        "notify_member_via_text",
+        (
+            "action_notify_member_via_text.content",
+            "action_notify_member_via_text.html_content",
+        ),
+        "entity_record",
+        "a notify_member_via_text message",
+    ),
+    TextSite(
+        "create_related_entity",
+        (
+            "action_create_related_entity.new_entity_name",
+            "action_create_related_entity.new_entity_name_html",
+        ),
+        "entity_record",
+        "a create_related_entity name",
+    ),
 )
 
 # Labels Kizen stores for reserved-namespace fields that are not reachable by

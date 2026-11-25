@@ -449,11 +449,15 @@ def list_subfolders(identifier: str) -> list[dict[str, Any]]:
         return auto_api.list_subfolders(client, match["id"])
 
 
-def check_step_spec(step: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+def check_step_spec(
+    step: dict[str, Any],
+    payload: dict[str, Any],
+    target_object: str | None,
+) -> list[str]:
     """Run ``automations create``'s per-step checks on a step for ``steps
-    add``/``edit``, against the variables the live automation declares.
-    Raises `SpecProblems` listing every error; returns the warnings as
-    lines for the report."""
+    add``/``edit``, against the variables the live automation declares and
+    its object's api_name. Raises `SpecProblems` listing every error;
+    returns the warnings as lines for the report."""
     from kizen_builder.tools.automation_check import (
         block_rule_errors,
         check_step,
@@ -465,6 +469,7 @@ def check_step_spec(step: dict[str, Any], payload: dict[str, Any]) -> list[str]:
         step,
         declared_variables(payload["steps"]),
         is_global=payload.get("type") == "global",
+        target_object=target_object,
     )
     errors += block_rule_errors(step)
     if errors:

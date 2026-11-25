@@ -21,7 +21,7 @@ from pydantic import BaseModel, ValidationError
 from kizen_builder.models.spec import AutomationDef, AutomationStepDef
 from kizen_builder.models.spec.automations_actions_data import ArrayAggregationMode
 from kizen_builder.models.spec.automations_shared import UNION_TAGS
-from kizen_builder.tools import step_catalog
+from kizen_builder.tools import merge_fields, step_catalog
 from kizen_builder.tools.findings import Finding, SpecProblems
 from kizen_builder.tools.planners.automations import (
     _CONFIGLESS_STEP_TYPES,
@@ -83,7 +83,11 @@ def check_automation(spec: Any) -> CheckedSpec:
     declared = declared_variables(steps)
     for i, step in enumerate(steps):
         step_errors, step_warnings = check_step(
-            step, declared, index=i, is_global=spec.get("type") == "global"
+            step,
+            declared,
+            index=i,
+            is_global=spec.get("type") == "global",
+            target_object=spec.get("target_object"),
         )
         errors.extend(step_errors)
         warnings.extend(step_warnings)
@@ -142,14 +146,17 @@ def check_step(
     *,
     index: int | None = None,
     is_global: bool = False,
+    target_object: str | None = None,
 ) -> tuple[list[Finding], list[Finding]]:
     """The checks one step gets on its own: block keys nothing reads,
     placeholders left in, variables nothing declares, an array variable
     with no aggregation mode, an entity variable with no object, a field
-    change in a global automation (a warning for a step that has an `id`),
-    and selector options missing the keys they're written with. Returns
-    ``(errors, warnings)``.
-    ``declared`` maps each variable name to its declaration."""
+    change in a global automation and a merge field naming the trigger
+    record in another step's form (each a warning for a step that has an
+    `id`), and selector options missing the keys they're written with.
+    Returns ``(errors, warnings)``.
+    ``declared`` maps each variable name to its declaration and
+    ``target_object`` is the automation's object api_name."""
     if not isinstance(step, dict):
         return [], []
     errors = [
@@ -161,10 +168,13 @@ def check_step(
         *_entity_subtype_errors(index, step),
     ]
     warnings = _selector_warnings(index, step)
-    own_record = _own_record_errors(index, step, is_global)
+    new_only = [
+        *_own_record_errors(index, step, is_global),
+        *_merge_field_errors(index, step, None if is_global else target_object),
+    ]
     # A step with an id already exists, so it doesn't block an unrelated
     # update; a new one does.
-    (warnings if step.get("id") else errors).extend(own_record)
+    (warnings if step.get("id") else errors).extend(new_only)
     return errors, warnings
 
 
@@ -676,6 +686,45 @@ def _own_record_errors(
             hint="kizen automations step-types show modify_related_entities",
         )
     ]
+
+
+def _merge_field_errors(
+    index: int | None, step: dict[str, Any], target_object: str | None
+) -> list[Finding]:
+    """A merge field naming the trigger record the way another step does
+    (`merge_fields.TEXT_SITES`). Not checked with no trigger record, or on
+    Contacts, whose forms weren't probed."""
+    if not isinstance(target_object, str) or target_object == "client_client":
+        return []
+    record_forms = {"custom_objects", "entity_record", target_object}
+    out: list[Finding] = []
+    for site in merge_fields.TEXT_SITES:
+        if step.get("step_type") != site.step_type:
+            continue
+        form = site.record_namespace
+        for path in site.paths:
+            for where, text in _dig(step, path):
+                if not isinstance(text, str):
+                    continue
+                for m in merge_fields.MERGE_FIELD_RE.finditer(text):
+                    namespace, _, rest = m[1].partition(".")
+                    if namespace not in record_forms or namespace == form:
+                        continue
+                    token = f"{{{{ {m[1]} }}}}"
+                    out.append(
+                        Finding(
+                            f'"{token}" doesn\'t resolve in {site.label}, which '
+                            "names the trigger record's fields as "
+                            f"{{{{ {form}.<field> }}}}",
+                            step=step.get("key"),
+                            index=index,
+                            path=where,
+                            got=token,
+                            suggestion=f"{{{{ {form}.{rest} }}}}",
+                            hint="kizen automations step-types concepts",
+                        )
+                    )
+    return _unique(out)
 
 
 def _entity_subtype_errors(index: int | None, step: dict[str, Any]) -> list[Finding]:
