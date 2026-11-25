@@ -394,6 +394,41 @@ def test_a_variable_of_the_wrong_kind_is_an_error():
     assert "must be an array variable" in _only(_errors(spec), step="find").message
 
 
+def _goal_waiting_on(variable):
+    return {
+        "key": "wait",
+        "step_type": "goal",
+        "step_goal": {
+            "wait_type": "never",
+            "triggers": [
+                {
+                    "trigger_type": "activity_logged",
+                    "trigger_activity_logged": {
+                        "activity_type": "call",
+                        "scheduled_activity_variable": variable,
+                    },
+                }
+            ],
+        },
+    }
+
+
+def test_a_goal_waits_on_a_declared_id_variable():
+    path = "step_goal.triggers[0].trigger_activity_logged.scheduled_activity_variable"
+    f = _only(_errors(_spec(_goal_waiting_on("activity_id"))), step="wait")
+    assert (f.path, f.got) == (path, "activity_id")
+    assert "is not declared" in f.message
+
+    spec = _spec(_var("n", "number"), _goal_waiting_on("n"))
+    f = _only(_errors(spec), step="wait")
+    assert f.path == path
+    assert "single string or uuid" in f.message
+
+    check_automation(
+        _spec(_var("activity_id", "uuid"), _goal_waiting_on("activity_id"))
+    )
+
+
 def test_variable_references_inside_lists_are_followed():
     spec = _spec(
         {

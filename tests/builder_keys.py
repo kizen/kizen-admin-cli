@@ -139,8 +139,9 @@ REWIRED_BEFORE_BUILD = {"go_to_automation_step": {"step", "trigger"}}
 
 
 def unclassified_read_keys(raw: dict[str, Any]) -> set[str]:
-    """`<type>.<key>` for each key of a read step or trigger block whose
-    builder neither honours it nor declares it unsent, null values included.
+    """`<type>.<key>` for each key of a read step or trigger block, a goal's
+    triggers included, whose builder neither honours it nor declares it
+    unsent, null values included.
     Any of these would make `translate` refuse the read once it is set."""
     ap = automations_planner
     found: set[str] = set()
@@ -154,7 +155,15 @@ def unclassified_read_keys(raw: dict[str, Any]) -> set[str]:
             ap._TRIGGER_BUILDERS,
             t.get(trigger_config_field(t["trigger_type"])),
         )
-        for t in raw.get("triggers") or []
+        for t in [
+            *(raw.get("triggers") or []),
+            *(
+                t
+                for s in raw.get("steps") or []
+                if s["step_type"] == "goal"
+                for t in (s.get("step_goal") or {}).get("triggers") or []
+            ),
+        ]
     ]
     for type_, registry, block in blocks:
         builder = registry.get(type_)

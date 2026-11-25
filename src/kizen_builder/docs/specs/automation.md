@@ -166,9 +166,15 @@ matches, its descriptions, skip and failure settings, and per-type settings a
 Kizen PUT would reset, such as an LLM step's `merge_field_validation` and MCP
 server, a stop's `action`, a plugin step's `preview_user_id`, an
 `update_variable`'s `value_resolution`, an `initialize_variable`'s
-`is_return_variable`, an `exit_loop`'s target loop, and a
-`schedule_activity`'s `target_variable`.
-`--dry-run` names them as `keeps_live=[<key>, …]`. An explicit value always
+`is_return_variable`, an `exit_loop`'s target loop, a
+`schedule_activity`'s `target_variable`, and a goal's Activity Logged
+`scheduled_activity_variable`.
+`--dry-run` names them as `keeps_live=[<key>, …]`. Kizen gives a goal's
+triggers new ids on every save, so inside a goal step matched by `id`, a
+trigger whose `id` is stale or missing still pairs with the live one of the
+same type (for Activity Logged, the same activity type) when the goal has
+exactly one such trigger in the spec and live. Otherwise its settings aren't
+kept, and `--dry-run` and `diff` warn, naming the trigger. An explicit value always
 wins, `""` and `false` included; `description: ""` gets the type's default
 text. Settings the CLI doesn't model, such as an AI step's fallback model or
 Create Related Record's owner and stage resolution, are left as they are.

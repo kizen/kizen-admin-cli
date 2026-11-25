@@ -7717,6 +7717,302 @@ def test_update_omitting_a_match_mode_keeps_the_live_one(
         ]
 
 
+def test_update_keeps_a_goal_match_mode_without_the_trigger_id(
+    patch_live_lookups, monkeypatch
+):
+    import kizen_builder.tools.planners.automations as ma
+
+    raw, spec = _field_updated_update(live_value=True)
+    del spec["steps"][0]["step_goal"]["triggers"][0]["id"]
+    monkeypatch.setattr(ma, "list_automations", lambda: [raw])
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    (op,) = plan_update_automation(spec).operations
+    (goal_trigger,) = op.payload["steps"][0]["step_goal"]["triggers"]
+    assert goal_trigger["trigger_field_updated"]["to_match_mode"] == (
+        "any_including_blank"
+    )
+    assert "g0" in op.preview["keeps_live"]
+
+
+# ---------------------------------------------------------------------------
+# A goal's Activity Logged trigger: scheduled_activity_variable
+# ---------------------------------------------------------------------------
+
+_SA_GOAL_ID = "0b6f3e2a-9c1d-4e8f-a7b5-3d2c1e0f9a11"
+_SA_GOAL_TRIGGER_ID = "7e4d2c1b-8a9f-4b3e-9c6d-5f1a0e2b3c12"
+_SA_VAR_ID = "c6a54c3a-485c-454e-9583-2eff6c4b837a"
+_SA_INIT_ID = "4a2b8c6d-1e3f-4a5b-8c7d-9e0f1a2b3c13"
+
+
+def _scheduled_goal_spec(**trigger_block) -> dict:
+    """Declares `act_id` and waits in a goal for a Follow Up; the goal's
+    activity_logged block gets `trigger_block`."""
+    return {
+        "api_name": "goal_probe",
+        "name": "Goal Probe",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "v",
+                "order": 0,
+                "parent_key": None,
+                "step_type": "initialize_variable",
+                "action_initialize_variable": {
+                    "variable": {"name": "act_id", "data_type": "string"},
+                    "sources": [],
+                },
+            },
+            {
+                "key": "g",
+                "order": 1,
+                "parent_key": "v",
+                "step_type": "goal",
+                "step_goal": {
+                    "wait_type": "delay",
+                    "delay_type": "days",
+                    "delay_amount": 3,
+                    "triggers": [
+                        {
+                            "trigger_type": "activity_logged",
+                            "trigger_activity_logged": {
+                                "activity_type": "follow_up",
+                                **trigger_block,
+                            },
+                        }
+                    ],
+                },
+            },
+        ],
+    }
+
+
+def _goal_activity_block(payload: dict) -> dict:
+    goal = next(s for s in payload["steps"] if s["type"] == "goal")
+    (trigger,) = goal["step_goal"]["triggers"]
+    return trigger["trigger_activity_logged"]
+
+
+def test_goal_activity_logged_plans_its_scheduled_activity_variable(
+    patch_live_lookups,
+):
+    payload = _build(
+        _scheduled_goal_spec(scheduled_activity_variable={"name": "act_id"})
+    )
+    assert _goal_activity_block(payload) == {
+        "activity_type_id": "a0000000-0000-4000-8000-0000000000c2",
+        "scheduled_activity_variable": "act_id",
+    }
+    assert "scheduled_activity_variable" not in _goal_activity_block(
+        _build(_scheduled_goal_spec())
+    )
+
+
+def test_automation_activity_logged_trigger_refuses_scheduled_activity_variable(
+    patch_live_lookups,
+):
+    spec = _scheduled_goal_spec()
+    spec["triggers"] = [
+        {
+            "trigger_type": "activity_logged",
+            "order": 0,
+            "trigger_activity_logged": {
+                "activity_type": "follow_up",
+                "scheduled_activity_variable": "act_id",
+            },
+        }
+    ]
+    with pytest.raises(PlanError) as e:
+        _build(spec)
+    assert str(e.value) == (
+        "trigger 'trigger.activity_logged.1' trigger_activity_logged: "
+        "scheduled_activity_variable works only on an Activity Logged trigger "
+        "inside a goal step (step_goal.triggers); Kizen refuses it on an "
+        "automation's trigger."
+    )
+    spec["triggers"][0]["trigger_activity_logged"]["scheduled_activity_variable"] = None
+    trigger = _build(spec)["triggers"][-1]
+    assert trigger["trigger_activity_logged"] == {
+        "activity_type_id": "a0000000-0000-4000-8000-0000000000c2"
+    }
+
+
+def test_goal_trigger_key_the_planner_drops_is_refused(patch_live_lookups):
+    with pytest.raises(PlanError) as e:
+        _build(_scheduled_goal_spec(new_setting="on"))
+    assert str(e.value).startswith(
+        "step 'g' goal trigger 'goal_trigger_0' trigger_activity_logged: "
+        "new_setting would be silently dropped"
+    )
+
+
+def _scheduled_goal_live(monkeypatch) -> dict:
+    """`_scheduled_goal_spec` as a live automation whose goal trigger waits
+    on `act_id`, served to `plan_update_automation`."""
+    import kizen_builder.tools.planners.automations as ma
+
+    variable = {
+        "id": _SA_VAR_ID,
+        "name": "act_id",
+        "data_type": "string",
+        "data_subtype": None,
+        "deleted": False,
+        "is_array": False,
+        "is_return_variable": False,
+    }
+    envelope = {
+        "description": "",
+        "user_description": "",
+        "parent_condition": "",
+        "action_on_failure": "notify_continue",
+        "should_skip_execution": False,
+        "error_notification_severity_level": "inherit",
+    }
+    raw = {
+        "id": "2d8f6a4c-3b1e-4c9d-8e7f-0a1b2c3d4e14",
+        "api_name": "goal_probe",
+        "name": "Goal Probe",
+        "revision": 2,
+        "active": False,
+        "triggers": [],
+        "variables": [variable],
+        "steps": [
+            {
+                **envelope,
+                "id": _SA_INIT_ID,
+                "step_type": "initialize_variable",
+                "order": 0,
+                "parent_step_id": None,
+                "action_initialize_variable": {"variable": variable, "sources": []},
+            },
+            {
+                **envelope,
+                "id": _SA_GOAL_ID,
+                "step_type": "goal",
+                "order": 1,
+                "parent_step_id": _SA_INIT_ID,
+                "step_goal": {
+                    "wait_type": "delay",
+                    "delay_type": "days",
+                    "delay_amount": 3,
+                    "triggers": [
+                        {
+                            "id": _SA_GOAL_TRIGGER_ID,
+                            "trigger_type": "activity_logged",
+                            "trigger_activity_logged": {
+                                "activity_type": {
+                                    "id": "a0000000-0000-4000-8000-0000000000c2",
+                                    "name": "Follow Up",
+                                },
+                                "scheduled_activity_variable": variable,
+                            },
+                        }
+                    ],
+                },
+            },
+        ],
+    }
+    listing = [{"id": raw["id"], "api_name": raw["api_name"]}]
+    monkeypatch.setattr(ma, "list_automations", lambda: listing)
+    monkeypatch.setattr(ma, "get_automation", lambda api_name: {"raw": raw})
+    return raw
+
+
+def _scheduled_goal_update(raw: dict, **trigger_block) -> dict:
+    spec = _scheduled_goal_spec(**trigger_block)
+    for step, live in zip(spec["steps"], raw["steps"], strict=True):
+        step.update(id=live["id"], **_live_step_keys(live))
+    spec["steps"][1]["step_goal"]["triggers"][0]["id"] = _SA_GOAL_TRIGGER_ID
+    return spec
+
+
+@pytest.mark.parametrize(
+    "trigger_id",
+    [_SA_GOAL_TRIGGER_ID, "9b1e3c55-0d2a-4f6e-8a7b-3c4d5e6f7a81", None],
+    ids=["current_id", "stale_id", "no_id"],
+)
+def test_update_omitting_scheduled_activity_variable_keeps_the_live_one(
+    patch_live_lookups, monkeypatch, trigger_id
+):
+    """A PUT without it clears it, and every PUT gives the goal's triggers
+    new ids (both confirmed live 2026-11-25), so a trigger whose kind is the
+    goal's only one pairs without its id."""
+    spec = _scheduled_goal_update(_scheduled_goal_live(monkeypatch))
+    spec["steps"][1]["step_goal"]["triggers"][0]["id"] = trigger_id
+    payload, keeps_live = _planned(spec)
+    assert _goal_activity_block(payload)["scheduled_activity_variable"] == "act_id"
+    assert keeps_live == ["g"]
+
+
+def test_update_explicit_null_clears_scheduled_activity_variable(
+    patch_live_lookups, monkeypatch
+):
+    raw = _scheduled_goal_live(monkeypatch)
+    payload, keeps_live = _planned(
+        _scheduled_goal_update(raw, scheduled_activity_variable=None)
+    )
+    assert "scheduled_activity_variable" not in _goal_activity_block(payload)
+    assert keeps_live == []
+
+
+def test_update_does_not_pair_goal_triggers_of_one_kind_and_says_so(
+    patch_live_lookups, monkeypatch
+):
+    raw = _scheduled_goal_live(monkeypatch)
+    (live_trigger,) = raw["steps"][1]["step_goal"]["triggers"]
+    raw["steps"][1]["step_goal"]["triggers"].append(
+        {
+            **live_trigger,
+            "id": "9b1e3c55-0d2a-4f6e-8a7b-3c4d5e6f7a82",
+            "trigger_activity_logged": {
+                **live_trigger["trigger_activity_logged"],
+                "scheduled_activity_variable": None,
+            },
+        }
+    )
+    spec = _scheduled_goal_update(raw)
+    (spec_trigger,) = spec["steps"][1]["step_goal"]["triggers"]
+    del spec_trigger["id"]
+    spec["steps"][1]["step_goal"]["triggers"].append(dict(spec_trigger))
+    (op,) = plan_update_automation(spec).operations
+    goal = op.payload["steps"][1]["step_goal"]
+    assert not any(
+        "scheduled_activity_variable" in t["trigger_activity_logged"]
+        for t in goal["triggers"]
+    )
+    assert "keeps_live" not in op.preview
+    assert op.preview["warnings"] == [
+        f"step 'g' goal trigger '{key}' (activity_logged) matches no live "
+        "trigger by id, and its kind isn't unique in the goal, so its live "
+        "settings aren't kept. Give it the live trigger's current id "
+        "(`automations show`), or set them in the spec."
+        for key in ("goal_trigger_0", "goal_trigger_1")
+    ]
+
+
+def test_patterns_doc_scheduled_activity_goal_plans(patch_live_lookups):
+    """The steps of "Waiting for the activity it scheduled" in
+    `kizen docs show automation-patterns`."""
+    doc = FIXTURES.parents[1] / "src/kizen_builder/docs/specs/automation-patterns.md"
+    text = doc.read_text()
+    section = text.split("### Waiting for the activity it scheduled", 1)[1]
+    steps = json.loads(section.split("```json", 1)[1].split("```", 1)[0])
+    payload = _build(
+        {
+            "api_name": "pattern",
+            "name": "Pattern",
+            "type": "record_based",
+            "target_object": "patients",
+            "steps": steps,
+        }
+    )
+    schedule = next(s for s in payload["steps"] if s["type"] == "schedule_activity")
+    assert schedule["action_schedule_activity"]["target_variable"] == "follow_up_id"
+    assert _goal_activity_block(payload)["scheduled_activity_variable"] == (
+        "follow_up_id"
+    )
+
+
 @pytest.mark.parametrize(
     "ref",
     [

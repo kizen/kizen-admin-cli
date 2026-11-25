@@ -382,6 +382,18 @@ def test_create_related_entity_variants_build_a_payload(patch_live_lookups):
         uuid.UUID(block["target_custom_object"])
 
 
+def test_goal_variants_build_a_payload(patch_live_lookups):
+    for variant, block in _built_variants(
+        "goal",
+        **{"<activity api_name>": "follow_up", "<uuid or string variable>": "act_id"},
+    ):
+        (trigger,) = block["triggers"]
+        sent = trigger["trigger_activity_logged"]
+        assert sent.get("scheduled_activity_variable") == (
+            "act_id" if variant.name == "wait_for_scheduled_activity" else None
+        )
+
+
 def test_math_operator_variants_build_a_payload(patch_live_lookups):
     for variant, block in _built_variants("math_operator"):
         assert block["subtype"] == variant.block["subtype"]

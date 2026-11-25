@@ -54,6 +54,11 @@ called out explicitly under **Changed** or **Removed**.
   isn't inside, or one that sets both `loop_to_exit` and `step`. `show` draws
   the target and warns about steps hung under it, which never run.
 
+- **Goals can wait for one scheduled activity.** An Activity Logged trigger
+  inside a goal takes `scheduled_activity_variable`, the String or UUID
+  variable a Schedule Activity step saved the activity's id to. Before this,
+  the CLI dropped that setting when it wrote a goal back.
+
 ### Changed
 
 - `kizen init` now asks for the API key, then the user id, then the business

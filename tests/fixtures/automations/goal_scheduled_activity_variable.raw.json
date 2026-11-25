@@ -1,0 +1,254 @@
+{
+ "id": "63d8e4e2-9e1f-48a5-9dc4-0200b6ab3732",
+ "name": "goal probe",
+ "api_name": "goal_probe",
+ "ai_description": null,
+ "active": false,
+ "type": "record_based",
+ "custom_object": {
+  "id": "97467bef-b375-44e1-9196-dd91e7c85c60",
+  "name": "meetings",
+  "description": null,
+  "entity_name": "Meeting",
+  "object_name": "Meetings",
+  "object_class": "custom_objects",
+  "object_type": "standard",
+  "default_on_activities": true,
+  "deleted": false
+ },
+ "user_description": "",
+ "folder": {
+  "id": "44b300c0-ce2c-4c49-a427-44a25f85bfad",
+  "name": "<business_root>"
+ },
+ "triggers": [
+  {
+   "id": "5ac5bd5b-f9b0-4191-baf5-a1d44dbf8e6e",
+   "description": "Manual",
+   "user_description": "",
+   "trigger_type": "manual",
+   "stats": {
+    "number_completed": 0
+   }
+  },
+  {
+   "id": "4001c80a-964d-4de3-aa0a-41ba70d7db73",
+   "order": 1,
+   "description": "Activity Logged",
+   "user_description": "",
+   "trigger_type": "activity_logged",
+   "trigger_activity_logged": {
+    "activity_type": {
+     "id": "2ad15a97-d834-40d8-ab1a-5112ac2b70ad",
+     "name": "Meeting Follow-up",
+     "api_name": "meeting_follow_up",
+     "deleted": false
+    },
+    "scheduled_activity_variable": null
+   },
+   "stats": {
+    "number_completed": 0
+   }
+  }
+ ],
+ "steps": [
+  {
+   "id": "f7759f7e-5843-47ab-bd13-afa5960915e8",
+   "step_type": "initialize_variable",
+   "order": 0,
+   "description": "Initialize Variable",
+   "user_description": "",
+   "stats": {
+    "number_completed": 0,
+    "number_failed": 0,
+    "number_pending": 0
+   },
+   "parent_step_id": null,
+   "parent_condition": "",
+   "action_initialize_variable": {
+    "sources": [],
+    "variable": {
+     "id": "c6a54c3a-485c-454e-9583-2eff6c4b837a",
+     "name": "act_id",
+     "data_type": "string",
+     "data_subtype": null,
+     "input_format": null,
+     "output_format": null,
+     "created": "2026-11-25T15:48:39.399607Z",
+     "deleted": false,
+     "is_array": false,
+     "is_return_variable": false,
+     "is_array_item_variable": false,
+     "source_array_variable": null
+    },
+    "is_required": false,
+    "array_aggregation_mode": null,
+    "deduplicate_array": false
+   },
+   "action_on_failure": "notify_continue",
+   "should_skip_execution": false,
+   "error_notification_severity_level": "inherit",
+   "is_branch_group_initiator": false
+  },
+  {
+   "id": "f358956e-d18b-4fe8-ac6b-531138a75d29",
+   "step_type": "schedule_activity",
+   "order": 1,
+   "description": "Action: Schedule Activity",
+   "user_description": "",
+   "stats": {
+    "number_completed": 0,
+    "number_failed": 0,
+    "number_pending": 0
+   },
+   "parent_step_id": "f7759f7e-5843-47ab-bd13-afa5960915e8",
+   "parent_condition": "",
+   "action_schedule_activity": {
+    "activity_type": {
+     "id": "2ad15a97-d834-40d8-ab1a-5112ac2b70ad",
+     "name": "Meeting Follow-up",
+     "deleted": false,
+     "enabled": true
+    },
+    "schedule": {
+     "type": "with_delay",
+     "with_delay": {
+      "delay_type": "day",
+      "delay_value_type": "static",
+      "delay_value": 2,
+      "delay_variable": null,
+      "time_offset": "automation_time",
+      "time_offset_type": "static",
+      "time_offset_value": null,
+      "time_offset_variable": null,
+      "time": null
+     },
+     "on_or_around_date": null,
+     "skip_non_working_days": false
+    },
+    "assigned_to": {
+     "assignment_type": "owner",
+     "variable": null,
+     "role": null,
+     "employee": null,
+     "employees": [],
+     "field": null
+    },
+    "note": "follow up",
+    "html_note": null,
+    "variable_field_resolution": "overwrite",
+    "notifications": [],
+    "association_configs": [
+     {
+      "custom_object": {
+       "id": "97467bef-b375-44e1-9196-dd91e7c85c60",
+       "object_name": "Meetings",
+       "entity_name": "Meeting",
+       "deleted": false
+      },
+      "association_source": "context_record",
+      "relationship_field": null,
+      "automation_variable": null
+     }
+    ],
+    "target_variable": {
+     "id": "c6a54c3a-485c-454e-9583-2eff6c4b837a",
+     "name": "act_id",
+     "data_type": "string",
+     "data_subtype": null,
+     "deleted": false,
+     "is_array": false,
+     "is_return_variable": false
+    }
+   },
+   "action_on_failure": "notify_continue",
+   "should_skip_execution": false,
+   "error_notification_severity_level": "inherit",
+   "is_branch_group_initiator": false
+  },
+  {
+   "id": "1b136793-67c5-4669-8ce0-6d9cf2180026",
+   "step_type": "goal",
+   "order": 2,
+   "description": "Goal - Activity Logged",
+   "user_description": "",
+   "stats": {
+    "number_completed": 0,
+    "number_pending": 0,
+    "number_met": 0,
+    "number_not_met": 0
+   },
+   "parent_step_id": "f358956e-d18b-4fe8-ac6b-531138a75d29",
+   "parent_condition": "",
+   "step_goal": {
+    "wait_type": "delay",
+    "delay_type": "days",
+    "delay_amount": 3,
+    "specific_datetime": null,
+    "triggers": [
+     {
+      "id": "247270a2-6229-4e12-af4a-832ce8f22d85",
+      "description": "Activity Logged",
+      "user_description": "",
+      "trigger_type": "activity_logged",
+      "trigger_activity_logged": {
+       "activity_type": {
+        "id": "2ad15a97-d834-40d8-ab1a-5112ac2b70ad",
+        "name": "Meeting Follow-up",
+        "api_name": "meeting_follow_up",
+        "deleted": false
+       },
+       "scheduled_activity_variable": {
+        "id": "c6a54c3a-485c-454e-9583-2eff6c4b837a",
+        "name": "act_id",
+        "data_type": "string",
+        "data_subtype": null,
+        "deleted": false,
+        "is_array": false,
+        "is_return_variable": false
+       }
+      }
+     }
+    ],
+    "value_origin": "static",
+    "variable": null
+   },
+   "action_on_failure": "notify_continue",
+   "should_skip_execution": false,
+   "error_notification_severity_level": "inherit",
+   "is_branch_group_initiator": false
+  }
+ ],
+ "variables": [
+  {
+   "id": "c6a54c3a-485c-454e-9583-2eff6c4b837a",
+   "name": "act_id",
+   "data_type": "string",
+   "data_subtype": null,
+   "input_format": null,
+   "output_format": null,
+   "created": "2026-11-25T15:48:39.399607Z",
+   "deleted": false,
+   "is_array": false,
+   "is_return_variable": false,
+   "is_array_item_variable": false,
+   "source_array_variable": null
+  }
+ ],
+ "revision": 1,
+ "error_notification_email": "",
+ "skip_non_working_days": false,
+ "number_active": 0,
+ "number_paused": 0,
+ "number_completed": 0,
+ "priority_rank": 10,
+ "trigger_throttle_seconds": 0.5,
+ "created": "2026-11-25T09:48:39.358797-06:00",
+ "updated": "2026-11-25T09:48:39.358808-06:00",
+ "debug_next_n_executions": 0,
+ "error_notification_severity_level": "error",
+ "is_callable": false,
+ "repeated_return_behavior": "skip",
+ "concurrency_limit": "no_limit",
+ "concurrent_execution_behavior": null
+}

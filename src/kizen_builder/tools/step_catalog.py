@@ -436,6 +436,8 @@ _SCHEDULE_ACTIVITY = Guide(
         "(confirmed live 2026-10-30, including runs). If an update removes the "
         'bound variable, also send `"target_variable": null`, or Kizen '
         "refuses the PUT: `variable '<name>' does not exist.`",
+        "To wait until this activity is logged, give a goal's Activity Logged "
+        "trigger the same variable: `kizen automations step-types show goal`.",
     ),
     concepts=("who", "when", "variable", "field", "if-already-set", "merge-fields"),
     doc=f'{_PATTERNS_DOC}, "A scheduled follow-up"',
@@ -1590,13 +1592,59 @@ _STOP_EXECUTION = Guide(
     ),
 )
 _GOAL = Guide(
+    variants=(
+        Variant(
+            "wait_for_activity",
+            "Met when an activity of that type is logged; Not Met after three days.",
+            {
+                "wait_type": "delay",
+                "delay_type": "days",
+                "delay_amount": 3,
+                "triggers": [
+                    {
+                        "trigger_type": "activity_logged",
+                        "trigger_activity_logged": {
+                            "activity_type": "<activity api_name>"
+                        },
+                    }
+                ],
+            },
+        ),
+        Variant(
+            "wait_for_scheduled_activity",
+            "Met only when the activity a schedule_activity step saved to the "
+            "variable is logged.",
+            {
+                "wait_type": "delay",
+                "delay_type": "days",
+                "delay_amount": 3,
+                "triggers": [
+                    {
+                        "trigger_type": "activity_logged",
+                        "trigger_activity_logged": {
+                            "activity_type": "<activity api_name>",
+                            "scheduled_activity_variable": (
+                                "<uuid or string variable>"
+                            ),
+                        },
+                    }
+                ],
+            },
+        ),
+    ),
     notes=(
         "A goal step waits on the same trigger types under "
         "`step_goal.triggers`, e.g. `email_received` for a reply. It counts "
         "only an event that happens while the run waits at it, so a "
         "`stage_updated` goal misses a move made before the run got there and "
         "stays pending (confirmed live 2026-10-30).",
+        "`scheduled_activity_variable` on an Activity Logged trigger names the "
+        "single String or UUID variable a schedule_activity step's "
+        "`target_variable` filled. Name it: its id is a 400, `variable '<id>' "
+        "does not exist.` (confirmed live 2026-11-25). It works only in a "
+        "goal. Left out, any activity of the type meets the goal.",
     ),
+    doc=f'{_PATTERNS_DOC}, "Waiting for the activity it scheduled"',
 )
 
 _EXIT_LOOP = Guide(
@@ -1645,6 +1693,11 @@ _ACTIVITY_TRIGGER = Guide(
     notes=(
         "To branch on what was logged, see `kizen docs show activity`, "
         '"Branching on what someone logged" (confirmed live 2026-10-30).',
+        "`scheduled_activity_variable` works only on this trigger inside a "
+        "goal step (`kizen automations step-types show goal`). On an "
+        "automation's trigger Kizen 400s, \"scheduled_activity_variable is "
+        'only supported on goals." (confirmed live 2026-11-25), and the CLI '
+        "refuses it first.",
     ),
 )
 _FORM_TRIGGER = Guide(

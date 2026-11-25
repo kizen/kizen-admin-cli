@@ -109,6 +109,15 @@ class TriggerActivityLoggedConfig(BaseModel):
         default=None,
         description="Activity type api_name or UUID. Same as `activity_type`.",
     )
+    scheduled_activity_variable: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Goal steps only: the name of a single String or UUID variable "
+            "holding a scheduled activity's id, for example a schedule_activity "
+            "step's target_variable. The goal is met only when that activity "
+            "is logged. Kizen refuses it on an automation's trigger."
+        ),
+    )
 
 
 class TriggerFormSubmittedConfig(BaseModel):

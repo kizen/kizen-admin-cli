@@ -45,6 +45,7 @@ from kizen_builder.tools.planners.automations import (
     _block_field_for,
     _merge_server_state,
     _prefix_for,
+    _reject_unhonoured_goal_trigger_keys,
     _reject_unhonoured_keys,
     _strip,
     _unwrap_id,
@@ -244,13 +245,15 @@ def _live_step_to_wire(
 
     block = dict(step.get(cfg_key) or {})
 
-    where = f"{where} step '{p['key']}' {cfg_key}"
+    step_where = f"{where} step '{p['key']}'"
+    where = f"{step_where} {cfg_key}"
     if step_type == "go_to_automation_step":
         block = _rewire_go_to(block, step_keys, trigger_keys, where)
 
     builder = _STEP_BUILDERS.get(step_type)
     if builder is not None:
         _reject_unhonoured_keys(builder, block, where, live=True)
+        _reject_unhonoured_goal_trigger_keys(step_type, block, step_where, live=True)
         p[cfg_key] = builder(block, _SHIM_AUTO, _SHIM_CTX)
     else:
         p[cfg_key] = _generic_block(block)
