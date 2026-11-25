@@ -251,6 +251,7 @@ def steps_edit(
             {**checked, "key": key, "step_type": step["type"]},
             payload,
             target_object,
+            live_step=step,
         )
         normalized = auto_tools.normalize_step_patch(
             dict(patch), key, step["type"], payload, target_object

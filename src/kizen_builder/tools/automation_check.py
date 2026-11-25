@@ -10,6 +10,7 @@ needs the environment (does this field exist) stays with the planner.
 from __future__ import annotations
 
 import difflib
+import json
 import re
 import types
 import typing
@@ -725,6 +726,49 @@ def _merge_field_errors(
                         )
                     )
     return _unique(out)
+
+
+def merge_fields_against_live(
+    errors: list[Finding],
+    warnings: list[Finding],
+    step: dict[str, Any],
+    live_step: dict[str, Any] | None,
+    target_object: str | None,
+    index: int | None = None,
+) -> tuple[list[Finding], list[Finding]]:
+    """``check_step``'s findings with the merge-field ones decided per token
+    rather than by the step's ``id``: a wrong form the live step already
+    carries warns, so an unrelated edit isn't blocked by it, and one the
+    edit brings in is an error. ``live_step`` is the step as it is live, in
+    either the read or the wire shape, or None."""
+    found = _merge_field_errors(index, step, target_object)
+    kept = {
+        f"{{{{ {m[1]} }}}}"
+        for m in merge_fields.MERGE_FIELD_RE.finditer(json.dumps(live_step or {}))
+    }
+    return (
+        [f for f in errors if f not in found] + [f for f in found if f.got not in kept],
+        [f for f in warnings if f not in found] + [f for f in found if f.got in kept],
+    )
+
+
+def refuse_new_merge_fields(
+    spec: dict[str, Any], live_steps: list[dict[str, Any]], warnings: list[Finding]
+) -> list[Finding]:
+    """For an update: raise `SpecProblems` if a step with an ``id`` brings in
+    a merge field in the wrong form that the live step doesn't already
+    carry. Returns ``warnings`` without the findings it turned into errors."""
+    by_id = {s.get("id"): s for s in live_steps}
+    target = None if spec.get("type") == "global" else spec.get("target_object")
+    errors: list[Finding] = []
+    for i, step in enumerate(spec.get("steps") or []):
+        if isinstance(step, dict) and step.get("id"):
+            errors, warnings = merge_fields_against_live(
+                errors, warnings, step, by_id.get(step["id"]), target, i
+            )
+    if errors:
+        raise SpecProblems(errors, warnings)
+    return warnings
 
 
 def _entity_subtype_errors(index: int | None, step: dict[str, Any]) -> list[Finding]:

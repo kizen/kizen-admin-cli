@@ -1885,3 +1885,55 @@ def test_steps_add_refuses_the_wrong_form_for_the_live_object():
     (f,) = exc.value.errors
     assert f.suggestion == "{{ custom_objects.name }}"
     assert check_step_spec(step, {"type": "record_based", "steps": []}, "leads") == []
+
+
+def _live_llm(prompt: str) -> dict:
+    """A live call_llm step as `steps get` gives it (wire-shaped)."""
+    return {
+        "id": "abc",
+        "key": "llm",
+        "type": "call_llm",
+        "action_call_llm": {"prompt": prompt},
+    }
+
+
+@pytest.mark.parametrize(
+    ("live_prompt", "refused"),
+    [("{{ custom_objects.name }}", True), ("{{ entity_record.name }}", False)],
+    ids=["edit-adds-it", "edit-keeps-it"],
+)
+def test_steps_edit_refuses_a_wrong_form_only_when_the_edit_brings_it_in(
+    live_prompt, refused
+):
+    from kizen_builder.tools.automations import check_step_spec
+
+    live = _live_llm(live_prompt)
+    patch = {**live, "step_type": "call_llm"}
+    patch["action_call_llm"] = {"prompt": "Who is {{ entity_record.name }}?"}
+    payload = {"type": "record_based", "steps": [live]}
+    if refused:
+        with pytest.raises(SpecProblems) as exc:
+            check_step_spec(patch, payload, "deals", live_step=live)
+        assert [f.got for f in exc.value.errors] == ["{{ entity_record.name }}"]
+    else:
+        (line,) = check_step_spec(patch, payload, "deals", live_step=live)
+        assert "{{ entity_record.name }}" in line
+
+
+def test_update_refuses_a_wrong_form_new_to_an_existing_step():
+    from kizen_builder.tools.automation_check import refuse_new_merge_fields
+
+    step = _llm("call_llm", prompt="{{ entity_record.name }}", is_advanced=True)
+    spec = _spec({**step, "id": "abc"})
+    warnings = check_automation(spec).warnings
+    with pytest.raises(SpecProblems) as exc:
+        refuse_new_merge_fields(
+            spec, [_live_llm("{{ custom_objects.name }}")], warnings
+        )
+    assert [f.got for f in exc.value.errors] == ["{{ entity_record.name }}"]
+    kept = refuse_new_merge_fields(
+        spec, [_live_llm("{{ entity_record.name }}")], warnings
+    )
+    assert [
+        f.got for f in kept if f.hint == "kizen automations step-types concepts"
+    ] == ["{{ entity_record.name }}"]
