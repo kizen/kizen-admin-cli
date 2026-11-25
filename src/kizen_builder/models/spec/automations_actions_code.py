@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from kizen_builder.models.spec.automations_shared import (
     CodeStepInputConfig,
@@ -98,6 +98,21 @@ def _check_destinations(block: Any) -> Any:
 
 _IS_ADVANCED_DESCRIPTION = "Must be true for more than one destination."
 _HTML_PROMPT_DESCRIPTION = "Leave it out: the CLI derives it from prompt."
+
+# The data_type Kizen's builder saves on each step; it has no control for it.
+# An extraction saved as 'doc' fails when it runs on a PDF (confirmed live
+# 2026-11-25), so the CLI always sends these and refuses any other value.
+FIXED_DATA_TYPES = {"file_content_extraction": "image", "audio_transcription": "audio"}
+
+
+def _check_data_type(value: str | None, step_type: str, why: str = "") -> str | None:
+    fixed = FIXED_DATA_TYPES[step_type]
+    if value is not None and value != fixed:
+        raise ValueError(
+            f"data_type '{value}' isn't one the builder uses: {step_type} always "
+            f"sends '{fixed}'{why}. Leave data_type out; the CLI sends '{fixed}'."
+        )
+    return value
 
 
 class ActionLlmCallConfig(BaseModel):
@@ -224,7 +239,10 @@ class ActionAudioTranscriptionConfig(BaseModel):
     )
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = Field(default=False, description=_IS_ADVANCED_DESCRIPTION)
-    data_type: str | None = None
+    data_type: str | None = Field(
+        default=None,
+        description="Leave it out: the CLI sends 'audio', as the builder does.",
+    )
     business_plugin_app_id: str | None = Field(
         default=None,
         description="See ActionLlmCallConfig.business_plugin_app_id.",
@@ -235,6 +253,11 @@ class ActionAudioTranscriptionConfig(BaseModel):
         default=None,
         description="See ActionLlmCallConfig.merge_field_validation.",
     )
+
+    @field_validator("data_type")
+    @classmethod
+    def _data_type_is_audio(cls, value: str | None) -> str | None:
+        return _check_data_type(value, "audio_transcription")
 
     @model_validator(mode="after")
     def _many_destinations_are_advanced(self) -> Self:
@@ -267,7 +290,13 @@ class ActionFileContentExtractionConfig(BaseModel):
     )
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
     is_advanced: bool = Field(default=False, description=_IS_ADVANCED_DESCRIPTION)
-    data_type: str | None = None
+    data_type: str | None = Field(
+        default=None,
+        description=(
+            "Leave it out: the CLI sends 'image', as the builder does; it "
+            "reads PDF, JPG, JPEG and PNG."
+        ),
+    )
     business_plugin_app_id: str | None = Field(
         default=None,
         description="See ActionLlmCallConfig.business_plugin_app_id.",
@@ -278,6 +307,16 @@ class ActionFileContentExtractionConfig(BaseModel):
         default=None,
         description="See ActionLlmCallConfig.merge_field_validation.",
     )
+
+    @field_validator("data_type")
+    @classmethod
+    def _data_type_is_image(cls, value: str | None) -> str | None:
+        return _check_data_type(
+            value,
+            "file_content_extraction",
+            ", for PDF, JPG, JPEG and PNG files alike, and a step saved as 'doc' "
+            "fails when it runs",
+        )
 
     @model_validator(mode="after")
     def _many_destinations_are_advanced(self) -> Self:

@@ -57,6 +57,7 @@ from kizen_builder.models.spec import (
     AutomationStepDef,
     AutomationTriggerDef,
 )
+from kizen_builder.models.spec.automations_actions_code import FIXED_DATA_TYPES
 from kizen_builder.models.spec.automations_triggers import (
     RETIRED_WEBHOOK_AUTH_KEYS,
     trigger_config_field,
@@ -502,6 +503,7 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
     auto = auto.model_copy(update={"active": resolved_active})
 
     live_payload = live_to_payload(current)
+    _show_stored_data_types(live_payload, current)
     ctx.refuse_inactive_start_targets = False
     spec_payload, _ = _update_payload(auto, ctx, current)
     # Neither side carries the live folder, so a spec that names one would
@@ -519,6 +521,21 @@ def diff_automation(automation: dict[str, Any] | AutomationDef) -> dict[str, Any
         "diff": diff_wire_payloads(live_payload, spec_payload),
         **({"warnings": warnings} if warnings else {}),
     }
+
+
+def _show_stored_data_types(payload: dict[str, Any], raw: dict[str, Any]) -> None:
+    """`live_to_payload` sends the fixed data_type, as every write does, so
+    put back what is stored: a step saved with another value then diffs as
+    the rewrite the update makes."""
+    stored = {
+        s["id"]: s[_block_field_for(s["step_type"])]["data_type"]
+        for s in raw.get("steps") or []
+        if s["step_type"] in FIXED_DATA_TYPES
+        and (s.get(_block_field_for(s["step_type"])) or {}).get("data_type")
+    }
+    for step in payload["steps"]:
+        if step["id"] in stored:
+            step[_block_field_for(step["type"])]["data_type"] = stored[step["id"]]
 
 
 def _update_payload(
@@ -3769,7 +3786,9 @@ def _normalize_destinations(destinations: list[dict[str, Any]]) -> list[dict[str
     return resolved
 
 
-@honours(
+# `data_type` is declared but never read: the builder sends the fixed value
+# (FIXED_DATA_TYPES), and a live read or a spec may still carry the key.
+_LLM_FILE_STEP_KEYS = (
     "model_name",
     "prompt",
     "html_prompt",
@@ -3785,8 +3804,24 @@ def _normalize_destinations(destinations: list[dict[str, Any]]) -> list[dict[str
     "data_type",
     "merge_field_validation",
 )
+
+
+@honours(*_LLM_FILE_STEP_KEYS)
 def _step_file_content_extraction(
     block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    return _llm_file_step(block, auto, ctx, "file_content_extraction")
+
+
+@honours(*_LLM_FILE_STEP_KEYS)
+def _step_audio_transcription(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    return _llm_file_step(block, auto, ctx, "audio_transcription")
+
+
+def _llm_file_step(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext, step_type: str
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "model_name": block.get("model_name"),
@@ -3860,8 +3895,7 @@ def _step_file_content_extraction(
         )
     if block.get("is_advanced") is not None:
         out["is_advanced"] = block["is_advanced"]
-    if block.get("data_type"):
-        out["data_type"] = block["data_type"]
+    out["data_type"] = FIXED_DATA_TYPES[step_type]
     return {k: v for k, v in out.items() if v is not None}
 
 
@@ -4675,9 +4709,7 @@ _STEP_BUILDERS: dict[str, Any] = {
     "update_variable": _step_update_variable,
     "call_llm": _step_call_llm,
     "file_content_extraction": _step_file_content_extraction,
-    # Same wire shape as file_content_extraction (model/prompt/plugin/
-    # input_field/destinations), just data_type=audio.
-    "audio_transcription": _step_file_content_extraction,
+    "audio_transcription": _step_audio_transcription,
     "assign_team_member": _step_assign_team_member,
     "schedule_activity": _step_schedule_activity,
     "send_related_contact_email": _step_send_related_contact_email,

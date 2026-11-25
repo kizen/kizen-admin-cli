@@ -1328,6 +1328,36 @@ def test_two_llm_destinations_with_is_advanced_pass():
     check_automation(_spec(_llm("call_llm", is_advanced=True)))
 
 
+_DATA_TYPE_REFUSALS = {
+    "file_content_extraction": (
+        "data_type 'doc' isn't one the builder uses: file_content_extraction "
+        "always sends 'image', for PDF, JPG, JPEG and PNG files alike, and a step "
+        "saved as 'doc' fails when it runs. Leave data_type out; the CLI sends "
+        "'image'."
+    ),
+    "audio_transcription": (
+        "data_type 'doc' isn't one the builder uses: audio_transcription always "
+        "sends 'audio'. Leave data_type out; the CLI sends 'audio'."
+    ),
+}
+
+
+@pytest.mark.parametrize("step_type", sorted(_DATA_TYPE_REFUSALS))
+def test_an_llm_file_step_refuses_another_data_type(step_type):
+    f = _only(_errors(_spec(_llm(step_type, data_type="doc"))), step="llm")
+    assert f.path == f"action_{step_type}.data_type"
+    assert f.message == _DATA_TYPE_REFUSALS[step_type]
+
+
+@pytest.mark.parametrize(
+    ("step_type", "data_type"),
+    [("file_content_extraction", "image"), ("audio_transcription", "audio")],
+)
+def test_an_llm_file_step_takes_its_own_data_type(step_type, data_type):
+    block = {"is_advanced": True, "data_type": data_type}
+    assert check_automation(_spec(_llm(step_type, **block))).warnings == []
+
+
 @pytest.mark.parametrize(
     ("step", "path", "message"),
     [
@@ -1351,8 +1381,13 @@ def test_two_llm_destinations_with_is_advanced_pass():
             "action_call_llm",
             "more than one destination needs is_advanced: true",
         ),
+        (
+            _llm("file_content_extraction", is_advanced=True, data_type="doc"),
+            "action_file_content_extraction.data_type",
+            "file_content_extraction always sends 'image'",
+        ),
     ],
-    ids=["static_source", "schedule_time", "day_count", "is_advanced"],
+    ids=["static_source", "schedule_time", "day_count", "is_advanced", "data_type"],
 )
 def test_steps_edit_checks_the_block_rules(monkeypatch, step, path, message):
     key, step_type = step["key"], step["step_type"]
