@@ -17,7 +17,7 @@ from kizen_builder.models.spec.automations_actions_messaging import (
 )
 from kizen_builder.models.spec.automations_shared import SOURCE_SUBTYPES
 from kizen_builder.models.spec.automations_triggers import AutomationTriggerDef
-from kizen_builder.tools import automation_check, step_catalog
+from kizen_builder.tools import automation_check, merge_fields, step_catalog
 from kizen_builder.tools.planners.automations import (
     _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
@@ -488,7 +488,13 @@ def test_text_steps_point_at_the_merge_field_table(type_name):
 
 
 def test_merge_field_table_is_a_concept():
-    assert "entity_record.<field>" in step_catalog.CONCEPTS["merge-fields"]
+    concept = step_catalog.CONCEPTS["merge-fields"]
+    assert "entity_record.<field>" in concept
+    for site in merge_fields.TEXT_SITES:
+        line = next(
+            ln for ln in concept.splitlines() if f"`{site.record_namespace}." in ln
+        )
+        assert f"`{site.step_type}`" in line
 
 
 # --- CLI ------------------------------------------------------------------

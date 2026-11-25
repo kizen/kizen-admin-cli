@@ -436,6 +436,12 @@ def plan_update_automation(automation: dict[str, Any] | AutomationDef) -> Plan:
     # payload must carry server-managed state, and the revision must be known
     # at plan time so the previewed payload is exactly what apply sends.
     current = get_automation(auto.api_name)["raw"]
+    if isinstance(automation, dict):
+        from kizen_builder.tools.automation_check import refuse_new_merge_fields
+
+        checked.warnings = refuse_new_merge_fields(
+            automation, current.get("steps") or [], checked.warnings
+        )
 
     # An omitted `active` preserves whatever the live automation already is,
     # rather than defaulting to False — the bug this item fixes. An explicit

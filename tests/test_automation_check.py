@@ -14,8 +14,8 @@ from typer.testing import CliRunner
 import kizen_builder.cli as cli
 from kizen_builder.cli._mutations import _run_mutation
 from kizen_builder.tools import automations as auto_tools
-from kizen_builder.tools import step_catalog
-from kizen_builder.tools.automation_check import check_automation
+from kizen_builder.tools import merge_fields, step_catalog
+from kizen_builder.tools.automation_check import check_automation, check_step
 from kizen_builder.tools.findings import Finding, SpecProblems
 from tests.conftest import FIXTURES
 
@@ -500,9 +500,9 @@ def test_steps_add_refuses_a_field_change_in_a_global_automation():
         "action_change_field_value": {"field_ref": "flagged"},
     }
     with pytest.raises(SpecProblems) as exc:
-        check_step_spec(change, {"type": "global", "steps": []})
+        check_step_spec(change, {"type": "global", "steps": []}, None)
     assert "global automation has none" in exc.value.errors[0].message
-    assert check_step_spec(change, {"type": "record_based", "steps": []}) == []
+    assert check_step_spec(change, {"type": "record_based", "steps": []}, "deals") == []
 
 
 def test_a_placeholder_says_replace_it_and_names_the_lookup():
@@ -727,10 +727,12 @@ def test_steps_get_output_passes_the_step_checks(path):
     from kizen_builder.tools.automations import check_step_spec
     from kizen_builder.translate import live_to_payload
 
-    payload = live_to_payload(json.loads(path.read_text()))
+    raw = json.loads(path.read_text())
+    payload = live_to_payload(raw)
+    target_object = (raw.get("custom_object") or {}).get("name")
     for step in payload["steps"]:
         patch = {k: v for k, v in step.items() if k != "type"}
-        check_step_spec({**patch, "step_type": step["type"]}, payload)
+        check_step_spec({**patch, "step_type": step["type"]}, payload, target_object)
 
 
 def _steps(monkeypatch, argv, spec, steps=()):
@@ -1370,7 +1372,7 @@ def test_steps_edit_block_rules_pass_the_fixed_shape():
     from kizen_builder.tools.automations import check_step_spec
 
     fixed = _llm("call_llm", is_advanced=True)
-    assert check_step_spec(fixed, {"steps": []}) == []
+    assert check_step_spec(fixed, {"steps": []}, None) == []
 
 
 def test_steps_edit_catches_on_day_and_time_on_a_date_field(patch_live_lookups):
@@ -1747,3 +1749,191 @@ def test_a_typed_block_still_passes_a_key_it_does_not_declare(step):
         },
     }
     check_automation(_spec(step, triggers=[trigger]))
+
+
+# --- merge-field forms per step ----------------------------------------------
+
+_SITE_PATHS = [(site, path) for site in merge_fields.TEXT_SITES for path in site.paths]
+
+
+def _text_step(site, path, text, **top):
+    """A step of ``site``'s type carrying ``text`` at ``path`` alone."""
+    block: dict = {}
+    node = block
+    *parents, leaf = path.split(".")
+    for part in parents:
+        if part.endswith("[]"):
+            child: dict = {}
+            node[part[:-2]] = [child]
+        else:
+            child = node.setdefault(part, {})
+        node = child
+    node[leaf] = text
+    return {"key": "t", "step_type": site.step_type, **block, **top}
+
+
+def _merge_findings(step, target_object="deals", is_global=False):
+    errors, warnings = check_step(
+        step, {}, index=0, target_object=target_object, is_global=is_global
+    )
+    hint = "kizen automations step-types concepts"
+    return [f for f in errors if f.hint == hint], [
+        f for f in warnings if f.hint == hint
+    ]
+
+
+@pytest.mark.parametrize(("site", "path"), _SITE_PATHS, ids=[p for _, p in _SITE_PATHS])
+def test_each_text_takes_its_own_steps_record_form(site, path):
+    form = site.record_namespace
+    assert _merge_findings(_text_step(site, path, f"x {{{{ {form}.name }}}}")) == (
+        [],
+        [],
+    )
+    for wrong in sorted({"custom_objects", "entity_record", "deals"} - {form}):
+        token = f"{{{{ {wrong}.name }}}}"
+        errors, _ = _merge_findings(_text_step(site, path, f"x {token}"))
+        (f,) = errors
+        assert f.got == token
+        assert f.suggestion == f"{{{{ {form}.name }}}}"
+        assert f.path == path.replace("[]", "[0]")
+        assert site.label in f.message
+
+
+def test_a_prompt_with_the_wrong_form_says_which_form_it_takes():
+    step = _llm("call_llm", prompt="Who is {{ entity_record.name }}?", is_advanced=True)
+    (f,) = _errors(_spec(step))
+    assert f.message == (
+        '"{{ entity_record.name }}" doesn\'t resolve in a call_llm prompt, which '
+        "names the trigger record's fields as {{ custom_objects.<field> }}"
+    )
+    assert (f.step, f.path, f.got, f.suggestion, f.hint) == (
+        "llm",
+        "action_call_llm.prompt",
+        "{{ entity_record.name }}",
+        "{{ custom_objects.name }}",
+        "kizen automations step-types concepts",
+    )
+
+
+def test_a_hop_keeps_its_path_and_a_span_is_read_inside():
+    span = (
+        '<p><span class="kzn-merge-field" data-merge-field-fallback-label="Owner '
+        'Email" data-merge-field-relationship="deals.owner.email" '
+        'data-merge-field-objectname="Deals">{{ deals.owner.email }}</span></p>'
+    )
+    site = next(s for s in merge_fields.TEXT_SITES if s.step_type == "call_llm")
+    (f,) = _merge_findings(_text_step(site, "action_call_llm.html_prompt", span))[0]
+    assert f.suggestion == "{{ custom_objects.owner.email }}"
+
+
+def test_other_namespaces_pass_unchecked():
+    site = next(s for s in merge_fields.TEXT_SITES if s.step_type == "call_llm")
+    text = (
+        "{{ automation_variable.av }} {{ automation_variable.rec.name }} "
+        "{{ business.name }} {{ team_member.email }} {{ companies.name }} "
+        "{{ automation_history.execution_id }}"
+    )
+    assert _merge_findings(_text_step(site, "action_call_llm.prompt", text)) == (
+        [],
+        [],
+    )
+
+
+def test_no_record_form_check_without_a_trigger_record_or_on_contacts():
+    site = next(s for s in merge_fields.TEXT_SITES if s.step_type == "call_llm")
+    step = _text_step(site, "action_call_llm.prompt", "{{ entity_record.name }}")
+    assert _merge_findings(step, target_object=None, is_global=True) == ([], [])
+    assert _merge_findings(step, target_object="deals", is_global=True) == ([], [])
+    assert _merge_findings(step, target_object="client_client") == ([], [])
+
+
+def test_an_existing_step_with_the_wrong_form_only_warns():
+    site = next(s for s in merge_fields.TEXT_SITES if s.step_type == "call_llm")
+    step = _text_step(
+        site, "action_call_llm.prompt", "{{ entity_record.name }}", id="abc"
+    )
+    errors, warnings = _merge_findings(step)
+    assert errors == []
+    (w,) = warnings
+    assert w.suggestion == "{{ custom_objects.name }}"
+
+
+def test_wrong_forms_come_back_with_the_specs_other_problems():
+    spec = _spec(
+        _llm(
+            "call_llm",
+            prompt="{{ entity_record.name }} and {{ deals.stage }}",
+            is_advanced=True,
+        ),
+        _activity(target_variable="activity_id", note="{{ entity_record.name }}"),
+    )
+    found = {(f.step, f.got) for f in _errors(spec)}
+    assert found == {
+        ("llm", "{{ entity_record.name }}"),
+        ("llm", "{{ deals.stage }}"),
+        ("act", "{{ entity_record.name }}"),
+        ("act", "activity_id"),
+    }
+
+
+def test_steps_add_refuses_the_wrong_form_for_the_live_object():
+    from kizen_builder.tools.automations import check_step_spec
+
+    step = _llm("call_llm", prompt="{{ deals.name }}", is_advanced=True)
+    with pytest.raises(SpecProblems) as exc:
+        check_step_spec(step, {"type": "record_based", "steps": []}, "deals")
+    (f,) = exc.value.errors
+    assert f.suggestion == "{{ custom_objects.name }}"
+    assert check_step_spec(step, {"type": "record_based", "steps": []}, "leads") == []
+
+
+def _live_llm(prompt: str) -> dict:
+    """A live call_llm step as `steps get` gives it (wire-shaped)."""
+    return {
+        "id": "abc",
+        "key": "llm",
+        "type": "call_llm",
+        "action_call_llm": {"prompt": prompt},
+    }
+
+
+@pytest.mark.parametrize(
+    ("live_prompt", "refused"),
+    [("{{ custom_objects.name }}", True), ("{{ entity_record.name }}", False)],
+    ids=["edit-adds-it", "edit-keeps-it"],
+)
+def test_steps_edit_refuses_a_wrong_form_only_when_the_edit_brings_it_in(
+    live_prompt, refused
+):
+    from kizen_builder.tools.automations import check_step_spec
+
+    live = _live_llm(live_prompt)
+    patch = {**live, "step_type": "call_llm"}
+    patch["action_call_llm"] = {"prompt": "Who is {{ entity_record.name }}?"}
+    payload = {"type": "record_based", "steps": [live]}
+    if refused:
+        with pytest.raises(SpecProblems) as exc:
+            check_step_spec(patch, payload, "deals", live_step=live)
+        assert [f.got for f in exc.value.errors] == ["{{ entity_record.name }}"]
+    else:
+        (line,) = check_step_spec(patch, payload, "deals", live_step=live)
+        assert "{{ entity_record.name }}" in line
+
+
+def test_update_refuses_a_wrong_form_new_to_an_existing_step():
+    from kizen_builder.tools.automation_check import refuse_new_merge_fields
+
+    step = _llm("call_llm", prompt="{{ entity_record.name }}", is_advanced=True)
+    spec = _spec({**step, "id": "abc"})
+    warnings = check_automation(spec).warnings
+    with pytest.raises(SpecProblems) as exc:
+        refuse_new_merge_fields(
+            spec, [_live_llm("{{ custom_objects.name }}")], warnings
+        )
+    assert [f.got for f in exc.value.errors] == ["{{ entity_record.name }}"]
+    kept = refuse_new_merge_fields(
+        spec, [_live_llm("{{ entity_record.name }}")], warnings
+    )
+    assert [
+        f.got for f in kept if f.hint == "kizen automations step-types concepts"
+    ] == ["{{ entity_record.name }}"]

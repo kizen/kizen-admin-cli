@@ -174,6 +174,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **`automations create`/`update` and `steps add`/`edit` refuse a merge field
+  that names the trigger record the way another step does**, such as
+  `{{ entity_record.name }}` in a `call_llm` prompt (which fails the step at
+  run time), and print the form that step takes. A wrong form an existing
+  step already carries live gets a warning instead.
+
 - **`automations diff` no longer reports `value_html: ''` on
   `initialize_variable` sources.**
 

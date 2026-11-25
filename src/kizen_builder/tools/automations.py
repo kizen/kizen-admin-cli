@@ -449,23 +449,37 @@ def list_subfolders(identifier: str) -> list[dict[str, Any]]:
         return auto_api.list_subfolders(client, match["id"])
 
 
-def check_step_spec(step: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+def check_step_spec(
+    step: dict[str, Any],
+    payload: dict[str, Any],
+    target_object: str | None,
+    live_step: dict[str, Any] | None = None,
+) -> list[str]:
     """Run ``automations create``'s per-step checks on a step for ``steps
-    add``/``edit``, against the variables the live automation declares.
-    Raises `SpecProblems` listing every error; returns the warnings as
-    lines for the report."""
+    add``/``edit``, against the variables the live automation declares and
+    its object's api_name. For an edit, ``live_step`` is the step being
+    edited: a wrong merge-field form the edit brings in is an error even
+    though the step has an id. Raises `SpecProblems` listing every error;
+    returns the warnings as lines for the report."""
     from kizen_builder.tools.automation_check import (
         block_rule_errors,
         check_step,
         declared_variables,
+        merge_fields_against_live,
     )
     from kizen_builder.tools.findings import SpecProblems
 
+    is_global = payload.get("type") == "global"
     errors, warnings = check_step(
         step,
         declared_variables(payload["steps"]),
-        is_global=payload.get("type") == "global",
+        is_global=is_global,
+        target_object=target_object,
     )
+    if live_step is not None:
+        errors, warnings = merge_fields_against_live(
+            errors, warnings, step, live_step, None if is_global else target_object
+        )
     errors += block_rule_errors(step)
     if errors:
         raise SpecProblems(errors, warnings)

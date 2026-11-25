@@ -248,7 +248,10 @@ def steps_edit(
         target_object = (raw.get("custom_object") or {}).get("name")
         checked = {k: v for k, v in patch.items() if k != "type"}
         warnings += auto_tools.check_step_spec(
-            {**checked, "key": key, "step_type": step["type"]}, payload
+            {**checked, "key": key, "step_type": step["type"]},
+            payload,
+            target_object,
+            live_step=step,
         )
         normalized = auto_tools.normalize_step_patch(
             dict(patch), key, step["type"], payload, target_object
@@ -317,7 +320,7 @@ def steps_add(
     ) -> Any:
         target_object = (raw.get("custom_object") or {}).get("name")
         parent_key, adopt = parent or None, not leaf
-        warnings += auto_tools.check_step_spec(spec, payload)
+        warnings += auto_tools.check_step_spec(spec, payload, target_object)
         defaults: list[str] = []
         if spec.get("step_type") == "loop":
             loop, closer, item = auto_tools.build_wire_loop(
