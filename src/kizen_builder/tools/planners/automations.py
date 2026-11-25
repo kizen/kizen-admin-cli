@@ -3501,19 +3501,29 @@ def _step_search_records(
     filter_config/filter_groups resolve against it directly rather than
     against auto.target_object, unlike a condition step.
     """
-    object_ref = block.get("custom_object")
-    object_api = _api_name_of(object_ref)
-    object_id = _resolve_object(object_ref, ctx)
-    if not object_id:
-        raise PlanError("search_records step requires a resolvable 'custom_object'")
     var_name = _unwrap_variable_name(block.get("destination_variable"))
-    out: dict[str, Any] = {
-        "custom_object": {"id": object_id},
-        "filter_type": block.get("filter_type"),
+    return {
+        **_searched_records(block, auto, ctx, "search_records"),
         "destination_variable": {"name": var_name} if var_name else None,
         "destination_variable_resolution": block.get(
             "destination_variable_resolution", "overwrite"
         ),
+    }
+
+
+def _searched_records(
+    block: dict[str, Any], auto: AutomationDef, ctx: LiveContext, step_type: str
+) -> dict[str, Any]:
+    """The object, filter type, filter and filter groups of a search step,
+    in write dialect."""
+    object_ref = block.get("custom_object")
+    object_api = _api_name_of(object_ref)
+    object_id = _resolve_object(object_ref, ctx)
+    if not object_id:
+        raise PlanError(f"{step_type} step requires a resolvable 'custom_object'")
+    out: dict[str, Any] = {
+        "custom_object": {"id": object_id},
+        "filter_type": block.get("filter_type"),
     }
     fc = block.get("filter_config")
     if fc is not None:
@@ -3543,6 +3553,21 @@ def _step_search_records(
         if gid:
             groups.append({"id": gid})
     out["filter_groups"] = groups
+    return out
+
+
+def _value_source(
+    source: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> dict[str, Any]:
+    """One value source (an extraction step's `input_value_source`) in write
+    dialect: bare UUIDs, the variable by name, and `field`/`relationship_field`
+    given as 'object.field' resolved."""
+    (out,) = _normalize_variable_sources([source], auto, ctx)
+    for key in ("field", "relationship_field"):
+        ref = out.get(key)
+        if isinstance(ref, str) and "." in ref:
+            obj_api, fld_api = ref.split(".", 1)
+            out[key] = ctx.field_uuid(obj_api, fld_api)
     return out
 
 
@@ -3877,14 +3902,7 @@ def _step_file_content_extraction(
     # Same wire conventions as variable sources: bare UUIDs, variable by name.
     source = None
     if block.get("input_value_source"):
-        (source,) = _normalize_variable_sources(
-            [block.get("input_value_source")], auto, ctx
-        )
-        for key in ("field", "relationship_field"):
-            ref = source.get(key)
-            if isinstance(ref, str) and "." in ref:
-                obj_api, fld_api = ref.split(".", 1)
-                source[key] = ctx.field_uuid(obj_api, fld_api)
+        source = _value_source(block["input_value_source"], auto, ctx)
     # Kizen takes exactly one of the two, and every read mirrors input_field
     # into a context_entity_field source. Collapse the mirror, so a re-save
     # sends what was written.
