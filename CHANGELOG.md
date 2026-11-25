@@ -174,6 +174,13 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Fixed
 
+- **A CLI-built Initialize/Update Variable step with a text value no longer
+  opens blank in Kizen's builder**, and saving it there no longer wipes the
+  value. Condition LLM prompts, activity notes and new-record names also open
+  with their merge fields shown, and editing a prompt in a spec from
+  `automations get` (or a webhook header's value) no longer leaves the
+  builder showing the old text.
+
 - **`automations create`/`update` and `steps add`/`edit` refuse a merge field
   that names the trigger record the way another step does**, such as
   `{{ entity_record.name }}` in a `call_llm` prompt (which fails the step at

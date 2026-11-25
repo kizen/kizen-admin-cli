@@ -1882,26 +1882,21 @@ def _trigger_on_or_around_date(
 
 @honours_all
 def _trigger_webhook(block: dict[str, Any], ctx: LiveContext) -> dict[str, Any]:
-    def resolve_label(namespace: str, field_path: str) -> str | None:
-        if namespace == "integration_secret":
-            return ctx.integration_secret_description(field_path)
-        return None
-
     # Drop server-assigned id; pass through the rest as-is.
-    return _webhook_auth(_strip(block, drop={"id"}), resolve_label)
+    return _webhook_auth(_strip(block, drop={"id"}), ctx)
 
 
 _WEBHOOK_AUTH_KEYS = ("auth_type", "headers", "secret")
 
 
-def _webhook_auth(
-    block: dict[str, Any], resolve_label: merge_fields.ResolveLabel
-) -> dict[str, Any]:
+def _webhook_auth(block: dict[str, Any], ctx: LiveContext | None) -> dict[str, Any]:
     """Reduce a webhook block's auth to the shape the UI writes (confirmed
     live 2026-10-27). Reads carry `headers: []`, `secret: null`, an expanded
     `secret` and, on older captures, the retired `auth_header_*` keys. A
-    header without an `html_value` key gets the UI's rich-text mirror, whose
-    merge-field label for a secret is the secret's description."""
+    header's `html_value` is the UI's rich-text mirror, whose merge-field
+    label for a secret is the secret's description. With live lookups it
+    follows `value` as a step text's HTML does (`_text_html`); `translate`
+    (no lookups) and a carried live auth keep a present one as is."""
     out = {k: v for k, v in block.items() if k not in RETIRED_WEBHOOK_AUTH_KEYS}
     if out.get("secret") is None:
         out.pop("secret", None)
@@ -1912,16 +1907,26 @@ def _webhook_auth(
     else:
         out["headers"] = [
             h
-            if "html_value" in h
-            else {
-                **h,
-                "html_value": "<p>"
-                + merge_fields.render(h["value"], resolve_label=resolve_label)
-                + "</p>",
-            }
+            if "html_value" in h and not isinstance(ctx, LiveContext)
+            else {**h, "html_value": _webhook_header_html(h, ctx)}
             for h in out["headers"]
         ]
     return out
+
+
+def _webhook_header_html(header: dict[str, Any], ctx: Any) -> Any:
+    try:
+        return _text_html(header["value"], header.get("html_value"), ctx)
+    except PlanError:
+        # Before 2026-11-25 a header looked up only its secret's label, so
+        # another namespace that isn't an object, or translate's no-lookup
+        # context, still gets the fallback label rather than failing.
+        def secret_label(namespace: str, field_path: str) -> str | None:
+            if namespace == "integration_secret":
+                return ctx.integration_secret_description(field_path)
+            return None
+
+        return merge_fields.render_html(header["value"], resolve_label=secret_label)
 
 
 def _carry_webhook_auth(
@@ -1943,7 +1948,7 @@ def _carry_webhook_auth(
         if match is None:
             out.append(t)
             continue
-        auth = _webhook_auth(match, lambda _ns, _path: None)
+        auth = _webhook_auth(match, None)
         carried = {k: auth[k] for k in _WEBHOOK_AUTH_KEYS if k in auth}
         out.append({**t, "trigger_webhook": {**block, **carried}})
     return out
@@ -2316,6 +2321,7 @@ def _build_step_payload(
     try:
         block_dict = _resolve_goal_trigger_stages(step.step_type, block_dict, auto, ctx)
         wire_block = builder(block_dict, auto, ctx)
+        _render_text_html(step.step_type, wire_block, auto, ctx)
     except (PlanError, VariableReferenceError) as e:
         raise PlanError(f"step '{step.key}': {e}") from e
     if step.step_type == "stop_execution":
@@ -3765,15 +3771,6 @@ def _step_call_llm(
         out["business_plugin_app_id"] = bpa_id
     if block.get("html_prompt") is not None:
         out["html_prompt"] = block["html_prompt"]
-    elif out.get("prompt"):
-        # Kizen's builder UI always keeps prompt/html_prompt in sync (same
-        # quirk as notify_member_via_text's content/html_content): a
-        # plain-prompt-only step still runs fine via the API but the
-        # rich-text prompt editor renders blank without this.
-        resolve_label, resolve_objectname = _merge_field_resolvers(auto, ctx)
-        out["html_prompt"] = (
-            f"<p>{merge_fields.render(out['prompt'], resolve_label=resolve_label, resolve_objectname=resolve_objectname)}</p>"
-        )
     if block.get("destinations"):
         out["destinations"] = _resolve_llm_destinations(
             block["destinations"], auto, ctx
@@ -3931,12 +3928,6 @@ def _step_file_content_extraction(
     out["input_value_source"] = source
     if block.get("html_prompt") is not None:
         out["html_prompt"] = block["html_prompt"]
-    elif out.get("prompt"):
-        # Same prompt/html_prompt sync quirk as call_llm — see its comment.
-        resolve_label, resolve_objectname = _merge_field_resolvers(auto, ctx)
-        out["html_prompt"] = (
-            f"<p>{merge_fields.render(out['prompt'], resolve_label=resolve_label, resolve_objectname=resolve_objectname)}</p>"
-        )
     if block.get("merge_field_validation"):
         out["merge_field_validation"] = block["merge_field_validation"]
     if block.get("destinations"):
@@ -4322,15 +4313,67 @@ def _email_recipient(selector: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _text_html(
+    text: Any, given: Any, ctx: LiveContext | None, target_object: str | None = None
+) -> Any:
+    """The HTML side of a step text or webhook header, which the builder's
+    editor opens and a UI save writes back (confirmed live 2026-11-25):
+    ``given`` while it says what ``text`` says, so builder formatting
+    survives a round trip, else ``text`` rendered, so a cleared text clears
+    it. With no plain text and no ``given``, ``given``."""
+    if not isinstance(text, str) or (not text and not given):
+        return given
+    if isinstance(given, str) and merge_fields.same_text(text, given):
+        return given
+    if ctx is None:
+        return merge_fields.render_html(text)
+    resolve_label, resolve_objectname = _merge_field_resolvers(target_object, ctx)
+    return merge_fields.render_html(
+        text, resolve_label=resolve_label, resolve_objectname=resolve_objectname
+    )
+
+
+def _render_text_html(
+    step_type: str, block: dict[str, Any], auto: AutomationDef, ctx: LiveContext
+) -> None:
+    """Fill in the HTML side of each text the step carries
+    (`merge_fields.TEXT_SITES`). A static source counts only as a string;
+    a `schedule_activity` note already HTML is left as written."""
+    from kizen_builder.tools.automation_check import _dig
+
+    for site in merge_fields.TEXT_SITES:
+        if site.step_type != step_type:
+            continue
+        parent, _, text_key = site.text.partition(".")[2].rpartition(".")
+        html_key = site.html.rpartition(".")[2]
+        holders = [v for _, v in _dig(block, parent)] if parent else [block]
+        for holder in holders:
+            text = holder.get(text_key)
+            if not isinstance(text, str) or (
+                "source_type" in holder
+                and (holder["source_type"], holder.get("source_subtype"))
+                != ("static", "string")
+            ):
+                continue
+            if html_key == text_key:
+                if not text.startswith("<p"):
+                    holder[text_key] = _text_html(text, None, ctx, auto.target_object)
+                continue
+            html_text = _text_html(text, holder.get(html_key), ctx, auto.target_object)
+            if html_text is not None:
+                holder[html_key] = html_text
+
+
 def _merge_field_resolvers(
-    auto: AutomationDef, ctx: LiveContext
+    target_object: str | None, ctx: LiveContext
 ) -> tuple[merge_fields.ResolveLabel, merge_fields.ResolveObjectName]:
     """The label/objectname resolvers `merge_fields.render` needs for one
     automation payload build, backed by this plan call's `LiveContext`.
 
     ``entity_record``/``custom_objects`` (the reserved pseudo-tokens for "the
     triggering record" and "the automation's own target_object") resolve
-    against the automation's `target_object`; any other namespace outside
+    against the automation's `target_object`; an ``integration_secret`` is
+    labelled with the secret's description; any other namespace outside
     `merge_fields.RESERVED_NAMESPACES` is treated as a real custom object's
     own api_name and resolved against itself. Neither resolver attempts a
     relationship-hop field path (more than one segment past the namespace,
@@ -4341,6 +4384,8 @@ def _merge_field_resolvers(
     """
 
     def resolve_label(namespace: str, field_path: str) -> str | None:
+        if namespace == "integration_secret":
+            return ctx.integration_secret_description(field_path)
         if namespace not in merge_fields.RESERVED_NAMESPACES:
             # An unknown object fails the plan; an unknown field on a real
             # one falls back to the title-cased label below.
@@ -4356,7 +4401,7 @@ def _merge_field_resolvers(
         if "." in field_path:
             return None
         if namespace in ("entity_record", "custom_objects"):
-            object_api_name = auto.target_object
+            object_api_name = target_object
         elif namespace not in merge_fields.RESERVED_NAMESPACES:
             object_api_name = namespace
         else:
@@ -4402,16 +4447,6 @@ def _step_notify_member_via_text(
     for key in ("content", "html_content"):
         if block.get(key) is not None:
             out[key] = block[key]
-    if out.get("content") and not out.get("html_content"):
-        # Kizen's builder UI always keeps content/html_content in sync
-        # (confirmed from a live capture); a plain-content-only step still
-        # renders in the API but shows blank/wrong in the UI without this.
-        # Merge-field tokens (e.g. `{{ entity_record.owner }}`) render into
-        # the UI's special span markup rather than being escaped literally.
-        resolve_label, resolve_objectname = _merge_field_resolvers(auto, ctx)
-        out["html_content"] = (
-            f"<p>{merge_fields.render(out['content'], resolve_label=resolve_label, resolve_objectname=resolve_objectname)}</p>"
-        )
     base_id = block.get("base_message_id") or block.get("message_template_id")
     if base_id:
         out["base_message_id"] = base_id

@@ -346,7 +346,6 @@ _SCHEDULE_ACTIVITY = Guide(
                     "employee_id": "<team member uuid>",
                 },
                 "note": "<plain text>",
-                "html_note": "<p>the same note as HTML</p>",
                 "target_variable": "<uuid or string variable>",
             },
         ),
@@ -443,8 +442,9 @@ _SCHEDULE_ACTIVITY = Guide(
     notes=(
         "on_or_around_date takes its date from `field_ref` or from `variable` "
         '({"name": <date variable>}); set one.',
-        "Set `html_note` with `note` when you want both: a write without "
-        "`html_note` clears it.",
+        "Write `note` as plain text; the CLI stores it as HTML in `note`, as "
+        "the builder does. `html_note` doesn't reach the scheduled activity "
+        "(confirmed live 2026-11-25).",
         "`association_configs` is only for an activity type tied to more than "
         "one object; the server fills the default entries.",
         "In `association_configs`, `context_record` is valid only on the entry "
@@ -486,7 +486,6 @@ _RESOLUTIONS = (
 _NEW_RECORD = {
     "target_custom_object": "<object api_name>",
     "new_entity_name": "Follow-up for {{ entity_record.name }}",
-    "new_entity_name_html": "<p>Follow-up for {{ entity_record.name }}</p>",
 }
 
 _CREATE_RELATED_ENTITY = Guide(

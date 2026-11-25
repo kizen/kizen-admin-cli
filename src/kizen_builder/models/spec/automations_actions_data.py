@@ -143,7 +143,7 @@ class ActionCreateRelatedEntityConfig(BaseModel):
     )
     new_entity_name_html: str | None = Field(
         default=None,
-        description="Required by Kizen: the same name as HTML, e.g. <p>...</p>.",
+        description="Leave it out: the CLI derives it from new_entity_name.",
     )
     new_entity_owner_type: (
         Literal["assign_from_context_record", "newly_assigned_owner"] | None

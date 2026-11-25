@@ -245,7 +245,6 @@ One automation, one branch, one merge, one `code_step` — the graph rules in
       "action_create_related_entity": {
         "target_object": "service_tickets",
         "new_entity_name": "Escalation for {{ entity_record.name }}",
-        "new_entity_name_html": "<p>Escalation for {{ entity_record.name }}</p>",
         "new_entity_owner_type": "assign_from_context_record",
         "context_entity_field": "<service_tickets.escalation_ticket_field_uuid>"
       } },

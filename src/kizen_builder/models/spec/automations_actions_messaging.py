@@ -578,8 +578,8 @@ class ActionScheduleActivityConfig(BaseModel):
     html_note: str | None = Field(
         default=None,
         description=(
-            "HTML-formatted note. Kizen stores it separately from `note`, and "
-            "a write without it clears it (confirmed live 2026-10-06)."
+            "Not used by the builder or copied to the activity (confirmed "
+            "live 2026-11-25); leave it out."
         ),
     )
     target_variable: str | dict[str, Any] | None = Field(
