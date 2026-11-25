@@ -25,6 +25,7 @@ from kizen_builder.models.spec.automations_triggers import (
     AutomationTriggerDef,
     trigger_config_field,
 )
+from kizen_builder.tools import merge_fields
 from kizen_builder.tools.planners.automations import (
     _CONFIGLESS_STEP_TYPES,
     _STEP_BUILDERS,
@@ -78,6 +79,62 @@ class UnknownType(LookupError):
 # Shared concepts
 # ---------------------------------------------------------------------------
 
+
+def _merge_fields_concept() -> str:
+    """The merge-field concept, its per-step lists from
+    `merge_fields.TEXT_SITES`."""
+    forms = {
+        "entity_record": "`entity_record.<field>`",
+        "custom_objects": (
+            "`custom_objects.<field>`, literally, whatever the object's api_name"
+        ),
+    }
+    steps: dict[str, list[str]] = {form: [] for form in forms}
+    for site in merge_fields.TEXT_SITES:
+        text = site.paths[0].partition(".")[2]
+        steps[site.record_namespace].append(f"`{site.step_type}` (`{text}`)")
+    lines = [f"- {forms[form]}: {', '.join(listed)}." for form, listed in steps.items()]
+    return "\n".join(
+        [
+            "`{{ ... }}` tokens in text a step sends or stores. The namespace for "
+            "the trigger record's own fields depends on the step:",
+            *lines,
+            "- A notify email's body names them by the object's api_name, "
+            "`{{ <object api_name>.<field> }}` (confirmed live 2026-11-25); "
+            "`send_related_contact_email`/`_text` are untested.",
+            "`entity_record.<field>` or `<object api_name>.<field>` in a "
+            "`call_llm` or condition prompt fails the step, as does "
+            "`entity_record.<field>` in a `file_content_extraction` prompt "
+            "(confirmed live 2026-11-25); the CLI refuses a trigger-record field "
+            "in another step's form.",
+            "The `notify_member_via_text` form is from the editor alone, which "
+            "shows `entity_record` as a chip and outlines every other form red; "
+            "no run was observed.",
+            "These render empty rather than fail:",
+            "- `entity_record.<field>` or `<object api_name>.<field>` in a static "
+            "variable source or a `schedule_activity` note (confirmed live "
+            "2026-11-25).",
+            "- A hop, `{{ custom_objects.<relationship>.<field> }}`, in a "
+            "`call_llm` prompt, even with `default_to_unknown` (confirmed live "
+            "2026-10-30).",
+            "- On a Contacts automation, `{{ contact.id }}`, `{{ contact.email }}` "
+            "and `{{ entity_record.id }}` in a static variable source save, but "
+            "the variable arrives empty (`{{ custom_objects.id }}` there is a "
+            "400; confirmed live 2026-10-30). Bind the field as a code step's "
+            "`field` input instead.",
+            "`{{ automation_variable.<name> }}` renders in a static source, "
+            "though the editor marks it red there and in a text message. To use "
+            "a related record's field, "
+            "copy it into a variable first, then write "
+            "`{{ automation_variable.<name> }}` (`kizen docs show "
+            "automation-patterns`, \"Reading a related record's field into a "
+            'variable"). The other namespaces (`team_member`, `business`, '
+            "`automation_history`, …) and the `kzn-merge-field` span each token "
+            "sits in are in `kizen docs show email-templates`.",
+        ]
+    )
+
+
 CONCEPTS: dict[str, str] = {
     "who": (
         "A team member selector: a `type` (or `assignment_type`) plus the id "
@@ -118,30 +175,7 @@ CONCEPTS: dict[str, str] = {
         "`destination_variable_resolution`, `variable_field_resolution`, "
         "`conflict_resolution`)."
     ),
-    "merge-fields": (
-        "`{{ ... }}` tokens in text a step sends or stores. The namespace for "
-        "the trigger record's own fields depends on the step:\n"
-        "- `entity_record.<field>`: `notify_member_via_email`, "
-        "`notify_member_via_text`, `send_related_contact_email`, "
-        "`send_related_contact_text`.\n"
-        "- `custom_objects.<field>`, literally, whatever the object's "
-        "api_name: `call_llm` (`prompt`), `schedule_activity` (`note`), "
-        "`initialize_variable`/`update_variable` (static sources).\n"
-        "These render empty rather than fail (confirmed live 2026-10-30):\n"
-        "- `entity_record.<field>` in a `schedule_activity` note.\n"
-        "- A hop, `{{ custom_objects.<relationship>.<field> }}`, in a "
-        "`call_llm` prompt, even with `default_to_unknown`.\n"
-        "- On a Contacts automation, `{{ contact.id }}`, `{{ contact.email }}` "
-        "and `{{ entity_record.id }}` in a static variable source save, but "
-        "the variable arrives empty (`{{ custom_objects.id }}` there is a "
-        "400). Bind the field as a code step's `field` input instead.\n"
-        "To use a related record's field, copy it into a variable first, then "
-        "write `{{ automation_variable.<name> }}` (`kizen docs show "
-        "automation-patterns`, \"Reading a related record's field into a "
-        'variable"). The other namespaces (`team_member`, `business`, '
-        "`automation_history`, …) and the `kzn-merge-field` span each token "
-        "sits in are in `kizen docs show email-templates`."
-    ),
+    "merge-fields": _merge_fields_concept(),
 }
 
 

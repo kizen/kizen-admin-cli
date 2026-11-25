@@ -456,6 +456,7 @@ rule.
 | An option field's label resolves to its UUID; an unknown label is refused. Kizen answers a label with a 500, or saves an automation it can't read | `_option_labels_to_ids` | 2026-10-30 |
 | A condition needs at least one rule (empty `query`, a group with no `filters`, `in_group` with no `group_ids`); the UI shows an error on an empty one | `_condition_rules_problem` | reported 2026-09-29 |
 | A filter value can't hold a `{{ … }}` merge field; Kizen stores it as text and matches nothing | `_refuse_merge_fields` | 2026-11-02 |
+| A `{{ … }}` token naming the trigger record in another step's form is refused (a warning when the live step already carries it) | `merge_fields.TEXT_SITES`, `check_step`, `merge_fields_against_live` | 2026-11-25 |
 | The plan warns about each compiled rule without a `view_model` | `_unlaid_rule_warnings` | — |
 | Webhook `headers` only with `http_header`, `secret` only with `basic_auth` (Kizen drops them silently); retired `auth_header_name`/`auth_header_value` refused | `TriggerWebhookConfig._validate_auth` | 2026-10-27 |
 | Webhook header names are 2-100 characters | `WebhookAuthHeader` | 2026-10-27 |

@@ -292,10 +292,14 @@ when the namespace is a real custom object's api_name; reserved namespaces —
 real object fields: `link_url`, `created`, `estimated_close_date`),
 `team_member` (the notified team member's own fields), `business` (tenant
 settings), `contact`, `automation_variable`, `automation_history`, and
-`custom_objects` (the literal token `call_llm`/`initialize_variable` use for
-the automation's own target_object) — never carry it. No API-queryable
+`custom_objects` (how prompts, static variable sources and activity notes
+name the automation's own record) — never carry it. No API-queryable
 catalog of namespaces exists; any custom object's api_name can be one. Full
 table: `kizen automations step-types concepts`, merge-fields.
+
+An automation's notify email names the record's fields by the object's
+api_name, `{{ <object api_name>.<field> }}`, with `objectname` set (confirmed
+live 2026-11-25).
 
 **A `paragraphs`-based `Text` block is one of the places this format is
 authored**: a `{{ ns.field }}` token inline in a `ParagraphDef.text` string is
