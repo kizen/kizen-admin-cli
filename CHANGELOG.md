@@ -16,6 +16,10 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Added
 
+- **Variable steps can read a field from a record variable**
+  (`source_subtype: record_variable_field`); see
+  `kizen automations step-types show initialize_variable`.
+
 - **`kizen business-variables list|set|delete`** reads and writes business
   variables, the values merge fields use as `{{ business_variable.<api_name> }}`.
   `set` creates a variable or changes its value or name, and leaves the
@@ -169,6 +173,16 @@ called out explicitly under **Changed** or **Removed**.
   `value_resolution: "overwrite"` to replace.
 
 ### Fixed
+
+- **`automations diff` no longer reports `value_html: ''` on
+  `initialize_variable` sources.**
+
+- **A field reference or merge field on an object that doesn't exist fails the
+  dry run with the step and the reference.** It used to print only *"HTTP 404:
+  No CustomObject matches the given query."* A merge-field namespace used as a
+  `field_ref`, such as `custom_objects.email` or `entity_record.email`, is
+  called out as one, with the api_name form to use instead
+  (`client_client.email`).
 
 - **Automations with a Create Related Record step can be updated, shown,
   diffed and round-tripped again.** Since Kizen's 2026-11-23 release the CLI

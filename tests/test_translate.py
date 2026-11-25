@@ -1543,6 +1543,15 @@ def _static_list_source(payload: dict) -> dict:
     return _init_block(payload)["sources"][0]
 
 
+def _init_field_value_source(payload: dict) -> dict:
+    return next(
+        src
+        for step in _steps_by_type(payload, "initialize_variable")
+        for src in step["action_initialize_variable"]["sources"]
+        if src["source_type"] == "field_value"
+    )
+
+
 def _update_source(payload: dict) -> dict:
     (step,) = _steps_by_type(payload, "update_variable")
     return step["action_update_variable"]["sources"][0]
@@ -1561,7 +1570,13 @@ _SERVER_DEFAULTS = {
     "error_notification_email": ("loops", _top, "", "ops@example.com"),
     "deduplicate_array": ("loops", _init_block, False, True),
     "array_separator": ("loops", _static_list_source, "comma", "semicolon"),
-    "value_html": ("branching_test", _update_source, "", "<p>x</p>"),
+    "update_variable value_html": ("branching_test", _update_source, "", "<p>x</p>"),
+    "initialize_variable value_html": (
+        "kitchen_sink_triggers",
+        _init_field_value_source,
+        "",
+        "<p>x</p>",
+    ),
     "step description": (
         "loops",
         _step_zero,

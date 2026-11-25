@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 
 import pytest
 
@@ -7444,6 +7445,137 @@ def test_trigger_bare_field_ref_needs_a_target_object(
     )
     with pytest.raises(PlanError, match="unqualified and the automation has no"):
         _build(spec)
+
+
+def _variable_source_spec(field_ref: str) -> dict:
+    source = {
+        "source_type": "field_value",
+        "source_subtype": "this_record_field",
+        "field_ref": field_ref,
+    }
+    return {
+        "name": "x",
+        "api_name": "x",
+        "type": "record_based",
+        "target_object": "patients",
+        "triggers": [{"trigger_type": "manual", "trigger_manual": {}}],
+        "steps": [
+            {
+                "key": "val",
+                "step_type": "initialize_variable",
+                "order": 0,
+                "action_initialize_variable": {
+                    "sources": [source],
+                    "variable": {"name": "val", "data_type": "string"},
+                },
+            }
+        ],
+    }
+
+
+def _object_lookup_fails_with(monkeypatch, status: int) -> None:
+    """Make the fixture lookup's LookupError for an unknown object an HTTP
+    error, as the real lookup's `list_categories` call raises."""
+    import kizen_builder.tools.planners.automations as ma
+    from kizen_builder.api.client import KizenAPIError
+
+    fixture_lookup = ma.get_object
+
+    def get_object(api_name):
+        try:
+            return fixture_lookup(api_name)
+        except LookupError:
+            raise KizenAPIError(
+                status, "No CustomObject matches the given query."
+            ) from None
+
+    monkeypatch.setattr(ma, "get_object", get_object)
+
+
+@pytest.mark.parametrize("server_404", [False, True], ids=["lookup", "http_404"])
+@pytest.mark.parametrize(
+    "obj, problem",
+    [
+        (
+            "custom_objects",
+            "'custom_objects' is a merge-field namespace, not an object",
+        ),
+        ("entity_record", "'entity_record' is a merge-field namespace, not an object"),
+        ("nope", "no object 'nope' in '[^']+'"),
+    ],
+    ids=["custom_objects", "entity_record", "unknown"],
+)
+def test_field_ref_on_an_unknown_object_names_the_step_and_ref(
+    patch_live_lookups, monkeypatch, obj, problem, server_404
+):
+    """The real lookup 404s an unknown object ("No CustomObject matches the
+    given query"), which used to surface bare, with no step or ref."""
+    if server_404:
+        _object_lookup_fails_with(monkeypatch, 404)
+    with pytest.raises(PlanError) as e:
+        _build(_variable_source_spec(f"{obj}.email"))
+    assert re.fullmatch(
+        f"step 'val': field '{obj}.email': {problem}. A field reference names "
+        "the object by its api_name, e.g. 'client_client.email' for Contacts; "
+        "kizen objects list shows them.",
+        str(e.value),
+    )
+
+
+def test_object_lookup_server_error_is_not_an_unknown_object(
+    patch_live_lookups, monkeypatch
+):
+    from kizen_builder.api.client import KizenAPIError
+
+    _object_lookup_fails_with(monkeypatch, 500)
+    with pytest.raises(KizenAPIError) as e:
+        _build(_variable_source_spec("nope.email"))
+    assert e.value.status_code == 500
+
+
+def _notify_text_spec(content: str) -> dict:
+    return {
+        "api_name": "x",
+        "name": "x",
+        "type": "record_based",
+        "target_object": "patients",
+        "steps": [
+            {
+                "key": "notify",
+                "step_type": "notify_member_via_text",
+                "order": 0,
+                "action_notify_member_via_text": {
+                    "team_member": {"type": "owner"},
+                    "content": content,
+                },
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize("server_404", [False, True], ids=["lookup", "http_404"])
+@pytest.mark.parametrize("token", ["nope.email", "nope.owner.email"])
+def test_merge_field_on_an_unknown_object_fails_the_plan(
+    patch_live_lookups, monkeypatch, token, server_404
+):
+    if server_404:
+        _object_lookup_fails_with(monkeypatch, 404)
+    with pytest.raises(PlanError) as e:
+        _build(_notify_text_spec(f"Hi {{{{ {token} }}}}"))
+    assert re.fullmatch(
+        f"step 'notify': merge field '{{{{ {re.escape(token)} }}}}': no object "
+        "'nope' in '[^']+'. A merge field starts with a merge-field namespace "
+        "\\(entity_record, custom_objects, …\\) or an object's api_name; "
+        "kizen objects list shows them.",
+        str(e.value),
+    )
+
+
+def test_merge_field_unknown_field_on_a_real_object_falls_back(patch_live_lookups):
+    payload = _build(_notify_text_spec("{{ patients.no_such_field }}"))
+    html_content = payload["steps"][0]["action_notify_member_via_text"]["html_content"]
+    assert 'data-merge-field-fallback-label="No Such Field"' in html_content
+    assert 'data-merge-field-relationship="patients.no_such_field"' in html_content
 
 
 def _field_updated_values(block: dict, *, goal: bool = False) -> dict:

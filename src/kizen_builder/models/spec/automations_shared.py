@@ -159,7 +159,13 @@ class VariableSourceConfig(BaseModel):
         default=None, description="The field's UUID, sent as `field`."
     )
     value: Any = None
-    variable: str | None = None
+    variable: str | None = Field(
+        default=None,
+        description=(
+            "The variable this source reads, by name: a `variable` source's "
+            "value, or a `record_variable_field` source's record."
+        ),
+    )
 
     @field_validator("source_subtype")
     @classmethod

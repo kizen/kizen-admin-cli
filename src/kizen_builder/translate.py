@@ -944,7 +944,7 @@ def _with_default_description(item: dict[str, Any]) -> dict[str, Any]:
 def _diffable_variable_block(step_type: str, block: dict[str, Any]) -> dict[str, Any]:
     """An initialize_variable/update_variable block with its omitted defaults
     filled in: `deduplicate_array`, a static list source's `array_separator`,
-    and an update_variable source's `value_html`."""
+    and a source's `value_html`."""
     out = {**_VARIABLE_BLOCK_DEFAULTS, **block}
     if step_type == "initialize_variable" and "variable" in out:
         out["variable"] = _diffable_variable(out["variable"])
@@ -956,8 +956,7 @@ def _diffable_variable_block(step_type: str, block: dict[str, Any]) -> dict[str,
                     src.get("value"), list
                 ):
                     src = {"array_separator": "comma", **src}
-                if step_type == "update_variable":
-                    src = {"value_html": "", **src}
+                src = {"value_html": "", **src}
             sources.append(src)
         out["sources"] = sources
     return out
