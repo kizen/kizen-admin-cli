@@ -789,6 +789,8 @@ def smart_connectors_set_sql_params(
             raise typer.BadParameter(f"--param {name} is given twice.")
         params[name] = value.strip()
     unset = [n.strip() for n in unset]
+    if "" in unset:
+        raise typer.BadParameter("--unset needs a parameter name.")
     if not params and not unset:
         raise typer.BadParameter("pass at least one --param or --unset.")
     if both := sorted(set(params) & set(unset)):
