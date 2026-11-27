@@ -228,12 +228,12 @@ def _set_status(
                     "--status queued`.",
                     emoji=False,
                 )
-            elif plan["queued_live_runs"]:
+            elif queued := plan["queued_live_runs"]:
+                runs = "execution" if queued == 1 else "executions"
                 target.print(
-                    f"[yellow]![/yellow] {plan['queued_live_runs']} live executions "
-                    "are pending. Once active, the connector resumes processing "
-                    f"them. See `smart-connectors executions list {name} "
-                    "--status queued`.",
+                    f"[yellow]![/yellow] {queued} queued live {runs} will run once "
+                    f"the connector is active. See `smart-connectors executions "
+                    f"list {name} --status queued`.",
                     emoji=False,
                 )
 

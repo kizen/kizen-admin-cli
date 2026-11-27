@@ -1240,7 +1240,32 @@ def test_activate_preview_warns_about_every_missing_prerequisite():
     assert "no execution variables" in result.output
     assert "no load steps" in result.output
     assert "no published script" in result.output
-    assert "3 live executions are pending" in result.output
+    assert "3 queued live executions will run" in result.output
+
+
+@respx.mock
+def test_activate_names_a_single_queued_execution_in_the_singular():
+    respx.get(f"{BASE}/order_import").mock(
+        return_value=httpx.Response(200, json=DETAIL)
+    )
+    respx.get(f"{BASE}/order_import/executions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [{"id": "exec-1", "status": "queued", "dry_run": False}],
+            },
+        )
+    )
+
+    result = CliRunner().invoke(
+        cli.app, ["smart-connectors", "activate", "order_import", "--dry-run"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "1 queued live execution will run" in result.output
 
 
 @respx.mock
