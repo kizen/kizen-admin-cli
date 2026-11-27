@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from kizen_builder.models.spec.automations_shared import (
     CodeStepInputConfig,
@@ -87,6 +87,19 @@ class ActionPluginCodeStepConfig(BaseModel):
     secrets: list[Any] = Field(default_factory=list)
 
 
+def _check_destinations(block: Any) -> Any:
+    """The server 400s more than one destination on a step that isn't
+    advanced: "Multiple destinations are not allowed for non-advanced LLM
+    call actions" (confirmed live 2026-11-17 on all three LLM steps)."""
+    if len(block.destinations) > 1 and not block.is_advanced:
+        raise ValueError("more than one destination needs is_advanced: true")
+    return block
+
+
+_IS_ADVANCED_DESCRIPTION = "Must be true for more than one destination."
+_HTML_PROMPT_DESCRIPTION = "Leave it out: the CLI derives it from prompt."
+
+
 class ActionLlmCallConfig(BaseModel):
     """Config for `step_type: call_llm`."""
 
@@ -105,9 +118,9 @@ class ActionLlmCallConfig(BaseModel):
         )
     )
     prompt: str | None = None
-    html_prompt: str | None = None
+    html_prompt: str | None = Field(default=None, description=_HTML_PROMPT_DESCRIPTION)
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
-    is_advanced: bool = False
+    is_advanced: bool = Field(default=False, description=_IS_ADVANCED_DESCRIPTION)
     business_plugin_app_id: str | None = Field(
         default=None,
         description=(
@@ -180,6 +193,10 @@ class ActionLlmCallConfig(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def _many_destinations_are_advanced(self) -> Self:
+        return _check_destinations(self)
+
 
 class ActionAudioTranscriptionConfig(BaseModel):
     """Config for `step_type: audio_transcription`. See
@@ -189,7 +206,7 @@ class ActionAudioTranscriptionConfig(BaseModel):
 
     model_name: str
     prompt: str | None = None
-    html_prompt: str | None = None
+    html_prompt: str | None = Field(default=None, description=_HTML_PROMPT_DESCRIPTION)
     input_field_ref: str | None = Field(
         default=None,
         description="'object.field' for the audio file field. Resolved to UUID at apply time.",
@@ -206,7 +223,7 @@ class ActionAudioTranscriptionConfig(BaseModel):
         ),
     )
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
-    is_advanced: bool = False
+    is_advanced: bool = Field(default=False, description=_IS_ADVANCED_DESCRIPTION)
     data_type: str | None = None
     business_plugin_app_id: str | None = Field(
         default=None,
@@ -219,6 +236,10 @@ class ActionAudioTranscriptionConfig(BaseModel):
         description="See ActionLlmCallConfig.merge_field_validation.",
     )
 
+    @model_validator(mode="after")
+    def _many_destinations_are_advanced(self) -> Self:
+        return _check_destinations(self)
+
 
 class ActionFileContentExtractionConfig(BaseModel):
     """Config for `step_type: file_content_extraction`. See
@@ -228,7 +249,7 @@ class ActionFileContentExtractionConfig(BaseModel):
 
     model_name: str
     prompt: str | None = None
-    html_prompt: str | None = None
+    html_prompt: str | None = Field(default=None, description=_HTML_PROMPT_DESCRIPTION)
     input_field_ref: str | None = Field(
         default=None,
         description="'object.field' for the file field. Resolved to UUID at apply time.",
@@ -245,7 +266,7 @@ class ActionFileContentExtractionConfig(BaseModel):
         ),
     )
     destinations: list[LlmDestinationConfig] = Field(default_factory=list)
-    is_advanced: bool = False
+    is_advanced: bool = Field(default=False, description=_IS_ADVANCED_DESCRIPTION)
     data_type: str | None = None
     business_plugin_app_id: str | None = Field(
         default=None,
@@ -257,3 +278,7 @@ class ActionFileContentExtractionConfig(BaseModel):
         default=None,
         description="See ActionLlmCallConfig.merge_field_validation.",
     )
+
+    @model_validator(mode="after")
+    def _many_destinations_are_advanced(self) -> Self:
+        return _check_destinations(self)

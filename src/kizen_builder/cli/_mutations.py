@@ -23,10 +23,12 @@ from kizen_builder.cli._shared import (
     console,
     err_console,
     exit_spec_errors,
+    exit_spec_problems,
     parse_json,
     read_text_file,
 )
 from kizen_builder.tools import plans as plan_tools
+from kizen_builder.tools.findings import SpecProblems
 from kizen_builder.tools.planners.automations import known_choices_addendum
 from kizen_builder.tools.plans import PlanError
 
@@ -54,9 +56,22 @@ def _render_plan(
     table.add_column("key")
     table.add_column("preview")
     for i, op in enumerate(plan.operations, 1):
-        preview = ", ".join(f"{k}={v}" for k, v in op.preview.items() if k != "env")
+        preview = ", ".join(
+            f"{k}={v}" for k, v in op.preview.items() if k not in ("env", "step_keys")
+        )
         table.add_row(str(i), op.action, op.kind, op.key, preview)
     target.print(table)
+    for op in plan.operations:
+        _print_changed_keys(op.preview.get("step_keys"), target)
+
+
+def _print_changed_keys(step_keys: dict[str, str] | None, target: Console) -> None:
+    """The spec step keys a read won't give back, and what it gives instead."""
+    changed = [f"{k} → {v}" for k, v in (step_keys or {}).items() if k != v]
+    if changed:
+        target.print(
+            f"step keys after the write: {escape(', '.join(changed))}", emoji=False
+        )
 
 
 _STATUS_SYMBOLS = {"ok": "✓", "skipped": "·", "failed": "✗", "adjusted": "~"}
@@ -79,6 +94,8 @@ def _render_result(result: plan_tools.ApplyResult) -> None:
             r.message or "",
         )
     console.print(table)
+    for r in result.results:
+        _print_changed_keys(r.step_keys, console)
     archived = [
         r for r in result.results if r.kind == "record_archive" and r.status == "ok"
     ]
@@ -96,6 +113,7 @@ def _run_mutation(
     dry_run: bool,
     yes: bool,
     json_out: bool,
+    full: bool = False,
     stdin_consumed: bool = False,
 ) -> None:
     """Shared flow for every create/update verb.
@@ -103,16 +121,21 @@ def _run_mutation(
     Builds the plan (live-state validation), renders it, then either stops
     (`--dry-run`), or confirms and applies. With `--json` the preview
     goes to stderr so stdout carries only the machine-readable payload
-    (plan JSON on --dry-run, apply results otherwise).
+    (plan JSON on --dry-run, apply results otherwise). `full` keeps each
+    result's whole server response.
     """
     # Planning has two failures worth their own wording — `plan error:` for an
     # impossible change, one `spec error:` line per bad field for a malformed
     # spec (bad api_name casing, reserved field name, missing required config)
-    # instead of a raw pydantic traceback. Everything else is the ordinary
-    # `error:` line, so the inner handlers sit inside `cli_errors`.
+    # instead of a raw pydantic traceback. A planner that checks the whole spec
+    # first raises `SpecProblems` with every finding, which `--json` prints as
+    # JSON. Everything else is the ordinary `error:` line, so the inner
+    # handlers sit inside `cli_errors`.
     with cli_errors():
         try:
             plan = build_plan()
+        except SpecProblems as e:
+            exit_spec_problems(e, json_out)
         except PlanError as e:
             err_console.print(f"[red]plan error:[/red] {escape(str(e))}", emoji=False)
             raise typer.Exit(code=1) from e
@@ -155,7 +178,7 @@ def _run_mutation(
     _enrich_known_choice_failures(result)
 
     if json_out:
-        typer.echo(plan_tools.result_to_json(result))
+        typer.echo(plan_tools.result_to_json(result, full=full))
     else:
         _render_result(result)
     if not result.all_ok:

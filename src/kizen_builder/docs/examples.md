@@ -215,10 +215,10 @@ documents, `confirmed live 2026-08-13`.
 
 ## 3. The automation
 
-One automation, one branch, one merge, one `code_step` — `automation.md`'s
-graph rules (one root, `parent_key` chaining, `parent_branch` on the first
-step of each branch, merge via `go_to_automation_step`) in the smallest shape
-that exercises all of them.
+One automation, one branch, one merge, one `code_step` — the graph rules in
+`kizen docs show automation` (one root, `parent_key` chaining,
+`parent_branch` on the first step of each branch) plus a merge via
+`go_to_automation_step`, in the smallest shape that exercises all of them.
 
 <!-- fixture: examples/service_ticket/automation.json -->
 ```json
@@ -280,8 +280,8 @@ Two placeholder tokens, both filled in from the previous two sections:
   field's `id` from `objects get service_tickets`. This is
   `create_related_entity`'s `context_entity_field`: the field on **this
   automation's own `target_object`** that gets set to point at the record
-  this step creates (see `automation.md`'s `create_related_entity`
-  section). The ref
+  this step creates (see `kizen automations step-types show
+  create_related_entity`). The ref
   `"service_tickets.escalation_ticket"` (or bare `"escalation_ticket"`)
   resolves to the same UUID at plan time.
 - `<site_visit_activity_type_uuid>` — the `Site Visit` activity type's `id`
@@ -291,14 +291,14 @@ Two placeholder tokens, both filled in from the previous two sections:
 **`create_related_entity` names its target with `target_object`**, an
 alias for the wire key `target_custom_object`. A spec that sets only
 `target_object` applies, `confirmed live 2026-10-05`. Either key alone is
-enough; see `automation.md`'s `create_related_entity` section for the rest
-of the step's keys.
+enough; `kizen automations step-types show create_related_entity` lists
+the rest of the step's keys.
 
 `condition.filter_config` uses the bare field api_name and an option
 **label** (`"High"`), not a UUID — `kizen docs show filters` resolves it at
 apply time, same DSL as `records list --filter`. `code_step`'s
 `inputs[].field_ref` is `"service_tickets.priority"`, not a UUID — see
-`kizen docs show automation`, 'Field references'.
+`kizen automations step-types concepts`.
 
 ```bash
 kizen automations create --spec-file automation.json --dry-run
@@ -307,9 +307,9 @@ kizen automations activate escalate_high_priority_tickets --yes
 ```
 
 `kizen automations show escalate_high_priority_tickets` renders the graph —
-a `manual` trigger is auto-prepended (documented in `automation.md`'s "wire
-keys that differ from the obvious guess" section). The render below is the
-literal captured output, `confirmed live 2026-08-13`:
+a `manual` trigger is auto-prepended (the `triggers` row of `kizen docs show
+automation`'s field table). The render below is the literal captured
+output, `confirmed live 2026-08-13`:
 
 ```
 rev 2, active, for service_tickets

@@ -15,6 +15,7 @@ the wire formats, endpoints, and confirmed quirks together.
 | Custom fields, relationship fields, options | `field` |
 | Records (CRUD, bulk, upsert, set-field) | `records` |
 | An automation's definition | `automation` |
+| Worked multi-step automations | `automation-patterns` |
 | One step of an existing automation | `automation-step` |
 | Starting / watching / controlling a run | `automation-runtime` |
 | The Python inside a `code_step` | `code-steps` |
@@ -35,6 +36,8 @@ the wire formats, endpoints, and confirmed quirks together.
 | Files: upload, reference, download | `files` |
 | Filters — one DSL, six surfaces | `filters` |
 | One build across surfaces, start to finish | `examples` |
+| Profiles, credentials, app-builder variables | `environments` |
+| Checking what a write looks like on screen | `verifying` |
 
 `kizen docs list` is the live version of this table. Command **syntax** is
 always `kizen <group> <cmd> --help`; how to *operate* an environment is
@@ -86,6 +89,18 @@ deprecated.
 Several endpoints register only the slashless path and 404 with an HTML page if
 you add one — automation executions and dashboards among them. Don't add
 trailing slashes anywhere.
+
+### Piped JSON drops empty keys
+
+Piped JSON is indented by one space. Summaries, meaning `get`/`list`-style
+reads and apply results, also leave out keys whose value is `null`, `""`, `[]`
+or `{}` (jq reads a missing key as `null`). So a cleared field and a field
+the response never had look the same there; to check that a write cleared a
+field, read it with `KIZEN_OUTPUT=terminal`. Everything else keeps every key:
+`--raw`, plans and payloads, reads you edit and send back (`automations show`,
+`steps get`, `layouts get`, `activities get`), diffs and drift, run logs and
+step history, `code test`, and every other result. `KIZEN_OUTPUT=terminal`
+gives every key on any command.
 
 ### Everything mutating is plan → preview → confirm
 

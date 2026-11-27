@@ -49,7 +49,7 @@ def _missing_runtime_message() -> str:
         "that the rest of the CLI works fine without.\n\n"
         f"    {upgrade.extra_install_hint('connectors')}\n\n"
         "What's in the extra, and why the runtime is vendored: "
-        '`kizen docs show reference`, "Installing the `connectors` extra".'
+        '`kizen docs show smart-connectors`, "Installing the `connectors` extra".'
     )
 
 

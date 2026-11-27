@@ -102,8 +102,62 @@ and the submitter's pick landed on the record. So leave a value the submitter
 mustn't choose off the form, and set it in an automation.
 
 This form ties every answer to a `support_requests` record and leaves Channel
-off. The object and its fields are in `kizen docs show automation`, "Find or
-create a Contact by email".
+off. The object and its fields, applied as in `kizen docs show examples`:
+
+<!-- fixture: examples/support_desk/support_requests.object.json -->
+```json
+{
+  "api_name": "support_requests",
+  "name": "Support Requests",
+  "entity_name": "Support Request",
+  "description": "A request to the support desk, from a customer's email address.",
+  "categories": [
+    { "api_name": "request_details", "name": "Request Details" }
+  ]
+}
+```
+
+<!-- fixture: examples/support_desk/support_requests.fields.json -->
+```json
+{
+  "category": "Request Details",
+  "fields": [
+    {
+      "name": "Customer Email",
+      "api_name": "customer_email",
+      "field_type": "email"
+    },
+    {
+      "name": "Customer",
+      "api_name": "customer",
+      "field_type": "relationship",
+      "relation": {
+        "target_object": "client_client",
+        "relation_type": "many_to_one",
+        "related_name": "Support Requests"
+      }
+    },
+    {
+      "name": "Subject",
+      "api_name": "subject",
+      "field_type": "text"
+    },
+    {
+      "name": "Message",
+      "api_name": "message",
+      "field_type": "longtext"
+    },
+    {
+      "name": "Channel",
+      "api_name": "channel",
+      "field_type": "dropdown",
+      "options": ["Web Form", "Email", "Chat"]
+    }
+  ]
+}
+```
+
+The form:
 
 <!-- fixture: examples/support_desk/contact_support.form.json -->
 ```json
@@ -146,8 +200,8 @@ An automation on the object sets Channel: a `new_entity_created` trigger, a
 condition that Channel is blank, then `change_field_value` with the option's
 label. A submission leaves Channel blank only because the form doesn't offer
 it. The blank check keeps the step off requests that arrived another way and
-were created with a channel. Triggers and steps are in `kizen docs show
-automation`.
+were created with a channel. Each trigger and step is on `kizen automations
+step-types show <type>`.
 
 ```json
 { "name": "Default the channel", "type": "record_based",

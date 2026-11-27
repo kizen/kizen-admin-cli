@@ -13,22 +13,22 @@ each entity — `kizen docs list` for the surface topics.
 
 ```
 kizen envs list                              # show env this directory resolves to
-kizen docs show <topic>                      # rendered in a terminal; raw markdown when piped (--rendered/--raw or KIZEN_OUTPUT force either)
+kizen docs show <topic>                      # rendered in a terminal, raw when piped (--rendered/--raw or KIZEN_OUTPUT force either)
 kizen objects list                           # list objects, custom and built-in (e.g. Contacts)
 kizen objects get <api_name>                 # one object incl. categories, fields, option UUIDs; full stage detail for pipelines
 kizen objects stages list <pipeline>         # a pipeline's stages: name, status, chance-to-close, order
 kizen automations list                       # list automations (summary)
-kizen automations get <api_name>             # one automation incl. triggers + steps
+kizen automations get <api_name>             # triggers + steps by key; --json adds config blocks; long strings, and blocks past 20k chars, elide to a `steps get` pointer
 kizen automations show <api_name>            # step tree with synthesized step keys (handles for steps verbs)
 kizen automations steps get <api> <key>      # one step's wire JSON (starting point for steps edit)
-kizen automations roundtrip <api_name>       # translate + graph-validate (add --execute to PUT + drift-check); --execute writes live and confirms
+kizen automations roundtrip <api_name>       # translate + graph-validate; --execute also PUTs (confirms) and drift-checks
 kizen automations diff <api_name> --spec-file <path>  # preview what `update` from this spec would change — read-only
 kizen automations step-types list            # every step and trigger type the CLI can write (no env needed)
-kizen automations step-types show <type>     # one type's config block: entries to copy, what each choice needs, every field (--json adds the JSON Schema); common names like `wait`, `ai_step` work too
+kizen automations step-types show <type>     # one type's config block: entries to copy, what each choice needs, every field (--json adds the JSON Schema); `wait`, `ai_step` work too
 kizen automations step-types show <type> --variant <name>   # just that entry as JSON, for a spec file or `steps add`
 kizen automations step-types skeleton [--object <api_name>] # a minimal automation spec to build on
 kizen automations step-types concepts        # ideas most steps share: who, when, variables, fields, value sources
-kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see kizen docs show automation)
+kizen automations llm-models                 # live model_name + business_plugin_app_id catalog (see `step-types show call_llm`)
 kizen automations runs list <api_name>       # recent runs for an automation
 kizen automations runs view <exec_uuid>      # one run: summary + step-by-step trace (per-step status/duration)
 kizen automations runs view <exec_uuid> --no-steps   # summary only (status + record + start/finish)
@@ -82,7 +82,7 @@ kizen toolbar-templates get <uuid|name> [--json|--raw]  # entry tree; --json is 
 kizen roles list                             # list roles (name, user count, # perm groups, default flag)
 kizen roles get <name|uuid>                  # one role: default flag, app permissions, attached groups + level counts
 kizen permissions groups                     # list permission groups (raw)
-kizen permissions group <name|uuid>          # one group as a sectioned permission map (UI-style sliders); --field-permissions adds per-field rows; --raw for wire JSON
+kizen permissions group <name|uuid>          # one group as a sectioned permission map; --field-permissions adds per-field rows; --raw for wire JSON
 kizen permissions meta                        # the permissions catalog (sections, capabilities, defaults)
 
 kizen service-accounts list [--search <text>]  # name, api_name, type, status, groups, key count + preview (never a key)
@@ -186,9 +186,14 @@ output (the plan with `--dry-run`, apply results otherwise).
 
 An apply result is `{plan_id, env, results: [{key, kind, action, status,
 server_uuid, message, raw}]}`, one entry per operation. A created entity's id
-is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. The
-preview goes to stderr and only the JSON to stdout, so don't merge `2>&1` into
-a JSON parse.
+is its result's `server_uuid`, e.g. `jq -r '.results[0].server_uuid'`. `raw`
+keeps the response's top-level values (`"raw_trimmed": true` when nested ones
+were cut; `--full` keeps all), but a failed result keeps its whole error body.
+The preview goes to stderr and only the JSON to stdout, so don't merge `2>&1`
+into a JSON parse.
+
+Piped `get`/`list` JSON leaves out empty keys: see `kizen docs show
+reference` (Piped JSON drops empty keys).
 
 ```
 # create
@@ -199,7 +204,7 @@ kizen fields create <object_api_name> [--spec-file path | < stdin]              
 kizen automations create [--spec-file path | < stdin]
 kizen dashboards create [--spec-file path | < stdin]            # dashboard/homepage + dashlets
 kizen toolbar-templates create [--spec-file path | < stdin]     # private to you unless sharing_settings says otherwise
-kizen dashboards dashlet-config --type <t> [--object o] [--field f] [--filter '<json>'|--filter-file f] [--full]   # print one dashlet config (no write)
+kizen dashboards dashlet-config --type <t> [--object o] [--field f] [--filter '<json>'|--filter-file f] [--full]   # print one dashlet config
 kizen mcp-servers create [--spec-file path | < stdin]           # MCP server: tools, upstream tools + sharing (kizen docs show mcp-server)
 kizen layouts update <object_api_name> [--spec-file | < stdin]  # PUT-replace a record layout
 kizen records create <object> --field api_name=value [...]      # one record (values resolved vs schema)
@@ -209,11 +214,11 @@ kizen records create <object> [--spec-file f.csv|f.json | < stdin]   # bulk crea
 kizen objects update <api_name> [--object-name X] [--description Y] [--quick-filtering/--no-quick-filtering]
 kizen categories update <object_api_name> <current_name> --name <new>
 kizen fields update <object_api_name> <field_api_name> [--name X] [--required] [...]
-kizen automations update [--spec-file path | < stdin]
+kizen automations update [<api_name>] [--spec-file path | < stdin]
 kizen dashboards update <uuid|api_name> [--spec-file | < stdin]   # metadata + dashlets (diff by id)
 kizen toolbar-templates update <uuid|name> [--spec-file | < stdin]   # no spec re-saves plugin pages after a release
 kizen dashboards duplicate <uuid|api_name> [--name X] [--api-name Y]   # unpublished copy, source's sharing
-kizen mcp-servers update <uuid|api_name> [--spec-file | < stdin]   # tools compare as a set; `get --raw` output re-applies as a skip; omitting upstreams keeps them
+kizen mcp-servers update <uuid|api_name> [--spec-file | < stdin]   # tools compare as a set; `get --raw` output re-applies as a skip
 kizen records update <object> <uuid> --field api_name=value [...]    # one record
 kizen records update <object> [--spec-file f.csv|f.json | < stdin]   # bulk update (each row needs an 'id')
 kizen records upsert <object> <lookup_value> --field api_name=value [...]  # create-or-update by lookup_value
@@ -274,19 +279,19 @@ kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
 # submissions, subscribers, page-view, and upload endpoints are NOT covered yet — later slice
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)
-kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # build a local workdir (connector.sql + __config.json + data/)
+kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # local workdir: connector.sql + __config.json + data/
 kizen smart-connectors run [--dir path] [--skip-sql]       # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
 kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
-# `run`/`add-input` need the 'connectors' extra; `run`'s error prints the install line (see smart-connectors). `push` previews a SQL diff and confirms
+# `run`/`add-input` need the 'connectors' extra (`run`'s error prints the install line). `push` previews a SQL diff and confirms
 # (mutation gate) before writing; only --publish makes a live change. See kizen docs show smart-connectors.
 
 # smart connectors — building one from scratch, in order. Spec: kizen docs show smart-connector-flow
 kizen smart-connectors create <name> --object <api_name> [--type spreadsheet|webhook|schedule|activity|...]
                               [--cadence secs] [--activity-object <activity type>] [--sql-version 4.1.x]
-kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--template-sql]  # upload the reference file + generate the SQL template
+kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--template-sql]  # upload the reference file, generate the SQL template
 # → iterate on the SQL with pull → run → push
-kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; reports its tables; publish is blocked until this succeeds
+kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; publish is blocked until this succeeds
 kizen smart-connectors push --publish [--dir path]               # sample, then publish; refreshes the output columns configure-flow checks
 kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
@@ -335,7 +340,7 @@ kizen permissions group-create --name X [--base default|clone] [--source-group <
 kizen permissions group-update <name|uuid> --settings-file f       # raise/lower controls on an EXISTING group; same op shapes as group-create
 kizen permissions group-delete <name|uuid>
 kizen service-accounts create --name X [--group <name|uuid> ...]  # integration account; Kizen derives api_name; no groups = disabled
-kizen service-accounts update <ref> [--name Y] [--api-name y] [--group <name|uuid> ... | --clear-groups]  # --group REPLACES the set; rename keeps api_name
+kizen service-accounts update <ref> [--name Y] [--api-name y] [--group <name|uuid> ... | --clear-groups]  # --group REPLACES the set
 kizen service-accounts delete <ref>                                # permanent archive; integration accounts only
 
 # business variables ({{ business_variable.<api_name> }} merge fields)
@@ -352,10 +357,10 @@ kizen messages create <api> --template <name|uuid>          # UUID → step's em
 ```
 
 Step keys come from `kizen automations show` and re-synthesize after every
-apply — always re-run `show` before the next step operation. The post-apply
+apply. Each step write prints the keys it leaves; use those, or re-run `show`,
+for the next step operation. The post-apply
 output includes the before/after semantic diff as the audit trail. See
-`kizen docs show automation` / `automation-step` ("GET and PUT are different
-Editing") for the full model.
+`kizen docs show automation-step` for the full model.
 
 The canonical loop:
 
@@ -399,13 +404,10 @@ JSON list of objects. Useful for standing up test/reference data. Contacts use
 duplicates records — `records upsert` is the fix. It matches an existing
 record by `lookup_value` (the object's name field; email for contacts) and
 updates it in place, or creates one if nothing matches. Bulk spec rows carry
-`lookup_value` instead of `id`. `--oncreate-unarchive` (`prompt|unarchive|
-overwrite`) controls what happens on create when an archived record already
-matches; `--onupdate-conflict overwrite` lets an update proceed past an
-archived-record naming conflict. Omit both to keep the server's default
-(conflict-raising) behavior. Note `lookup_value` is a single string matched
-against the object's identifying field — there's no separate "which field to
-match on" option.
+`lookup_value` instead of `id`; it is one string matched against the
+object's identifying field, with no "which field to match on" option. For
+archived-record matches (`--oncreate-unarchive`, `--onupdate-conflict`), see
+`kizen docs show records`.
 
 **Field options & deletion.** `fields options add/remove` edit a select-type
 field's options in place via Kizen's dedicated option endpoints (not a field

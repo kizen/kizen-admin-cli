@@ -25,7 +25,7 @@ helper command prints (:mod:`kizen_builder.auth_helper`).
 **API-key mode** is its sibling: when ``$KICODE_API_KEY`` is in the process
 environment, a wrapper supplies the key and identity the same way, and requests
 carry the profile-style ``X-API-KEY`` headers. Setting both is an error. Helper
-mode's contract is documented in ``docs/operating.md``; API-key mode serves
+mode's contract is documented in ``docs/environments.md``; API-key mode serves
 kicode only and is deliberately left out of the shipped docs.
 """
 

@@ -30,11 +30,13 @@ SPECS_DIRNAME = "specs"
 #: newcomer should read them.
 GUIDE_TOPICS = (
     "operating",
+    "environments",
     "commands",
     "reference",
     "code-steps",
     "filters",
     "examples",
+    "verifying",
 )
 
 

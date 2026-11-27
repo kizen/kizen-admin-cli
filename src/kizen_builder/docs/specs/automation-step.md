@@ -2,15 +2,17 @@
 
 For surgically changing **one** step on an existing automation, without
 re-sending the whole `AutomationDef`. Step keys come from
-`kizen automations show <api>` and **re-synthesize after every apply** — re-run
-`show` before each step operation.
+`kizen automations show <api>` and **re-synthesize after every apply**. Each
+write prints the keys it leaves; use those, or re-run `show`, for the next step
+operation.
 
 **Consumed by:**
 - `kizen automations steps edit <api> <key> --spec-file <f>` — a **patch**.
 - `kizen automations steps add <api> (--parent <key>|--root) [--branch yes|no] [--leaf] --spec-file <f>` — a **new step**.
 
-See `automation.md` for step types, config blocks, and graph rules — the
-building blocks are identical; only the delivery differs.
+Step blocks are the same as in a whole automation: `kizen automations
+step-types show <type>` prints one, and `kizen docs show automation` has the
+graph rules. Only the delivery differs.
 
 ---
 
@@ -61,11 +63,7 @@ kizen automations steps add flag_big_north_accounts --parent check --branch yes 
   --spec-file delay.json --dry-run
 ```
 
-## Gotchas
-
-- **Re-run `automations show` before every step op** — keys rotate after each apply.
-- **`steps remove <key> [--cascade]`** removes one step (or the whole subtree).
-- The post-apply output includes a before/after semantic diff — that's the audit trail.
+`steps remove <key> [--cascade]` removes one step, or its whole subtree.
 
 ---
 
@@ -90,8 +88,9 @@ kizen automations roundtrip <name> [--execute]   # translator fidelity check
 Consequences worth knowing:
 
 - **Keys re-synthesize after every apply** — they encode order + type, so an
-  insert or remove mid-graph renames every later step. Always re-run `show`
-  before the next step operation.
+  insert or remove mid-graph renames every later step. The write prints the
+  keys it leaves (`keys now:`); use those, or re-run `show`, before the next
+  step operation.
 - **`edit` is a merge patch, but config blocks replace wholesale.** Send a
   complete config block, not a partial one. One exception: a
   `stop_execution` block keeps the live `action` and `notify` it leaves
@@ -138,11 +137,12 @@ Consequences worth knowing:
   synthesized `key`s rotate — `go_to` references are re-keyed onto those, same
   as before.
 - **A step setting the CLI doesn't model stops the loop before the PUT,**
-  on any step, not only the one you're editing — see "GET and PUT are
-  different dialects" in `kizen docs show automation`.
+  on any step, not only the one you're editing, rather than dropping the
+  setting. The error names the step and the block; change that step in the
+  Kizen UI.
 
 ## See also
 
-- `kizen docs show automation` — the full step-type catalog, config blocks, and
-  the GET→PUT translation this loop depends on.
+- `kizen automations step-types show <type>` — one step type's block.
+- `kizen docs show automation` — the graph rules and what an update keeps.
 - `kizen docs show automation-runtime` — watching and controlling a run.

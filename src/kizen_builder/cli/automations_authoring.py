@@ -7,8 +7,8 @@ Nothing here touches an environment. It prints the catalog in
 
 from __future__ import annotations
 
-import json
 import re
+import textwrap
 from typing import Any
 
 import typer
@@ -63,7 +63,7 @@ def _print_type(info: dict[str, Any]) -> None:
 
     for v in info["variants"]:
         echo(f"\n# {v['name']}: {v['summary']}")
-        echo(json.dumps(v["spec"], indent=2))
+        echo(out.dumps_json(v["spec"]))
 
     for s in info.get("selectors") or []:
         default = f"  (default: {s['default']})" if s.get("default") else ""
@@ -82,9 +82,11 @@ def _print_type(info: dict[str, Any]) -> None:
             star = "*" if f["required"] else " "
             line = f"  {star} {f['path']}  [{f['type']}]"
             if f.get("choices"):
-                line += "  " + " | ".join(f["choices"])
+                line += "  " + " | ".join(c or '""' for c in f["choices"])
             elif f.get("known_choices"):
                 line += "  seen: " + " | ".join(f["known_choices"])
+            if f.get("same_as"):
+                line += f"  same keys as {f['same_as']}"
             echo(line)
             if f.get("description"):
                 echo(f"      {_first_sentence(f['description'])}")
@@ -107,7 +109,7 @@ def _print_type(info: dict[str, Any]) -> None:
     echo(
         f"\nOne {kind} alone: kizen automations step-types show {name} "
         "--variant <name>\n"
-        f"Full schema: --json.  Quirks and wire format: {info['doc']}"
+        f"Full schema: --json.  See also: {info['doc']}"
     )
 
 
@@ -142,6 +144,7 @@ def types_list(output: str = OUTPUT_OPTION, json_out: bool = JSON_OPTION) -> Non
             out.Column("purpose", "purpose"),
             out.Column("variants", lambda r: ", ".join(r["variants"])),
         ],
+        prune=False,  # every row keeps `variants`, even empty
     )
 
 
@@ -176,7 +179,7 @@ def types_show(
         note = f"'{type_name}' isn't a type name; showing {name}."
         typer.echo(note, err=bool(variant or json_out))
     if variant or json_out:
-        typer.echo(json.dumps(info, indent=2))
+        out.emit_json(info)
         return
     _print_type(info)
 
@@ -188,10 +191,10 @@ def types_concepts(
     """The ideas most step types share: who, when, variables, fields, value
     sources, filters, merge fields."""
     if json_out:
-        typer.echo(json.dumps(step_catalog.CONCEPTS, indent=2))
+        out.emit_json(step_catalog.CONCEPTS)
         return
     for name, text in step_catalog.CONCEPTS.items():
-        typer.echo(f"{name}\n  {text}\n")
+        typer.echo(f"{name}\n{textwrap.indent(text, '  ')}\n")
 
 
 @types_app.command("skeleton", epilog=_EPILOG)
@@ -202,4 +205,4 @@ def types_skeleton(
 ) -> None:
     """Print a minimal automation spec as JSON: name, api_name, type,
     target_object, a manual trigger and one step. Add steps from `show`."""
-    typer.echo(json.dumps(step_catalog.skeleton(obj or None), indent=2))
+    out.emit_json(step_catalog.skeleton(obj or None))

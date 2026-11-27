@@ -14,7 +14,9 @@ from rich.table import Table
 from kizen_builder import output as out
 from kizen_builder.cli._mutations import _read_spec, _run_mutation
 from kizen_builder.cli._shared import (
+    FULL_OPTION,
     JSON_OPTION,
+    MUTATION_JSON_OPTION,
     OUTPUT_OPTION,
     app,
     cli_errors,
@@ -160,9 +162,8 @@ def messages_templates_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create an email template from a spec file — `craft_json` and `content`
     built together from one pass over the spec's `sections`, so the two can
@@ -193,6 +194,7 @@ def messages_templates_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
         stdin_consumed=from_stdin,
     )
 
@@ -210,9 +212,8 @@ def messages_templates_clone(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Copy an email template, both content fields included.
 
@@ -225,6 +226,7 @@ def messages_templates_clone(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -255,9 +257,8 @@ def messages_templates_update(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """PATCH one email template's fields.
 
@@ -297,6 +298,7 @@ def messages_templates_update(
             dry_run=dry_run,
             yes=yes,
             json_out=json_out,
+            full=full,
             stdin_consumed=from_stdin,
         )
         return
@@ -316,6 +318,7 @@ def messages_templates_update(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -328,9 +331,8 @@ def messages_templates_delete(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Delete an email template."""
     _run_mutation(
@@ -338,6 +340,7 @@ def messages_templates_delete(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )
 
 
@@ -410,9 +413,8 @@ def messages_create(
     yes: bool = typer.Option(
         False, "--yes", "-y", help="Skip the y/N confirmation prompt."
     ),
-    json_out: bool = typer.Option(
-        False, "--json", help="Emit JSON (plan with --dry-run, results otherwise)."
-    ),
+    json_out: bool = MUTATION_JSON_OPTION,
+    full: bool = FULL_OPTION,
 ) -> None:
     """Create an automation-scoped message from an email template.
 
@@ -431,4 +433,5 @@ def messages_create(
         dry_run=dry_run,
         yes=yes,
         json_out=json_out,
+        full=full,
     )

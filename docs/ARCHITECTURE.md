@@ -61,7 +61,7 @@ app-builder, `HelperAuth` becomes
 [`BearerHelperAuth`](../src/kizen_builder/auth_helper.py), which sends only
 `Authorization: Bearer` and resends once after a 401 with a refreshed token;
 the environment contract is in
-[`operating.md`](../src/kizen_builder/docs/operating.md). Retry is decided by
+[`environments.md`](../src/kizen_builder/docs/environments.md). Retry is decided by
 method and failure kind, never by endpoint: a GET retries a transport error or a
 429/502/503/504, any request retries a connection that never opened, and a
 write is never retried once sent. A write whose answer was lost says the server
@@ -100,7 +100,13 @@ it prints a `Table` as a `title:` line and `| a | b |` rows of plain text, with
 no borders, padding or wrapping, so no `Table(` call site chooses a form of its
 own. Everything
 else that prints differently when piped, like `docs show`, asks
-`for_agent()` too.
+`for_agent()` too. That includes JSON: every command prints it through
+`output.emit_json` / `dumps_json`, which indent by one space when piped.
+Only summaries drop empty values: `output.render()` (the `get`/`list` path)
+prunes unless a read is edited and sent back (`layouts get`, `activities
+get`), and apply results prune unless `--full`. Everything else printed
+with `emit_json`, such as payloads, diffs, run logs and results, keeps
+every key.
 
 `_RootGroup` is the root app's `cls=`. It ends any command that raises
 `ConfigError` or `KizenAPIError` on one `error:` line with exit 1, so a command

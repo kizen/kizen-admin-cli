@@ -209,3 +209,31 @@ def test_render_resolve_label_takes_precedence_over_known_label_table():
     )
     assert 'data-merge-field-fallback-label="Resolved Live Label"' in out
     assert "Team Member First Name" not in out
+
+
+def test_render_keeps_a_pre_wrapped_span_and_wraps_a_bare_token():
+    wrapped = (
+        '<span class="kzn-merge-field" '
+        'data-merge-field-fallback-label="First Name" '
+        'data-merge-field-relationship="contact.first_name">'
+        "{{ contact.first_name }}</span>"
+    )
+    out = render(f"Hi {wrapped} & {{{{ contact.last_name }}}}")
+    assert out == (
+        f"Hi {wrapped} &amp; "
+        '<span class="kzn-merge-field" '
+        'data-merge-field-fallback-label="Last Name" '
+        'data-merge-field-relationship="contact.last_name">'
+        "{{ contact.last_name }}</span>"
+    )
+
+
+@pytest.mark.parametrize(
+    "span",
+    [
+        '<span class="kzn-merge-field">plain</span>',
+        '<span class="kzn-merge-field" onclick="x()">{{ contact.first_name }}</span>',
+    ],
+)
+def test_render_escapes_a_span_it_would_not_write(span):
+    assert render(span).startswith("&lt;span")

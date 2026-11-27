@@ -90,8 +90,8 @@ def list_automations(folder: str | None = None) -> list[dict[str, Any]]:
 def list_llm_models() -> list[dict[str, Any]]:
     """Flatten the automations metadata endpoint's LLM catalog into one row
     per (provider, model) — the live source for `call_llm`'s `model_name` +
-    `business_plugin_app_id` pairing (see automation.md "LLM & extraction
-    destinations").
+    `business_plugin_app_id` pairing (see `kizen automations step-types show
+    call_llm`).
     """
     config = load_env_config()
     with KizenClient(config) as client:
@@ -107,7 +107,12 @@ def get_automation(api_name: str) -> dict[str, Any]:
         if match is None:
             raise LookupError(f"no automation with api_name '{api_name}'")
         detail = auto_api.get_automation(client, match["id"])
+    return summarize_automation(detail, config.name)
 
+
+def summarize_automation(detail: dict[str, Any], env: str) -> dict[str, Any]:
+    """The raw GET as summary rows: no step keys, no configs, nothing
+    translated, so it reads any automation."""
     triggers = []
     for t in detail.get("triggers") or []:
         row = {
@@ -140,7 +145,7 @@ def get_automation(api_name: str) -> dict[str, Any]:
         )
 
     return {
-        "env": config.name,
+        "env": env,
         "id": detail.get("id"),
         "name": detail.get("name"),
         "api_name": detail.get("api_name"),
@@ -233,15 +238,30 @@ def _inactive_target_warnings(
     return {"warnings": warnings} if warnings else {}
 
 
+class UntranslatedAutomation(Exception):
+    """The automation was read but couldn't be translated; ``summary`` is
+    what `summarize_automation` makes of the raw GET."""
+
+    def __init__(self, reason: str, summary: dict[str, Any]) -> None:
+        super().__init__(reason)
+        self.summary = summary
+
+
 def show_automation(api_name: str) -> dict[str, Any]:
     """The automation as a translated wire payload — synthesized step keys
-    included — for tree rendering and as the source of step-edit handles."""
+    included — for tree rendering and as the source of step-edit handles.
+    Raises `UntranslatedAutomation`, carrying the summary, when the
+    translation fails."""
     from kizen_builder.translate import exit_loop_dead_end_warnings, live_to_payload
 
     config = load_env_config()
     with KizenClient(config) as client:
         raw, listing = _fetch_with_listing(client, api_name)
-    payload = live_to_payload(raw)
+    try:
+        payload = live_to_payload(raw)
+    except Exception as e:  # any translator failure: the read still works
+        summary = summarize_automation(raw, config.name)
+        raise UntranslatedAutomation(str(e) or type(e).__name__, summary) from e
     warnings = [
         *_inactive_target_warnings(payload, listing).get("warnings", []),
         *exit_loop_dead_end_warnings(payload["steps"]),
@@ -270,13 +290,17 @@ def patch_steps(
     returns a report) → validate the graph → with ``execute``, PUT atomically
     (``last_revision`` guards against concurrent edits), re-GET, and report
     the before/after semantic diff as evidence of exactly what changed.
+    ``step_keys`` maps each step's key in the report to the key a read gives
+    it after the write: planned, then read from the re-GET once applied.
     """
     from kizen_builder.translate import (
         exit_loop_dead_end_warnings,
         live_to_payload,
+        planned_step_keys,
         resolve_exit_loop_targets,
         semantic_diff,
         validate_payload,
+        written_step_keys,
     )
 
     config = load_env_config()
@@ -296,6 +320,7 @@ def patch_steps(
             "validation_problems": problems,
             **({"warnings": warnings} if warnings else {}),
             "payload": payload,
+            "step_keys": planned_step_keys(payload["steps"]),
             "executed": False,
         }
         if problems or not execute:
@@ -310,6 +335,7 @@ def patch_steps(
         _reconcile_notify_member_message_links(client, after)
         result["executed"] = True
         result["revision_after"] = after.get("revision")
+        result["step_keys"] = written_step_keys(payload["steps"], after)
         result["diff"] = [
             {"path": p, "before": a, "after": b}
             for p, a, b in semantic_diff(before, after)
@@ -421,6 +447,29 @@ def list_subfolders(identifier: str) -> list[dict[str, Any]]:
 
         match = _find_folder(identifier, auto_api.list_folders(client))
         return auto_api.list_subfolders(client, match["id"])
+
+
+def check_step_spec(step: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    """Run ``automations create``'s per-step checks on a step for ``steps
+    add``/``edit``, against the variables the live automation declares.
+    Raises `SpecProblems` listing every error; returns the warnings as
+    lines for the report."""
+    from kizen_builder.tools.automation_check import (
+        block_rule_errors,
+        check_step,
+        declared_variables,
+    )
+    from kizen_builder.tools.findings import SpecProblems
+
+    errors, warnings = check_step(
+        step,
+        declared_variables(payload["steps"]),
+        is_global=payload.get("type") == "global",
+    )
+    errors += block_rule_errors(step)
+    if errors:
+        raise SpecProblems(errors, warnings)
+    return [f.text() + (f" (see: {f.hint})" if f.hint else "") for f in warnings]
 
 
 def build_wire_step(

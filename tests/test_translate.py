@@ -22,11 +22,13 @@ from kizen_builder.tools.plans import PlanError
 from kizen_builder.translate import (
     diff_wire_payloads,
     live_to_payload,
+    planned_step_keys,
     resolve_exit_loop_targets,
     semantic_diff,
     synthesize_step_keys,
     synthesize_trigger_keys,
     validate_payload,
+    written_step_keys,
 )
 from tests.conftest import load_fixture, plain
 
@@ -304,6 +306,28 @@ def test_orders_are_sequential(path: str) -> None:
     assert sorted(t["order"] for t in payload["triggers"]) == list(
         range(len(payload["triggers"]))
     )
+
+
+def test_written_step_keys_match_the_planned_ones() -> None:
+    """The keys a write prints before it (planned from the sent order) are the
+    ones the server's response gives back."""
+    raw = load_fixture("automations/branching_test.raw.json")
+    sent = [
+        {**s, "key": f"spec_{i}"}
+        for i, s in enumerate(reversed(live_to_payload(raw)["steps"]))
+    ]
+
+    planned = planned_step_keys(sent)
+
+    assert planned == written_step_keys(sent, raw)
+    assert list(planned.values()) == list(synthesize_step_keys(raw).values())
+    assert planned[sent[-1]["key"]] == "s00_initialize_variable"
+
+
+def test_written_step_keys_are_empty_when_the_step_count_differs() -> None:
+    raw = load_fixture("automations/two_code_steps.raw.json")
+    sent = live_to_payload(raw)["steps"][:1]
+    assert written_step_keys(sent, raw) == {}
 
 
 @pytest.mark.parametrize("path", ALL_FIXTURES)
@@ -741,6 +765,17 @@ def test_cc_team_member_normalized_to_id_dialect(kitchen: dict) -> None:
     by_type = {cc["type"]: cc for cc in ccs}
     assert all(isinstance(e, str) for e in by_type["employees"]["employee_ids"])
     assert "employees" not in by_type["employees"]  # read key
+
+
+@pytest.mark.parametrize(
+    "step_type", ["send_related_contact_email", "send_related_contact_text"]
+)
+def test_a_null_send_to_contact_field_reads_through(step_type: str) -> None:
+    raw = load_fixture("automations/kitchen_sink_triggers.raw.json")
+    step = next(s for s in raw["steps"] if s["step_type"] == step_type)
+    step[f"action_{step_type}"]["send_to_contact_field"] = None
+    block = _step_block(live_to_payload(raw), step_type)
+    assert block["send_to_contact_field"] is None
 
 
 def test_message_steps_reference_message_by_id(kitchen: dict) -> None:

@@ -933,7 +933,7 @@ def test_generate_sample_cli_exit_code_follows_the_state_not_the_download():
         cli.app, ["smart-connectors", "generate-sample", "order_import", "--json"]
     )
     assert ok.exit_code == 0
-    assert json.loads(ok.stdout)["outputs"] is None
+    assert json.loads(ok.stdout).get("outputs") is None
 
 
 def _mock_script(
@@ -1704,7 +1704,8 @@ def test_executions_get_cli_step_table_strips_the_type_prefix():
 
 
 @respx.mock
-def test_executions_get_cli_json_emits_the_row():
+def test_executions_get_cli_json_emits_the_row(monkeypatch):
+    monkeypatch.setenv("KIZEN_OUTPUT", "terminal")
     _mock_execution(EXEC_ROW)
     result = CliRunner().invoke(
         cli.app,

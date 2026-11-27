@@ -17,27 +17,12 @@ kizen automations start <api_name> --record <uuid> --var org_match=true
 Asks for y/N confirmation (`--yes` skips it): it runs live and can't be
 undone. See `kizen docs show operating`, rule 3.
 
-```
-POST /api/automation2/automations/<automation-identifier>/start
-{
-  "record_id": "<uuid>",       # custom-object records
-  "client_id":  "<uuid>",      # OR this, for contact (client_client) automations
-  "variable_overrides": [ {"variable_name": "org_match", "value": "true"} ]
-}
-```
-
-- `record_id` and `client_id` are **mutually exclusive** — contacts use
-  `client_id`, custom-object records use `record_id`. The CLI routes one
-  `--record` to the right key for you.
+- One `--record` works for any object: the CLI sends a Contact as
+  `client_id` and any other record as `record_id`.
 - `--record` is optional: global (record-less) automations start without it.
-- **`variable_overrides` is a list, not a dict** (`StartAutomationRequest` →
-  `VariableOverrideRequest`), keyed by the variable's `name` (not id), and
-  `value` is always a **string** (nullable) that the server coerces by the
-  variable's `data_type`. Verified against the public schema at
-  `/api/docs/public/schema` plus a live start.
-- Response is `{"execution": {ReadAutomationExecution}}` — or
-  `{"execution": null}` if a UUID was passed as the identifier instead of the
-  api_name.
+- `--var name=value` sets a variable by its `name`. The value goes as text,
+  and Kizen converts it to the variable's `data_type`. Verified against the
+  public schema plus a live start.
 
 ### `--wait` / `--show-logs` — start and follow a run in one command
 
@@ -59,32 +44,17 @@ view --wait` below, and so are the exit codes (`completed` → 0,
 
 ## Watching a run
 
-```
-GET /api/automation2/automation-execution?automation_id=<uuid>&record_id=<uuid>&size=25
-GET /api/automation2/automation-execution/<execution-id>
-GET /api/automation2/automation-execution/<execution-id>/history
-```
-
-`size` maxes at 100. CLI: `kizen automations runs list <api_name>`, and
+CLI: `kizen automations runs list <api_name>`, and
 `runs view <exec_uuid>` (`--no-steps` for the summary half only, `--wait` to
 block until the run finishes). `runs logs <exec_uuid>` prints each step's
 `detailed_log` — see below.
 
-- Detail response has `status`, `record`, `automation`, `debug_mode`, `created`
-  (≈ started) and `updated` (≈ finished). There is **no** `started_at` /
-  `finished_at`. On a halted execution it also carries `paused_on_step`
-  (`{id, type, branching_step, label}`) — `runs view` surfaces this whenever
-  the GET carries it.
-- **No trailing slash** — `…/<execution-id>/` 404s with an HTML page; the
-  router only registers the slashless path.
-- In `/history`, each row is one step or trigger firing. Type and human
-  description live in a nested `step` / `trigger` object (`{type,
-  description}`), **not** at the row top level. Timing is `execution_time_ms`
-  (null for async steps like `code_step` / `call_llm`) plus `created` /
-  `updated`.
-- `/history` is a paginated DRF envelope of 100 rows a page by default; a
-  211-row run came back as three pages (**confirmed live 2026-10-16**). The
-  CLI follows every `next` link.
+- A run has `status`, `record`, `automation`, `debug_mode`, `created`
+  (≈ started) and `updated` (≈ finished); there is no `started_at` or
+  `finished_at`. A halted run also names the step it paused on, and `runs
+  view` shows it.
+- `runs view` reads every step row, however long the run (a 211-row run came
+  back as three pages, confirmed live 2026-10-16).
 - `detailed_log` on a history row is where a `code_step`'s output lands —
   **only** `outputs.log("…")` populates it; plain `print()` does not.
   `runs logs <exec_uuid>` renders it. **Confirmed live 2026-08-13**, its shape
@@ -130,65 +100,27 @@ Every verb except `pause` asks for y/N confirmation (`--yes` skips it). CLI:
 `kizen automations runs
 pause|resume|cancel|skip-and-resume|debug-rerun|debug-restart|debug-step|debug-sendit <exec>`.
 
-```
-POST /api/automation2/automation-execution/<id>/pause
-POST /api/automation2/automation-execution/<id>/play             # resume
-POST /api/automation2/automation-execution/<id>/cancel           # irreversible
-POST /api/automation2/automation-execution/<id>/skip-and-resume
-POST /api/automation2/automation-execution/<id>/debug-sendit     # run a debug execution to completion
-POST /api/automation2/automation-execution/<id>/debug-rerun      # re-run one step, nothing after it scheduled
-POST /api/automation2/automation-execution/<id>/debug-restart    # restart from a step, subsequent steps ARE scheduled
-POST /api/automation2/automation-execution/<id>/debug-step       # skip or execute one step of a debug execution
-```
+- `pause`, `resume` and `cancel` (irreversible) do what they say.
+- `skip-and-resume` resumes a run paused on a step failure by skipping that
+  step (`--branch yes|no` past a condition).
+- `debug-sendit` runs a debug execution to completion; `debug-rerun` re-runs
+  one step with nothing after it scheduled; `debug-restart` restarts from a
+  step and schedules the steps after it; `debug-step` skips or executes one
+  step of a debug execution.
 
-**Confirmed live 2026-07-22** for pause/play/cancel against a real delayed
+**Confirmed live 2026-07-22** for pause/resume/cancel against a real delayed
 execution — status flipped `active` → `paused` → `active` → `cancelled` on the
 following GET each time. `debug-step` **confirmed live 2026-08-13**: it
 started an execution with `debug_mode: "active"`, which parks at each step in
 status `debug_waiting` until advanced.
 
-### The oddly-heavy shared request body
-
-pause / play / cancel / debug-sendit all take a
-`LightReadAutomationExecutionRequest`: `id`, `automation_id`, `client_id`,
-`record_id`, `status`, `trigger_history_id`, `debug_mode` — **all marked
-required** by the schema, despite the action being implied entirely by the
-endpoint rather than by anything in the body.
-
-In practice, echo the execution's own current `GET`, current `status` included.
-Sending the *pre-transition* status worked fine in every direction tested, so
-the field is presumably read-only in effect despite being schema-required. The
-CLI builds this body from a live execution read — don't hand-construct it.
-
-Per-verb bodies:
-
-- **`skip-and-resume`** — `InlineFormRequest`: `{skip_step_id,
-  continue_with_branch?}` (`"yes"`/`"no"`). Resumes an execution paused on a
-  step failure by skipping that step.
-- **`debug-rerun` / `debug-restart`** — `DebugRerunRequest`: `{step_id}`.
-- **`debug-step`** — `DebugStepRequest`: `{action: "execute"|"skip"|"debug",
-  history_id, continue_with_branch?}`.
-
-**Correction, confirmed live 2026-08-13**: only `debug-sendit` returns an
-empty/`null` body. `debug-step` returns a full `LightAutomationHistory`, and
-the schema `$ref`s the same shape for `debug-rerun`/`debug-restart`. The CLI
-still re-`GET`s the execution afterward to report the before/after status —
-`debug-step`'s response is the *step's* new history row, not the execution.
+The debug verbs re-read the execution afterwards and report its status
+before and after.
 
 ## Diagnostics
 
-Read-only and paginated:
-
-```
-GET /api/automation2/automations/<identifier>/modification-history
-  ?date_from=<iso>&date_to=<iso>&event_type=<type>&search=<text>
-GET /api/automation2/automations/<identifier>/histories/failures?page=<n>&page_size=<n>
-```
-
-CLI: `kizen automations modification-history <api>` / `kizen automations
-failures <api>`. `modification-history` accepts many more filters than the CLI
-exposes (`custom_object_ids`, `has_comment`, `role_ids`, `team_member`,
-`include_related`, `ordering`).
+Read-only: `kizen automations modification-history <api>` / `kizen automations
+failures <api>`. Both are paginated.
 
 ## See also
 

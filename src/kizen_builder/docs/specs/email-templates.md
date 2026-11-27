@@ -259,8 +259,8 @@ kizen messages create <automation> --template <name> --yes --json | jq -r '.resu
 A message belongs to its automation and can't be deleted (`DELETE` answers
 405). Deleting the automation leaves the message bound to the deleted id, so a
 recreated automation needs new messages (confirmed live 2026-10-30). The full
-order (template, automation, message, step) is in `kizen docs show automation`,
-"Email steps: build order".
+order (template, automation, message, step) is on `kizen automations
+step-types show notify_member_via_email`.
 
 The template must have compiled `content`. The endpoint copies it into the
 message and rejects a blank one (`400 content: This field may not be blank.`,
@@ -295,12 +295,14 @@ settings), `contact`, `automation_variable`, `automation_history`, and
 `custom_objects` (the literal token `call_llm`/`initialize_variable` use for
 the automation's own target_object) — never carry it. No API-queryable
 catalog of namespaces exists; any custom object's api_name can be one. Full
-table and the shared span-building rules: `kizen docs show automation`.
+table: `kizen automations step-types concepts`, merge-fields.
 
 **A `paragraphs`-based `Text` block is one of the places this format is
 authored**: a `{{ ns.field }}` token inline in a `ParagraphDef.text` string is
 rendered into the span above, with the same rules as an automation step's
-merge fields. `automation_variable.*` is rejected at
+merge fields. A token already wrapped in the span, with only its
+`data-merge-field-*` attributes, is kept as written, here and in automation
+prompts and webhook headers; the text around it is still escaped. `automation_variable.*` is rejected at
 spec-validation time for a `Text` block's paragraphs — that namespace only
 exists in an automation-scoped message, not a portable library template.
 
@@ -544,8 +546,9 @@ use `clone`.
 
 ## See also
 
-- `kizen docs show automation` — the `notify_member_via_email` /
-  `notify_member_via_text` steps that consume these, and the per-step-type
-  merge-field namespace table.
+- `kizen automations step-types show notify_member_via_email` /
+  `notify_member_via_text` — the steps that consume these;
+  `kizen automations step-types concepts` — the per-step-type merge-field
+  namespace table.
 - `kizen docs show layout` / `kizen docs show form` — the same craft.js
   vocabulary, with the casing and `Root`-props differences called out.

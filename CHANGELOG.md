@@ -43,8 +43,9 @@ called out explicitly under **Changed** or **Removed**.
   `step-types concepts` covers what most steps share. `step-types show`
   accepts common names such as `wait` and `ai_step`, and lists the types a
   name like `send_email` could mean; any other unwired name gets the wired
-  type it most likely means. The automation doc's wired-type tables are
-  gone; `step-types list` replaces them.
+  type it most likely means. Card entries leave out `order`, which the CLI
+  numbers by position. The automation doc's wired-type tables are gone;
+  `step-types list` replaces them.
 
 - **Automations can end a loop early with an `exit_loop` step again.** Kizen's
   builder now ships it. `action_exit_loop.loop_to_exit` names the loop to end,
@@ -62,6 +63,12 @@ called out explicitly under **Changed** or **Removed**.
 
 ### Changed
 
+- `kizen init` now asks for the API key, then the user id, then the business
+  id. That is the order the Kizen UI lists a service account's credentials, so
+  values copied across in sequence land in the right prompt. Before, it asked
+  for the business id before the user id. `kizen init --help` lists the flags
+  in the same order. Flag names, env vars and stored profiles are unchanged.
+
 - **`kizen docs show` prints the raw markdown when piped or captured.** The
   output is the shipped file byte for byte, so `grep`, `head` and an agent's
   capture see the source instead of rich's column-padded rendering. A
@@ -76,13 +83,88 @@ called out explicitly under **Changed** or **Removed**.
   A terminal looks the same as before. `KIZEN_OUTPUT=terminal` gives the
   terminal form anywhere; `KIZEN_OUTPUT=agent` gives the piped form, for
   tables and for `docs show`.
+- **Piped JSON is smaller: one-space indent, and summaries leave out empty
+  values.** In `get`/`list`-style reads and apply results, keys whose value
+  is `null`, `""`, `[]` or `{}` are left out; jq reads a missing key as
+  `null`. So a blank field and a field the response never had look the
+  same there; to check that a write cleared a field, read it with
+  `KIZEN_OUTPUT=terminal`. Everything else keeps every key:
+  `--raw`, plans and payloads, reads you edit and send back
+  (`automations show`, `steps get`,
+  `layouts get`, `activities get`), diffs, run logs, `code test` and other
+  results. A terminal still gets two-space indent and every key;
+  `KIZEN_OUTPUT` picks either form anywhere.
+- **Apply results keep the server response's top-level values only; `--full`
+  restores the whole body.** A result that lost nested values carries
+  `"raw_trimmed": true` beside `raw`. `.results[].server_uuid` and scalar
+  reads like `.results[0].raw.base_message_id` are unchanged. A failed
+  result keeps its whole `raw`, so the server's field-level errors survive.
 
+- **`step-types show` and dry-run now check and list every key and choice
+  of `filter_config`, the `field_updated` trigger, `create_related_entity`,
+  `math_operator`, code- and plugin-step inputs and outputs, and each notify
+  step's recipient types.** A bare filter clause is reported with its wrapped
+  form, a `field_updated` option can be given by name, and an email
+  recipient of one `employee` is sent as `employees`.
+- **Automation dry-runs report every spec problem at once, with the step,
+  path and a suggested fix. `api_name` and step and trigger `order` default
+  when left out.** `automations create|update --dry-run` lists every wrong
+  choice, unknown key, placeholder, undeclared variable and graph problem
+  before any live call, each with a "did you mean" and the command that
+  lists the allowed values; `--json` puts them under `errors` and
+  `warnings`. Before, each run stopped at the first. `api_name` defaults to
+  the slugified name, a step's or trigger's `order` to its position, and the
+  plan preview says so. `steps add` and `steps edit` run the same per-step
+  checks.
 - **schedule_activity's `schedule` and `assigned_to` are typed; a wrong
   choice fails the dry-run.** A wrong `schedule.type`, a `with_delay` or
   `on_or_around_date` type without its block, `delay_type: days`, a
   `delay_value` or `date_offset_days` below 1, or an unknown
   `assignment_type` is refused before anything is sent. Before, each came
   back from the server as a 400.
+- **A `field_updated` trigger with a `from_value` or `to_value` but no match
+  mode fires only on that value.** The CLI now sends `specific_value` for the
+  missing mode, or `date_between` for a date range. Before, Kizen stored
+  `any_including_blank` and the trigger fired on every change to the field.
+  Goal steps' triggers get the same default. A trigger with an `id` keeps its
+  live mode when the live trigger has that value set too, so an automation
+  an earlier version built this way keeps misfiring after an `update`: state
+  `from_match_mode` / `to_match_mode` in its spec to fix it.
+- **A new `create_related_entity` step links the new record without
+  unlinking the others.** When `context_entity_field` is to-many and the spec
+  leaves `context_entity_field_resolution` out, the CLI now sends `add_only`.
+  Before, it sent `overwrite`, which left the new record as the field's only
+  link. A step with an `id` keeps its live value.
+- **The automation spec page is now a short guide; per-step detail is in
+  `kizen automations step-types show`.** `kizen docs show automation` opens
+  with the build order and keeps the step graph, variables and what an update
+  keeps; `kizen docs show operating` leads with the approval gate. Per-step
+  notes print with `step-types show <type>`, and the rules `--dry-run`
+  enforces and the API wire detail are no longer repeated. Worked examples
+  moved to `kizen docs show automation-patterns` (the AI-reads-a-reply and
+  knowledge-catalog ones to `docs show code-steps` and `docs show
+  mcp-server`), environment setup to `docs show environments`, and what to
+  check in the browser after a write to `docs show verifying`. The
+  merge-field namespaces are in `step-types concepts`, and the `step-types
+  show` footer now reads "See also".
+- **`automations get` shows step keys and, with `--json`, each step's
+  settings. Writes print the keys steps end up with. `automations update`
+  accepts the api_name as an argument.** `get` leads each step row with the
+  key the `steps` verbs take, and `get --json` prints an outline of every
+  trigger and step, then each one with its config block, in place of the
+  old summary. Strings over 2,000 characters and filter-rule view_models
+  print as `<N chars elided; kizen automations steps get <api> <key>>`.
+  When the read would still pass 20,000 characters (where the in-app agent
+  cuts a command's output), whole config blocks, then whole steps, print
+  that way too, largest first; the outline always keeps every step. A spec
+  or step patch that still holds a stand-in fails its dry run. An
+  automation the CLI can't translate still reads: `get` warns and prints the
+  old summary, by step id. Kizen stores no step keys, so a
+  read renames steps `s<NN>_<type>`: `automations create|update` now print
+  `step keys after the write: wait → s00_delay` in the plan and after
+  applying (`step_keys` with `--json`), and `steps add|edit|remove` name the
+  step's new key and list every key when the write shifted any. `automations update <api_name>`
+  fills in a spec that leaves `api_name` out and refuses one that disagrees.
 
 - **A new `update_variable` step on an array variable appends by default.**
   When a spec or a `steps add` block leaves `value_resolution` out, the CLI now
@@ -103,6 +185,30 @@ called out explicitly under **Changed** or **Removed**.
   CLI used to refuse them. `automations update` now keeps the step's
   `preview_user_id` when the spec leaves it out, and a spec can set it or set
   it to `null`.
+
+- **The dry run refuses an array variable step with no
+  `array_aggregation_mode`** on `initialize_variable` and `update_variable`.
+  It used to pass, then fail live with *"Array aggregation mode is required
+  for array variables"*. **It also refuses `change_field_value` in a global
+  automation**, which has no record of its own for it to write, and points
+  at `modify_related_entities` on the loop's item variable; a step that
+  already has an `id` only warns, so an unrelated update still goes through.
+  The same checks run in `steps add` and `steps edit`.
+
+- **`archive_record` can target a related record or a variable's record.**
+  Its card lists `record_source`, `relationship_fields` (field refs) and
+  `automation_variable_name`, and the dry run refuses a source without its
+  key. **`send_related_contact_email`/`_text` take `send_to_contact_field`
+  by name and require it**: a bare name or `object.field` resolves, where it
+  used to fail with *"Must be a valid UUID"*, and a missing one fails the dry
+  run with the candidate fields. The text step's `relationship_field_ref` is
+  an alias. **A variable source's `field_ref` is resolved** to `field`; it
+  used to pass the dry run and fail with *"field is required"*.
+
+- **Pre-wrapped merge-field spans are no longer escaped and wrapped again.**
+  A token already in a `kzn-merge-field` span is sent as written, in message
+  text, AI prompts and webhook headers.
+
 - **`field_ref` in a team-member block (notify, assign, cc, and
   schedule_activity's assignee) now resolves to the field's UUID.** In the
   notify and cc selectors and schedule_activity's assignee it was dropped
@@ -116,6 +222,32 @@ called out explicitly under **Changed** or **Removed**.
   no longer fails** with "Exit Loop step references a loop that does not
   exist." `steps`, `roundtrip --execute` and `update` now send the loop's key
   instead of echoing the id read back.
+- **A code step's `related_field` input or output on a to-many relationship
+  fails the dry-run.** The server refused it with *"The field must not allow
+  multiple values"*. The finding says to read the relationship with
+  `input_type: field` and `is_list: true`, or to write with
+  `modify_related_entities`. `related_field` also takes `related_field_ref`
+  and an `object.field` ref.
+- **An entity variable's `data_subtype` takes the object's api_name; a
+  missing one fails the dry-run.** The server wanted the UUID and answered an
+  api_name with *"is not a valid UUID"*.
+- **A date schedule or date trigger with no `time` fails the dry-run.** A
+  schedule's `on_or_around_date` needs `time` unless `time_offset` is not
+  `specific_time` or `date_offset` is `on_day_and_time`; a trigger needs
+  `time` and `period` unless it's `on_day_and_time`. Each was a 400 before.
+- **The dry run now rejects invalid `source_subtype`, `array_separator`,
+  `value_type`, goal `delay_type` and `change_type` values, and `step-types
+  show` lists the valid ones.** These used to fail only at apply.
+- **Four more automation specs the server rejects fail the dry-run.** Each
+  was a 400 before:
+  - a `static` variable source with no `source_subtype`;
+  - `date_offset: on_day_and_time` on a date field, not a datetime one, in
+    an `on_or_around_date` trigger, a goal's trigger or a schedule;
+  - `days_before` or `days_after` with `date_offset_days` 0 or left out;
+  - two or more `destinations` on `call_llm`, `file_content_extraction` or
+    `audio_transcription` without `is_advanced: true`.
+
+  `automations steps add` and `steps edit` run the same checks.
 
 ## [0.7.0] — 2026-11-16
 

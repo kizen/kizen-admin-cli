@@ -6,7 +6,62 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from kizen_builder.models.spec.automations_shared import TeamMemberConfig
+from kizen_builder.models.spec.automations_shared import (
+    DAYS_OFFSET_MESSAGE,
+    DAYS_OFFSETS,
+    RawFilterConfig,
+    TeamMemberConfig,
+)
+
+_RECIPIENT_KEYS = (
+    "last_active_role takes role_id, team_selector_field takes field_ref "
+    "('object.field'), and owner and last_active nothing else"
+)
+
+
+# One create per value, 2026-11-16: employees and team_member are refused on
+# a text step.
+class TextRecipient(TeamMemberConfig):
+    """Who `notify_member_via_text` texts."""
+
+    type: (  # type: ignore[assignment]
+        Literal[
+            "owner",
+            "last_active",
+            "last_active_role",
+            "team_selector_field",
+            "employee",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description=f"employee takes employee_id, {_RECIPIENT_KEYS}.",
+    )
+
+
+# Confirmed live 2026-11-16: employee is refused on an email step, the
+# others aren't. The planner sends employee as employees, so a spec written
+# for a text step works here too.
+class EmailRecipient(TeamMemberConfig):
+    """Who `notify_member_via_email` emails, or copies."""
+
+    type: (  # type: ignore[assignment]
+        Literal[
+            "owner",
+            "last_active",
+            "last_active_role",
+            "team_selector_field",
+            "employees",
+            "employee",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description=(
+            f"employees takes employee_ids, {_RECIPIENT_KEYS}. employee "
+            "with employee_id is sent as employees."
+        ),
+    )
 
 
 class ActionSendEmailConfig(BaseModel):
@@ -33,11 +88,21 @@ class ActionSendEmailConfig(BaseModel):
     cc_team_member: TeamMemberConfig | None = None
 
 
+_SEND_TO_CONTACT_FIELD = (
+    "Required: the relationship field to Contacts, on the automation's "
+    "object, that names the recipient, as 'object.field' or a UUID. Resolved "
+    "to a UUID at apply time."
+)
+
+
 class ActionSendRelatedContactEmailConfig(BaseModel):
     """Config for `step_type: send_related_contact_email`."""
 
     model_config = ConfigDict(extra="allow")
 
+    send_to_contact_field: str | None = Field(
+        default=None, description=_SEND_TO_CONTACT_FIELD
+    )
     email: str | dict[str, Any] | None = Field(
         default=None,
         description=(
@@ -61,13 +126,13 @@ class ActionNotifyMemberViaEmailConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    team_member: TeamMemberConfig
+    team_member: EmailRecipient
     id: str | None = Field(
         default=None,
         description="UUID of the email message/template to send (see `kizen messages templates`).",
     )
     email_template_id: str | None = Field(default=None, description="Alias for `id`.")
-    cc_team_member: TeamMemberConfig | None = None
+    cc_team_member: EmailRecipient | None = None
 
 
 class ActionNotifyMemberViaTextConfig(BaseModel):
@@ -81,7 +146,7 @@ class ActionNotifyMemberViaTextConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    team_member: TeamMemberConfig
+    team_member: TextRecipient
     content: str | None = None
     html_content: str | None = None
     base_message_id: str | None = None
@@ -109,13 +174,17 @@ class ActionSendRelatedContactTextConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    relationship_field_ref: str | None = Field(
-        default=None,
-        description="'object.field' for the relationship field pointing to the contact.",
+    send_to_contact_field: str | None = Field(
+        default=None, description=_SEND_TO_CONTACT_FIELD
     )
-    relationship_field_id: str | None = None
-    message: str | None = None
-    html_message: str | None = None
+    text: str | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "A text AutomationMessage id (bare UUID or {id: uuid}), which the "
+            "CLI can't create yet: add the step in the Kizen UI. A message "
+            "belongs to one automation."
+        ),
+    )
 
 
 class ActionRequestInfoViaTextConfig(BaseModel):
@@ -184,7 +253,7 @@ class ActionAssignTeamMemberConfig(BaseModel):
     field_ref: str | None = Field(
         default=None,
         description=(
-            "'object.field' reference, resolved to `field_id` at apply time. "
+            "'object.field' reference, resolved to `field_id` at plan time. "
             "For `related_team_selector_field`, qualify it with the far "
             "object: a bare name resolves against the automation's own object."
         ),
@@ -339,8 +408,9 @@ class ScheduleOnOrAroundDateConfig(BaseModel):
         default=None,
         description=(
             "A date or datetime field on the record, as `<object>.<field>` "
-            "or a bare field api_name. Resolved to `field_id` at apply time. "
-            "Set this, `field_id` or `variable`."
+            "or a bare field api_name; on_day_and_time needs a datetime one. "
+            "Resolved to `field_id` at apply time. Set this, `field_id` or "
+            "`variable`."
         ),
     )
     field_id: str | dict[str, Any] | None = Field(
@@ -368,6 +438,36 @@ class ScheduleOnOrAroundDateConfig(BaseModel):
         default=None, description='`HH:MM` on a 24-hour clock, e.g. "10:00".'
     )
     time_offset_value: int | None = None
+
+    # The server reads a left-out time_offset as specific_time and then
+    # 400s for want of `time`; on_day_and_time takes the field's own time
+    # and ignores time_offset (confirmed live 2026-11-16).
+    @model_validator(mode="after")
+    def _time_when_specific(self) -> Self:
+        if (
+            self.date_offset != "on_day_and_time"
+            and self.time_offset in (None, "specific_time")
+            and not self.time
+        ):
+            raise ValueError(
+                "needs `time` (HH:MM): a left-out time_offset is "
+                "specific_time, which takes one. Set `time`, or a time_offset "
+                "that doesn't take it (from_field, from_variable, or "
+                "hours/minutes before/after with time_offset_value)"
+            )
+        return self
+
+    # A left-out count is a 400: "This field is required when
+    # date_offset_type is static" (confirmed live 2026-11-17).
+    @model_validator(mode="after")
+    def _days_with_days_offset(self) -> Self:
+        if (
+            self.date_offset in DAYS_OFFSETS
+            and self.date_offset_days is None
+            and (self.model_extra or {}).get("date_offset_type") in (None, "static")
+        ):
+            raise ValueError(DAYS_OFFSET_MESSAGE)
+        return self
 
 
 class ActivityScheduleConfig(BaseModel):
@@ -504,4 +604,5 @@ class ActionDeleteScheduledActivityConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    filter_config: dict[str, Any] | None = None
+    # Not wired; nothing compiles the DSL here.
+    filter_config: RawFilterConfig | None = None
