@@ -59,16 +59,16 @@ kizen team search <name>                     # find team member UUIDs by name or
 kizen messages templates list                # email templates (source for `messages create --template`)
 
 kizen smart-connectors list [--search <t>] [--type <t>] [--status <s>]  # ETL/data-ingestion connectors
-kizen smart-connectors get <connector>                  # one connector: detail + draft/live SQL script ids
-kizen smart-connectors metadata                         # connector-type / matching-rule catalog (raw)
-kizen smart-connectors executions list <connector>      # run history (most recent first)
+kizen smart-connectors get <connector>   # one connector: detail + draft/live SQL script ids
+kizen smart-connectors metadata   # connector-type / matching-rule catalog (raw)
+kizen smart-connectors executions list <connector>   # run history (most recent first)
 kizen smart-connectors executions get <connector> <eid> # one run: status, full error, step counts, files
 kizen smart-connectors executions download <connector> <eid> [--file report|output|input] [--out path]
                                                         # save its .xlsx report (default), output zip, or input file
 kizen smart-connectors executions sql <connector> <eid> # the SQL used in one execution
-kizen smart-connectors scripts <connector>              # the connector's draft + live SQL scripts
+kizen smart-connectors scripts <connector>   # the connector's draft + live SQL scripts
 kizen smart-connectors download-sample <connector> [--script draft|live|<id>] [--out path]  # save a script's output-sample zip
-kizen smart-connectors events <connector-uuid>          # event history / audit trail (UUID only)
+kizen smart-connectors events <connector-uuid>   # event history / audit trail (UUID only)
 
 kizen filter-groups list <object> [--search <text>]     # per-object saved filters (segments)
 kizen filter-groups get <object> <uuid|name>            # one filter group's config + sharing_settings
@@ -280,8 +280,8 @@ kizen forms delete <form> ; kizen forms duplicate <form> [--name X]
 
 # smart connectors — local dev loop: pull → run → push (replaces the UI download/copy-paste cycle)
 kizen smart-connectors pull <connector> [--dir path] [--script draft|live] [--overwrite]   # local workdir: connector.sql + __config.json + data/
-kizen smart-connectors run [--dir path] [--skip-sql]       # execute connector.sql locally via embedded ClickHouse; needs the 'connectors' extra
-kizen smart-connectors add-input <file> [--dir path]       # normalize a CSV/Excel/ZIP into data/ + patch config (needs 'connectors' extra)
+kizen smart-connectors run [--dir path] [--skip-sql]   # execute connector.sql locally via embedded ClickHouse
+kizen smart-connectors add-input <file> [--dir path]   # normalize a CSV/Excel/ZIP into data/ + patch config
 kizen smart-connectors push [--dir path] [--publish] [--dry-run] [--yes]  # write connector.sql back to the draft; --publish promotes it live
 # `run`/`add-input` need the 'connectors' extra (`run`'s error prints the install line). `push` previews a SQL diff and confirms
 # (mutation gate) before writing; only --publish makes a live change. See kizen docs show smart-connectors.
@@ -292,12 +292,12 @@ kizen smart-connectors create <name> --object <api_name> [--type spreadsheet|web
 kizen smart-connectors set-input <file> --connector <c> [--no-regenerate] [--template-sql]  # upload the reference file, generate the SQL template
 # → iterate on the SQL with pull → run → push
 kizen smart-connectors generate-sample <connector> [--no-wait]   # server-side output sample; publish is blocked until this succeeds
-kizen smart-connectors push --publish [--dir path]               # sample, then publish; refreshes the output columns configure-flow checks
-kizen smart-connectors suggest-variables <connector> [--spec]    # infer execution variables from the file's columns (writes nothing)
+kizen smart-connectors push --publish [--dir path]   # sample, then publish; refreshes the output columns configure-flow checks
+kizen smart-connectors suggest-variables <connector> [--spec]   # infer execution variables from the file's columns (writes nothing)
 kizen smart-connectors configure-flow [<connector>] --spec-file f   # execution variables + load steps (object/field/variable writes)
-kizen smart-connectors activate <connector>                # a LIVE run without this sits queued forever, silently
-kizen smart-connectors deactivate <connector>                      # status inactive: no live runs; every edit and dry runs still work
-kizen smart-connectors set-sql-params <connector> [--param name=value] [--unset name]   # connector sql_parameters; merged over live, no publish needed
+kizen smart-connectors activate <connector>   # a LIVE run without this sits queued forever, silently
+kizen smart-connectors deactivate <connector>   # status inactive: no live runs; every edit and dry runs still work
+kizen smart-connectors set-sql-params <connector> [--param k=v] [--unset k]   # names not passed keep their value; no publish
 kizen smart-connectors start-flow <connector> [--write-records] [--ignore-blockers]   # queue a run; dry run unless --write-records
 # `set-input` on a connector that already has a file replaces it, keeping your SQL. What that leaves stale:
 # kizen docs show smart-connectors (Replacing the reference file).
@@ -314,7 +314,7 @@ kizen smart-connectors seeds remove <connector> --object <o>
 
 # smart connectors — webhook connectors (triggered by a real inbound POST, never by start-flow)
 kizen smart-connectors webhook-sample <path> --body '<json>' --employee <email|name|uuid>  # the reference file they need
-kizen smart-connectors send-webhook <connector> --body '<json>|@file' [--query k=v]        # fires it for real
+kizen smart-connectors send-webhook <connector> --body '<json>|@file' [--query k=v]   # fires it for real
 # create --type webhook pins sql_version 4.1.x (lower 500s) and set-input drops the generated
 # `output.webhooks` debug table (no such object; it crashes sample generation). Inbound requests are
 # BATCHED on the connector's cadence, so an execution appears within that window, not immediately.
