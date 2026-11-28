@@ -20,6 +20,7 @@ GET   /api/smart-connectors/{connector}                      # full detail — U
 GET   /api/smart-connectors/metadata                         # connector-type / matching-rule catalog
 GET   .../{connector}/executions                             # run history; ?ids=<eid> for one run
 GET   .../{connector}/executions/{eid}/sql-script            # the SQL used in one run
+PATCH /api/smart-connectors/{connector}                      # partial update (flow, status, sql_parameters, …)
 GET   .../{connector}/sql-scripts  ·  .../sql-scripts/{id}   # draft / live scripts
 PATCH .../sql-scripts/{id}                                   # edit the draft (user_script)
 POST  .../sql-scripts/{id}/publish                           # promote draft → live
@@ -52,6 +53,30 @@ A SQL script's `config_metadata` comes back **as a dict** (the OpenAPI types it
 `seed_tables`, and a `triggered` block. That dict, plus the connector's
 `sql_parameters` / `integration_secrets`, is exactly what the local dev
 package's `__config.json` is built from.
+
+## SQL parameters (`sql_parameters`)
+
+A connector-level name → value hash, e.g. `{"sql_param_1": "test value"}`.
+The script reads it as the table `meta.parameters` (`name String, value
+String`). The runner stringifies each value. `set-sql-params` sets and removes
+entries.
+
+- **It lives on the connector, not the script.** There's no draft or publish.
+  `PATCH /api/smart-connectors/{connector}` with `{"sql_parameters": {...}}`
+  saves it, and the next run reads the new values.
+- **The PATCH replaces the whole hash.** `set-sql-params` reads the live values
+  and sends the merged hash. Names you don't pass keep their value. `--unset`
+  removes a name by leaving it out. Confirmed live 2026-11-17.
+- **The UI deactivates an active connector on save.** The Secrets and SQL
+  Parameters modal asks first, then sends `status: "inactive"` in the same
+  PATCH when the connector is `operational` or `need_attention`. The server
+  doesn't require it. `set-sql-params` does the same and shows it in the
+  preview. Run `activate` afterwards. Read in the react-app source 2026-11-17.
+- The UI trims names and values, and `set-sql-params` does too.
+- `start-connector-flow` also accepts `sql_parameters`. They apply to that one
+  run only, merged over the connector's.
+- `pull` copies them into `__config.json`. Re-`pull` after changing them to run
+  locally with the new values.
 
 ## The local dev loop
 
@@ -281,7 +306,11 @@ its own 400:
   configuring each load step."
 
 `activate` warns about both in its preview, and about a connector with no
-published script. **Deactivating and reactivating needs nothing re-done.**
+published script. Switching on from `inactive` or `setup`, it also counts the
+queued live executions (`status=queued&include_dry_run=false`) and warns that
+they resume once the connector is active. The UI's "Active?" toggle runs the
+same query and shows the same warning. Read in the react-app source
+2026-11-17. **Deactivating and reactivating needs nothing re-done.**
 `inactive` → `operational` goes straight through with nothing else changed.
 
 ### Flow edits have no draft; SQL edits apply on publish
@@ -518,7 +547,7 @@ produced, and warns when they differ from the connector's recognized scopes
 
 Authoring: `create` → `set-input` → `generate-sample` → `push --publish` →
 `configure-flow` → `activate` → `start-flow`, and `deactivate`. Plus
-`seeds list|add|remove`, and for webhook connectors `webhook-sample` and
+`set-sql-params`, `seeds list|add|remove`, and for webhook connectors `webhook-sample` and
 `send-webhook`.
 
 Every write previews and confirms first (`--dry-run` to stop after the preview,

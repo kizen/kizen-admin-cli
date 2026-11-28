@@ -750,3 +750,110 @@ def smart_connectors_configure_flow(
         "[dim]Next: `smart-connectors activate` (a live run silently queues "
         "forever without it), then `start-flow` (dry run).[/dim]"
     )
+
+
+@smart_connectors_app.command("set-sql-params")
+def smart_connectors_set_sql_params(
+    connector: str = typer.Argument(..., help="Connector UUID or api_name."),
+    param: list[str] = typer.Option(
+        [],
+        "--param",
+        help="name=value to set. Repeatable. Names not given keep their value.",
+    ),
+    unset: list[str] = typer.Option(
+        [], "--unset", help="Name of a parameter to remove. Repeatable."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show the change without applying."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip the confirmation prompt."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
+) -> None:
+    """Set or remove the connector's SQL parameters.
+
+    These are the name/value pairs its script reads from `meta.parameters`.
+
+    Saved on the connector, not the script: no publish is needed, and the next
+    run reads the new values. Like the UI, a change to an active connector also
+    sets it inactive. Run `activate` afterwards.
+    """
+    params: dict[str, str] = {}
+    for item in param:
+        name, sep, value = item.partition("=")
+        name = name.strip()
+        if not sep or not name:
+            raise typer.BadParameter(f"--param must be name=value (got {item!r}).")
+        if name in params:
+            raise typer.BadParameter(f"--param {name} is given twice.")
+        params[name] = value.strip()
+    unset = [n.strip() for n in unset]
+    if "" in unset:
+        raise typer.BadParameter("--unset needs a parameter name.")
+    if not params and not unset:
+        raise typer.BadParameter("pass at least one --param or --unset.")
+    if both := sorted(set(params) & set(unset)):
+        raise typer.BadParameter(f"both set and unset: {', '.join(both)}.")
+
+    with _connector_errors():
+        plan = sc_tools.plan_set_sql_params(connector, params, unset)
+    name = escape(plan["connector_api_name"] or connector)
+
+    if not plan["changed"]:
+        if json_out:
+            out.emit_json(plan)
+        else:
+            console.print(
+                f"[dim]No change to {name}'s SQL parameters.[/dim]", emoji=False
+            )
+        return
+
+    def render(target: Console) -> None:
+        target.print(f"[bold]{name}[/bold]: sql_parameters", emoji=False)
+        before, after = plan["from_params"], plan["to_params"]
+        for key, value in after.items():
+            if key not in before:
+                line = f"+ {key} = {value!r}"
+            elif before[key] != value:
+                line = f"~ {key}: {before[key]!r} → {value!r}"
+            else:
+                continue
+            target.print(f"  {escape(line)}", emoji=False)
+        for key in sorted(before.keys() - after.keys()):
+            target.print(f"  {escape(f'- {key}')}", emoji=False)
+        if plan["deactivates"]:
+            target.print(
+                f"[yellow]![/yellow] status {plan['status']} → [bold]inactive[/bold]. "
+                "The UI deactivates on this change too. Run `smart-connectors "
+                "activate` afterwards.",
+                emoji=False,
+            )
+
+    if not _preview_and_confirm(
+        plan,
+        render=render,
+        action="change SQL parameters",
+        dry_run=dry_run,
+        yes=yes,
+        json_out=json_out,
+    ):
+        return
+
+    with cli_errors():
+        result = sc_tools.apply_set_sql_params(plan)
+
+    if json_out:
+        out.emit_json(result)
+        return
+    console.print(
+        f"[green]{escape(result['connector'] or connector)}[/green] SQL parameters "
+        f"saved ({len(result['sql_parameters'] or {})} total)",
+        emoji=False,
+    )
+    if plan["deactivates"]:
+        console.print(
+            f"[yellow]status is now '{escape(result['status'] or 'unknown')}'.[/yellow] "
+            "Run `smart-connectors activate` to resume live runs.",
+            emoji=False,
+        )

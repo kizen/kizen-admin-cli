@@ -4211,6 +4211,7 @@
 │ generate-sample    Run the draft server-side to generate its output sample.                      │
 │ suggest-variables  Ask Kizen to infer execution variables from the reference file's columns.     │
 │ configure-flow     Save a connector's execution variables and load steps from a spec file.       │
+│ set-sql-params     Set or remove the connector's SQL parameters.                                 │
 │ webhook-sample     Write the reference CSV a webhook connector's template generator needs.       │
 │ send-webhook       Fire a connector's real inbound webhook. This writes records.                 │
 │ activate           Flip a connector to `operational` so live runs actually execute.              │
@@ -4249,7 +4250,8 @@
  status, but a live run of a connector that isn't `operational` sits in                             
  `queued` indefinitely with no error — which is why this is its own command.                        
  The server refuses to activate without execution variables and fully                               
- configured load steps.                                                                             
+ configured load steps. Like the UI's toggle, the preview warns when live                           
+ executions are queued, since they resume once the connector is active.                             
                                                                                                     
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
 │ *    connector      <str>  Connector UUID or api_name. [required]                                │
@@ -4734,6 +4736,28 @@
 │    --json                                        Emit JSON (plan with --dry-run, result          │
 │                                                  otherwise).                                     │
 │    --help                                        Show this message and exit.                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                    
+ Usage: smart-connectors set-sql-params [OPTIONS] {connector}                                       
+                                                                                                    
+ Set or remove the connector's SQL parameters.                                                      
+                                                                                                    
+ These are the name/value pairs its script reads from `meta.parameters`.                            
+                                                                                                    
+ Saved on the connector, not the script: no publish is needed, and the next                         
+ run reads the new values. Like the UI, a change to an active connector also                        
+ sets it inactive. Run `activate` afterwards.                                                       
+                                                                                                    
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────╮
+│ *    connector      <str>  Connector UUID or api_name. [required]                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --param            <str>  name=value to set. Repeatable. Names not given keep their value.       │
+│ --unset            <str>  Name of a parameter to remove. Repeatable.                             │
+│ --dry-run                 Show the change without applying.                                      │
+│ --yes      -y             Skip the confirmation prompt.                                          │
+│ --json                    Emit JSON.                                                             │
+│ --help                    Show this message and exit.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                     
  Usage: smart-connectors start-flow [OPTIONS] {connector}                                           
@@ -6032,6 +6056,9 @@
 
 
 ===== smart-connectors set-input =====
+
+
+===== smart-connectors set-sql-params =====
 
 
 ===== smart-connectors start-flow =====

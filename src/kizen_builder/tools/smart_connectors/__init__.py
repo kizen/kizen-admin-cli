@@ -19,6 +19,7 @@ across ``authoring/``:
 * ``configure-flow``   — save execution variables and load steps from a spec
 * ``activate``         — the ``status: "operational"`` flip a live run needs
   (``deactivate`` sets ``inactive``)
+* ``set-sql-params``   — set the connector's ``sql_parameters``
 * ``start-flow``       — queue a dry or live execution
 
 The dev-loop functions turn the manual "download the dev package from the UI,
@@ -94,6 +95,10 @@ from kizen_builder.tools.smart_connectors.authoring.set_input import (
     _drop_phantom_output_tables,
     apply_set_input,
     plan_set_input,
+)
+from kizen_builder.tools.smart_connectors.authoring.sql_params import (
+    apply_set_sql_params,
+    plan_set_sql_params,
 )
 from kizen_builder.tools.smart_connectors.authoring.start_flow import (
     apply_start_flow,
@@ -181,6 +186,7 @@ __all__ = [
     "apply_seed_change",
     "apply_send_webhook",
     "apply_set_input",
+    "apply_set_sql_params",
     "apply_set_status",
     "apply_start_flow",
     "build_webhook_sample",
@@ -203,6 +209,7 @@ __all__ = [
     "plan_remove_seed",
     "plan_send_webhook",
     "plan_set_input",
+    "plan_set_sql_params",
     "plan_set_status",
     "plan_start_flow",
     "pull_connector",

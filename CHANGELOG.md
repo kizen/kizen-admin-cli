@@ -53,6 +53,13 @@ called out explicitly under **Changed** or **Removed**.
   and `steps` refuse an exit loop outside a loop body, one aimed at a loop it
   isn't inside, or one that sets both `loop_to_exit` and `step`. `show` draws
   the target and warns about steps hung under it, which never run.
+- **SmartConnector SQL parameters can be set and removed.** `kizen
+  smart-connectors set-sql-params <connector> --param name=value` sets the
+  values a script reads from `meta.parameters`, and `--unset name` removes one.
+  Both are repeatable. Names you don't pass keep their value, and the change
+  applies to the next run with no publish. Like the UI, a change to an
+  operational connector also sets it inactive. Run `smart-connectors activate`
+  afterwards.
 
 ### Changed
 
@@ -167,6 +174,10 @@ called out explicitly under **Changed** or **Removed**.
   updates now append too. A step with an `id` keeps its live value, and
   `automations diff` no longer shows that kept value as removed. Set
   `value_resolution: "overwrite"` to replace.
+- **`smart-connectors activate` warns about queued live executions.** When it
+  switches an inactive connector on, the preview shows how many live
+  executions are pending. They resume once the connector is active. This
+  matches the warning on the UI's "Active?" toggle.
 
 ### Fixed
 
